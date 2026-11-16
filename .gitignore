@@ -1,0 +1,17 @@
+# .NET / IDE build output
+[Bb]in/
+[Oo]bj/
+.vs/
+.idea/
+*.user
+*.suo
+
+# Python
+__pycache__/
+*.pyc
+
+# Never commit original game files or importer output
+/games/
+/imported/
+*.DAX
+*.dax
