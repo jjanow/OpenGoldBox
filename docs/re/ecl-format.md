@@ -271,7 +271,7 @@ area loop 0x403E (checks at 0x4118–0x423B), which clears it on exit (0x4245); 
   padding) **into string slot 1**, which is then printed as a text would be. So `PRINTCLR [$6E79]` (ECL1 block 18
   $A0AB) prints the cell's value as digits, and slot 1 keeps the digits afterwards. DOSBox-X check (patched save D):
   PRINTCLR 12345 then PRINT [x] with x = 5 showed `123455`, and slot 1 still held the digits' tail afterwards.
-  How the text box shows a text is still Lee's description (L).
+  How the text box shows a text: `view3d.md` "Text window" (program read s12: START 0x77F8).
 - **INPUTNUM / INPUTSTR** (0x1697 / 0x16DA): the length operand is loaded but never fetched.
 
 ### Encounters (program read 2026-11-17)
@@ -529,8 +529,8 @@ only. `[?]` = unknown or unconfirmed.
 | 0E | PICTURE | PICTURE | 1 | 1 | v | Picture v ($6DE1 = 255) or head $6DE1 + body v; 255 = back to the view | P (shape) | 137 |
 | 0F | INPUTNUM | INPUT NUMBER | 2 | 2 | v a | Read a number into a; v is ignored (input up to 6 characters, re-asked until 0..65536; low 16 bits stored) | P | 2 |
 | 10 | INPUTSTR | INPUT STRING | 2 | 2 | v a | Read text into a (SAVE-text rules); v is ignored: up to 40 characters 0x20–0x7A, upper-cased, empty input stored as one space | P | 20 |
-| 11 | PRINT | PRINT | 1 | 1 | s | Print to the text box; a number (type < 0x80) is printed as decimal digits via slot 1 (P, 0x174F); layout L | L | 289 |
-| 12 | PRINTCLR | PRINTCLEAR | 1 | 1 | s | Clear the text box, print (numbers as for PRINT) | L | 1401 |
+| 11 | PRINT | PRINT | 1 | 1 | s | Print to the text box; a number (type < 0x80) is printed as decimal digits via slot 1 (P, 0x174F); layout P (`view3d.md` "Text window") | P | 289 |
+| 12 | PRINTCLR | PRINTCLEAR | 1 | 1 | s | Cursor to (1, 17), clear the text box, print (numbers as for PRINT; layout as PRINT) | P | 1401 |
 | 13 | RETURN | RETURN | 0 | 0 | – | Pop PC; empty stack: fall through | P | 440 |
 | 14 | CMPAND | COMPARE AND | 4 | 4 | v1 v2 v3 v4 | "=" if v1 = v2 and v3 = v4, else "≠"; other flags 0 | P | 65 |
 | 15 | VMENU | VERTICAL MENU | 3+n | **0** | a s n, s×n | Prompt s, list n choices, choice index → a | P (shape) | 15 |
@@ -861,7 +861,7 @@ Run: `python3 -I tools/scripts/ecl.py check <gamedir>` on PoR DOS v1.3 (files as
   `party_opcodes` (s11) checks LOADCHAR, ROB (money rounding included), SPELL, CHKPARTY and DAMAGE. Still open:
   SPELL's residue in other contexts, WHO's Escape, DAMAGE's effect handlers (trigger classes 12 and 16), ADDNPC's
   portrait tables (not read from START.EXE yet), PROTECT's glyph drawing (display, not captured).
-- Still "L" (Lee only): the text box layout of PRINT/PRINTCLR (the number case is P).
+- The text box layout of PRINT/PRINTCLR: program read in s12 (`view3d.md` "Text window").
 - Stack residue outside COMPARE: what an undefined read returns in other handlers (e.g. block 10's `SAVE [$C059]`,
   after LOADFILES/LOADPIECES) and what an unknown operand type's value fetch returns. The VM uses
   `EclVmPolicy.UndefinedValue` and logs it; no v1.3 outcome depends on it.

@@ -31,6 +31,9 @@ public sealed class EclPartyRules(EclMemory memory, Func<int, int> random)
     /// </summary>
     public Func<EclCharacter, int, int, int>? EffectTrigger { get; set; }
 
+    /// <summary>DS:682A: the save type of the saving throw being rolled (read by class-12 handlers).</summary>
+    public int LastSaveType { get; private set; }
+
     public event Action<string>? Diagnostic;
     /// <summary>DAMAGE applied to one creature (0x959F), for the text box.</summary>
     public event Action<EclDamageReport>? Damaged;
@@ -243,6 +246,7 @@ public sealed class EclPartyRules(EclMemory memory, Func<int, int> random)
         if (roll == 20)
             return true;
         int total = (byte)(roll + (sbyte)m[SaveBonus] + (sbyte)(byte)bonus);
+        LastSaveType = type;
         total = Trigger(m, 12, total, SaveTriggerEffects);
         return m[Saves + type] <= (byte)total;
     }

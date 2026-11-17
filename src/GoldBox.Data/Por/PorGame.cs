@@ -9,7 +9,13 @@ namespace GoldBox.Data.Por;
 /// <param name="Encounter">Encounter pictures and menus.</param>
 /// <param name="Combat">The fight, loot, shops, temples (a placeholder until the fight is built).</param>
 /// <param name="Area">The door menu, the bump, the camp menu.</param>
-public sealed record PorPlayer(IEclHost Host, IEncounterUi Encounter, ICombatRunner Combat, IAreaUi Area);
+/// <param name="FightMenu">The player's combat menu. When set, COMBAT builds the real fight (<see cref="PorFight"/>) and
+/// hands it to <see cref="ICombatRunner.Fight(EncounterState, Fight)"/>; when null, <paramref name="Combat"/> runs the
+/// fight itself (<see cref="ICombatRunner.Fight(EncounterState)"/>).</param>
+/// <param name="QuickFight">With no <paramref name="FightMenu"/>: build the real fight anyway, every party member acting
+/// through the AI as if on Quick (a headless fight, for a front end without a combat screen).</param>
+public sealed record PorPlayer(IEclHost Host, IEncounterUi Encounter, ICombatRunner Combat, IAreaUi Area,
+    IFightMenuChooser? FightMenu = null, bool QuickFight = false);
 
 /// <summary>
 /// A running PoR game in a 3D area: the VM with the encounter host and the explore loop (<see cref="AreaLoop"/>), the
@@ -56,6 +62,9 @@ public sealed class PorGame
         };
         // DS:49FF: the after-combat step sets it on the VM when the party is destroyed; the area loop clears it.
         Encounter.Vm = Vm;
+        if ((player.FightMenu is not null || player.QuickFight) && PorFight.Kit(dir) is { } kit)
+            Encounter.FightBuilder = state => kit.Create(memory, state, Rng.Next,
+                PorFight.Area(memory, (Encounter.Map as MapPlanes)?.Planes, Vm.CurrentScript, state.Duel), player.FightMenu);
         Loop.MapLoaded += m => Encounter.Map = new MapPlanes(m.PlanesArray);
         front.Target = Encounter;
     }
@@ -193,5 +202,10 @@ public sealed class PorGame
         public void Protect(ushort address) => Target.Protect(address);
         public ushort Random(ushort range) => Target.Random(range);
         public void ScriptChanging(ushort script) => Target.ScriptChanging(script);
+        public int? PickCharacter(string prompt) => Target.PickCharacter(prompt);
+        public void DrawGlyphs(ushort address, IReadOnlyList<byte> glyphs) => Target.DrawGlyphs(address, glyphs);
+        public EclCharacter? CreateNpc(ushort monster) => Target.CreateNpc(monster);
+        public void DamageReport(EclDamageReport report) => Target.DamageReport(report);
+        public void TextHome() => Target.TextHome();
     }
 }

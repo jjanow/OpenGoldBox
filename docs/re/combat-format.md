@@ -55,8 +55,8 @@ length and the number of turns; a fight replay must follow this order.
 **A creature's turn** (0x99FD, P structure): combat record +0x0F, +0x12, +0x07 = 0; effects with trigger 7
 (0x2B1E4); if initiative > 0: initiative 20 becomes 19, the creature becomes current (DS:5D92), stats are
 recalculated, effects with trigger 15; then if initiative is still > 0 the AI (0xABCF) acts when 0x10F ≠ 0, else the
-player's menu (0x9B21). The stat recalculation (START 0x1758) is not modelled: the derived bytes (0x110–0x11C) are
-taken as they stand `[?]`.
+player's menu (0x9B21). The stat recalculation is START 0x1758 (`character-format.md` "Stat recalculation";
+`StatRecalc`), called at 0x9A8A.
 
 **Program units of the fight** (overlay stubs, `ecl-format.md` "Program references"): stub 0x35 (0x9807–0xAA86)
 the loop, menu and end of round; stub 0x38 (0xABC0–0xC4E7) the AI; stub 0x68 (0x127FB–0x1646D) round start, moves,
@@ -133,7 +133,7 @@ attacker +8 = 1.
 - No hit at all: the miss message. Done when 0x113 = 0x114 = 0; +5 = 0; done → 0x31D7.
 - **Draw order per attack:** 1d20, then (on a hit) the damage dice.
 
-**Attack roll** (0x2BBA1): invisibility (effect 0x19, first instance) removed (0x2BEBC); 1d20 into DS:6822 (signed);
+**Attack roll** (0x2BBA1): invisibility (effect 0x19, every instance: a loop of START 0x2199 find and 0x2AF10) removed (0x2BEBC); 1d20 into DS:6822 (signed);
 ≤ 1 misses; 20 becomes 100; trigger 0x0A on the attacker and 0x10 on the defender; hit when roll ≥ 0 and roll +
 THAC0 byte 0x110 + m ≥ defense byte, as 16-bit signed sums, where m = low byte of VM $6E71 (party side) or $6E70
 (hostile side), signed. In the 60 − x encoding of both bytes this is exactly "1d20 ≥ THAC0 − AC − m", with 1 always
@@ -157,8 +157,9 @@ of range ≤ 3 adds both at any distance > 0. `[?]` A ranged weapon with range 0
 HP − damage. Over > 9, or remain 0 on an animated (1) creature → dead (6); else over > 0 → dying (5) and, in combat
 (DS:49F3 = 5), combat record +0x0E = over; else remain 0 → unconscious (4). A status not okay/animated (set at START
 0x2208: {0, 1}): in play 0, HP 0, in combat the team count of its side − 1 and initiative 0; else HP = remain. Then
-any damage > 0: the defender's +1 (cast allowed) = 0 and a spell it was casting is lost (+0 = 0; START 0x202B
-`[?]`). A defender out of play loses the first instance of each effect in DS:0C14 (7, 11, 30, 31, 32, 51, 52, 53, 54,
+any damage > 0: the defender's +1 (cast allowed) = 0 and a spell it was casting is lost: START 0x202B (call at
+0x12D2C) removes the first memorised copy of that spell from the **current** character (DS:5D92, the attacker while
+it attacks), then +0 = 0. A defender out of play loses the first instance of each effect in DS:0C14 (7, 11, 30, 31, 32, 51, 52, 53, 54,
 58, 59, 95, 98, 137, 74, 75; 0x2BEF4, their removal handlers run `[?]`), runs trigger 0x0D, and if still out of play
 leaves the map (0x3154B).
 
@@ -177,8 +178,9 @@ experience; the monsters' items (added at the head after the fight) still do.
 loop over the menu (0x9E6D): M move (0xA1E6), V view (0x21AED, then 0x1351E), A aim (0x15D53), U use (0x21F32,
 then 0x1351E), C cast (0x14C0F), T turn undead (0x13965, then 0x31D7), Q quick (0xAA32, then the AI 0xABCF), D done
 (0xA64C), Alt-M quick magic, space (party back to manual), Alt-Q (all to quick, initiative 20), Alt-X (0x1638E).
-**AI** (0xABCF, P structure): four dice calls at 0xAC26–0xAC5E, turn undead (0xAFA4), spells (0x27C38, 0xADC3), item
-use (0xB105), move/attack (0xBF8A, 0xB6FC, target 0x15FDF), morale (0xBB0F, 0xBB81). Neither is read further `[?]`.
+Read in full in s12: `combat-menu.md` (menu, move, aim, Done menu, cast frame, sweep attacks, turn undead).
+**AI** (0xABCF): read in full in s12, `combat-ai.md` (opening dice, morale 0xBC97, item 0xAFA4, turn undead 0xADC3,
+spell 0xB105, weapon 0xBF8A, target search 0x15FDF, move/attack 0xB6FC, step 0xB3B2).
 
 **End of round** (0xA087, P): one minute passes (clock routine 0x241A1, unit 1); DS:6DE3 + 1; 0x15074 (enemy hit
 points, below); for every
@@ -264,6 +266,16 @@ each okay NPC with 0x85 ≠ 0 as taking its share, and waits for a key.
 
 **Loot menu** (0x644B), P structure: View (0x21AED), Take (0x62B6), Pool (0x25191), Share (0x252C3), D (0x27C38),
 Exit, G / O previous / next character (0x23819); the item list comes from 0x25C07.
+Menu line (s12): with money in the pool View, Take, Pool, Share; with items only View, Take, Pool; then Detect and
+Exit when there are items and the current character has spell 5 or 11 among its memorised bytes 0x17–0x2B, else
+Exit; with nothing left View, Pool, Exit. P pools only for a non-extended key (0x50 is also Down's scan code). E (or
+the key 0) with money or items left: a two-line message (treasure left, go back?) and a yes/no; yes stays.
+**Take** (0x62B6): money and items → a "Take:" menu (Money, Items, Exit) until Exit; money only → the coin take
+0x25974; items only → the item take 0x6184 (`shop-format.md`). **Summary** (0x5E94, s12): the text box is cleared, then one
+result line: with DS:443A (a hostile that did not flee) or a duel (DS:84D4): in a duel the duel-lost text when
+DS:84DA = 0, else the duel-won text; outside a duel the party-won text. Otherwise the party-fled text when DS:443B is
+set, else the treasure-found text (a COMBAT with no monsters). Then the experience line (the duelist's or each character's share,
+DS:84D6) and a key prompt through the menu routine.
 
 ## Shop (0x7212) — P
 
@@ -307,9 +319,9 @@ CALL $2C90 and the search vector. The `encmenu_flee` capture is replayed with no
 
 ## Open `[?]`
 
-- The menu (0x9B21) and AI (0xABCF) beyond their structure; placement and the arena (fight start 0xE402); moving,
-  fleeing, attacks of opportunity and guards (0x12E22, 0x12F0D, 0x130AD, 0x13465); sweep attacks (0x1367D); turn
-  undead; spells (0x14C0F, 0x27C38); direction and distance (0x14E38, START 0x30FB); the effect handlers (0x2B1E4
+- Placement, the arena, direction/distance and moves (fight start 0xE402, 0x12E22–0x13465, 0x14E38, START 0x30FB)
+  are read in `combat-map.md`; the menu, sweep and turn undead in `combat-menu.md`; the AI in its own spec.
+- Spells (0x14C0F, 0x27C38); the effect handlers (0x2B1E4
   triggers; terrain 0x2B9D1); the stat recalculation's effect on THAC0/AC during a fight.
-- Summary screen (0x5E94); the loot menu beyond its structure (take/pool/share: `shop-format.md`); byte 0000:0013 in the no-fight case.
+- Summary screen (0x5E94): exact rows; byte 0000:0013 in the no-fight case.
 - Shop/temple: see `shop-format.md` "Open".

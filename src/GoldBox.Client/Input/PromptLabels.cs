@@ -19,6 +19,8 @@ public static class PromptLabels
         "Tab" => "TAB",
         "PageUp" => "PGUP",
         "PageDown" => "PGDN",
+        "Home" => "HOME",
+        "End" => "END",
         _ when name.StartsWith("NumPad", StringComparison.Ordinal) => "PAD " + name[6..],
         _ when name.Length == 2 && name[0] == 'D' && char.IsDigit(name[1]) => name[1..],
         _ => name.ToUpperInvariant(),
@@ -62,6 +64,7 @@ public static class PromptLabels
         GameAction.Search => "CLICK SEARCH",
         GameAction.Look => "CLICK LOOK",
         GameAction.Encamp => "CLICK ENCAMP",
+        GameAction.PreviousMember or GameAction.NextMember => "CLICK A NAME",
         _ => "",
     };
 

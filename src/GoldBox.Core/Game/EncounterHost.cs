@@ -211,7 +211,10 @@ public sealed class EncounterHost : IEclHost
             if (view < Memory.Read(Distance))
                 Memory.Write(Distance, (ushort)view);
             StartFight();
-            CombatRunner.Fight(State);
+            if (FightBuilder?.Invoke(State) is { } fight)
+                CombatRunner.Fight(State, fight);
+            else
+                CombatRunner.Fight(State);
             AfterCombatStep();
             State.Duel = false;
         }
@@ -219,6 +222,13 @@ public sealed class EncounterHost : IEclHost
         State.SpriteShown = false;
         State.PictureShown = false;
     }
+
+    /// <summary>
+    /// Builds the fight after the fight start's VM-cell part (<see cref="FightKit.Create"/>: arena, placement, map,
+    /// moves, spells, effects, AI and menu); the host then hands it to <see cref="ICombatRunner.Fight(EncounterState, Fight)"/>.
+    /// Null, or a builder that returns null: <see cref="ICombatRunner.Fight(EncounterState)"/> runs the fight itself.
+    /// </summary>
+    public Func<EncounterState, Fight?>? FightBuilder { get; set; }
 
     /// <summary>VM cells the fight start writes (GAME.OVR 0xE48C–0xE4AD): $6E33 = 0, morale threshold $6DC6 ≤ 100.</summary>
     public const ushort AttackedAllies = 0x6E33, MoraleThreshold = 0x6DC6;
@@ -490,6 +500,7 @@ public sealed class EncounterHost : IEclHost
     public int? PickCharacter(string prompt) => Inner.PickCharacter(prompt);
     public void DrawGlyphs(ushort address, IReadOnlyList<byte> glyphs) => Inner.DrawGlyphs(address, glyphs);
     public void DamageReport(EclDamageReport report) => Inner.DamageReport(report);
+    public void TextHome() => Inner.TextHome();
 
     /// <summary>
     /// ADDNPC's record (GAME.OVR 0x1F248, docs/re/ecl-format.md "Party, damage and text-box opcodes"): the monster

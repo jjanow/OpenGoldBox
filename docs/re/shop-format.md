@@ -14,7 +14,13 @@ Id of an already identified flail took 200 (162 pp left); Sell of the flail (val
 over six members gave the pool, coins and weights the model computes (remainders to the first members). **D** for
 those steps. Seen as well: the weight word stayed stale after the payment (1449 with the old coins counted) and was
 recomputed when the items screen was redrawn; the shop's Buy list shows 7 items per page (the 8th is on the
-"Prev" page). Temple, Take and Appraise are not checked in DOSBox.
+"Prev" page). Take and Appraise are not checked in DOSBox.
+
+**DOSBox (s12, capture `temple`)**: Cure Blindness on a character who is not blind (cast anyway: 1000 paid, no
+draw), Cure Light (1d8: 1 draw), Serious (2d8 + 1: 2 draws, capped at max HP), Critical at full HP (600 paid, 3
+draws, no change) and Raise Dead on a living character without the money (nothing paid, no draw): coins, HP and
+RandSeed match `TempleRules` + `Money.Pay` (`TempleCaptureTests`). The weight word stayed stale through all
+payments and was recomputed when View opened. **D** for those entries and the payment.
 
 ## Money — P
 
@@ -42,11 +48,21 @@ recomputed when the items screen was redrawn; the shop's Buy list shows 7 items 
 
 ## Shop menu (0x7212)
 
-Buy, View, Take, Pool, Share, Appraise, Exit; Take and Share only while the pool holds money or items (0x25C07).
-The temple uses the same Take/Pool/Share/Appraise/View routines.
+Buy, View, Take, Pool, Share, Appraise, Exit; Take and Share only while the pool holds **money** (s12: 0x25C07
+returns two flags, money = any of the seven pool dwords non-zero, items = treasure list non-empty; the shop and the
+temple test only the money flag, and the shop's stock is the treasure list anyway). The temple uses the same
+Take/Pool/Share/Appraise/View routines.
+
+**Party selection** (s12): after the menu the shop compares the key with 0x47 / 0x4F and calls 0x23819 with it,
+without testing the menu's extended-key flag, so both G / O and Home / End reach it (the scan codes of Home and End
+are 0x47 and 0x4F). 0x23819: 0x47 → the previous member of the party list (the head wraps to the last), 0x4F → the
+next (the last wraps to the head), any other key → the head. The camp calls it only for extended keys (Home / End);
+the loot menu tests G / O like the shop, and pools only on a non-extended P.
 
 **Buy** (0x7035, P). An item picker over the treasure list (0x6D04) returns a key; B or Enter buys the highlighted
-item, any other key leaves. Price = the item's value word (0x3A).
+item, any other key leaves. Price = the item's value word (0x3A). Before listing, the picker writes value 1 into
+every stock item whose value is 0 (0x6D3C: nothing in a shop is free) and renames each item as its name padded to 30
+characters with the value right-aligned at the end (the list's text; s12).
 1. If price ≤ low word of the character's gold, or else ≤ the pool's gold: copy the item (0x6F0D).
 2. The copy (0x6F0D) first asks 0x23795: refused (message, nothing paid) when the character has more than 15 items
    (+0xC7 > 15) or weight + item weight × count (count 0 = 1; 16-bit) > the carrying limit. Else a copy with
@@ -67,6 +83,10 @@ others only when in play = 0 or status = 1 (`[?]` intent).
 - **Id** (0x22F8C): a 200-gold offer, yes/no; on yes 200 gold from the character (32-bit total)
   or else the pool, else the not-enough message; after payment: `hidden` = 0 → a "nothing new" message (the
   200 are spent); else `hidden` := 0 and the item is renamed (`item-format.md` "Identify").
+
+**Loot item take** (0x6184, s12): the same copy step 0x6F0D gives the highlighted treasure item to the current
+character (T or Enter; refused when it cannot carry it); on success the original is unlinked from the treasure list
+and freed. Repeats until another key or an empty list.
 
 **Take** (0x25974 → 0x25711, P): pick a kind held in the pool (kinds 6 down to 0), type an amount (0x24F1D).
 If the amount would overload the character: message, nothing moves. Else amount := min(amount, pool[kind]);
@@ -139,7 +159,8 @@ even for Raise Dead / Stone to Flesh on a target that does not qualify, which th
 
 ## Open `[?]`
 
-- When the weight word is recomputed after a payment (coins rewritten, weight not).
+- When the weight word is recomputed after a payment (coins rewritten, weight not): seen at View in DOSBox (shop
+  items screen, temple View); the routine that does it is not read.
 - Sell's extra condition for members with 0x84 ≥ 0x80; the menu routine 0x2CC8C's output byte.
 - Temple: effect handler 0x4E on a revived character, DS:681F, the intent of the raise
   dead hit-point rule.

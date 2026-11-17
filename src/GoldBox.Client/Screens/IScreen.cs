@@ -37,6 +37,14 @@ public static class Chrome
     public static void Text(IndexedFrame f, TextFont font, int col, int row, string text, byte colour) =>
         font.Draw(f, col * 8, row * 8, text, colour);
 
+    /// <summary>Blank <paramref name="cells"/> cells from (col, row).</summary>
+    public static void Clear(IndexedFrame f, int col, int row, int cells)
+    {
+        for (int y = 0; y < 8; y++)
+            for (int x = 0; x < cells * 8; x++)
+                f[col * 8 + x, row * 8 + y] = 0;
+    }
+
     /// <summary>Right-aligned text ending at column <paramref name="endCol"/> (inclusive).</summary>
     public static void TextRight(IndexedFrame f, TextFont font, int endCol, int row, string text, byte colour) =>
         Text(f, font, endCol - text.Length + 1, row, text, colour);

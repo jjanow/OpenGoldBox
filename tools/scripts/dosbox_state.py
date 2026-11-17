@@ -5,6 +5,8 @@
     dosbox_state.py check STATE.sav SAVGAMx.DAT                 compare the four VM areas with a game save
     dosbox_state.py diff  A.sav B.sav                           VM cells / DS variables / map bytes that changed
     dosbox_state.py combat STATE.sav [--json]                   the combat list with each creature's combat record
+    dosbox_state.py fight  STATE.sav OUTDIR                     raw fight dump: DS segment, arena, cloud list,
+                                                                every creature's record/combat record/items/effects
 
 Run with ``python3 -I``. Method and addresses: docs/re/dosbox-trace-method.md.
 
@@ -60,6 +62,17 @@ AREAS = [  # name, DS offset of the far pointer, VM base, cells, cell size
 ]
 SAVE_OFFSETS = {'area_4900': 1, 'area_6B00': 2049, 'area_9700': 4097, 'script_9900': 5121}
 GEO_PTR = 0x6A5C
+# Fight dump (docs/re/combat-format.md). Pointers are read as stored; nothing below decodes the blocks.
+EFFECT_NEXT = 5        # 9-byte effect record, next at +5 (docs/re/item-format.md "Effect record")
+ARENA_SIZE = 0x4E9     # block at the far pointer DS:6716 (freed by the fight clean-up 0x9807)
+CLOUD_SIZE = 19        # records of the list at DS:6DBB (freed by 0x9807)
+CLOUD_NEXT = 4         # [?] next pointer at +4 per Lee's FAQ 12.2.6.8 (not read in the program)
+FIGHT_PTRS = [(0x6716, 'arena_6716'), (0x6DBB, 'list_6dbb'), (0x5D96, 'list_head_5d96'),
+              (0x5D92, 'current_5d92'), (0x4436, 'selected_4436'), (0x5D9A, 'thrown_5d9a'),
+              (0x6810, 'treasure_6810'), (0x6E36, 'picture_6e36'), (0x6DB5, 'ptr_6db5'), (0x6826, 'ptr_6826')]
+FIGHT_BYTES = [(0x6DE3, 1), (0x6814, 1), (0x6815, 1), (0x49F3, 1), (0x49F4, 1), (0x6E2F, 1), (0x6E30, 1),
+               (0x6E31, 1), (0x6DB9, 1), (0x6DBA, 1), (0x6C94, 1), (0x681A, 1), (0x681D, 1), (0x6822, 1),
+               (0x6823, 1), (0x6824, 1), (0x6E2D, 1), (0x6E2E, 1), (0x6818, 1), (0x84D4, 1)]
 
 
 class State:
@@ -112,6 +125,55 @@ class State:
         return {'creatures': out, 'current': self.farptr(0x5D92), 'list_head': self.farptr(0x5D96),
                 'round_counter_ds6de3': self.u(0x6DE3, 1), 'team_counts_ds6814': [self.u(0x6814, 1), self.u(0x6815, 1)],
                 'randseed': self.u(0x4428, 4), 'ds_49f3': self.u(0x49F3, 1)}
+
+    def ptr_at(self, linear):
+        """Far pointer stored at a linear address: (segment, offset, linear target or None for nil)."""
+        o, sg = struct.unpack_from('<HH', self.ram, linear)
+        return sg, o, (sg * 16 + o if (sg or o) else None)
+
+    def chain(self, start, size, next_off, limit):
+        """Walk a linked list of fixed-size heap records (far `next` pointer at next_off)."""
+        out, seen, p = [], set(), start
+        while p is not None and len(out) < limit and p not in seen and p + size <= len(self.ram):
+            seen.add(p)
+            out.append((p, bytes(self.ram[p:p + size])))
+            p = self.ptr_at(p + next_off)[2]
+        return out
+
+    def fight(self):
+        """Raw fight state (docs/re/combat-format.md): far pointers as stored, the arena block, the list at DS:6DBB,
+        and for every creature of the combat list its record, combat record, item list and effect list."""
+        def fp(off):
+            sg, o, lin = self.ptr_at(self.ds + off)
+            return {'ds_off': '%04X' % off, 'seg': sg, 'off': o, 'linear': lin}
+        ptrs = {name: fp(off) for off, name in FIGHT_PTRS}
+        arena = ptrs['arena_6716']['linear']
+        clouds = self.chain(ptrs['list_6dbb']['linear'], CLOUD_SIZE, CLOUD_NEXT, 64)
+        creatures = []
+        for i, (p, rec) in enumerate(self.chain(ptrs['list_head_5d96']['linear'], 0x11D, PARTY_NEXT, 80)):
+            sg, o, cr = self.ptr_at(p + 0x108)
+            items = self.chain(self.ptr_at(p + 0xC8)[2], 63, ITEM_NEXT, 64)
+            effects = self.chain(self.ptr_at(p + 0x7F)[2], 9, EFFECT_NEXT, 64)
+            creatures.append({
+                'index': i, 'linear': p, 'name': rec[1:1 + min(rec[0], 15)].decode('latin-1'),
+                'record': rec.hex(), 'combat_ptr': [sg, o],
+                'combat': bytes(self.ram[cr:cr + 22]).hex() if cr is not None else None,
+                'items': [{'linear': a, 'record': r.hex()} for a, r in items],
+                'effects': [{'linear': a, 'record': r.hex()} for a, r in effects]})
+        # Convenience view, labels from Lee's FAQ (DS map, 12.2.6.3), not read in the program [?]: DS:5F2A count,
+        # DS:5F2B 4-byte locations (x, y, ?, icon size) and DS:65BD creature pointers, both 1-based.
+        by_addr = {c['linear']: c['index'] for c in creatures}
+        locations = []
+        for k in range(min(self.u(0x5F2A, 1), 72)):
+            loc = self.ram[self.ds + 0x5F2B + 4 * k:self.ds + 0x5F2F + 4 * k]
+            locations.append({'slot': k + 1, 'x': loc[0], 'y': loc[1], 'b2': loc[2], 'size': loc[3],
+                              'list_index': by_addr.get(self.ptr_at(self.ds + 0x65BD + 4 * k)[2])})
+        return {'ds_segment': self.ds >> 4, 'vars': self.vars(), 'pointers': ptrs, 'locations_lee': locations,
+                'ds_bytes': {'%04X' % off: self.u(off, n) for off, n in FIGHT_BYTES},
+                'pool_67f4': list(struct.unpack_from('<7I', self.ram, self.ds + 0x67F4)),
+                'arena': bytes(self.ram[arena:arena + ARENA_SIZE]).hex() if arena is not None else None,
+                'list_6dbb': [{'linear': a, 'record': r.hex()} for a, r in clouds],
+                'creatures': creatures}
 
     def geo(self):
         p = self.farptr(GEO_PTR)
@@ -172,6 +234,35 @@ def cmd_dump(st, as_json, outdir):
             print('%-26s %s' % (k, hex(x)))
 
 
+def cmd_fight(st, outdir):
+    """fight.json (everything, bytes as hex) plus raw .bin files: ds.bin (DS:0000-FFFF), arena.bin, list_6dbb.bin
+    (records concatenated), creatures/NN_{record,combat,items,effects}.bin."""
+    f = st.fight()
+    os.makedirs(os.path.join(outdir, 'creatures'), exist_ok=True)
+    open(os.path.join(outdir, 'ds.bin'), 'wb').write(st.ram[st.ds:st.ds + 0x10000])
+    if f['arena']:
+        open(os.path.join(outdir, 'arena.bin'), 'wb').write(bytes.fromhex(f['arena']))
+    open(os.path.join(outdir, 'list_6dbb.bin'), 'wb').write(b''.join(bytes.fromhex(c['record']) for c in f['list_6dbb']))
+    for c in f['creatures']:
+        b = os.path.join(outdir, 'creatures', '%02d_' % c['index'])
+        open(b + 'record.bin', 'wb').write(bytes.fromhex(c['record']))
+        if c['combat']:
+            open(b + 'combat.bin', 'wb').write(bytes.fromhex(c['combat']))
+        open(b + 'items.bin', 'wb').write(b''.join(bytes.fromhex(i['record']) for i in c['items']))
+        open(b + 'effects.bin', 'wb').write(b''.join(bytes.fromhex(e['record']) for e in c['effects']))
+    open(os.path.join(outdir, 'fight.json'), 'w').write(json.dumps(f, indent=1) + '\n')
+    v = f['vars']
+    print('randseed %08x  round DS:6DE3 %d  teams %d/%d  creatures %d  clouds %d  arena %s' % (
+        v['randseed'], f['ds_bytes']['6DE3'], f['ds_bytes']['6814'], f['ds_bytes']['6815'], len(f['creatures']),
+        len(f['list_6dbb']), 'yes' if f['arena'] else 'nil'))
+    for c in f['creatures']:
+        r = bytes.fromhex(c['record'])
+        cr = bytes.fromhex(c['combat']) if c['combat'] else b''
+        print('%2d %-16s st %d play %d host %d auto %d hp %3d items %2d effects %d combat %s' % (
+            c['index'], c['name'], r[0x10C], r[0x10D], r[0x10E], r[0x10F], r[0x11B], len(c['items']),
+            len(c['effects']), cr.hex()))
+
+
 def cmd_check(st, save):
     s = open(save, 'rb').read()
     bad = 0
@@ -225,6 +316,8 @@ def main(argv):
                 print('%-16s st %d play %d host %d auto %d dex %2d init %s move %s hp %3d  combat %s' % (
                     k['name'], k['status'], k['in_play'], k['hostile'], k['auto'], k['dex'], k['initiative'],
                     k['movement'], k['hp'], k['combat']))
+    elif cmd == 'fight':
+        cmd_fight(State(argv[2]), argv[3])
     elif cmd == 'diff':
         cmd_diff(State(argv[2]), State(argv[3]))
     else:

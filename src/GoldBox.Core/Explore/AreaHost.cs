@@ -68,4 +68,9 @@ public sealed class AreaHost(AreaLoop loop, IEclHost inner) : IEclHost
     public void Program(ushort program) => Inner.Program(program);
     public void Protect(ushort address) => Inner.Protect(address);
     public void ScriptChanging(ushort script) => Inner.ScriptChanging(script);
+    public int? PickCharacter(string prompt) => Inner.PickCharacter(prompt);
+    public void DrawGlyphs(ushort address, IReadOnlyList<byte> glyphs) => Inner.DrawGlyphs(address, glyphs);
+    public EclCharacter? CreateNpc(ushort monster) => Inner.CreateNpc(monster);
+    public void DamageReport(EclDamageReport report) => Inner.DamageReport(report);
+    public void TextHome() => Inner.TextHome();
 }

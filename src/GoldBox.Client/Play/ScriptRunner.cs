@@ -8,7 +8,59 @@ public abstract record PlayerRequest;
 /// under <paramref name="Prompt"/>. The answer is the index. <paramref name="CancelIndex"/> is answered on Cancel
 /// (null: Cancel does nothing, as in the original menus that have no way out).
 /// </summary>
-public sealed record ChoiceRequest(string? Prompt, IReadOnlyList<string> Items, bool Vertical, int? CancelIndex = null) : PlayerRequest;
+public sealed record ChoiceRequest(string? Prompt, IReadOnlyList<string> Items, bool Vertical, int? CancelIndex = null) : PlayerRequest
+{
+    /// <summary>Answers for the previous / next party member (the program's party selection 0x23819).</summary>
+    public const int PreviousMember = -2, NextMember = -3;
+
+    /// <summary>
+    /// A prompt drawn on the menu line before the items, in colour 13, as the program's menu routine (0x2CC8C) does
+    /// ("Camp:"); null = none.
+    /// </summary>
+    public string? MenuPrompt { get; init; }
+
+    /// <summary>
+    /// The menu also takes the party selection keys (the original's Home / End, and G / O in the shop, temple and
+    /// loot menus): answered <see cref="PreviousMember"/> / <see cref="NextMember"/>.
+    /// </summary>
+    public bool PartySelect { get; init; }
+
+    /// <summary>Extra hotkeys that answer as <see cref="PreviousMember"/> / <see cref="NextMember"/> (G and O where the program tests them).</summary>
+    public string? MemberLetters { get; init; }
+}
+
+/// <summary>
+/// Wait for any key (the program's "press a key" stops): <paramref name="Prompt"/> on the bottom line in colour 13
+/// for the keyboard (the device prompt for pad and mouse); null = the text window's page prompt.
+/// </summary>
+public sealed record KeyRequest(string? Prompt = null) : PlayerRequest;
+
+/// <summary>A row of a full-screen list: its text and colour (selectable rows are drawn by the screen in its colours).</summary>
+public sealed record ListLine(string Text, byte Colour = 10, int Column = 1);
+
+/// <summary>
+/// A full-screen page (the program's item lists and character view): fixed <paramref name="Lines"/> at the top
+/// (title, header, character data), then <paramref name="Rows"/> to pick from (may be empty), and the actions on the
+/// bottom line. The answer is a <see cref="ListAnswer"/>. <paramref name="CancelAction"/> is answered on Cancel.
+/// </summary>
+public sealed record ListRequest(IReadOnlyList<ListLine> Lines, IReadOnlyList<string> Rows, IReadOnlyList<string> Actions,
+    int? CancelAction, int FirstRow = 3, int VisibleRows = 18) : PlayerRequest
+{
+    /// <summary>The row picked first.</summary>
+    public int Selected { get; init; }
+
+    /// <summary>The action highlighted first (the one used last, when the page comes back).</summary>
+    public int SelectedAction { get; init; }
+
+    /// <summary>Actions that need a row (greyed out when the list is empty).</summary>
+    public IReadOnlySet<int> RowActions { get; init; } = new HashSet<int>();
+
+    /// <summary>The menu also takes the party selection keys (see <see cref="ChoiceRequest.PartySelect"/>).</summary>
+    public bool PartySelect { get; init; }
+}
+
+/// <summary>The action picked on a <see cref="ListRequest"/> (or a member switch) and the row it applies to.</summary>
+public sealed record ListAnswer(int Action, int Row);
 
 /// <summary>A line typed by the player: digits only when <paramref name="Numeric"/>. The answer is the string.</summary>
 public sealed record TextRequest(string Prompt, bool Numeric, int MaxLength) : PlayerRequest;

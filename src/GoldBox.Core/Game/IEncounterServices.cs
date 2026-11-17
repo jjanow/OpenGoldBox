@@ -66,6 +66,11 @@ public interface ICombatRunner
     /// </summary>
     void Fight(EncounterState state);
     /// <summary>
+    /// The fight built by <see cref="EncounterHost.FightBuilder"/> (arena and placement done): the runner shows it and
+    /// runs it to its end. Default: <see cref="Game.Fight.Run"/>, headless.
+    /// </summary>
+    void Fight(EncounterState state, Fight fight) => fight.Run();
+    /// <summary>
     /// The loot part of the after-combat step (0x6AD6–0x6AE7), after the host has taken the NPCs' treasure share
     /// (0x6866, <see cref="EncounterHost.NpcsTakingShare"/>): the summary screen (0x5E94) and the loot menu (0x644B),
     /// where the player takes money and items from

@@ -1,0 +1,55 @@
+using System.Globalization;
+
+namespace GoldBox.Client.Play;
+
+/// <summary>
+/// The questions the Client's screens ask on the logic thread, on top of <see cref="ScriptRunner.Ask"/> (or a
+/// scripted answer function in tests): bottom-line menus, yes/no, key waits, numbers and full-screen lists. Texts go
+/// to the program's text window (<see cref="TextWindow"/>).
+/// </summary>
+public sealed class Dialog(Func<PlayerRequest, object?> ask, TextWindow text)
+{
+    public TextWindow Text { get; } = text;
+
+    public object? Ask(PlayerRequest request) => ask(request);
+
+    /// <summary>A menu on the bottom line; the answer is the item index, or a <see cref="ChoiceRequest"/> member answer.</summary>
+    public int Menu(IReadOnlyList<string> items, string? prompt = null, int? cancel = null, bool partySelect = false,
+        string? memberLetters = null) =>
+        ask(new ChoiceRequest(null, items, false, cancel)
+        {
+            MenuPrompt = prompt?.TrimEnd(), // the program's prompts carry a trailing space; the screen adds one
+            PartySelect = partySelect,
+            MemberLetters = memberLetters,
+        }) is int i ? i : cancel ?? 0;
+
+    /// <summary>A vertical list in the text window under <paramref name="prompt"/>; the answer is the index.</summary>
+    public int List(string? prompt, IReadOnlyList<string> items, int? cancel = null) =>
+        ask(new ChoiceRequest(prompt, items, true, cancel)) is int i ? i : cancel ?? 0;
+
+    /// <summary>The program's yes/no menu ("~Yes ~No" with the question as its prompt): true on Yes. Cancel = No.</summary>
+    public bool YesNo(string? prompt = null) => Menu(["YES", "NO"], prompt, cancel: 1) == 0;
+
+    /// <summary>Print into the text window.</summary>
+    public void Show(string message, bool clear = true, byte colour = TextWindow.ScriptColour) =>
+        Text.Print(message, clear, colour);
+
+    /// <summary>Print, then wait for a key. [?] Where the program pauses after its messages is not read for each one.</summary>
+    public void Say(string message, bool clear = true, byte colour = TextWindow.ScriptColour)
+    {
+        Show(message, clear, colour);
+        WaitKey();
+    }
+
+    public void WaitKey(string? prompt = null) => ask(new KeyRequest(prompt));
+
+    /// <summary>A number typed on the bottom line (digits only); null when nothing was typed.</summary>
+    public int? Number(string prompt)
+    {
+        var s = ask(new TextRequest(prompt.TrimEnd(), true, 6)) as string ?? "";
+        return int.TryParse(s, NumberStyles.None, CultureInfo.InvariantCulture, out var n) ? n : null;
+    }
+
+    /// <summary>A full-screen list; the answer's action is −1 when nothing came back.</summary>
+    public ListAnswer Page(ListRequest request) => ask(request) as ListAnswer ?? new ListAnswer(-1, 0);
+}

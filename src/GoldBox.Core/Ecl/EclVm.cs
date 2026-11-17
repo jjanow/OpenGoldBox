@@ -123,6 +123,9 @@ public sealed class EclVm
     /// <summary>The party opcodes read from the program (LOADCHAR, CHKPARTY, SPELL, ROB, DAMAGE); draws go through the host.</summary>
     public EclPartyRules PartyRules { get; }
 
+    /// <summary>The effect handlers DAMAGE runs (<see cref="EclPartyRules.EffectTrigger"/>).</summary>
+    public Game.EffectHandlers Effects { get; }
+
     public EclVm(EclMemory memory, IEclHost host)
     {
         Memory = memory;
@@ -134,6 +137,9 @@ public sealed class EclVm
             return r;
         });
         PartyRules.Diagnostic += Diag;
+        // DAMAGE's saving throw (class 12) and to-hit (class 16) effects: the program's handlers (0x2B1E4).
+        Effects = new Game.EffectHandlers(n => (ushort)PartyRules.Random(n));
+        Effects.AttachTo(PartyRules);
         PartyRules.Damaged += d => HostCall("DamageReport", [d.Target.Name, Num(d.Damage), d.Dies ? "dies" : "hit"], null,
             () => Host.DamageReport(d));
         Memory.Written += w => _step?.Writes.Add(w);
@@ -1028,6 +1034,7 @@ public sealed class EclVm
         RestoreSelected(); // 0xDAC
         _gosub.Clear();
         StopFlag = true;
+        Host.TextHome(); // display only: the text cursor back to column 1, row 17 (not traced)
     }
 
     /// <summary>EXIT (0xDAC) and PROGRAM (0x3B5C): after a LOADCHAR (DS:4430) the selected character (DS:4436) is current again.</summary>

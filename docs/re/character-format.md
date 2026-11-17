@@ -205,6 +205,34 @@ save A, ECL2 block 20 fight: 8 × set 2 id 2 and 1 × set 2 id 12, party of 6): 
 share shown on screen. With 0x32 the result would be 537 / 6 = 89. The split over classes is the award loop
 0x58D3 (`combat-format.md` "After combat"; checked against save B: +99/+30/+45/+99/+99/+99 for a share of 90).
 
+## Stat recalculation (START 0x1758, program read s12; checked under emulation)
+
+`StatRecalc.Recalculate`; `StatRecalcProgramTests` compares it with the program run under emulation on 720
+creatures of the `fight_quick` RAM (with random readied flags, pluses, Str/Dex, money, byte 0xAA). In order:
+
+- Item count 0xC7, hands 0x100 (Σ base byte 1 of readied items), weight 0x102 (Σ word 0x37 × count 0x39 when
+  count > 0, + the 7 money words), the 13 equipment pointers; a readied item with byte 0x2F = 0xBA marks the bag.
+- Phase 1–2 dice, sides, bonus (0x115–0x11A) := natural attack 0xA3–0xA8; save bonus 0x101 := 0; AC 0x111 := 0xA9;
+  movement 0x11C := 0x72; THAC0 0x110 := 0x2D. Dex AC (0x1C86): Dex 1–3 → −4, 4–6 → Dex − 7, 15–18 → Dex − 14,
+  19–20 → 4, 21–23 → 5, 24–25 → 6.
+- No weapon: THAC0 + Str to-hit (0x1E22), bonus 0x119 + Str damage (0x1EC5), both 0 when byte 0xAA = 0. To-hit by
+  strength code: 1–3 −3, 4–5 −2, 6–7 −1, 17–19 +1, 20–22 +2, 23–25 +3, 26–27 +4, 28–30 code − 23. Damage: 1–2 −2,
+  3–5 −1, 16 +1, 17–19 code − 16, 20–29 code − 17, 30 +14.
+- Weapon (0x0BA0): THAC0 := 0x2D, + Dex missile adjustment (0x1D08) when base flags bit 1; bonus 0x119 := base byte
+  11, + Str (as above) when flags bit 2; plus = weapon 0x32, + the bolts' plus (flags bit 7) / arrows' plus (bit 0);
+  bonus + plus; race 2 with types 0x24, 0x25, 0x29–0x2C: plus + 1; THAC0 + plus; dice / sides := base bytes 9 / 10.
+- Each readied item: body armour movement (below) and AC (0x0E22): base byte 6 > 0x7F gives code = byte 6 AND 0x7F;
+  shield (slot 1): shield AC := code + plus; code 0: a ring (slot 9) keeps the highest plus, other items add their
+  plus, and byte 0x33 adds to 0x101; else the highest code + plus is the armour value, and a winning body armour
+  with plus > 0 marks magic armour (ring protection then 0).
+- Bag: weight − 5000 (at least 0), at least the readied weight. Encumbrance cap (below).
+- Armour value := at least AC 0xA9; AC 0x111 := Dex + shield + items + ring + armour (byte); rear AC 0x112 := armour +
+  items + ring − 2; sweep level 0x6B := 0x98 when it and the race byte are > 0 (signed), else 1.
+
+Fight call sites: fight start 0xD8DA (every creature), turn start 0x9A8A, the defender before trigger 0x0B
+(0x13D84), the attacker after an attack (0x14299, also undoing the large-creature dice), the AI weapon pick
+(0xC35D, 0xC3CD, 0xC4A4, 0xC4C6), the spell resolution (0x279C5), effect handlers (0x2C14D).
+
 ## Movement recalculation (code read)
 
 The recalculation routine (START image 0x1758, far address 00BA:0BB8; 22 call sites in GAME.OVR) sets
@@ -227,7 +255,19 @@ goblin fight from save A): the 8 goblin guards (set 2 id 2, readied 200-coin arm
 above (200 → 9; 150 → 6, plus → +3 = 9). The monster loader (OVR 0x1EEAA, called from 0x7917) does not call it.
 It happens at the fight start: OVR 0xD8B2, called from the fight-start routine 0xE402 (program read 2026-11-17, s10;
 `combat-format.md`), walks the whole combat list (DS:5D96) and recalculates every entry before it gives each one a
-combat record. The other combat-side call sites (e.g. OVR 0xC35D, 0x13D84, 0x14299) were not followed.
+combat record. The other call sites are listed under "Stat recalculation" above.
+
+## Strength code and carrying allowance (program read s12)
+
+**Strength code** (START 0x1D8A, one far pointer argument): Str (0x10) 0..17 → the same number; Str 18 → by
+exceptional strength (0x16): 0 → 18, 1–50 → 19, 51–75 → 20, 76–90 → 21, 91–99 → 22, 100 → 23; Str 19..25 → Str + 5
+(24..30). For Str above 25, or Str 18 with an exceptional value above 100, the routine returns a stack byte it never
+wrote `[?]` (the Client takes code 0).
+
+**Carrying allowance** in coins (START 0x1F4B, by strength code): 1–3 → −350, 4–5 → −250, 6–7 → −150, 12–13 → 100,
+14–15 → 200, 16 → 350, 17–21 → 500 + 250 × (code − 17), 22–26 → 2000 + 1000 × (code − 22), 27 → 7500, 28–30 → 9000 +
+3000 × (code − 28); every other code (0, 8–11) → 0. The money routines' carrying limit (0x24C89) is this + 1500
+(`shop-format.md`). Code: `GoldBox.Core.Game.Carrying` (also the weight sum below, without the bag-of-holding term).
 
 ## MONnCHA.DAX, MONnITM.DAX, MONnSPC.DAX
 

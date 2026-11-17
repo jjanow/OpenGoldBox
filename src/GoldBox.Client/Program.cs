@@ -39,8 +39,13 @@ else
     {
         var dir = new PorGameDirectory(gameDir);
         var art = PorViewArt.Load(dir);
-        player = new ClientPlayer(runner, () => game!.Memory);
-        var who = new PorPlayer(player, player, player, player);
+        player = new ClientPlayer(runner, () => game!.Memory)
+        {
+            Resources = ClientResources.Load(dir),
+            Game = () => game,
+        };
+        player.InstallPaging();
+        var who = new PorPlayer(player, player, player, player, QuickFight: true);
         // The game seeds its generator from the DOS clock at start-up.
         uint seed = (uint)Environment.TickCount64;
         string? savePath = null;

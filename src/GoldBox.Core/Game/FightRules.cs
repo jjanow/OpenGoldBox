@@ -31,16 +31,18 @@ public sealed class BaseItemTable
 
 /// <summary>
 /// Effect hooks the fight calls (dispatcher GAME.OVR 0x2B1E4 runs every effect of the creature whose trigger class
-/// matches; handlers DS:6828). The handlers are not read [?]; <see cref="NoFightEffects"/> does nothing, which is the
-/// program's behaviour for a creature with no effects.
+/// matches; handlers DS:6828), implemented by <see cref="EffectHandlers"/>; <see cref="NoFightEffects"/> does nothing,
+/// which is the program's behaviour for a creature with no effects.
 /// </summary>
 public interface IFightEffects
 {
     /// <summary>0x2B1E4: run the effects of <paramref name="c"/> with trigger class <paramref name="trigger"/>
     /// (<see cref="FightRules"/> lists the classes the fight uses). They may change <paramref name="fight"/>'s scratch cells.</summary>
     void Trigger(int trigger, EclCharacter c, FightState fight);
-    /// <summary>The removal call of an effect (0x2AF10 runs its handler with "removed" set). [?] handlers not read.</summary>
+    /// <summary>The removal call of an effect (0x2AF10 runs its handler with "removed" set).</summary>
     void Removed(EclCharacter c, byte[] effect);
+    /// <summary>The terrain check 0x2B9D1 the end of round runs for every creature after its trigger-0x13 effects.</summary>
+    void Terrain(EclCharacter c, FightState fight) { }
 }
 
 public sealed class NoFightEffects : IFightEffects
@@ -51,8 +53,9 @@ public sealed class NoFightEffects : IFightEffects
 }
 
 /// <summary>
-/// Where the creatures stand on the combat map. Placement (fight start 0xE402), the arena and the path code (unit
-/// 0x166CB) are not read [?]; a fight runner supplies positions through this interface.
+/// Direction and distance between creatures on the combat map: 0x14E38 and START 0x30FB, implemented by
+/// <see cref="CombatMap"/> (arena and placement: <see cref="FightPlacement"/>); <see cref="GridGeometry"/> is a test
+/// stand-in.
 /// </summary>
 public interface IFightGeometry
 {
@@ -87,7 +90,7 @@ public static class FightRules
 
     /// <summary>Effect ids whose presence makes a creature helpless (DS:286C, START 0x1713). [?] which spells they are.</summary>
     public static readonly byte[] HelplessEffects = [0x33, 0x34, 0x35, 0x1F];
-    /// <summary>Invisibility (0x2BEBC removes its first instance when the creature attacks).</summary>
+    /// <summary>Invisibility (0x2BEBC removes every instance when the creature attacks).</summary>
     public const byte InvisibilityEffect = 0x19;
     /// <summary>Effects removed when a creature drops (0x2BEF4, list DS:0C14: the first instance of each).</summary>
     public static readonly byte[] DroppedEffects = [7, 11, 30, 31, 32, 51, 52, 53, 54, 58, 59, 95, 98, 137, 74, 75];
@@ -290,7 +293,7 @@ public static class FightRules
     public static bool IsHelpless(EclCharacter c) => HelplessEffects.Any(c.HasEffect);
 
     /// <summary>
-    /// The attack roll (0x2BBA1). Removes the attacker's invisibility (0x2BEBC); 1d20 into DS:6822 (signed); a roll of 1 or
+    /// The attack roll (0x2BBA1). Removes the attacker's invisibility, every instance (0x2BEBC); 1d20 into DS:6822 (signed); a roll of 1 or
     /// less misses; 20 becomes 100; trigger 0x0A (attacker) and 0x10 (defender); then a hit when roll ≥ 0 and roll +
     /// THAC0 byte 0x110 + modifier ≥ <paramref name="defense"/>, as 16-bit signed sums. The modifier is the low byte of
     /// VM $6E71 for the party side (hostile 0), $6E70 for the other, signed. With both bytes in the 60 − x encoding
@@ -299,7 +302,7 @@ public static class FightRules
     public static bool AttackRoll(EclCharacter attacker, EclCharacter defender, byte defense, FightState fight, EclMemory memory,
         Func<ushort, ushort> random, IFightEffects effects)
     {
-        RemoveFirstEffect(attacker, InvisibilityEffect, effects);
+        RemoveInvisibility(attacker, effects);
         fight.AttackRoll = (sbyte)Dice(random, 1, 20);
         if (fight.AttackRoll <= 1)
             return false;
@@ -437,9 +440,10 @@ public static class FightRules
 
     /// <summary>
     /// The damage part of 0x12AF4 (the rest is the message): a hit inflicts the damage; damage &gt; 0 clears the
-    /// defender's cast allowed (+1) and loses a spell it was casting (+0 → 0; START 0x202B removes the memorised spell
-    /// [?]). A defender now out of play loses its <see cref="DroppedEffects"/> (0x2BEF4), runs trigger 0x0D, and when
-    /// still out of play is taken off the map (0x3154B, not modelled).
+    /// defender's cast allowed (+1) and loses a spell it was casting: START 0x202B (0x12D2C) removes the first memorised
+    /// copy of that spell from the <b>current</b> character (DS:5D92, the attacker during an attack), then +0 → 0. A
+    /// defender now out of play loses its <see cref="DroppedEffects"/> (0x2BEF4) and runs trigger 0x0D; the map removal
+    /// (0x3154B) is the caller's (<see cref="Fight.MakeAttack"/>).
     /// </summary>
     public static void ApplyAttackResult(EclCharacter defender, byte damage, bool hit, FightState fight, IFightEffects effects)
     {
@@ -450,7 +454,11 @@ public static class FightRules
         {
             rec[CombatRecord.CastAllowed] = 0;
             if (rec[CombatRecord.SpellCast] > 0)
+            {
+                if (fight.Current is { } cur)
+                    FightSpells.RemoveSpell(cur, rec[CombatRecord.SpellCast]);
                 rec[CombatRecord.SpellCast] = 0;
+            }
         }
         if (defender[InPlay] == 0)
         {
@@ -458,6 +466,13 @@ public static class FightRules
                 RemoveFirstEffect(defender, id, effects);
             effects.Trigger(TriggerHpZero, defender, fight);
         }
+    }
+
+    /// <summary>0x2BEBC: while the creature has an invisibility effect (0x19, START 0x2199), 0x2AF10 removes it.</summary>
+    public static void RemoveInvisibility(EclCharacter c, IFightEffects effects)
+    {
+        while (c.Effects.Any(e => e.Length > 0 && e[0] == InvisibilityEffect))
+            RemoveFirstEffect(c, InvisibilityEffect, effects);
     }
 
     /// <summary>0x2AF10 with no node: the first effect with this id leaves the list; its handler runs with "removed".</summary>
@@ -483,7 +498,8 @@ public static class FightRules
     /// left = 0; actions done. No draw.</item>
     /// <item>Otherwise: with a weapon and a large defender (0x6C &gt; 0x80, or 0x6C AND 7 &gt; 1) the phase-1 damage dice
     /// become the weapon's large dice and the bonus +0x119 changes by large − small bonus. Trigger 0x0B on the defender
-    /// (after its stat recalculation [?], not modelled). Defense: backstab → rear AC 0x112 − 2; else AC 0x111, or the
+    /// (after its stat recalculation START 0x1758 at 0x13D84, which the effects' <see cref="EffectHandlers.Recalculate"/>
+    /// runs). Defense: backstab → rear AC 0x112 − 2; else AC 0x111, or the
     /// rear AC when attacked from behind (argument, or +0x0F &gt; 1, the attacker in the defender's facing direction and
     /// +0x12 &gt; 4); then the range penalty. From the current phase (+4) down to 1, while the phase has attacks left
     /// and the defender is up: one attack (−1 left, phase stored, counted); a hit when the attack roll hits, or (after a
@@ -511,7 +527,7 @@ public static class FightRules
             attacks++;
             hits++;
             ApplyAttackResult(def, (byte)(def[Hp] + 5), true, fight, effects);
-            RemoveFirstEffect(att, InvisibilityEffect, effects);
+            RemoveInvisibility(att, effects);
             att[0x113] = 0;
             att[0x114] = 0;
             anyHit = true;
@@ -636,6 +652,7 @@ public static class FightRules
     public static void EndOfRoundCreature(EclCharacter c, FightState fight, IFightEffects effects)
     {
         effects.Trigger(TriggerRoundEnd, c, fight);
+        effects.Terrain(c, fight);
         if (c[Status] == (byte)CreatureStatus.Dying)
         {
             var rec = fight.Record(c);

@@ -3,8 +3,8 @@ namespace GoldBox.Core.Explore;
 /// <summary>
 /// The game's 1-bit 8×8 text font (8X8D1 block 201 in PoR DOS: 177 glyphs × 8 bytes, bit 7 = left pixel). Glyph order
 /// read off the data (docs/re/view3d.md "Font"): glyphs 32..63 are ASCII 0x20..0x3F, glyphs 1..31 are the letters
-/// 0x41..0x5F (code − 0x40); lower case is drawn as upper case. [?] Which program routine maps characters to glyphs
-/// is not read; the rule matches the status line and menu of the DOSBox screenshots.
+/// 0x41..0x5F (code − 0x40); lower case is drawn as upper case. This is the glyph routine's rule (START.EXE 0x726F:
+/// glyph = UpCase(character) mod 64; docs/re/view3d.md "Font").
 /// </summary>
 public sealed class TextFont
 {

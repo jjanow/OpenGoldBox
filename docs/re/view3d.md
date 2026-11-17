@@ -223,7 +223,11 @@ Code: `GoldBox.Core.Explore.AreaLoop` (one command at a time), `GameClock`, `Are
   Then 0x23DCC(count, unit) runs `[?]` (not read; likely effect durations).
 - **Redraw 0x2DCF4** (3D): reads the event byte of the party's square again (DS:6AB1), switches the area map off
   where $49FB ≠ 0, recomputes the backdrop.
-- `[?]` The camp menu 0x196A0 (rest, memorise, …) is not built; the Client runs vector 2 and a stand-in menu.
+- **Camp menu 0x196A0** (s12): DS:49F3 = 2 (saved and restored), a camp message in the text box, then the menu
+  routine with a "Camp:" prompt and the DS menu line (v1.3 DS:0508; six words: save, view, magic, rest, alter,
+  exit) until E (or key 0). S saves (0x1FD3E) and asks whether to quit, V views (0x21AED), M magic (0x18C22), R rest
+  (0x17FAB), A alter (0x1948A); Home / End (extended keys only) select a member (0x23819). The Client builds View;
+  the others say they are not built yet (`[?]` not read), so no rest is interrupted.
 - The time is not drawn on the explore screen in our DOSBox-X screenshots of save A (the position line holds only
   x,y and facing).
 
@@ -231,7 +235,33 @@ Code: `GoldBox.Core.Explore.AreaLoop` (one command at a time), `GameClock`, `Are
 
 - 8X8D1 block 201 holds 177 glyphs of 8 bytes each, 1 bit per pixel, bit 7 on the left.
 - Glyphs 32..63 are ASCII 0x20..0x3F, and glyphs 1..31 are 0x41..0x5F (code − 0x40).
-- `[?]` This mapping was read off the glyph shapes and the status line. The program's text routine is not read.
+- The glyph routine (START 0x726F: column, row, colour, count, character, flag) draws text with the flag set as
+  glyph UpCase(character) mod 64, which is this mapping (s12); with the flag clear the byte is the glyph number
+  (PROTECT's runes). Columns above 39 or rows above 24 are not drawn. In CGA mode (DS:4A1E = 0) the colour goes
+  through a 16-entry table at DS:25D5; in EGA it is used as is.
+
+## Text window (START 0x77F8; program read s12)
+
+Arguments: box (x0, y0, x1, y1) in text cells, colour, clear flag, string. PRINT and PRINTCLR (GAME.OVR 0x174F) use
+the box (1, 17)–(38, 22) and colour 10; PRINTCLR first puts the cursor at (1, 17) and passes clear = 1. The text
+cursor is DS:5E24 (column) / DS:5E25 (row); it stays where the last print left it (PRINTRET: next row, column 1;
+EXIT: (1, 17), no clear).
+1. A cursor outside the box goes to (x0, y0); with clear the box is blanked (0x7E63) and the cursor goes there too.
+2. The string is cut into words. From position p: skip characters of the delimiter set (DS:0D16, a set constant:
+   `! , - . : ; ?`), then characters that are neither delimiters nor spaces, then, unless that stopped on a space,
+   the delimiters right after. The word runs from p to that last character (so it includes the space or delimiter
+   that ended it); each scan stops at the string's last character.
+3. If column + (word length − 1) > x1: column := x0, row + 1, and spaces at p are skipped (0x77A4). If the row is then
+   below y1 and text is left, the cursor goes to (x0, y0), a page prompt (a fixed string just before the routine) is
+   drawn on row 24 in colour 13, the program waits for a key, blanks the box and prints the word; otherwise the next
+   pass prints it on the new row. (A test at 0x79A9 for a word ending exactly on x1 can never be true.)
+4. Else the word is drawn (0x7737), one cell per character; while DS:4A00 is set (PRINT sets it) each character is
+   followed by a delay of DS:49E2 × 10 ms `[?]` (the Client shows the text at once).
+5. After the string a cursor past x1 goes to column x0 of the next row.
+The window never scrolls. Code: `GoldBox.Client.Play.TextWindow`.
+
+CLEARBOX (0x385A) blanks the picture window (1, 1)–(15, 15), not this box; `[?]` when the 3D view is drawn there
+again is not read (the Client keeps it blank until the next command).
 
 ## Verification (2026-11-17, s10)
 

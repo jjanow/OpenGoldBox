@@ -29,6 +29,8 @@ public sealed class ControlsScreen(TextFont font, IScreenHost host) : IScreen
         (GameAction.MenuRight, "MENU RIGHT"),
         (GameAction.Confirm, "CHOOSE"),
         (GameAction.Cancel, "BACK"),
+        (GameAction.PreviousMember, "PREVIOUS MEMBER"),
+        (GameAction.NextMember, "NEXT MEMBER"),
     ];
 
     private static readonly string[] Extra = ["RESET TO DEFAULTS", "BACK TO THE GAME", "QUIT"];

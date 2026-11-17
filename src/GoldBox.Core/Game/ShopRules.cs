@@ -32,6 +32,39 @@ public static class ShopRules
         return unchecked((ushort)(c.Word(Money.Weight) + w)) <= Money.CarryLimit(strengthAllowance); // 16-bit sum
     }
 
+    /// <summary>
+    /// The Buy list's set-up (0x6D04–0x6E17): before listing, every stock item whose value word is 0 gets value 1
+    /// (written into the record), so nothing in a shop is free. The list then shows each name with its value
+    /// right-aligned in a 30-character field.
+    /// </summary>
+    public static void PriceStock(IEnumerable<byte[]> stock)
+    {
+        foreach (var it in stock)
+            if (Word(it, ItemValue) == 0)
+            {
+                it[ItemValue] = 1;
+                it[ItemValue + 1] = 0;
+            }
+    }
+
+    /// <summary>
+    /// The copy step (0x6F0D) that Buy and the loot's item Take (0x6184) share: refused (false, an "overloaded"
+    /// message) when <see cref="CanCarry"/> says no; else a copy with <c>next</c> cleared goes to the end of the
+    /// character's items. The loot then unlinks and frees the original from the treasure list; the shop keeps it.
+    /// The program recalculates the character (START 0x1758) inside the copy: the caller does (weight at least,
+    /// <see cref="Carrying.RecalculateWeight"/>).
+    /// </summary>
+    public static bool GiveCopy(EclCharacter c, byte[] item, int strengthAllowance)
+    {
+        if (!CanCarry(c, item, strengthAllowance))
+            return false;
+        var copy = (byte[])item.Clone();
+        Array.Clear(copy, 0x2A, 4); // next = nil
+        c.Items.Add(copy);
+        c[ItemCount] = (byte)c.Items.Count;
+        return true;
+    }
+
     public enum BuyResult { Bought, CannotCarry, NotEnoughMoney }
 
     /// <summary>

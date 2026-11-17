@@ -17,6 +17,9 @@ public sealed class CombatRecord
     public const int SpellCast = 0, CastAllowed = 1, ItemUseAllowed = 2, Initiative = 3, AttackPhase = 4, SweepBudget = 5,
         Movement = 6, Guarding = 7, MadeAttack = 8, Facing = 9, Dying = 0x0E, FlankCount = 0x0F, FlankSpread = 0x12,
         NotParty = 0x13;
+    /// <summary>+0x10: turned by turn undead (0x13A84; the AI reads it). +0x11: has tried turning undead this fight
+    /// (0x139A5; the menu's Turn entry needs 0). docs/re/combat-menu.md.</summary>
+    public const int Turned = 0x10, TriedTurning = 0x11;
 
     public byte[] Bytes { get; } = new byte[Size];
 
@@ -78,6 +81,19 @@ public sealed class FightState
     public byte[] AttacksMade { get; } = new byte[3];
     /// <summary>DS:6E2F: the enemy side's hit points left, in 5 % steps (0x15074).</summary>
     public byte HostileHpPercent { get; set; }
+    /// <summary>DS:6E30: quick (computer-controlled) party members may cast spells. The menu's Alt-M toggles it, the
+    /// fight start (0xE457) clears it, the AI reads it (0xB187).</summary>
+    public bool QuickMagic { get; set; }
+    /// <summary>DS:681E: set by effect handlers during the target check 0x13880 (triggers 1 and 0) when the creature
+    /// can't be targeted; cleared by the check before it runs them.</summary>
+    public byte TargetBlocked { get; set; }
     /// <summary>The creature acting now (DS:5D92 during the fight).</summary>
     public EclCharacter? Current { get; set; }
+
+    // Cells the monster AI (GAME.OVR 0xABCF, docs/re/combat-ai.md) passes to the effect handlers and the map.
+    /// <summary>DS:6825: the morale value the trigger-0x11 effects see (morale check 0xBC97).</summary>
+    public byte Morale { get; set; }
+    /// <summary>Arena (DS:6716) byte +6: lines ignore obstacles (read by 0x2FF74); set for the second pass of the
+    /// target search 0x15FDF and cleared at its end.</summary>
+    public bool IgnoreObstacles { get; set; }
 }

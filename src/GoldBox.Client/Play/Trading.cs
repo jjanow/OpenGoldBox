@@ -1,0 +1,190 @@
+using System.Globalization;
+using GoldBox.Core.Ecl;
+using GoldBox.Core.Game;
+
+namespace GoldBox.Client.Play;
+
+/// <summary>Where the money and item screens run (the program's interface state DS:49F3).</summary>
+public enum Venue
+{
+    /// <summary>Camp (DS:49F3 = 2): View without Sell / Id.</summary>
+    Camp,
+    /// <summary>Shop or temple (DS:49F3 = 1): the items menu adds Sell and Id.</summary>
+    Shop,
+    /// <summary>The loot step after a fight (DS:49F3 = 6).</summary>
+    Loot,
+}
+
+/// <summary>
+/// What the shop, temple, loot and camp screens work on: the party, the money pool (DS:67F4) and the treasure list
+/// (DS:6810: the shop's stock or the loot), the game's random generator, and the program's texts. The rules are
+/// Core's (<see cref="ShopRules"/>, <see cref="Money"/>, <see cref="TempleRules"/>, <see cref="Carrying"/>); the
+/// menus and their order follow the program (docs/re/shop-format.md, combat-format.md "After combat").
+/// </summary>
+public sealed class TradeContext
+{
+    public required Dialog Dialog { get; init; }
+    public required GameText Text { get; init; }
+    public required EclParty Party { get; init; }
+    /// <summary>The pool: seven dwords (copper … jewellery).</summary>
+    public required uint[] Pool { get; init; }
+    /// <summary>The treasure list (shop stock or loot), head first.</summary>
+    public required List<byte[]> Treasure { get; init; }
+    /// <summary>Random(n): 0..n−1 from the game's generator.</summary>
+    public required Func<int, int> Random { get; init; }
+    /// <summary>Item name word w from the program's table, or null.</summary>
+    public Func<int, string?> Word { get; init; } = _ => null;
+    /// <summary>Whether an item type is a scroll (base slot 11..13; GAME.OVR 0x2A255), from the ITEMS table.</summary>
+    public Func<byte, bool> IsScroll { get; init; } = _ => false;
+    /// <summary>The temple's heal list names (program table), or null.</summary>
+    public IReadOnlyList<string>? TempleNames { get; init; }
+
+    public EclCharacter? Current => Party.Current;
+
+    /// <summary>Detect magic (effect 5) on any party member: the naming routine marks magical items with "*".</summary>
+    public bool Detect => Party.Members.Any(m => m.HasEffect(5));
+
+    public string ItemName(byte[] item) => ItemNames.Compose(item, Word, Detect).TrimEnd().ToUpperInvariant();
+
+    /// <summary>The pool holds money (0x25C07, first answer).</summary>
+    public bool PoolHasMoney => Pool.Any(v => v != 0);
+
+    /// <summary>Apply a member answer of a menu (previous / next, 0x23819; or a clicked name). Returns false for other answers.</summary>
+    public bool SelectMember(int answer)
+    {
+        int n = Party.Members.Count;
+        if (n == 0)
+            return false;
+        int cur = Math.Max(0, Party.CurrentIndex);
+        switch (answer)
+        {
+            case ChoiceRequest.PreviousMember:
+                Party.CurrentIndex = (cur + n - 1) % n; // the head wraps to the last member
+                return true;
+            case ChoiceRequest.NextMember:
+                Party.CurrentIndex = (cur + 1) % n;     // the last wraps to the head
+                return true;
+            case <= MemberPick when MemberPick - answer < n:
+                Party.CurrentIndex = MemberPick - answer;
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    /// <summary>Answers at or below this pick a member directly (a click on the party list): <c>MemberPick − index</c>.</summary>
+    public const int MemberPick = -100;
+}
+
+/// <summary>The money routines the shop, temple and loot menus share (GAME.OVR 0x25191, 0x252C3, 0x25974, 0x2663B).</summary>
+public static class MoneyScreens
+{
+    /// <summary>Pool (0x25191).</summary>
+    public static void Pool(TradeContext t) => ShopRules.PoolMoney(t.Party.Members, t.Pool);
+
+    /// <summary>
+    /// Share (0x252C3). [?] With no member that counts (0x84 = 0 or 0xB3) the program divides by zero; we leave the
+    /// pool as it is.
+    /// </summary>
+    public static void Share(TradeContext t)
+    {
+        if (!t.Party.Members.Any(c => c[0x84] is 0 or 0xB3))
+            return;
+        ShopRules.Share(t.Party.Members, t.Pool, Carrying.StrengthAllowance);
+    }
+
+    /// <summary>
+    /// Take (0x25974 → 0x25711): pick a kind the pool holds (kinds 6 down to 0), type an amount; overloaded → a message
+    /// and nothing moves.
+    /// </summary>
+    public static void Take(TradeContext t)
+    {
+        if (t.Current is not { } c)
+            return;
+        var kinds = Enumerable.Range(0, 7).Reverse().Where(k => t.Pool[k] != 0).ToList();
+        if (kinds.Count == 0)
+            return;
+        var labels = kinds.Select(k => $"{t.Text.Coin(k)} {t.Pool[k].ToString(CultureInfo.InvariantCulture)}").Append("EXIT").ToList();
+        int i = t.Dialog.List(t.Text[Msg.SelectCoin], labels, cancel: labels.Count - 1);
+        if (i < 0 || i >= kinds.Count)
+            return;
+        int kind = kinds[i];
+        int? n = t.Dialog.Number(t.Text[Msg.HowMuch] + t.Text[Msg.WillYouTake]);
+        if (n is not { } amount || amount <= 0)
+            return;
+        if (!ShopRules.Take(c, t.Pool, kind, (ushort)Math.Min(amount, ushort.MaxValue), Carrying.StrengthAllowance(c)))
+            t.Dialog.Say(t.Text[Msg.Overloaded]);
+    }
+
+    /// <summary>
+    /// Appraise (0x2663B): needs gems or jewellery on the current character; Gems / Jewelry / Exit until Exit or
+    /// nothing is left; each appraisal rolls a value, then Sell, or Sell / Keep when the character can carry one more
+    /// item (<see cref="ShopRules.Appraise"/>).
+    /// </summary>
+    public static void Appraise(TradeContext t)
+    {
+        if (t.Current is not { } c)
+            return;
+        var d = t.Dialog;
+        while (true)
+        {
+            int gems = c.Word(Money.Gems), jewels = c.Word(Money.Jewellery);
+            if (gems == 0 && jewels == 0)
+            {
+                d.Say(t.Text[Msg.NoGems]);
+                return;
+            }
+            d.Show(t.Text[Msg.FineCollection]);
+            if (gems > 0)
+            {
+                d.Text.NewLine();
+                d.Show(gems + t.Text[gems == 1 ? Msg.OneGem : Msg.Gems], clear: false);
+            }
+            if (jewels > 0)
+            {
+                d.Text.NewLine();
+                d.Show(jewels + t.Text[jewels == 1 ? Msg.OneJewel : Msg.Jewels], clear: false);
+            }
+            var items = new List<string>();
+            if (gems > 0) items.Add(t.Text[Msg.GemsItem].Trim());
+            if (jewels > 0) items.Add(t.Text[Msg.JewelryItem].Trim());
+            items.Add("EXIT");
+            int pick = d.Menu(items, t.Text[Msg.AppraisePrompt], cancel: items.Count - 1);
+            if (pick < 0 || pick >= items.Count - 1)
+                return;
+            bool jewellery = gems == 0 || pick == 1;
+            ShopRules.Appraise(c, t.Pool, jewellery, t.Random, (value, canKeep) =>
+            {
+                d.Show(GameText.Cat(t.Text[jewellery ? Msg.JewelValued : Msg.GemValued], value));
+                string[] choices = canKeep ? ["SELL", "KEEP"] : ["SELL"];
+                // K only when offered; any other key sells (0x2663B), so backing out sells too.
+                return d.Menu(choices, t.Text[Msg.YouCan], cancel: 0) == 1;
+            }, Carrying.StrengthAllowance(c));
+            Carrying.RecalculateWeight(c); // START 0x1758 after each appraisal
+        }
+    }
+
+    /// <summary>
+    /// The exit question of the shop and temple (0x7350 / the temple's): with money in the pool, a message and "go back?";
+    /// returns true to stay. Pool items alone do not ask.
+    /// </summary>
+    public static bool StayForMoney(TradeContext t, Msg leaving, Msg goBack)
+    {
+        if (!t.PoolHasMoney)
+            return false;
+        t.Dialog.Show(t.Text[leaving]);
+        t.Dialog.Text.NewLine();
+        t.Dialog.Show(t.Text[goBack], clear: false, colour: 15);
+        return t.Dialog.YesNo();
+    }
+
+    /// <summary>The money of a character as "N KIND" parts, highest kind first (for the view and lists).</summary>
+    public static string MoneyLine(TradeContext t, EclCharacter c)
+    {
+        var parts = new List<string>();
+        for (int k = 6; k >= 0; k--)
+            if (c.Word(Money.Coins + 2 * k) is var v and > 0)
+                parts.Add($"{v} {t.Text.Coin(k)}");
+        return string.Join(" ", parts);
+    }
+}

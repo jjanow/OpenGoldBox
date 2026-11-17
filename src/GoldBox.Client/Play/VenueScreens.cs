@@ -1,0 +1,374 @@
+using System.Globalization;
+using GoldBox.Core.Ecl;
+using GoldBox.Core.Game;
+
+namespace GoldBox.Client.Play;
+
+/// <summary>
+/// The shop (GAME.OVR 0x7212), the temple (0x5280), the loot step after a fight (0x5E94, 0x644B) and the camp menu
+/// (0x196A0), run on the logic thread through a <see cref="TradeContext"/>. Menus, keys and their conditions are the
+/// program's (docs/re/shop-format.md, combat-format.md "After combat"); the screens keep the explore layout (party
+/// list on the right, text window, menu on the bottom line), lists and the character view are full-screen pages.
+/// </summary>
+public static class VenueScreens
+{
+    /// <summary>The shop and loot menus compare the key with G / O for the party selection (0x7415, 0x66E4).</summary>
+    private const string MemberLetters = "GO";
+
+    // ---- Shop (0x7212) ---------------------------------------------------------------------------------------------
+
+    /// <summary>
+    /// The shop: the pool and DS:6DC0 are cleared, the stock is the treasure list. Menu: Buy, View, Take, Pool, Share,
+    /// Appraise, Exit while the pool holds money (0x25C07's first answer), else Buy, View, Pool, Appraise, Exit.
+    /// </summary>
+    public static void Shop(TradeContext t)
+    {
+        Array.Clear(t.Pool);
+        while (true)
+        {
+            bool money = t.PoolHasMoney;
+            string[] menu = money
+                ? ["BUY", "VIEW", "TAKE", "POOL", "SHARE", "APPRAISE", "EXIT"]
+                : ["BUY", "VIEW", "POOL", "APPRAISE", "EXIT"];
+            int i = t.Dialog.Menu(menu, cancel: menu.Length - 1, partySelect: true, memberLetters: MemberLetters);
+            if (t.SelectMember(i))
+                continue;
+            switch (menu[Math.Clamp(i, 0, menu.Length - 1)])
+            {
+                case "BUY": Buy(t); break;
+                case "VIEW": CharacterView.Run(t, Venue.Shop); break;
+                case "TAKE": MoneyScreens.Take(t); break;
+                case "POOL": MoneyScreens.Pool(t); break;
+                case "SHARE": MoneyScreens.Share(t); break;
+                case "APPRAISE": MoneyScreens.Appraise(t); break;
+                default:
+                    if (!MoneyScreens.StayForMoney(t, Msg.ShopMoneyLeft, Msg.ShopGoBack))
+                        return;
+                    break;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Buy (0x7035): the stock list (0x6D04: a value 0 becomes 1; name with the value right-aligned at column 30); B or
+    /// Enter buys the highlighted item for the current character (<see cref="ShopRules.Buy"/>), anything else leaves.
+    /// </summary>
+    public static void Buy(TradeContext t)
+    {
+        ShopRules.PriceStock(t.Treasure);
+        int selected = 0;
+        while (t.Current is { } c && t.Treasure.Count > 0)
+        {
+            var rows = t.Treasure.Select(it => PriceRow(t.ItemName(it), it)).ToList();
+            var a = t.Dialog.Page(new ListRequest(
+                [new(t.Text[Msg.ShopTitle], 15, 1), new(MoneyScreens.MoneyLine(t, c), 14, 1), new(t.Text[Msg.ItemsHeader], 15, 1)],
+                rows, ["BUY", "EXIT"], 1, FirstRow: 4, VisibleRows: 7)
+            {
+                Selected = Math.Clamp(selected, 0, rows.Count - 1),
+                RowActions = new HashSet<int> { 0 },
+                PartySelect = true,
+            });
+            if (t.SelectMember(a.Action))
+                continue;
+            if (a.Action != 0 || a.Row < 0 || a.Row >= t.Treasure.Count)
+                return;
+            selected = a.Row;
+            var item = t.Treasure[a.Row];
+            Carrying.RecalculateWeight(c);           // START 0x1758 before the carry test (0x23795)
+            ushort withItem = unchecked((ushort)(c.Word(Money.Weight) + ItemWeight(item)));
+            switch (ShopRules.Buy(c, t.Pool, item, Carrying.StrengthAllowance(c)))
+            {
+                case ShopRules.BuyResult.NotEnoughMoney:
+                    t.Dialog.Say(t.Text[Msg.ShopNoMoney]);
+                    break;
+                case ShopRules.BuyResult.CannotCarry:
+                    t.Dialog.Say(t.Text[Msg.ShopOverloaded]);
+                    break;
+                default:
+                    // The recalculation ran inside the copy, before the payment: the weight keeps the old coins
+                    // (DOSBox s11: stale until the items screen is drawn again).
+                    c.SetWord(Money.Weight, withItem);
+                    break;
+            }
+        }
+    }
+
+    private static int ItemWeight(byte[] it) => (it[0x37] | it[0x38] << 8) * Math.Max(1, (int)it[0x39]);
+
+    /// <summary>A name with the value right-aligned in a 30-character field (0x6D04).</summary>
+    public static string PriceRow(string name, byte[] item)
+    {
+        string v = ((ushort)(item[0x3A] | item[0x3B] << 8)).ToString(CultureInfo.InvariantCulture);
+        int room = 30 - v.Length;
+        string n = name.Length > room - 1 ? name[..Math.Max(0, room - 1)] : name;
+        return n.PadRight(room) + v;
+    }
+
+    // ---- Temple (0x5280) -------------------------------------------------------------------------------------------
+
+    /// <summary>
+    /// The temple: the shop's frame (pool cleared), menu Heal, View, Take, Pool, Share, Appraise, Exit (Heal, View,
+    /// Pool, Appraise, Exit with no money in the pool); Heal opens the heal list (0x4F4E).
+    /// </summary>
+    public static void Temple(TradeContext t)
+    {
+        Array.Clear(t.Pool);
+        while (true)
+        {
+            bool money = t.PoolHasMoney;
+            string[] menu = money
+                ? ["HEAL", "VIEW", "TAKE", "POOL", "SHARE", "APPRAISE", "EXIT"]
+                : ["HEAL", "VIEW", "POOL", "APPRAISE", "EXIT"];
+            int i = t.Dialog.Menu(menu, cancel: menu.Length - 1, partySelect: true, memberLetters: MemberLetters);
+            if (t.SelectMember(i))
+                continue;
+            switch (menu[Math.Clamp(i, 0, menu.Length - 1)])
+            {
+                case "HEAL": HealList(t); break;
+                case "VIEW": CharacterView.Run(t, Venue.Shop); break;
+                case "TAKE": MoneyScreens.Take(t); break;
+                case "POOL": MoneyScreens.Pool(t); break;
+                case "SHARE": MoneyScreens.Share(t); break;
+                case "APPRAISE": MoneyScreens.Appraise(t); break;
+                default:
+                    if (!MoneyScreens.StayForMoney(t, Msg.TempleMoneyLeft, Msg.TempleGoBack))
+                        return;
+                    break;
+            }
+        }
+    }
+
+    /// <summary>Our names for the heal list when the program's table is not found.</summary>
+    private static readonly string[] OurCures =
+        ["BLINDNESS", "SICKNESS", "LIGHT WOUNDS", "SERIOUS WOUNDS", "CRITICAL WOUNDS", "POISON", "RAISE", "CURSE",
+         "STONE", "LEAVE"];
+
+    private static Msg? Absent(TempleRules.Cure cure) => cure switch
+    {
+        TempleRules.Cure.Blindness => Msg.NotBlind,
+        TempleRules.Cure.Disease => Msg.NotDiseased,
+        TempleRules.Cure.Poison => Msg.NotPoisoned,
+        TempleRules.Cure.RaiseDead => Msg.NotDead,
+        TempleRules.Cure.RemoveCurse => Msg.NotCursed,
+        TempleRules.Cure.StoneToFlesh => Msg.NotStoned,
+        _ => null,
+    };
+
+    /// <summary>
+    /// The heal list (0x4F4E): ten names, the 10th leaves; each entry works on the current character. Absent
+    /// condition → "cure anyway?" (0x458A); then the price question (0x4636) and payment (character, else pool, else
+    /// "not enough money"); after payment the "cured" text and the effect (<see cref="TempleRules.Apply"/>).
+    /// </summary>
+    public static void HealList(TradeContext t)
+    {
+        var names = (t.TempleNames ?? OurCures).Select(n => n.ToUpperInvariant()).ToList();
+        while (t.Current is { } c)
+        {
+            string who = c.Name.ToUpperInvariant();
+            int i = t.Dialog.List(who + t.Text[Msg.HowCanWeHelp], names, cancel: names.Count - 1);
+            if (i < 0 || i >= 9)
+                return;
+            var cure = (TempleRules.Cure)i;
+            var d = t.Dialog;
+            if (!TempleRules.Applies(cure, c) && Absent(cure) is { } absent)
+            {
+                d.Show(GameText.Cat(who, t.Text[absent]));
+                if (!d.YesNo(t.Text[Msg.CureAnyway]))
+                    continue;
+            }
+            ushort price = TempleRules.Price(cure);
+            d.Show(GameText.Cat(names[i] + t.Text[Msg.WillOnlyCost], price) + t.Text[Msg.GoldPieces]);
+            if (!d.YesNo(t.Text[Msg.PayForCure]))
+                continue;
+            if (Money.Pay(c, t.Pool, price, wideCharacterTotal: false) == Money.Payer.None)
+            {
+                d.Say(t.Text[Msg.TempleNoMoney]);
+                continue;
+            }
+            d.Say(who + t.Text[Msg.IsCured]);
+            TempleRules.Apply(cure, c, t.Random);
+        }
+    }
+
+    // ---- After combat (0x6866, 0x5E94, 0x644B) ---------------------------------------------------------------------
+
+    /// <summary>
+    /// The loot part of the after-combat step: the NPCs' share window (when any took a share), the summary (0x5E94),
+    /// then the loot menu (0x644B).
+    /// </summary>
+    public static void Loot(TradeContext t, AfterCombatOutcome outcome, bool duel, IReadOnlyList<EclCharacter> npcsTakingShare)
+    {
+        var d = t.Dialog;
+        if (npcsTakingShare.Count > 0)
+        {
+            d.Text.Clear();
+            foreach (var npc in npcsTakingShare)
+            {
+                d.Show(npc.Name.ToUpperInvariant() + t.Text[Msg.TakesShare], clear: false);
+                d.Text.NewLine();
+            }
+            d.WaitKey(t.Text[Msg.PressEnter]);
+        }
+        Summary(t, outcome, duel);
+        LootMenu(t);
+    }
+
+    /// <summary>
+    /// The summary screen (0x5E94, program read s12): one result line, then the experience line, then a key. The
+    /// result: when a hostile creature that did not flee was in the list (DS:443A) or in a duel (DS:84D4): the duel
+    /// lost (no winner, DS:84DA = 0) or won, else the party won; otherwise the party fled (DS:443B) or found treasure
+    /// (no monsters). The experience line names the duelist in a duel, else each character.
+    /// [?] The rows and the box the program clears first (0x3F1:0x2E8) are not matched cell for cell.
+    /// </summary>
+    public static void Summary(TradeContext t, AfterCombatOutcome outcome, bool duel)
+    {
+        var d = t.Dialog;
+        d.Text.Clear();
+        Msg result = outcome.HostileFound || duel
+            ? duel ? (outcome.Won ? Msg.WonDuel : Msg.LostDuel) : Msg.PartyWon
+            : outcome.PartyFled ? Msg.PartyFled : Msg.FoundTreasure;
+        d.Show(t.Text[result], clear: false);
+        d.Text.NewLine();
+        d.Show(GameText.Cat(GameText.Cat(t.Text[duel ? Msg.DuelistReceives : Msg.EachReceives], outcome.ExperienceShare), t.Text[Msg.ExperiencePoints]), clear: false);
+        d.WaitKey(t.Text[Msg.PressEnter]);
+    }
+
+    /// <summary>
+    /// The loot menu (0x644B), DS:49F3 = 6. With money in the pool: View, Take, Pool, Share; with items only: View,
+    /// Take, Pool; then " Detect Exit" when there are items and the current character has spell 5 or 11 memorised
+    /// (bytes 0x17–0x2B), else " Exit"; nothing left: View, Pool, Exit. Exit with treasure left asks to go back.
+    /// </summary>
+    public static void LootMenu(TradeContext t)
+    {
+        while (true)
+        {
+            bool money = t.PoolHasMoney, items = t.Treasure.Count > 0;
+            bool detect = items && t.Current is { } c && Enumerable.Range(0, 21).Any(k => c[0x17 + k] is 5 or 11);
+            var menu = new List<string>();
+            if (money) menu.AddRange(["VIEW", "TAKE", "POOL", "SHARE"]);
+            else if (items) menu.AddRange(["VIEW", "TAKE", "POOL"]);
+            else menu.AddRange(["VIEW", "POOL"]);
+            if (detect) menu.Add("DETECT");
+            menu.Add("EXIT");
+            int i = t.Dialog.Menu(menu, cancel: menu.Count - 1, partySelect: true, memberLetters: MemberLetters);
+            if (t.SelectMember(i))
+                continue;
+            switch (menu[Math.Clamp(i, 0, menu.Count - 1)])
+            {
+                case "VIEW": CharacterView.Run(t, Venue.Loot); break;
+                case "TAKE": LootTake(t); break;
+                case "POOL": MoneyScreens.Pool(t); break;
+                case "SHARE": MoneyScreens.Share(t); break;
+                case "DETECT":
+                    // TODO: the detect magic cast (0x27C38) belongs to the spells, not built yet.
+                    t.Dialog.Say("DETECT: NOT IN THIS BUILD YET.", colour: 14);
+                    break;
+                default:
+                    if (money || items)
+                    {
+                        t.Dialog.Show(t.Text[Msg.TreasureLeft]);
+                        t.Dialog.Text.NewLine();
+                        t.Dialog.Show(t.Text[Msg.ClaimTreasure], clear: false, colour: 15);
+                        if (t.Dialog.YesNo())
+                            break;
+                    }
+                    return;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Take (0x62B6): with money and items a "Take:" menu (Money, Items, Exit) until Exit or nothing is left; money
+    /// only → the coin take; items only → the item take.
+    /// </summary>
+    public static void LootTake(TradeContext t)
+    {
+        while (true)
+        {
+            bool money = t.PoolHasMoney, items = t.Treasure.Count > 0;
+            if (money && items)
+            {
+                int i = t.Dialog.Menu(["MONEY", "ITEMS", "EXIT"], t.Text[Msg.TakePrompt], cancel: 2);
+                if (i == 0) MoneyScreens.Take(t);
+                else if (i == 1) TakeItems(t);
+                else return;
+            }
+            else
+            {
+                if (money) MoneyScreens.Take(t);
+                else if (items) TakeItems(t);
+                return;
+            }
+        }
+    }
+
+    /// <summary>
+    /// The item take (0x6184): the treasure list (title, "Items:"); T or Enter gives the highlighted item to the current
+    /// character through the copy step (refused: overloaded) and frees it from the list; any other key leaves.
+    /// </summary>
+    public static void TakeItems(TradeContext t)
+    {
+        int selected = 0;
+        while (t.Current is { } c && t.Treasure.Count > 0)
+        {
+            var rows = t.Treasure.Select(t.ItemName).ToList();
+            var a = t.Dialog.Page(new ListRequest(
+                [new(t.Text[Msg.LootTitle], 15, 1), new(c.Name.ToUpperInvariant(), 11, 1), new(t.Text[Msg.ItemsHeader], 15, 1)],
+                rows, ["TAKE", "EXIT"], 1, FirstRow: 4, VisibleRows: 7)
+            {
+                Selected = Math.Clamp(selected, 0, rows.Count - 1),
+                RowActions = new HashSet<int> { 0 },
+                PartySelect = true,
+            });
+            if (t.SelectMember(a.Action))
+                continue;
+            if (a.Action != 0 || a.Row < 0 || a.Row >= t.Treasure.Count)
+                return;
+            selected = a.Row;
+            var item = t.Treasure[a.Row];
+            Carrying.RecalculateWeight(c);
+            if (!ShopRules.GiveCopy(c, item, Carrying.StrengthAllowance(c)))
+            {
+                t.Dialog.Say(t.Text[Msg.ShopOverloaded]);
+                continue;
+            }
+            Carrying.RecalculateWeight(c);
+            t.Treasure.RemoveAt(a.Row);
+        }
+    }
+
+    // ---- Camp (0x196A0) --------------------------------------------------------------------------------------------
+
+    /// <summary>
+    /// The camp menu (DS:49F3 = 2): "The party makes camp..." in the text window, then the menu line from the program
+    /// (Save, View, Magic, Rest, Alter, Exit) with the "Camp:" prompt until E. Home / End select a member (only the
+    /// extended keys here: the letters are menu items). View works; Save, Magic, Rest and Alter are not built (TODO:
+    /// save 0x1FD3E, magic 0x18C22, rest 0x17FAB / 0x24A66, alter 0x1948A — not read). Returns whether a rest was
+    /// interrupted (never, until Rest exists).
+    /// </summary>
+    public static bool Camp(TradeContext t, string? menuLine)
+    {
+        // Our words when the program's line is not found.
+        var words = (menuLine ?? "SAVE VIEW MAGIC REST ALTER EXIT").Split(' ', StringSplitOptions.RemoveEmptyEntries)
+            .Select(w => w.ToUpperInvariant()).ToList();
+        t.Dialog.Show(t.Text[Msg.MakesCamp]);
+        while (true)
+        {
+            int i = t.Dialog.Menu(words, t.Text[Msg.CampPrompt], cancel: words.Count - 1, partySelect: true);
+            if (t.SelectMember(i))
+                continue;
+            char key = words[Math.Clamp(i, 0, words.Count - 1)][0];
+            switch (key)
+            {
+                case 'V':
+                    CharacterView.Run(t, Venue.Camp);
+                    break;
+                case 'E':
+                    return false;
+                default:
+                    t.Dialog.Say(words[i] + ": NOT IN THIS BUILD YET.", colour: 14);
+                    break;
+            }
+        }
+    }
+}

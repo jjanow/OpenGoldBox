@@ -59,15 +59,51 @@ public class ScriptRunnerTests
 public class TextWindowTests
 {
     [Fact]
-    public void Wraps_at_word_boundaries_and_keeps_the_last_rows()
+    public void Prints_from_the_cursor_and_wraps_whole_words()
     {
-        var t = new TextWindow(10, 2);
-        t.Append("the quick brown fox jumps");
-        Assert.Equal(["BROWN FOX", "JUMPS"], t.Visible);
+        var t = new TextWindow();
+        t.Print("ab");
+        t.Print("cd");
+        Assert.Equal("ABCD", t.Lines[0]);
+        t.Print(new string('x', 32) + " yy", clear: true);   // 33 cells with the space, then "YY" needs 2 more of 38: fits
+        Assert.Equal(new string('X', 32) + " YY", t.Lines[0]);
+        t.Print(new string('x', 36) + " bb", clear: true);   // "BB" would end in column 39: next row
+        Assert.Equal([new string('X', 36), "BB"], t.Lines.Take(2));
+    }
+
+    [Fact]
+    public void Breaks_after_a_delimiter_too()
+    {
+        var t = new TextWindow();
+        t.Print(new string('a', 34) + "-bbbb");                 // the word ends with the hyphen: "BBBB" goes down
+        Assert.Equal([new string('A', 34) + "-", "BBBB"], t.Lines.Take(2));
+    }
+
+    [Fact]
+    public void A_full_box_waits_for_a_key_then_starts_again_at_the_top()
+    {
+        int pauses = 0;
+        var t = new TextWindow { Pause = () => pauses++ };
+        t.Print(string.Join(" ", Enumerable.Range(1, 7).Select(i => new string((char)('a' + i), 30))));
+        Assert.Equal(1, pauses);
+        Assert.Equal(new string('H', 30), t.Lines[0]);          // the 7th word on a cleared box
+        Assert.All(t.Lines.Skip(1), l => Assert.Equal("", l));
+    }
+
+    [Fact]
+    public void Print_return_and_exit_move_the_cursor_without_clearing()
+    {
+        var t = new TextWindow();
+        t.Print("one");
+        t.NewLine();
+        t.Print("two");
+        Assert.Equal(["ONE", "TWO"], t.Lines.Take(2));
+        t.Home();
+        t.Print("X");
+        Assert.Equal(["XNE", "TWO"], t.Lines.Take(2));
+        Assert.False(t.IsEmpty);
         t.Clear();
         Assert.True(t.IsEmpty);
-        t.Append("a\nb");
-        Assert.Equal(["A", "B"], t.Visible);
     }
 }
 
@@ -109,6 +145,18 @@ public class ExploreScreenTests
         r.Screen.Update(r.Input);
     }
 
+    /// <summary>
+    /// Answer whatever the game waits for: back out where the request allows it (the loot, shop and camp menus loop
+    /// until Exit), else take the first choice.
+    /// </summary>
+    private static void Settle(Rig r)
+    {
+        for (int guard = 0; r.Runner.Pending is { } p && guard < 200; guard++)
+            Press(r, p is ChoiceRequest { CancelIndex: not null } or ListRequest { CancelAction: not null }
+                ? GameAction.Cancel : GameAction.Confirm);
+        Assert.Null(r.Runner.Pending);
+    }
+
     private static void Key(Rig r, Keys k)
     {
         r.Input.Update(new KeyboardState(k), default, default, TimeSpan.Zero, _ => null);
@@ -135,9 +183,8 @@ public class ExploreScreenTests
         foreach (var a in route)
         {
             Press(r, a);
-            // An event on the way (text, menus) may wait for the player: take its first choice.
-            for (int guard = 0; r.Runner.Pending is not null && guard < 20; guard++)
-                Press(r, GameAction.Confirm);
+            // An event on the way (text, menus) may wait for the player.
+            Settle(r);
             if (a == GameAction.Forward)
                 steps++;
         }
@@ -149,8 +196,7 @@ public class ExploreScreenTests
         var menu = Assert.IsType<ChoiceRequest>(r.Runner.Pending);
         Assert.Equal(["BASH", "PICK", "EXIT"], menu.Items);
         Press(r, GameAction.Cancel);                        // Exit: no try, the step is refused, vector 1 runs
-        for (int guard = 0; r.Runner.Pending is not null && guard < 20; guard++)
-            Press(r, GameAction.Confirm);
+        Settle(r);
         Assert.Equal((10, 2), (r.Game.Memory.Position.X, r.Game.Memory.Position.Y));
         r.Runner.Dispose();
     }
@@ -165,13 +211,37 @@ public class ExploreScreenTests
         Press(r, GameAction.Search);
         Assert.True(r.Game.Loop.SearchOn);
         Press(r, GameAction.Forward);
-        while (r.Runner.Pending is not null)
-            Press(r, GameAction.Confirm);
+        Settle(r);
         Assert.Equal(t0 + 10, GameClock.TotalMinutes(r.Game.Memory));
         Press(r, GameAction.Look);
-        while (r.Runner.Pending is not null)
-            Press(r, GameAction.Confirm);
+        Settle(r);
         Assert.Equal(t0 + 20, GameClock.TotalMinutes(r.Game.Memory));
+        r.Runner.Dispose();
+    }
+
+    [Fact]
+    public void Encamp_opens_the_programs_camp_menu_and_view()
+    {
+        if (Dir() is null)
+            return;
+        var r = Start();
+        Press(r, GameAction.Encamp);
+        var menu = Assert.IsType<ChoiceRequest>(r.Runner.Pending);
+        Assert.Equal(6, menu.Items.Count);                 // the program's camp line (DS:0508 in v1.3)
+        Assert.NotNull(menu.MenuPrompt);
+        Assert.True(r.Player.Camping);
+        Assert.Contains(" CAMPING", ExploreScreen.StatusLine(r.Game, r.Player.Camping));
+        Key(r, Keys.V);                                    // View: the character page
+        var page = Assert.IsType<ListRequest>(r.Runner.Pending);
+        Assert.Equal(r.Game.Memory.Party!.Current!.Name.ToUpperInvariant(), page.Lines[0].Text);
+        Press(r, GameAction.NextMember);                   // the next member's page
+        page = Assert.IsType<ListRequest>(r.Runner.Pending);
+        Assert.Equal(r.Game.Memory.Party!.Members[1].Name.ToUpperInvariant(), page.Lines[0].Text);
+        Press(r, GameAction.Cancel);                       // leave the view
+        Assert.IsType<ChoiceRequest>(r.Runner.Pending);
+        Press(r, GameAction.Cancel);                       // Exit the camp
+        Settle(r);
+        Assert.False(r.Player.Camping);
         r.Runner.Dispose();
     }
 

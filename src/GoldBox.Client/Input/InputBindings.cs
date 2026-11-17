@@ -39,6 +39,10 @@ public enum GameAction
     Confirm,
     /// <summary>Menus: back out.</summary>
     Cancel,
+    /// <summary>Shop, temple, loot, camp and view: the previous party member (the original's Home key).</summary>
+    PreviousMember,
+    /// <summary>Shop, temple, loot, camp and view: the next party member (the original's End key).</summary>
+    NextMember,
 }
 
 /// <summary>The input device a binding or an input event belongs to.</summary>
@@ -84,6 +88,9 @@ public sealed class InputBindings
         b.Set(GameAction.MenuDown, ["Down"], ["DPadDown", "LeftThumbstickDown"]);
         b.Set(GameAction.Confirm, ["Enter"], ["A"]);
         b.Set(GameAction.Cancel, ["Escape"], ["B"]);
+        // The shoulders are Look / Encamp while exploring; those screens never ask for both at once.
+        b.Set(GameAction.PreviousMember, ["Home"], ["LeftShoulder"]);
+        b.Set(GameAction.NextMember, ["End"], ["RightShoulder"]);
         return b;
     }
 

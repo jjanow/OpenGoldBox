@@ -335,6 +335,18 @@ public class EncounterHostTests
         Assert.Equal(2, rig[0x6E3E]);
     }
 
+    [Fact]
+    public void Combat_with_a_fight_builder_hands_the_built_fight_to_the_runner()
+    {
+        var rig = new Rig(new EclAsm().Op(EclOpcodes.LoadMon, Imm8(1), Imm8(2), Imm8(1)).Op(EclOpcodes.Combat).Op(EclOpcodes.Exit));
+        Fight? built = null;
+        rig.Host.FightBuilder = s => built = new Fight(rig.Memory, s, new BaseItemTable([]), _ => 0,
+            new EndActionsController(), new GridGeometry());
+        rig.Run();
+        Assert.NotNull(built);
+        Assert.Equal(["Loot 0"], rig.Combat.Calls); // not the stand-in Fight(state)
+    }
+
     /// <summary>A fight that leaves every party member dead.</summary>
     private sealed class PartyDiesRunner : ICombatRunner
     {

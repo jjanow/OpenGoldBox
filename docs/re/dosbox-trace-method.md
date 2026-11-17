@@ -23,6 +23,7 @@ Rules for running emulators (virtual screen, no sound, one at a time): `AGENTS.m
 python3 -I tools/scripts/dosbox_state.py dump  STATE.sav [--json] [--areas OUTDIR]
 python3 -I tools/scripts/dosbox_state.py check STATE.sav SAVGAMx.DAT
 python3 -I tools/scripts/dosbox_state.py diff  A.sav B.sav
+python3 -I tools/scripts/dosbox_state.py fight STATE.sav OUTDIR
 ```
 
 - Finds the game's data segment from the DOS memory chain: the block owned by `START`; DS = PSP + 0x10 + 0xC7C.
@@ -35,6 +36,11 @@ python3 -I tools/scripts/dosbox_state.py diff  A.sav B.sav
   s11 the party list from the heap (DS:5D96, next pointer +0x104: name, HP, status, money, item count, record) and
   DS:84CE/84D0/84D2/84D3/4430/4436/5D92. Meanings:
   `ecl-format.md`.
+- `fight` (s12) writes raw fight data for a state taken in combat: `ds.bin` (the whole DS segment), `arena.bin`
+  (0x4E9 bytes at the far pointer DS:6716), the 19-byte records of the list DS:6DBB (next pointer at +4 per Lee
+  `[?]`), and in `fight.json` every creature of the combat list with its record, 22-byte combat record (+0x108),
+  item records (+0xC8, next +0x2A) and effect records (+0x7F, next +5), plus far pointers, the pool and a few fight
+  DS bytes. Nothing is decoded beyond Lee-labelled locations (DS:5F2B/65BD).
 - `--areas OUTDIR` writes the areas as binary files in the save-file layout plus `vars.json`.
 - `check` compares the four areas with a game save: a state taken right after loading save A matches `SAVGAMA.DAT`
   cell for cell except $6DD2/$6DD3, which the script init clears. This is the self-test of the address mapping.

@@ -39,6 +39,10 @@ public sealed class ExploreScreen : IScreen
     private int _selected;
     private string _typed = "";
     private TimeSpan _delayEnd;
+    private readonly ListPage _list = new();
+    /// <summary>A click already chose this answer (a party member, a key wait); given on the next update.</summary>
+    private object? _clickAnswer;
+    private bool _hasClickAnswer;
 
     public ExploreScreen(PorGame game, ClientPlayer player, ScriptRunner runner, IScreenHost host, char lastLetter = 'A')
     {
@@ -64,6 +68,7 @@ public sealed class ExploreScreen : IScreen
         if (_runner.Busy || _game.Loop.Defeated)
             return;
         _player.Notice = null;
+        _player.ViewBlanked = false; // [?] CLEARBOX's blank picture window lasts until the next command's redraw
         _lastLetter = command switch
         {
             AreaCommand.AreaMap => 'A',
@@ -139,7 +144,9 @@ public sealed class ExploreScreen : IScreen
     public void Hover(int x, int y)
     {
         Sync();
-        if (_runner.Pending is ChoiceRequest c && ItemAt(c, x / 8, y / 8) is { } i)
+        if (_runner.Pending is ListRequest l)
+            _list.Hover(l, x / 8, y / 8);
+        else if (_runner.Pending is ChoiceRequest c && ItemAt(c, x / 8, y / 8) is { } i)
             _selected = i;
         else if (_runner.Pending is TextRequest t && CellAt(t, x / 8, y / 8) is { } k)
             _selected = k;
@@ -149,6 +156,10 @@ public sealed class ExploreScreen : IScreen
     {
         switch (request)
         {
+            case KeyRequest:
+                return GameAction.Confirm;
+            case ListRequest l:
+                return _list.Click(l, click);
             case ChoiceRequest c:
                 if (click.Right)
                     return c.CancelIndex is not null ? GameAction.Cancel : null;
@@ -156,6 +167,11 @@ public sealed class ExploreScreen : IScreen
                 {
                     _selected = i;
                     return GameAction.Confirm;
+                }
+                if (c.PartySelect && RosterAt(click.X / 8, click.Y / 8) is { } m)
+                {
+                    _clickAnswer = TradeContext.MemberPick - m;
+                    _hasClickAnswer = true;
                 }
                 return null;
             case TextRequest t:
@@ -192,10 +208,21 @@ public sealed class ExploreScreen : IScreen
 
     private int ListTop(ChoiceRequest c) => Math.Clamp(_selected - ListRows + 1, 0, Math.Max(0, c.Items.Count - ListRows));
 
+    /// <summary>The party-list member under a cell (rows 4–11, columns 17–38).</summary>
+    private int? RosterAt(int col, int row)
+    {
+        int n = _game.Memory.Party?.Members.Count ?? 0;
+        int i = row - 4;
+        return col is >= 17 and <= 38 && i >= 0 && i < Math.Min(n, 8) ? i : null;
+    }
+
+    /// <summary>First column of a horizontal menu's items: after the menu prompt and a space.</summary>
+    private static int MenuStart(ChoiceRequest c) => c.MenuPrompt is { Length: > 0 } p ? p.Length + 1 : 0;
+
     private int? ItemAt(ChoiceRequest c, int col, int row)
     {
         if (!c.Vertical)
-            return row == MenuRow ? WordAt(c.Items, col) : null;
+            return row == MenuRow ? WordAt(c.Items, col - MenuStart(c)) : null;
         int top = ListTop(c);
         int i = top + row - ListFirstRow;
         return row >= ListFirstRow && row < ListFirstRow + ListRows && i < c.Items.Count && col >= 1 ? i : null;
@@ -301,6 +328,9 @@ public sealed class ExploreScreen : IScreen
         _shown = request;
         _selected = 0;
         _typed = "";
+        _hasClickAnswer = false;
+        if (request is ListRequest l)
+            _list.Sync(l);
         if (request is DelayRequest d)
             _delayEnd = _clock.Elapsed + d.Duration;
     }
@@ -310,8 +340,21 @@ public sealed class ExploreScreen : IScreen
     /// <summary>The answer to the request this frame, or null while the player has not answered.</summary>
     private Reply? Answer(PlayerRequest request, ActionInput input)
     {
+        if (_hasClickAnswer)
+        {
+            _hasClickAnswer = false;
+            return new Reply(_clickAnswer);
+        }
         switch (request)
         {
+            case KeyRequest:
+                return input.NewInput is not null || input.Pressed(GameAction.Confirm) || input.Pressed(GameAction.Cancel)
+                    ? new Reply(null)
+                    : null;
+
+            case ListRequest l:
+                return _list.Update(l, input) is { } a ? new Reply(a) : null;
+
             case DelayRequest:
                 return _clock.Elapsed >= _delayEnd || input.Pressed(GameAction.Confirm) ? new Reply(null) : null;
 
@@ -326,6 +369,17 @@ public sealed class ExploreScreen : IScreen
                     return new Reply(_selected);
                 if (input.Pressed(GameAction.Cancel) && c.CancelIndex is { } ci)
                     return new Reply(ci);
+                if (c.PartySelect && input.Pressed(GameAction.PreviousMember))
+                    return new Reply(ChoiceRequest.PreviousMember);
+                if (c.PartySelect && input.Pressed(GameAction.NextMember))
+                    return new Reply(ChoiceRequest.NextMember);
+                if (c.MemberLetters is { Length: 2 } ml && input.NewInput is (InputDevice.Keyboard, { Length: 1 } mk))
+                {
+                    if (mk[0] == ml[0])
+                        return new Reply(ChoiceRequest.PreviousMember);
+                    if (mk[0] == ml[1])
+                        return new Reply(ChoiceRequest.NextMember);
+                }
                 // The original's hotkeys: the first letter of an item.
                 if (input.NewInput is (InputDevice.Keyboard, { Length: 1 } key))
                     for (int i = 0; i < n; i++)
@@ -389,6 +443,12 @@ public sealed class ExploreScreen : IScreen
     public void Draw(IndexedFrame f, ActionInput input)
     {
         var font = _game.Art.Font;
+        var pending = _runner.Pending;
+        if (pending is ListRequest page)
+        {
+            _list.Draw(f, font, page, input);
+            return;
+        }
         f.Clear(0);
         // Frame cells as on the original screen: outer box, the divider under the view and party list, the divider
         // between view and party list, the view's own box, the box over the command line.
@@ -403,11 +463,13 @@ public sealed class ExploreScreen : IScreen
         DrawRoster(f, font);
 
         Chrome.Text(f, font, 17, StatusRow, StatusLine(_game, _player.Camping), Chrome.Green);
+        if (pending is ChoiceRequest choice)
+        {
+            Chrome.Text(f, font, 17, 12, Fit(ChoiceHint(choice, input), 22), Chrome.Grey);
+            if (choice.PartySelect)
+                Chrome.Text(f, font, 17, 13, Fit(MemberHint(input), 22), Chrome.Grey);
+        }
 
-        var pending = _runner.Pending;
-        int row = TextRow;
-        if (_player.Notice is { } notice)
-            Chrome.Text(f, font, 1, row++, Fit(notice, 38), Chrome.Yellow);
         switch (pending)
         {
             case ChoiceRequest { Vertical: true } v:
@@ -417,26 +479,75 @@ public sealed class ExploreScreen : IScreen
                 DrawTextEntry(f, font, t);
                 break;
             default:
+                DrawTextWindow(f, font);
                 if (pending is ChoiceRequest { Prompt: { } prompt })
-                    Chrome.Text(f, font, 1, row++, Fit(prompt, 38), Chrome.White);
-                foreach (var line in _player.Text.Visible)
-                {
-                    if (row >= TextRow + TextRows)
-                        break;
-                    Chrome.Text(f, font, 1, row++, line, Chrome.White);
-                }
+                    Chrome.Text(f, font, 1, TextRow + TextRows - 1, Fit(prompt, 38), Chrome.White);
                 if (pending is null && _player.Text.IsEmpty && _player.Notice is null)
                     DrawHelp(f, font, input);
                 break;
         }
+        if (_player.Notice is { } notice)
+        {
+            Chrome.Clear(f, 1, TextRow, 38);
+            Chrome.Text(f, font, 1, TextRow, Fit(notice, 38), Chrome.Yellow);
+        }
 
         if (pending is ChoiceRequest { Vertical: false } h)
-            DrawLine(f, font, h.Items, _selected, true);
+        {
+            int start = MenuStart(h);
+            if (h.MenuPrompt is { Length: > 0 } mp)
+                Chrome.Text(f, font, 0, MenuRow, mp, MenuPromptColour);
+            DrawLine(f, font, h.Items, _selected, start);
+        }
         else if (pending is null)
-            DrawLine(f, font, _commands, Array.FindIndex(_commands, w => w[0] == _lastLetter), false);
+            DrawLine(f, font, _commands, Array.FindIndex(_commands, w => w[0] == _lastLetter), 0);
         else if (pending is TextRequest tr)
             Chrome.Text(f, font, 0, MenuRow, Fit(tr.Prompt + (tr.Prompt.Length > 0 ? " " : "") + _typed + "_", 40), Chrome.White);
+        else if (pending is KeyRequest k)
+            Chrome.Text(f, font, 0, MenuRow, Fit(KeyPrompt(k, input), 40), MenuPromptColour);
     }
+
+    /// <summary>The menu routine's prompt colour and the page prompt's (0x2CC8C / START 0x7C85: 13).</summary>
+    private const byte MenuPromptColour = 13;
+
+    /// <summary>The script text window's cells (rows 17-22) as the program's text routine left them.</summary>
+    private void DrawTextWindow(IndexedFrame f, TextFont font)
+    {
+        var t = _player.Text;
+        for (int r = TextWindow.Top; r <= TextWindow.Bottom; r++)
+            for (int c = TextWindow.Left; c <= TextWindow.Right; c++)
+            {
+                var (ch, colour) = t.Cell(r, c);
+                if (ch != default)
+                    Chrome.Text(f, font, c, r, ch.ToString(), colour);
+            }
+    }
+
+    /// <summary>A key wait's line: the program's prompt for the keyboard, the button or click for pad and mouse.</summary>
+    private string KeyPrompt(KeyRequest k, ActionInput input) => input.LastDevice switch
+    {
+        InputDevice.Gamepad => $"PRESS {PromptLabels.For(input.Bindings, GameAction.Confirm, InputDevice.Gamepad)} TO CONTINUE",
+        InputDevice.Mouse => "CLICK TO CONTINUE",
+        _ => (k.Prompt ?? _player.Resources.PagePrompt ?? "PRESS A KEY").ToUpperInvariant(),
+    };
+
+    /// <summary>How to switch the party member on the device used last (the original: Home / End).</summary>
+    private static string ChoiceHint(ChoiceRequest c, ActionInput input)
+    {
+        var d = input.LastDevice;
+        if (d == InputDevice.Mouse)
+            return c.CancelIndex is null ? "CLICK: CHOOSE" : "CLICK / RIGHT CLICK";
+        string L(GameAction a) => PromptLabels.For(input.Bindings, a, d);
+        string pick = c.Vertical ? (d == InputDevice.Gamepad ? "DPAD " : "UP/DN ") : "";
+        string s = $"{pick}{L(GameAction.Confirm)} OK";
+        return c.CancelIndex is null ? s : $"{s} {L(GameAction.Cancel)} BACK";
+    }
+
+    private static string MemberHint(ActionInput input) => input.LastDevice switch
+    {
+        InputDevice.Mouse => "CLICK A NAME: WHO",
+        var d => $"{PromptLabels.For(input.Bindings, GameAction.PreviousMember, d)}/{PromptLabels.For(input.Bindings, GameAction.NextMember, d)}: WHO",
+    };
 
     /// <summary>
     /// The position line (START.EXE 0x34AB, program read s11): "x,y " only where the area map is allowed ($49FB = 0),
@@ -467,7 +578,13 @@ public sealed class ExploreScreen : IScreen
             return;
         }
         _game.DrawView(f, ViewX, ViewY, _game.Loop.ShowAreaMap);
-        if (_player.ViewOverlay is { } lines)
+        if (_player.ViewBlanked)
+        {
+            for (int y = 0; y < 88; y++)
+                for (int x = 0; x < 88; x++)
+                    f[ViewX + x, ViewY + y] = 0;
+        }
+        else if (_player.ViewOverlay is { } lines)
         {
             for (int y = 0; y < 88; y++)
                 for (int x = 0; x < 88; x++)
@@ -478,9 +595,9 @@ public sealed class ExploreScreen : IScreen
     }
 
     /// <summary>A line of words on the bottom row as the original draws its menus: the highlighted item all white, the others with a white hotkey letter.</summary>
-    private static void DrawLine(IndexedFrame f, TextFont font, IReadOnlyList<string> items, int selected, bool menu)
+    private static void DrawLine(IndexedFrame f, TextFont font, IReadOnlyList<string> items, int selected, int start)
     {
-        int col = 0;
+        int col = start;
         for (int i = 0; i < items.Count; i++)
         {
             var w = items[i];
@@ -490,7 +607,6 @@ public sealed class ExploreScreen : IScreen
             Chrome.Text(f, font, col + 1, MenuRow, w[1..], i == selected ? Chrome.White : Chrome.Green);
             col += w.Length + 1;
         }
-        _ = menu;
     }
 
     private void DrawVertical(IndexedFrame f, TextFont font, ChoiceRequest c)

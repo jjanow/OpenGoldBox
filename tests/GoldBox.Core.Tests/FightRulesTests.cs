@@ -152,13 +152,28 @@ public class FightRulesTests
     }
 
     [Fact]
-    public void Attack_roll_removes_the_attackers_invisibility()
+    public void Attack_roll_removes_every_invisibility_of_the_attacker()
     {
         var a = Creature("A");
         a.Effects.Add([FightRules.InvisibilityEffect, 0, 0, 0, 0, 0, 0, 0, 0]);
         a.Effects.Add([FightRules.InvisibilityEffect, 0, 0, 0, 0, 0, 0, 0, 0]);
         Roll(a, Creature("D", hostile: true), 50, 5);
-        Assert.Single(a.Effects); // the first instance only
+        Assert.Empty(a.Effects); // every instance (0x2BEBC loops)
+    }
+
+    [Fact]
+    public void Damage_loses_the_defenders_spell_and_the_current_characters_memorised_copy()
+    {
+        var attacker = Creature("A");
+        var caster = Creature("C", hostile: true);
+        attacker[FightSpells.Memorised] = 5;
+        caster[FightSpells.Memorised] = 5;
+        var fight = new FightState { Current = attacker };
+        fight.Record(caster)[CombatRecord.SpellCast] = 5;
+        FightRules.ApplyAttackResult(caster, 2, true, fight, NoFightEffects.Instance);
+        Assert.Equal(0, fight.Record(caster)[CombatRecord.SpellCast]);
+        Assert.Equal(0, attacker[FightSpells.Memorised]); // START 0x202B works on DS:5D92
+        Assert.Equal(5, caster[FightSpells.Memorised]);
     }
 
     [Fact]

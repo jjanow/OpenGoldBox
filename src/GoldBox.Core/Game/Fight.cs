@@ -3,8 +3,8 @@ using GoldBox.Core.Ecl;
 namespace GoldBox.Core.Game;
 
 /// <summary>
-/// Who decides a creature's actions: the player's combat menu (GAME.OVR 0x9B21) or the monster AI (0xABCF). Neither is
-/// read [?]; a controller acts through <see cref="Fight"/>'s action methods (<see cref="Fight.Attack"/>,
+/// Who decides a creature's actions: the player's combat menu (GAME.OVR 0x9B21, <see cref="MenuController"/>) or the
+/// monster AI (0xABCF, <see cref="MonsterAi"/>); a controller acts through <see cref="Fight"/>'s action methods (<see cref="Fight.Attack"/>,
 /// <see cref="Fight.EndActions"/>, <see cref="Fight.Guard"/>, <see cref="Fight.Delay"/>).
 /// </summary>
 public interface IFightController
@@ -24,9 +24,10 @@ public sealed class EndActionsController : IFightController
 /// <summary>
 /// The fight loop (GAME.OVR 0x9881, docs/re/combat-format.md "The fight"), headless: rounds of start of round
 /// (0x127FB) for every creature, picks by initiative (0x9938), turns (0x99FD) and the end of round (0xA087), until a
-/// side is empty. The arena, placement, movement on the map, spells and the AI are not read [?] and come from
-/// <see cref="IFightGeometry"/> and <see cref="IFightController"/>. Random draws follow the program's order for the
-/// parts modelled here.
+/// side is empty. The combat map, moves, spells, effects and the AI / menu come in through <see cref="IFightGeometry"/>
+/// (<see cref="CombatMap"/>), <see cref="Moves"/>, <see cref="Spells"/>, <see cref="Effects"/> and
+/// <see cref="IFightController"/>; <see cref="FightKit.Create"/> wires the program's parts. Random draws follow the
+/// program's order (the fight_quick capture replays draw for draw, <c>FightQuickReplayTests</c>).
 /// </summary>
 public sealed class Fight
 {
@@ -49,7 +50,29 @@ public sealed class Fight
     public IFightController Controller { get; }
     public IFightGeometry Geometry { get; }
     public IFightEffects Effects { get; }
+    /// <summary>Moves on the combat map (<see cref="IFightMoves"/>); none by default.</summary>
+    public IFightMoves Moves { get; set; } = NoFightMoves.Instance;
+    /// <summary>Spells in the fight (<see cref="IFightSpells"/>); none by default.</summary>
+    public IFightSpells Spells { get; set; } = NoFightSpells.Instance;
+    /// <summary>The combat map when <see cref="Geometry"/> is one, else null.</summary>
+    public IFightMap? Map => Geometry as IFightMap;
     public FightState State { get; } = new();
+
+    /// <summary>
+    /// The stat recalculation START 0x1758 (<see cref="StatRecalc.Recalculate"/>, set by <see cref="FightKit"/>). Null:
+    /// only the hands byte 0x100 is rebuilt (<see cref="MonsterAi.RecalcHands"/>) and the other derived bytes stand,
+    /// for tests with hand-made records.
+    /// </summary>
+    public Action<EclCharacter>? Recalculate { get; set; }
+
+    /// <summary>START 0x1758 on a creature (<see cref="Recalculate"/>).</summary>
+    public void RecalculateStats(EclCharacter c)
+    {
+        if (Recalculate is { } r)
+            r(c);
+        else
+            MonsterAi.RecalcHands(this, c);
+    }
 
     /// <summary>One game minute passes per round (clock routine 0x241A1, unit 1); the caller's clock.</summary>
     public Action? MinutePassed { get; set; }
@@ -104,7 +127,7 @@ public sealed class Fight
 
     /// <summary>
     /// 0x99FD: +0x0F, +0x12, +0x07 cleared; trigger 7; with initiative &gt; 0: 20 → 19, the creature becomes current,
-    /// [?] its stats are recalculated (START 0x1758, not modelled: the derived bytes stand), trigger 0x0F, and with
+    /// its stats are recalculated (START 0x1758 at 0x9A8A, <see cref="RecalculateStats"/>), trigger 0x0F, and with
     /// initiative still &gt; 0 the AI or the menu acts.
     /// </summary>
     public void Turn(EclCharacter c)
@@ -119,6 +142,7 @@ public sealed class Fight
         if (rec.InitiativeValue == 20)
             rec.InitiativeValue = 19;
         State.Current = c;
+        RecalculateStats(c);
         Effects.Trigger(FightRules.TriggerActionStart, c, State);
         if (rec.InitiativeValue > 0)
         {
@@ -171,6 +195,16 @@ public sealed class Fight
         _delayed = true;
     }
 
+    /// <summary>
+    /// The creature's turn ends with its actions not over: initiative = <paramref name="initiative"/> and it is picked
+    /// again later this round (a spell begun with a casting time, 0x14D33–0x14D64, or Delay).
+    /// </summary>
+    public void Postpone(EclCharacter c, sbyte initiative)
+    {
+        Record(c).InitiativeValue = initiative;
+        _delayed = true;
+    }
+
     private bool _delayed;
 
     /// <summary>Problems met (controllers that did not end a turn, …).</summary>
@@ -201,6 +235,15 @@ public sealed class Fight
     public FightRules.AttackOutcome Attack(EclCharacter attacker, EclCharacter defender, bool fromBehind = false, byte[]? ammo = null)
     {
         NoteAttackDirection(attacker, defender);
+        return MakeAttack(attacker, defender, fromBehind, ammo);
+    }
+
+    /// <summary>
+    /// MakeAttack (0x1407F) alone, without <see cref="NoteAttackDirection"/>: the free attacks of a move (0x130AD) call
+    /// it this way. A defender that drops leaves the combat map (0x3154B via 0x12AF4; <see cref="CombatMap.Downed"/>).
+    /// </summary>
+    public FightRules.AttackOutcome MakeAttack(EclCharacter attacker, EclCharacter defender, bool fromBehind = false, byte[]? ammo = null)
+    {
         var dRec = Record(defender);
         var aRec = Record(attacker);
         if (dRec[CombatRecord.FlankCount] < 3 && !fromBehind)
@@ -213,8 +256,11 @@ public sealed class Fight
             var saved = State.Current;
             State.Current = attacker;
             outcome = FightRules.RollAttacks(attacker, defender, fromBehind, State, Items, Memory, Random, Effects, Geometry);
+            if (defender[FightRules.InPlay] == 0 && Geometry is CombatMap map && map.OnMap(defender))
+                map.Downed(defender, State);
             if (ammo is not null)
                 FightRules.DropSpentWeapon(attacker, ammo, State, Encounter, Items);
+            RecalculateStats(attacker); // START 0x1758 at 0x14299: also undoes the large-creature dice of 0x13C01
             State.Current = saved;
         }
         if (outcome.ActionsDone)
@@ -225,7 +271,8 @@ public sealed class Fight
 
 /// <summary>
 /// A test <see cref="IFightGeometry"/> on fixed squares, not the program's: Chebyshev distance and the sign of the
-/// offset as one of 8 directions (0 N, clockwise; 8 for the same square). [?] 0x14E38 and START 0x30FB are not read.
+/// offset as one of 8 directions (0 N, clockwise; 8 for the same square). The program's rules (0x14E38, START 0x30FB)
+/// are <see cref="CombatMap"/>'s; this one is for tests that do not need them.
 /// </summary>
 public sealed class GridGeometry : IFightGeometry
 {
