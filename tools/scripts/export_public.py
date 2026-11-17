@@ -53,6 +53,9 @@ ALLOW = [
     "docs/re/**.md",
 ]
 DENY = [
+    # Both depths: "tests/**/x/**" needs a folder between tests/ and x/, so tests/x/ is listed on its own.
+    "tests/private/**",
+    "tests/fixtures-private/**",
     "tests/**/private/**",
     "tests/**/fixtures-private/**",
     "reverse-engineering/**",

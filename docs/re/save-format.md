@@ -125,7 +125,7 @@ The 7680-byte area at offset 5121 is the ECL script of the current map. The game
 `ECL<disk>.DAX`, drops the block's first 2 bytes and copies the rest to $9900, after zeroing the area (talonius
 `LoadEclScript`; prefix also noted in `docs/re/dax-format.md`). Lee: "The save game file includes the entire current
 ECL script." So a save is tied to the exact script version it was made with. An importer should rebuild this from the
-game's own ECL file and only check it against the save.
+game's own ECL file and only check it against the save; on load the game runs the stored copy (check 9).
 
 ## How a save game ties the files together
 
@@ -192,5 +192,15 @@ not checked by us. Later.
    after some play.
 7. v1.1 `SAVE\SAVGAMA.DAT` and `SAVE\CHRDATA*.*` (unpacked from `SAVE.ARC`, v1.1 360K set in
    `reverse-engineering/dos/original-images/por/`) are byte-identical to v1.3's.
+
+8. DOSBox-X (2026-11-17, RAM read from emulator save states with `tools/scripts/dosbox_state.py`; method
+   `docs/re/dosbox-trace-method.md`): right after loading save A from the main menu, the four VM areas in memory
+   equal the file's areas cell for cell, except $6DD2/$6DD3 (24 in the file, 0 in memory: the script init clears
+   them, `ecl-format.md`). A save made in the game (slot B, after a fight) and loaded again matched with no
+   difference at all. The party position bytes equal DS:6AAD–6AB1.
+9. The game runs the script stored in the save, not a fresh copy: a copy of save A whose stored vector 0 was changed
+   loaded with the changed vector in effect (DOSBox-X). So the ECL area matters on load; an importer that rebuilds
+   it from the ECL file must produce the same bytes.
+10. No map state is saved: doors opened before a save are locked again after loading it (DOSBox-X, `geo-format.md`).
 
 Run: `python3 -I tools/scripts/gbchar.py check <gamedir>` repeats checks 1-3 and 5.

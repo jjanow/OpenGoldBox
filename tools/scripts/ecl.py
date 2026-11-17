@@ -495,8 +495,6 @@ def fmt_insn(ins, an=None, show_hex=False):
         notes.append("no handler in the program")
     if an is not None:
         if ins.op in IFS:
-            for c in an.spec_into_data:
-                spec_cut_list.append((fn, bid, c))
             for h in an.hazards:
                 if h[0] == ins.off:
                     notes.append("IF-skip lands inside the next instruction")

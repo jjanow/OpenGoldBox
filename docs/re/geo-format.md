@@ -2,8 +2,9 @@
 
 Status: **layout verified** against every GEO block of Pool of Radiance DOS v1.1, v1.2 and v1.3 (29 blocks, byte-identical
 in all three versions) and against 34 of S. S. Lee's hand-drawn area maps (2026-11-17, see "Verification").
-The meaning of the event byte beyond bit 7, which ECL block loads which map, and the door types 2/3 rest on prior art
-and a heuristic script scan; those are marked `[?]`. No DOSBox check yet.
+Edge wrap, the door menus, door state after a save and the engine's use of the event byte were checked in
+GAME.OVR and in DOSBox-X (2026-11-17; method `docs/re/dosbox-trace-method.md`). Which ECL block loads which map
+rests partly on a heuristic script scan (see `ecl-format.md` for the exact list); open points are marked `[?]`.
 Container: `docs/re/dax-format.md`. Decoder: `tools/scripts/geo.py`.
 
 ## Sources
@@ -53,11 +54,20 @@ Each plane is row-major: byte `y*16 + x` belongs to square (x, y), 0 ≤ x, y �
   - where both faces have a wall, the wall types differ on 1,605 of 5,408 edges (each face carries its own texture).
 - Movement checks only the face of the square the party stands on (talonius `MoveForward`; coab `WallDoorFlagsGet`),
   so a one-sided wall is one-way. Opening a door changes both faces.
-- **Edges** (prior art, `[?]` until checked in DOSBox): the accessors wrap one step (x > 15 → 0, x < 0 → 15, same for
-  y; enough for the single-step lookups the engine makes), except that while the
-  current *ECL* block is 0 or 10 they return 0 for any square off the map. A step off the 16×16 grid sets a "left the
-  map" variable for the area script to handle. The wrap is real data, not a quirk: the Valjevo Castle hedge maze is
-  drawn across the inner corners of four 16×16 maps, and Lee's maps of the wilderness lairs use wrapped coordinates.
+- **Edges: the map wraps** (checked 2026-11-17, program read and DOSBox-X).
+  - The three map accessors (barrier GAME.OVR 0x2EC47, wall 0x2ED72, event 0x2EE71) wrap a coordinate outside
+    0..15 to the other side, except that while the current ECL block (DS:84DC) is 0 or 10 they return 0 for a
+    square off the map. That rule only matters for lookups beyond the edge (e.g. the 3D view); the party's own
+    square is always on the map.
+  - On a forward step (Up key, 0x16D58) the engine first clears VM $6DD5, and when the face is not impassable and
+    the step would leave the grid it sets **$6DD5 = 1** ("left the map") without moving. Then vector 0 (move) runs;
+    a script that handles the exit sets $6DC9 = 255, which cancels the step (0x17443) and loads another area. If the
+    script does nothing, the step routine (0x16E06) moves the party and wraps x/y to the other side.
+  - DOSBox-X test: a copy of save A with the Slums script's vector 0 pointed at an EXIT (so the exit is not handled),
+    party at 15,4 facing E, one step: party at **0,4** on the same map, $6DD5 = 1, previous x $49F0 = 15. With the
+    unmodified script the same step leaves the Slums (the script checks $6DD5).
+  - The wrap is also real data: the Valjevo Castle hedge maze is drawn across the inner corners of four 16×16 maps,
+    and Lee's maps of the wilderness lairs use wrapped coordinates.
 
 ### Walls (planes 0 and 1)
 
@@ -83,24 +93,51 @@ Two bits per face, read only when that face's wall type is non-zero:
 |---|---|---|---|
 | 0 | impassable | 9,780 | Lee "Impassable"; engine refuses the step |
 | 1 | passable | 2,876 | Lee "Passable" |
-| 2 | locked door: a menu offers Bash (Strength open-doors roll), Pick (thief) and Knock (memorised spell) | 128 | Lee "easy-to-open barred door"; talonius `ResolveMovement`; DrEvil "locked" |
-| 3 | harder door: Bash only succeeds at Strength 18/91 and up | 14 | Lee "hard-to-open barred door"; talonius `BashDoor`; DrEvil "wizard-locked". Which other options it offers is `[?]` |
+| 2 | locked door: menu Bash / Pick / Knock / Exit (below) | 128 | Lee "easy-to-open barred door"; GAME.OVR 0x17480; DOSBox-X |
+| 3 | harder door: menu Bash / Pick / Knock / Exit, but Pick never opens it and Bash needs Strength 18/91+ (below) | 14 | Lee "hard-to-open barred door"; GAME.OVR 0x175BF |
 
 - 88 faces without a wall store barrier 1 and 2 store barrier 2. The engine ignores these values, but `dump` reports them as
   stored.
-- At run time the engine edits plane 3 in memory. Opening a door sets both faces to 1. When a locked door offers no option
-  to the party, that face is set to 0. Whether these edits survive save/load or re-entering the area is `[?]` (the loader
-  re-reads the GEO block from the DAX).
+- At run time the engine edits plane 3 in memory. Opening a door sets the face to 1 and the facing face of the
+  next square too (0x167D4, called twice). When a locked door's menu would offer only Exit, that face is set to 0
+  (0x166CB): it becomes a plain wall.
+- **These edits are not saved.** The save game has no map data (`save-format.md`), and loading a save re-reads the
+  GEO block from the DAX (loader 0x2FA40). DOSBox-X check: the Slums door at (10,2) N was bashed open (plane 3 byte
+  0x16 → 0x15), the game saved to slot B and loaded again: the byte was 0x16 again (locked). Re-entering an area
+  runs LOADFILES, which reloads the map the same way, so doors should re-lock then too (code read, not tested).
+
+**Door menu** (walking into a barrier 2 or 3 face; GAME.OVR 0x17443–0x1771B, door routines 0x1695F–0x16D57). The
+menu is built from three DS flags, DS:6DDE (Bash), DS:6DDF (Pick), DS:6DE0 (Knock), plus Exit, which is always there.
+Where the flags are set back to 1 is not traced `[?]` (they persist at least while the party stays at the door).
+
+- **Shown:** Bash if DS:6DDE. Pick if DS:6DDF and someone in the party has a thief level. Knock: for barrier 2 if
+  DS:6DE0 and someone has spell 31 (Knock) memorised; for barrier 3 if DS:6DE0 and someone has a magic-user level.
+  If only Exit is left, the face becomes barrier 0 (above).
+- **Bash** (both types): party members are tried in order until one succeeds; a success opens the door and the
+  party steps through. Barrier 2: Strength 3–7 needs 1 on 1d6, 8–15 ≤ 2, 16–17 ≤ 3, 18/01–18/50 (and plain 18) ≤ 3,
+  18/51–18/99 ≤ 4, 18/00 ≤ 5; Strength 19 and up is not in the table and never succeeds (a quirk). Barrier 3:
+  18/91–18/99 needs 1 on 1d6, 18/00 ≤ 2, 19–20 ≤ 3, 21–22 ≤ 4, 23 ≤ 5, 24 ≤ 7 on 1d8, 25 always; any member tried
+  with less sets DS:6DDE = 0, so Bash leaves the menu for later tries.
+- **Pick**, barrier 2: members in order, success if 1d100 ≤ open-locks skill (creature 0x78) and status is okay
+  (0x10C = 0). After one try, successful or not, DS:6DDF = 0 and Pick leaves the menu. DOSBox-X: with save A's party
+  the menu showed Bash, Pick, Exit; Pick failed, and the next try showed Bash, Exit only; Bash then opened the door.
+  Barrier 3: choosing Pick only sets DS:6DDF = 0; it never opens the door.
+- **Knock** (both types): finds the first member with spell 31 memorised, clears that spell slot and opens the door;
+  without such a member nothing happens.
+- Dice: the game's dice routine (far call to GAME.OVR unit stub B0:48) with (count, sides).
 
 ### Event byte (plane 2)
 
 One byte per square, copied into the ECL variable Lee lists as $C04F ("event number of current square") after every step.
 The engine itself uses only:
 
-- **bit 7**: when set, the 3D view uses the area's *alternate* sky colour instead of the normal one (talonius
-  `mapview.pas`, coab `Draw3dWorldBackground`). 2,216 squares hold exactly 0x80.
+- **bit 7**: when set (byte > 0x7F), the 3D view takes the sky colour from VM $49FE instead of $49FD (GAME.OVR
+  0x2DD2A). DOSBox-X: in the Slums the sky turned from cyan to white when the party stepped onto a 0x80 square.
+  2,216 squares hold exactly 0x80.
 
-All other bits are a convention of each area's script `[?]`. Lee's location numbers match the **low 6 bits** on 407 of the 448
+All other bits are a convention of each area's script. Checked 2026-11-17: the engine stores the byte in DS:6AB1
+after each step (0x3A52, 0x3F0E, 0x8F20, 0x16E93, 0x2DD27) and hands it to the scripts as $C04F (VM reader 0x840F);
+the only test the engine makes on it is the bit-7 sky test; plane 2 is read only by the event accessor 0x2EE71. Lee's location numbers match the **low 6 bits** on 407 of the 448
 numbered squares we compared (see "Verification"). Valjevo Castle uses its own numbering, which accounts for most of the
 misses. Lee notes that the top 1–3 bits "are often flags". Prior art reports that scripts test 0x20 and 0x40 around
 random encounters `[?]`. An importer must hand the raw byte to the script.
@@ -182,7 +219,10 @@ unused. In the table:
 - In the ECL/GEO ids, 0–32 identify an area, and most areas use the same number for script and map (DrEvil's
   convention, confirmed by the scan wherever it finds a LOAD FILES). The exceptions are GEO 30–32, which are second maps
   of areas 16, 29 and 24. For Valjevo Castle (GEO 3–7), the script-to-map assignment is open `[?]`.
-- Two scripts are "bounded" (no edge wrap): ECL 0 (New Phlan) and ECL 10 (Valhingen Graveyard) `[?]`.
+- While ECL block 0 (New Phlan) or 10 (Valhingen Graveyard) runs, the map accessors return 0 for squares off the map
+  instead of wrapping (GAME.OVR 0x2EC5D; see "Edges"). Steps still wrap if a script leaves an edge open and unhandled.
+- Map names 24 and 31 (Lee's script list has them the other way round) were settled from the area script and the
+  program: see `ecl-format.md`, "Scripts and areas".
 
 ## Wilderness (overland)
 
@@ -288,8 +328,8 @@ the numbers below test the shipped code.
 
 **Not checked yet:**
 
-- DOSBox behaviour: edge wrap and bounds, one-way walls, the door menus for barriers 2 and 3, whether door state persists.
+- One-way walls in DOSBox (the step code reads only the party's own face, GAME.OVR 0x17469, which supports them).
+- Where DS:6DDE/6DDF/6DE0 (door menu flags) are reset.
 - Whether ECL 3 and 5 load GEO 3 and 5 through computed operands.
-- The event-byte flag bits.
 - The WALLDEF piece layout.
 - The overland tile table.

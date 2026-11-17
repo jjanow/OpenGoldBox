@@ -67,7 +67,7 @@ Field names in this document and in the JSON are ours.
 | 0x77 | 8 | `thief_skills.*` | Percentages incl. all modifiers: pick pockets, open locks, find/remove traps, move silently, hide in shadows, hear noise, climb walls, read languages | Lee, talonius; a level-1 halfling thief PC has 45 45 30 35 35 15 70 0 |
 | 0x7F | 4 | – | Far pointer to the effect list | **stale** |
 | 0x83 | 1 | `reserved["0x83"]` | Unused | 0 in PCs, 255 in all monsters |
-| 0x84 | 1 | `npc` | Bit 7 set = not a player character. Low bits: morale | Lee: morale = (value − 128) / 2; talonius: low 7 bits. `[?]` which formula; seen: 0 (PCs), 255 (163 monsters), 0xB2 (9 monsters) |
+| 0x84 | 1 | `npc` | Bit 7 set = not a player character. Low bits: morale | Lee: morale = (value − 128) / 2; talonius: low 7 bits. Code: the ECL ADD NPC command stores `0x80 | (operand / 2)` (OVR 0x38E9–0x390A; the scripts pass 99 or 100, giving 0xB1/0xB2). How the low bits are read back is `[?]`; seen: 0 (PCs), 255 (163 monsters), 0xB2 (9 monsters) |
 | 0x85 | 1 | `npc.treasure_share` | bits 0-2: share of treasure an NPC party member takes; bits 3-7 unused | Lee, talonius. 1 in all PCs |
 | 0x86 | 2 | `reserved` | Unused | 0 everywhere |
 | 0x88 | 14 | `money.*` | 7 × u16: copper, silver, electrum, gold, platinum, gems, jewelry | all sources |
@@ -85,7 +85,7 @@ Field names in this document and in the JSON are ours.
 | 0xAB | 1 | `byte_0xAB` | Random byte set at character creation; the roster uses (name, this byte) to detect duplicates | talonius (`chargen.pas`); Lee: "randomized combat icon, not believed used"; DrEvil: unknown. `[?]`. 255 in every monster, varied in PCs |
 | 0xAC | 4 | `xp` | Experience points (u32) | |
 | 0xB0 | 1 | `item_usability_mask` | Class bits for "can use item": bit 0 magic-user, 1 cleric, 2 thief, 3 fighter (other bits for druid/paladin/ranger/monk unconfirmed `[?]`) | DrEvil code reading; data: equals the bits of the class code (0x2F) on 179 of 184 records; the 5 exceptions are monster records whose class byte does not match their levels (e.g. class cleric with fighter levels) |
-| 0xB1 | 1 | `hp.rolled` | Max HP without CON bonus (and without changes made by the Modify menu) | Lee, talonius |
+| 0xB1 | 1 | `hp.rolled` | Max HP without CON bonus (and without changes made by the Modify menu) | Lee, talonius. Code writers: character creation (OVR 0x1B6C0, 0x1B774), level-up (0x1C959), energy drain (0x10EEB), drain restore (0x29CB0); none in the monster loader, so monsters keep the disk value. Used by the XP award |
 | 0xB2 | 6 | `spells.slots` | Spells per day: cleric levels 1-3, then magic-user levels 1-3 | |
 | 0xB8 | 2 | `monster.xp_base` | Experience awarded for defeating this creature (u16) | |
 | 0xBA | 1 | `monster.xp_per_rolled_hp` | Extra experience per hit point (see "XP award") | |
@@ -100,7 +100,7 @@ Field names in this document and in the JSON are ours.
 | 0xC8 | 4 | – | Far pointer to the item list | **stale** |
 | 0xCC | 52 | – | 13 far pointers to equipped items: weapon, shield, body armour, gauntlets, helm, belt, robe, cloak, boots, ring 1, ring 2, arrows, bolts | **stale/derived**; rebuilt from the items' "readied" flag. All zero in monster records |
 | 0x100 | 1 | `derived.hands_used` | Hands occupied by readied items | derived |
-| 0x101 | 1 | `derived.save_bonus` | Bonus from items (s8) | derived. Lee/talonius: saving-throw bonus; DrEvil: AC bonus from items `[?]` |
+| 0x101 | 1 | `derived.save_bonus` | Saving-throw bonus from items (s8) | derived. Code: recalculation zeroes it (START image 0x19DC) and adds item byte +33 of each readied item whose base AC code is exactly 128 (START 0xE22–0xEE5; types 76, 92, 93). The saving-throw routine (OVR 0x2BC4D) rolls 1d20: 1 fails, 20 succeeds, else roll + 0x101 + caller bonus (+ effect handlers of trigger class 12) ≥ save byte 0x6D+type succeeds. Lee/talonius right, DrEvil's "AC bonus" wrong |
 | 0x102 | 2 | `derived.encumbrance` | Carried weight in coins (u16) | derived |
 | 0x104 | 4 | – | Far pointer to the next creature (party / combat list) | **stale** |
 | 0x108 | 4 | – | Far pointer to the combat record | **stale** |
@@ -116,7 +116,7 @@ Field names in this document and in the JSON are ours.
 | 0x117 | 2 | `derived.attacks.*.sides` | Current damage die sides | derived |
 | 0x119 | 2 | `derived.attacks.*.bonus` | Current damage bonus (s8) | derived |
 | 0x11B | 1 | `hp.current` | Current hit points | real state, not derived |
-| 0x11C | 1 | `derived.movement` | Current movement | derived (encumbrance, effects) |
+| 0x11C | 1 | `derived.movement` | Current movement | derived; rule in "Movement recalculation" |
 
 Total 0x11D = 285 bytes. Every byte is covered above.
 
@@ -157,14 +157,57 @@ Lee's bestiary (10.2) prints the second byte on the "Rod, Staff, or Wand" row an
 "Petrification or Polymorph" row. The values match our bytes one for one, so this is a labelling slip in the
 bestiary listing, not a different layout. We follow the offset table and the code.
 
-## XP award `[?]`
+## XP award (verified: code read + one DOSBox fight)
 
-At the end of combat each defeated enemy that did not flee gives `xp_base + xp_per_rolled_hp × hp.rolled (0xB1)`
-(talonius `postcbt.pas`; DrEvil reads the same from the overlay code). Lee's bestiary totals multiply by the
-listed hit points (0x32) instead. The two differ wherever 0xB1 ≠ 0x32, which happens on 14 monster records:
-hobgoblins (sets 1, 2, 4: 0 vs 6), goblin guards (5 vs 4), set 3 id 108 (5 vs 8), set 3 id 109 (23 vs 35),
-set 4 id 27 (23 vs 39), set 5 id 90 (5 vs 8), set 7 id 68 (0 vs 30), set 7 id 78 (6 vs 8). We follow the code
-reading (0xB1) and name the JSON field `xp_per_rolled_hp` so nobody assumes max HP. To settle in DOSBox later.
+Post-combat routine at OVR 0x557E (v1.3), static read:
+
+1. Walk the combat list (DS:5D96, next = creature +104h). For every creature with `combat.hostile` (0x10E) = 1
+   and `combat.status` (0x10C) ≠ 3 (fled), add `xp_base (0xB8) + xp_per_rolled_hp (0xBA) × hp.rolled (0xB1)`
+   (OVR 0x5645–0x5673). The product is a 16-bit multiply that is then sign-extended, so a product ≥ 32768 would
+   count as negative; the largest product in the shipped data is 1540 (set 6 id 102), so this never happens.
+   The same loop adds the creature's 7 money words (0x88) to the treasure pool (DS:67F4) and moves its items to
+   the treasure list (always if the item value > 0, else on 1d10 ≤ 3 while fewer than 8 were taken).
+2. Add the treasure pool (OVR 0x57B1–0x5845): copper / 200 + silver / 20 + electrum / 2 + gold + platinum × 5 +
+   gems × 250 + jewelry × 2200 (integer divisions on the pool totals).
+3. Add 400 × `plus` for every item in the treasure list with `plus` > 0 (OVR 0x5848–0x589E; one item, the
+   pointer at DS:5D9A, is skipped `[?]` what it is).
+4. Divide by (word at [DS:49D6]+67Ch − byte DS:84D5) (OVR 0x58A0–0x58BE): the per-character share. The
+   divisor is presumably the number of characters sharing `[?]`.
+
+Before step 1 a separate branch (OVR 0x5584) returns `level_highest × 100` of the current character when the
+byte DS:84D4 and the word [DS:49D6]+5CCh are both set; what sets them is `[?]`.
+
+So the multiplier is the disk byte 0xB1, not 0x32 (talonius `postcbt.pas` and DrEvil agree; Lee's bestiary totals
+use 0x32 and are off wherever the two differ: 14 monster records, e.g. goblin guards 5 vs 4, set 3 id 109 23 vs 35,
+set 7 id 68 0 vs 30). No code writes 0xB1 for monsters (see the table row). DOSBox check (2026-11-17, shipped
+save A, ECL2 block 20 fight: 8 × set 2 id 2 and 1 × set 2 id 12, party of 6): monsters 8 × (10 + 1 × 5) +
+(10 + 1 × 7) = 137, silver 8 × 18 + 24 = 168 → 8, the leader's armour with plus 1 → 400; 545 / 6 = 90, the
+share shown on screen. With 0x32 the result would be 537 / 6 = 89. How the share is then split over classes is
+not part of this routine.
+
+## Movement recalculation (code read)
+
+The recalculation routine (START image 0x1758, far address 00BA:0BB8; 22 call sites in GAME.OVR) sets
+movement as follows:
+
+1. `movement` (0x11C) := `movement_base` (0x72) (START 0x19F5).
+2. For every readied item whose base slot is 2 (body armour) (START 0xD9B, called per readied item at 0x1AA9):
+   item weight ≤ 150 → base movement; 151–399 → 9; ≥ 400 → 6. Then, if the item's `plus` is non-zero (any sign)
+   and movement ≤ 9, add 3. The value is set, not capped: a base-6 creature in 200-coin armour gets 9.
+3. Encumbrance cap (START 0xF40): excess = encumbrance (0x102) − strength allowance (START 0x1F4B, indexed by a
+   strength code from START 0x1D8A; −350 … 15,000 coins), floored at 0. Excess ≤ 512 → no cap; 513–768 → 9;
+   769–1024 → 6; more → 3. Movement := min(movement, cap).
+   Encumbrance (START 0x17B4–0x1948) = Σ item weight × max(count, 1) + the 7 money words; a carried item of the
+   bag-of-holding kind subtracts 5000 (START 0x1AEC) `[?]` which flag selects it.
+
+The ECL ADD NPC command (OVR 0x38C4) loads the monster record, sets 0x84 and 0x10E, then runs the recalculation
+(OVR 0x3933). **Combat monsters are recalculated too** (DOSBox-X, 2026-11-17, RAM read at the start of the Slums
+goblin fight from save A): the 8 goblin guards (set 2 id 2, readied 200-coin armour) and the goblin leader (id 12,
+150-coin armour with plus 1) hold 0x72 = 6 and 0x11C = 6 on disk but 0x11C = 9 in memory, which is exactly the rule
+above (200 → 9; 150 → 6, plus → +3 = 9). Where in the code that happens is not traced: the monster loader
+(OVR 0x1EEAA, called from 0x7917) does not call it. The routine at OVR 0xD8B2 walks the whole combat list
+(DS:5D96) and recalculates every entry, but its callers (and so the moment it runs) were not traced; the other
+combat-side call sites (e.g. OVR 0xC35D, 0x13D84, 0x14299) were not followed either.
 
 ## MONnCHA.DAX, MONnITM.DAX, MONnSPC.DAX
 
@@ -259,9 +302,17 @@ v1.1 too.
    monster records, name, hit dice (0x73), hit points (0x32), movement (0x72), the six abilities incl. 18/xx,
    all five saving throws (in record order, see above), alignment, Large/not Large, class levels, XP base and XP per
    HP agree (Lee's entry for an id is compared with every set's copy), except:
-   - movement: Lee lists 9 (one record: 6) where the record holds 12 in both 0x72 and 0x11C, for 7 human NPC records
-     (set 1 id 107; set 3 ids 36, 103, 107, 108, 109, 112). Unexplained `[?]` (not a version difference: v1.1 and
-     v1.3 files are identical).
+   - movement: Lee lists 9 (one record: 6) where the record holds 12 in both 0x72 and 0x11C, for 7 NPC records
+     (set 1 id 107; set 3 ids 36, 103, 107, 108, 109, 112). **Explained** (code + data, 2026-11-17): these are
+     NPCs that join the party through ADD NPC (ECL3 block 0 `ADDNPC #107`; ECL3 block 11 picks from the table at
+     $A170 = ids 108, 103, 122, 36, 111, 112, 109, 110), and ADD NPC runs the movement recalculation (above).
+     With their readied armour from `MON3ITM`/`MON1ITM` the rule gives exactly Lee's values: 300-coin armour → 9
+     (ids 36, 103, 107, 108), 450-coin armour with plus 1 → 6 + 3 = 9 (id 109), 450-coin armour with plus 0 → 6
+     (id 112); the encumbrance cap does not lower any of them further. The other ADD NPC ids (24, 25, 27, 88,
+     104, 110, 111, 122) come out unchanged, as Lee lists. The same rule would change 18 other monster ids
+     (32 set copies; e.g. goblin guards 6 → 9, set 6 id 100 12 → 6, hill giants 12 → 3 through the encumbrance
+     cap) where Lee lists the base value; combat monsters do get the recalculation (DOSBox check under
+     "Movement recalculation"), so in play they move as the rule says and Lee's figures are the base values.
    - one record (set 8 id 95) only because the check script read Lee's "18(00)" as 0; the record holds 100. Not a
      data difference.
 3. Base THAC0 (0x2D) and base AC (0xA9) against Lee for the 67 records without items (Lee's figures are
@@ -274,6 +325,8 @@ v1.1 too.
    monster; 0x86/0x87 = 0 everywhere; undead turn index non-zero exactly for type 4; usability mask = class bits
    on 179 of 184; all monster equipment pointers zero.
 
-Not verified (`[?]`): morale formula of 0x84; meaning of 0xAB; icon body range at 0xBE; item usability bits 4-7;
-which bonus 0x101 holds; XP multiplier (0xB1 vs 0x32); creature-type codes beyond the ones the spells test.
+Not verified (`[?]`): how the morale bits of 0x84 are read; meaning of 0xAB; icon body range at 0xBE; item
+usability bits 4-7; creature-type codes beyond the ones
+the spells test. Settled 2026-11-17 by code read: XP multiplier (0xB1), 0x101 (saving-throw bonus), the 7
+movement differences (ADD NPC recalculation); by DOSBox: combat monsters get the movement recalculation.
 None of these needs an emulator to stay parity-safe as long as the importer copies the byte.

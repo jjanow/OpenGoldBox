@@ -58,23 +58,45 @@ Same layout on disk (`.ITM`, `MON?ITM`, `ITEM?`) and in memory (a singly linked 
 | 30 | 1 | `word2` | name word id, slot k=2 | verified |
 | 31 | 1 | `word1` | name word id, slot k=3 (written first) | verified |
 | 32 | 1 | `plus` | signed magic bonus; Lee/DrEvil: weapon to-hit/damage, armour/shield/ring AC | field verified (generator, naming); effect Lee |
-| 33 | 1 | `save_bonus` | signed second bonus; Lee: saving throw bonus (needs an AC-type base item) | `[?]` semantics |
+| 33 | 1 | `save_bonus` | signed saving-throw bonus: when readied, added to creature 0x101 only if the base `ac_code` is exactly 128 (types 76, 92, 93); also makes the item count as magical for the detect marker | verified (START image 0xE22–0xEE5; save roll OVR 0x2BC4D, see creature spec 0x101) |
 | 34 | 1 | `equipped` | 0/1 readied | verified (naming shows it) |
 | 35 | 1 | `hidden` | name-word hide mask: bit (3−k) hides slot k, i.e. bit 0 hides +31, bit 1 hides +30, bit 2 hides +2F. 0 = fully identified. | verified |
 | 36 | 1 | `cursed` | non-zero = cursed (Lee); counts as magical for the detect marker | marker verified; meaning Lee |
 | 37 | 2 | `weight` | weight in coins (Lee); DrEvil: multiplied by `count` for encumbrance | field verified (generator writes it); per-unit DrEvil |
 | 39 | 1 | `count` | stack count; 0 = single non-stacking item | verified |
 | 3A | 2 | `value` | value in gold pieces (Lee) | field verified (generator writes it); unit Lee |
-| 3C | 3 | `props` | type-dependent, see below | partly `[?]` |
+| 3C | 3 | `props` | type-dependent, see below | verified (code read) |
 
-**`props` (3C–3E).** Scrolls (base slot 11 magic-user, 12 cleric): each non-zero byte is a spell id (1..56,
-index into the spell name array DS:2912 + 41·(id−1)); bit 7 = flagged for scribing (Lee). Other items, as read
-from the data and consistent with Lee: if `3C` (charges) > 0, `3D` is the power used per charge: 1..56 = a spell
-id, 80..90 = an item power (spell table entry `3D − 23`, Lee); if `3C` = 0, `3D` is an **effect id** (9-byte
-record space) conferred while worn/wielded and `3E` (≥ 0x80) selects a special handler (Lee lists 129, 131, 132,
-133, 134, 135, 136, 137, 139; 128 = plain "confer `3D`"). Which code path decides consumable vs worn is not
-traced: `[?]`. Example from the random array (below): every charged entry has `3C` > 0; every worn entry has
-`3C` = 0 and `3E` ≥ 128.
+**`props` (3C–3E)** (verified, OVR offsets of v1.3). The program treats an item as a scroll when its base slot is
+11..13 (OVR 0x2A255). Scrolls: each non-zero byte is a spell id (1..56, index into the spell name array DS:2912 +
+41·(id−1)); bit 7 = flagged for scribing (Lee). For every other item **`3E` decides**, not `3C`:
+
+- `3E` < 0x80 and `3D` > 0: a **usable** item. The Use command (OVR 0x222F0, needs the item readied) and the
+  combat AI (OVR 0xB074) accept it; using it (OVR 0x22AC4) casts power `3D`, taken as spell table entry `3D` if
+  ≤ 56, else `3D − 23` (so 80..90 → 57..67, Lee's item powers). Then, only if `3C` > 0: if `count` > 1, `count`
+  is decreased; else `3C` is decreased and at 0 the item is removed from the inventory (START image 0x20A9).
+  So `3C` = 0 means unlimited use, and a stack of k items with c charges gives k − 1 + c uses.
+- `3E` ≥ 0x80: a **worn** item. Readying calls handler `3E` with "apply", unreadying with "remove" (OVR
+  0x2250A; dispatcher OVR 0x2AEEA = far 00B0:0025). The handler table at DS:6828 (4-byte far pointers, built
+  at OVR ≈0x11E00–0x12509) is shared: indices 1..127 are the effect handlers (effect id), 128..139 the item
+  codes. Handlers by code:
+  - 128, 129, 130, 133, 134, 136, 138, 139 (one routine, OVR 0x11B35): apply = add effect `3D` (permanent,
+    `param` 12, no remove handler) and run that effect's handler; remove = delete the first effect `3D`.
+    In the data: 129 ring (effect 61), 133 cloaks (effect 89), 136 two-handed sword (effect 3).
+  - 131 (OVR 0x11BB2): sets Strength to 18/00 through effect 38 (hard-coded; `3D` not used), with a message;
+    remove deletes the matching effect 38. Data: gauntlets.
+  - 132 (OVR 0x11D00): on apply, if the wearer's alignment ≠ `3D` & 0x0F, the item is unreadied and the wearer
+    takes `3D` >> 4 damage as non-weapon damage (OVR 0x2C22E). Data: long swords with `3D` = 0xF0 (lawful good,
+    15) and 0x52 (lawful evil, 5).
+  - 135 (OVR 0x11D8F): on apply, if Strength < 19 the item is unreadied with a message. Data: boulders.
+  - 137 (OVR 0x11DD5): apply does nothing; remove deletes effect 23. Written by the spell code (OVR 0xF515:
+    `3D` = 23, `3E` = 137).
+- `3E` < 0x80 and `3D` = 0: no use, no handler.
+
+Data survey (all 681 records): every charged item has `3E` = 0; every `3E` ≥ 128 record has `3C` = 0. One
+record breaks Lee's grouping: the long sword with props (0, 22, 0) (Lee's Flame Tongue) has `3E` < 0x80 and
+`3D` > 0, so by the code it is a usable item that casts spell 22 with no charge cost, and never confers an
+effect. Whether the Use menu (OVR 0x2D669) offers it is not read `[?]`.
 
 ## Name composition (verified)
 
@@ -120,10 +142,12 @@ item.name := s (max 40)
 if the selected character has ≥ 200 gp, deduct 200 from them, else if the money array at DS:67F4 (Lee: treasure money; here presumably the shop pool `[?]`) has
 ≥ 200, deduct it there, else show a "not enough money" message and stop. Only after paying: if `hidden` = 0,
 show an "already identified" message (the 200 gp are not refunded in this routine; whether the UI ever offers
-this case is `[?]`); else `hidden` := 0 and re-run the naming routine. Reading a scroll (OVR ≈0x27480–0x274C5)
-clears `hidden` if `HasEffect(reader, 0x10)` (any scroll; Lee: 0x10 = Read Magic) **or**
-(`reader+96h > 0` **and** base slot = 12); meaning of creature +96h `[?]`. Detect Magic (effect 5) only adds the
-`*` marker; it never clears `hidden`.
+this case is `[?]`); else `hidden` := 0 and re-run the naming routine. Reading a scroll (OVR 0x27466–0x274AC;
+reader = current character DS:5D92, scroll = DS:6B80) clears `hidden` if `HasEffect(reader, 0x10)` (any scroll;
+Lee: 0x10 = Read Magic) **or** (`reader+96h` > 0 signed **and** base slot = 12). Creature +96h is the cleric
+level (s8, −1/0 = none; creature spec). In plain terms: a scroll identifies itself when read by someone under
+Read Magic, and a cleric scroll also when read by anyone with a cleric level (druid, paladin and ranger levels do
+not count). Detect Magic (effect 5) only adds the `*` marker; it never clears `hidden`.
 
 ## Base item table (`ITEMS`, 16 bytes per type)
 
@@ -140,7 +164,7 @@ are never used. Lookups are `DS:5582 + 16·type + j`.
 | 5 | `rof_x2` | missile rate of fire in half-attacks per round | verified vs Lee 9.2 |
 | 6 | `ac_code` | ≥ 178: body armour/bracers, AC = 10 − (code − 178); 128..177: other AC bonus = code − 128; < 128: none | verified vs Lee 9.2.2 |
 | 7 | `weapon_kind` | 0 slashing, 1 piercing, 128 bashing (Lee notes several types look swapped) | Lee |
-| 8 | `byte8` | 0x80 on most weapons, else 0; no reader found | `[?]` |
+| 8 | `byte8` | 0x80 on most weapons, else 0. No reader found: no `[reg+558Ah]` access in START.EXE or GAME.OVR, and the two code paths that copy a whole 16-byte entry (OVR 0xBE62 AI weapon scoring, 0x13D33 damage vs large) never read its byte 8. The search did not cover computed offsets (e.g. `5582h + j` with j in a register) | `[?]`, probably unused |
 | 9–11 | `dmg_small_medium` | dice count, sides, signed bonus vs. small/medium | verified vs Lee 9.2 |
 | 12 | `range` | missile/throw range, exclusive (Lee's long range + 1) | verified vs Lee 9.2 |
 | 13 | `usable` | class bit mask: 1 magic-user, 2 cleric, 4 thief, 8 fighter, 16 druid, 32 monk, 64 paladin, 128 ranger | bit↔class verified: per-class bit array DS:05D6 (8 bytes) read against the class name array DS:0D38 + 27·k; the test `mask and bit ≠ 0` is DrEvil |
@@ -151,8 +175,16 @@ There is **no weight or price** in this table: weight and value live in each ite
 items, per-type weights and price multipliers are immediates in the generator code (OVR 0x25F0E–0x2620B).
 
 Notes from the check: types 48, 49 and 97–126 are all-zero; type 127 is a test-like entry (2d20, AC code 182,
-range 60) that no data file uses. Holy water (type 85) has 1d1−1 damage in the table while Lee lists 1d6, so its
-damage must come from special code `[?]`.
+range 60) that no data file uses.
+
+**Holy water** (type 85; verified by code read): the table gives 1d1−1. The special damage is the handler of
+effect 117 ("vulnerable to holy water", Lee), OVR 0x1177B (handler table index 117): when it runs for a
+defender that has effect 117 and the attacker (DS:5D92) has a type-85 item in its main-hand slot (creature
++0CCh), the weapon damage (DS:6818) is **replaced by 1d6 + 1** (2..7; Lee says 1d6). Lee puts 117 in trigger
+class 5 (defender took weapon damage); the class lists themselves were not read `[?]`. Against creatures without
+effect 117 the table damage applies; what 1d1−1 = 0 finally does after the other modifiers is not traced `[?]`.
+In the data effect 117 is on 11 monster blocks (MON2SPC/MON4SPC; undead such as set 4 id 105). The combat AI
+scores holy water at 8 against targets with a non-zero turn-undead index (OVR 0xBEC4); that is scoring, not damage.
 
 ## Random treasure (verified in code unless marked)
 
@@ -209,14 +241,14 @@ Same on disk (`.SPC`, `MON?SPC.DAX` blocks) and in memory (linked list hanging o
 
 | Off | Size | Field | Meaning | Status |
 |---|---|---|---|---|
-| 0 | 1 | `id` | effect id 1..127 (Lee 12.2.3 lists them all, with the trigger classes). Verified in code: 5 (party-wide test in the naming routine), 0x10 (scroll identify). | layout verified; meanings Lee |
+| 0 | 1 | `id` | effect id 1..127 (Lee 12.2.3 lists them all, with the trigger classes). Each id indexes the handler table DS:6828 (far pointers; dispatcher OVR 0x2AEEA; ids 5, 13, 19, 24, 27, 60, 63, 92, 127 share an empty handler, OVR 0x11DF6). Verified in code: 5 (party-wide test in the naming routine), 0x10 (scroll identify), 23 (spiritual hammer item), 38 (gauntlets), 117 (holy water). | layout verified; most meanings Lee |
 | 1 | 2 | `minutes` | remaining duration in game minutes, 0 = permanent (Lee; exception for id 75) | data consistent |
 | 3 | 1 | `param` | 255 = nothing special (and immune to dispel); else low nibble usually caster level, high nibble per-effect flags; Strength effects store a Strength code (Lee) | data consistent |
-| 4 | 1 | `remove_calls_handler` | boolean (Lee) | `[?]` (0 in every record on disk) |
+| 4 | 1 | `remove_calls_handler` | boolean: removing the effect first calls its handler with "remove" | verified (remove routine OVR 0x2AF10; add routine OVR 0x2BD3C writes it); 0 in every record on disk |
 | 5 | 4 | `next` | far pointer, stale on disk | verified |
 
-Data check: 79 records; ids 1–127 except one record with id 0 (`MON4SPC.DAX` block 105, sole record; `[?]`
-placeholder). Monster effects are all permanent with `param` 255; the save-slot-J characters carry effect 1 with
+Data check: 79 records; ids 1–127 except one record with id 0 (`MON4SPC.DAX` block 105, the first of its 10
+records; `[?]` placeholder). Monster effects are all permanent with `param` 255; the save-slot-J characters carry effect 1 with
 2 minutes left and `param` 1 (consistent with Lee: a level-1 casting).
 
 ## Where the tables are found (how `gbitem.py` does it)
@@ -235,8 +267,11 @@ All found by code patterns, not fixed addresses (works on v1.1, v1.2 and v1.3):
 - `items`: `{file, program{…locator results…}, blocks:[{block, bytes, trailing_bytes, records:[item]}]}`; `block`
   is the DAX id or `null` for `.ITM`. `item` = `{index, type, words{2f,30,31}, word_text, plus, save_bonus,
   equipped, hidden_mask, cursed, weight, count, value, props[3], stored_name, name, name_raw, name_identified,
-  detect_magic_marker, base{…}, scroll_spells[{spell, scribe_flag, name}] | props_hint{charges, power |
-  effect_id, power_spell_name?, power_spell_id?, special}, byte29, next_ptr}`.
+  detect_magic_marker, base{…}, scroll_spells[{spell, scribe_flag, name}] | props_hint, byte29, next_ptr}`.
+  `props_hint` follows "props" above (`3E` decides): `{kind: "usable", charges, unlimited, power,
+  power_spell_id, power_spell_name?}` (`power_spell_id` = `3D` if ≤ 56, else `3D` − 23), `{kind: "worn", handler,
+  action, effect_id? | alignment?, damage?}` (`action`: `add_effect`, `strength_18_00`, `alignment_check`,
+  `needs_strength_19`, `remove_effect_23`, or `unknown` for codes not in the table) or `{kind: "none"}`.
 - `effects`: same block wrapper, records `{index, id, minutes, param, param_lo, param_hi, remove_calls_handler,
   next_ptr}`.
 - `basetable`: `{program, types:[{type, raw, slot, slot_name, hands, damage_large[n,s,b], rate_of_fire_x2,
@@ -263,8 +298,10 @@ All found by code patterns, not fixed addresses (works on v1.1, v1.2 and v1.3):
 
 ## Open `[?]`
 
-- Consumable-vs-worn decision for `props`, and the meaning of each `3E` handler code (Lee's list only).
-- `save_bonus` (+33) exact use; `byte29`; base `byte8`; `weapon_kind` oddities.
-- Scroll self-identification condition (creature +96h).
-- Holy water damage path.
+- Whether the Use menu offers the Flame Tongue (props 0, 22, 0) as a usable item.
+- Holy water: trigger-class lists not read; final damage of 1d1−1 against ordinary targets.
+- `byte29`; base `byte8` (no reader found); `weapon_kind` oddities.
 - Effect id 0 record in `MON4SPC.DAX` block 105.
+
+Settled 2026-11-17 by code read: consumable vs worn (`3E`) and the handler codes; `save_bonus`; scroll
+self-identification (+96h = cleric level); holy water 1d6 + 1 against effect-117 creatures.

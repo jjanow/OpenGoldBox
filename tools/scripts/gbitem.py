@@ -386,25 +386,48 @@ def decode_item(r, prog=None, index=None):
                 d["scroll_spells"] = [{"spell": p & 0x7F, "scribe_flag": bool(p & 0x80),
                                        "name": prog.spell(p & 0x7F)} for p in props if p]
         if "scroll_spells" not in d:
-            # [?] consumable vs worn: charges > 0 -> byte 3D is a spell/power used per charge;
-            # otherwise byte 3D is an effect id (9-byte record space) conferred while worn/wielded
-            # and byte 3E (>= 128) selects a special handler.  See item-format.md.
-            p = {"charges": props[0]}
-            if props[0]:
-                p["power"] = props[1]
-                if 1 <= props[1] <= prog.spell_count:
-                    p["power_spell_name"] = prog.spell(props[1])
-                elif 80 <= props[1] <= 90:
-                    p["power_spell_id"] = props[1] - 23
-            else:
-                p["effect_id"] = props[1]
-            p["special"] = props[2]
-            d["props_hint"] = p
+            d["props_hint"] = props_hint(props, prog)
     if d.get("name") is not None:
         d["name_raw"] = d["name"]                  # exactly as the game stores it (trailing space)
         d["name"] = d["name"].rstrip()
         d["name_identified"] = d["name_identified"].rstrip()
     return d
+
+
+# Handlers of worn items (props 3E >= 0x80), item-format.md "props".
+WORN_ADD_EFFECT = {128, 129, 130, 133, 134, 136, 138, 139}
+WORN_HANDLERS = {131: "strength_18_00", 132: "alignment_check", 135: "needs_strength_19", 137: "remove_effect_23"}
+
+
+def props_hint(props, prog=None):
+    """What the program does with props 3C-3E of a non-scroll item (item-format.md "props"): byte 3E decides.
+
+    - 3E < 0x80 and 3D > 0: usable; Use casts power 3D (spell table entry 3D if <= 56, else 3D - 23);
+      3C = charges (0 = unlimited; with count > 1 the stack is used up first).
+    - 3E >= 0x80: worn; readying runs handler 3E (apply), unreadying runs it with remove.
+    - otherwise: no use, no handler.
+    """
+    c, power, h = props
+    if h >= 0x80:
+        p = {"kind": "worn", "handler": h}
+        if h in WORN_ADD_EFFECT:
+            p["action"] = "add_effect"
+            p["effect_id"] = power
+        elif h in WORN_HANDLERS:
+            p["action"] = WORN_HANDLERS[h]
+            if h == 132:
+                p["alignment"] = power & 0x0F
+                p["damage"] = power >> 4
+        else:
+            p["action"] = "unknown"          # handler codes above 139 are not in the table
+        return p
+    if power > 0:
+        spell_id = power if power <= 56 else power - 23
+        p = {"kind": "usable", "charges": c, "unlimited": c == 0, "power": power, "power_spell_id": spell_id}
+        if prog is not None and 1 <= spell_id <= prog.spell_count:
+            p["power_spell_name"] = prog.spell(spell_id)
+        return p
+    return {"kind": "none"}
 
 
 def decode_effect(r, index=None):
