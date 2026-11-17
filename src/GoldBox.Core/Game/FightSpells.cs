@@ -60,7 +60,7 @@ public interface IFightTargetList
 /// Casting in a fight (<see cref="IFightSpells"/>), reading the spell table from the player's program. Shares the
 /// effect engine <see cref="EffectHandlers"/> (saves, damage, effects) and its RNG.
 /// </summary>
-public sealed class FightSpells : IFightSpells
+public sealed partial class FightSpells : IFightSpells
 {
     /// <summary>Creature record offsets: memorised spells 0x17..0x2B (bit 7 = not yet memorised), cleric level 0x96,
     /// magic-user level 0x9B, hit-dice byte 0x73 (Sleep).</summary>
@@ -86,6 +86,10 @@ public sealed class FightSpells : IFightSpells
 
     /// <summary>The spell target list DS:6C94 (count) / DS:6C95 + 4·(i−1); null entries are dropped targets.</summary>
     public List<EclCharacter?> Targets { get; } = [];
+
+    /// <summary>DS:6DB9 / DS:6DBA: the aimed square (the caster's square until an aim moves it; Lightning Bolt's
+    /// rebound moves it too).</summary>
+    public (int X, int Y) Aim { get; set; }
 
     public event Action<EclCharacter, int, EffectEvent>? Event;
     public List<string> Diagnostics { get; } = [];
@@ -223,9 +227,8 @@ public sealed class FightSpells : IFightSpells
         }
     }
 
-    // CastAuto (0x14C0F with ai = 1) keeps the seam's default: Cast with no aim. The AI's aim (0x14611 for the AI) is
-    // not read [?], so only spells with area mode 0 (the caster) find a target; others are lost as an unpicked cast.
-    // FindCureTarget (0x143F3) and UseItem (0x22AC4) are not read [?] and keep the seam's defaults (none; nothing).
+    // CastAuto (0x14C0F with ai = 1), the AI's aim 0x14611, the cure test 0x143F3 and the item use 0x22AC4 are in
+    // FightSpells.Ai.cs.
 
     // ---- Casting in a fight -------------------------------------------------------------------------------------
 
@@ -303,6 +306,14 @@ public sealed class FightSpells : IFightSpells
                     RemoveSpell(caster, spell);
                 return false;
             }
+            // 0x27D9C–0x27E00 (in a fight): the caster faces the aimed square DS:6DB9/6DBA, the first direction whose
+            // cone holds it (0x300CD), set through 0x31232 (+9 = d); its own square gives 0.
+            if (InCombat && fight.Map is { } map && map.OnMap(caster))
+            {
+                var (cx, cy) = map.Position(caster);
+                var (ax, ay) = Aim;
+                fight.Record(caster)[CombatRecord.Facing] = (byte)map.DirectionToward(cx, cy, ax, ay);
+            }
             Effects.RemoveInvisibility(caster);
             if (!UsingItem)
                 RemoveSpell(caster, spell);
@@ -330,8 +341,15 @@ public sealed class FightSpells : IFightSpells
     /// </summary>
     public bool Pick(Fight fight, EclCharacter caster, int spell, IReadOnlyList<EclCharacter> aimed, (int X, int Y)? square)
     {
+        // DS:6DB9/6DBA: the caster's square (0x148E2), then the square of the last aim made (0x14874).
         Targets.Clear();
         Effects.Cells.MultiTarget = 0;
+        if (fight.Map is { } fm && fm.OnMap(caster))
+            Aim = fm.Position(caster);
+        if (square is { } aimSq)
+            Aim = aimSq;
+        else if (aimed.Count > 0 && fight.Map is { } am && am.OnMap(aimed[^1]))
+            Aim = am.Position(aimed[^1]);
         int mode = Table[spell].Area & 0x0F;
         if (mode == 0)
         {
@@ -467,7 +485,8 @@ public sealed class FightSpells : IFightSpells
     public static readonly int[] Modelled =
     [
         1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31,
-        32, 33, 49, 50, 52, 53, 54,
+        32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60,
+        61, 62, 63, 64, 65, 66, 67,
     ];
 
     /// <summary>The routine of a spell; the targets are in <see cref="Targets"/>, DS:681B = spell.</summary>
@@ -560,6 +579,8 @@ public sealed class FightSpells : IFightSpells
                 Resolve(spell, Dice(1, 4), false, 0, 0, caster);
                 return;
         }
+        if (MoreRoutine(spell, caster))
+            return;
         Diag($"[?] spell routine {spell} not modelled");
     }
 
@@ -594,18 +615,18 @@ public sealed class FightSpells : IFightSpells
     }
 
     /// <summary>
-    /// 0x282BD: Strength 18 with the exceptional part by casting level (1 → 0, 2 → 1, 3 → 51, 4 → 76, 5 → 91, 6 → 100;
-    /// [?] other levels keep the last value of DS:4845); 0x2C046 raises the first target (message when it rose); effect
-    /// 0x0C is added for the duration with the code 0x2C046 returned, removal on.
+    /// 0x282BD: Strength 18 with the exceptional part (DS:4845) by casting level (1 → 0, 2 → 1, 3 → 51, 4 → 76, 5 → 91,
+    /// 6 → 100; other levels keep what DS:4845 holds: the last Enlarge's value, or the last effect level Dispel Magic
+    /// looked at); 0x2C046 raises the first target (message when it rose); effect 0x0C is added for the duration with
+    /// the code 0x2C046 returned, removal on.
     /// </summary>
-    private byte _enlargeExc;
     private void Enlarge(int spell)
     {
         byte lvl = CasterLevel(spell);
-        _enlargeExc = lvl switch { 1 => 0, 2 => 1, 3 => 0x33, 4 => 0x4C, 5 => 0x5B, 6 => 0x64, _ => _enlargeExc };
+        Ds4845 = lvl switch { 1 => 0, 2 => 1, 3 => 0x33, 4 => 0x4C, 5 => 0x5B, 6 => 0x64, _ => Ds4845 };
         if (First is not { } t)
             return;
-        if (Effects.RaiseStrength(t, 0x12, _enlargeExc, out byte code))
+        if (Effects.RaiseStrength(t, 0x12, Ds4845, out byte code))
             Event?.Invoke(t, spell, EffectEvent.Other);
         EffectHandlers.AddEffect(t, 0x0C, Duration(spell), code, true);
     }

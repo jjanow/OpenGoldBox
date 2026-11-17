@@ -1,0 +1,245 @@
+using GoldBox.Client.Play;
+using GoldBox.Core.Ecl;
+using GoldBox.Core.Explore;
+using GoldBox.Core.Game;
+
+namespace GoldBox.Client.Tests;
+
+/// <summary>The camp screens (CampScreens, docs/re/camp.md) driven with scripted answers (no window, no game files).</summary>
+public class CampScreenTests
+{
+    private sealed class Script(params object?[] answers)
+    {
+        private readonly Queue<object?> _answers = new(answers);
+        public List<PlayerRequest> Asked { get; } = [];
+
+        public object? Ask(PlayerRequest r)
+        {
+            Asked.Add(r);
+            if (_answers.Count == 0)
+                throw new InvalidOperationException($"no answer left for {r}");
+            return _answers.Dequeue();
+        }
+
+        public int Left => _answers.Count;
+    }
+
+    private static EclCharacter Member(string name)
+    {
+        var c = new EclCharacter { Name = name };
+        c[0x10C] = 0;
+        c[0x10D] = 1;
+        return c;
+    }
+
+    private static (TradeContext T, Script S) Context(Script s, params EclCharacter[] members)
+    {
+        var p = new EclParty();
+        p.Members.AddRange(members);
+        p.CurrentIndex = 0;
+        return (new TradeContext
+        {
+            Dialog = new Dialog(s.Ask, new TextWindow()),
+            Text = new GameText(),
+            Party = p,
+            Pool = new uint[7],
+            Treasure = [],
+            Random = n => 0,
+        }, s);
+    }
+
+    /// <summary>A camp on a hand-made party: spells 3 (cleric 1, one member), 5 (cleric 1, caster), 15 (magic-user 1,
+    /// combat only); every generator draw 0.</summary>
+    internal static CampContext Camp(TradeContext t, EclMemory? memory = null, List<char>? saved = null)
+    {
+        var m = memory ?? new EclMemory();
+        m.Party = t.Party;
+        m.Write(EclPartyRules.PartySizeCell, (ushort)t.Party.Members.Count);
+        var d = new Dictionary<int, SpellInfo>
+        {
+            [3] = new(0, 1, 0, 0, 0, 0, 0, 2, 0, 0, 0, 1, 0, 0, 0, 0),
+            [5] = new(0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0),
+            [15] = new(1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0),
+        };
+        var table = new SpellTable(d);
+        var spells = new CampSpells(table, it => it[0x2E] == 99);
+        var state = new CampState();
+        var fx = new EffectHandlers(_ => 0) { List = () => t.Party.Members, CurrentCharacter = () => t.Party.Current };
+        return new CampContext
+        {
+            Trade = t,
+            State = state,
+            Spells = spells,
+            Rest = new CampRest(m, state, spells, _ => 0, (c, e) => c.Effects.Remove(e), c => fx.RestoreHitPoints(c, 1, false)),
+            Memory = m,
+            Cast = new CampCast(new FightSpells(table, fx, _ => 0), t.Party),
+            Save = k =>
+            {
+                saved?.Add(k);
+                return null;
+            },
+        };
+    }
+
+    [Fact]
+    public void Menu_lines_take_every_capital_as_a_hotkey()
+    {
+        var (items, keys) = CampScreens.ParseMenu("Go   fiNd Here Mark   Exit");
+        Assert.Equal(["GO", "FIND", "HERE", "MARK", "EXIT"], items);
+        Assert.Equal("GNHME", keys);
+        (items, keys) = CampScreens.ParseMenu("Lamps on  Bells off  Exit");
+        Assert.Equal(["LAMPS ON", "BELLS OFF", "EXIT"], items);
+        Assert.Equal("LBE", keys);
+    }
+
+    [Fact]
+    public void Rest_eight_hours_by_the_rest_menu()
+    {
+        var answers = new List<object?> { 3, 2 };            // REST, then HOURS
+        answers.AddRange(Enumerable.Repeat<object?>(4, 8));  // INC ×8 (Up answers INC as well)
+        answers.Add(0);                                       // REST
+        answers.AddRange(Enumerable.Repeat<object?>(false, 96 / 5)); // the key polls: nothing pressed
+        answers.Add(5);                                       // EXIT the camp
+        var (t, s) = Context(new Script([.. answers]), Member("ANNA"));
+        var camp = Camp(t);
+        Assert.False(VenueScreens.Camp(camp, null));
+        Assert.Equal("08:00", GameClock.Format(camp.Memory));
+        var restMenu = s.Asked.OfType<ChoiceRequest>().ElementAt(1);
+        Assert.Equal("RYHMIDE", restMenu.Hotkeys);
+        Assert.Equal(4, restMenu.UpAnswer);
+        Assert.Equal(5, restMenu.DownAnswer);
+        Assert.All(s.Asked.OfType<DelayRequest>(), d => Assert.True(d.ReportInput));
+        Assert.Equal(0, s.Left);
+    }
+
+    [Fact]
+    public void A_key_during_the_rest_asks_to_stop()
+    {
+        var (t, s) = Context(new Script(
+            3, 2, 4, 0,                 // REST, HOURS, INC, REST
+            true, 0,                    // input at the first poll; Stop resting? YES
+            5), Member("ANNA"));
+        var camp = Camp(t);
+        VenueScreens.Camp(camp, null);
+        Assert.Equal("00:20", GameClock.Format(camp.Memory));   // 4 ticks before the poll
+        Assert.Equal(0, s.Left);
+    }
+
+    [Fact]
+    public void Memorise_from_the_book_then_rest_learns_it()
+    {
+        var c = Member("ANNA");
+        c[0xB2] = 1;                    // one cleric level-1 slot
+        c[0x32 + 3] = 1;                // knows spell 3
+        var answers = new List<object?>
+        {
+            2, 1,                       // MAGIC, MEMORIZE (nothing pending: no first list)
+            new ListAnswer(0, 1),       // the book: row 0 is the level heading, row 1 spell 3
+            new ListAnswer(1, 0),       // EXIT the book
+            new ListAnswer(0, 0),       // the pending list (display only: EXIT)
+            0,                          // Memorize these spells? YES
+            4, 0,                       // REST (4 h 15 min = 51 ticks), REST in the rest menu
+        };
+        answers.AddRange(Enumerable.Repeat<object?>(false, 10));      // polls at ticks 5 … 50
+        answers.Add(null);              // "has memorized" at tick 51
+        answers.Add(5);                 // EXIT magic
+        answers.Add(5);                 // EXIT camp
+        var (t, s) = Context(new Script([.. answers]), c);
+        var camp = Camp(t);
+        VenueScreens.Camp(camp, null);
+        Assert.Equal(3, c[0x2B]);
+        Assert.Equal("04:15", GameClock.Format(camp.Memory));
+        Assert.Equal(0, s.Left);
+        var book = s.Asked.OfType<ListRequest>().First();
+        Assert.Contains(0, book.Labels);
+    }
+
+    [Fact]
+    public void Alter_order_place_moves_the_current_member_and_drop_removes_it()
+    {
+        var a = Member("ANNA");
+        var b = Member("BORN");
+        var (t, s) = Context(new Script(
+            4, 0,                       // ALTER, ORDER
+            0,                          // SELECT → place mode ("has been selected")
+            ChoiceRequest.NextMember,   // End: ANNA one place down
+            1,                          // EXIT order
+            1, 0,                       // DROP, Drop from party? YES
+            null,                       // "bids you farewell" key
+            5, 5), a, b);               // EXIT alter, EXIT camp
+        var camp = Camp(t);
+        VenueScreens.Camp(camp, null);
+        Assert.Same(b, Assert.Single(t.Party.Members));
+        Assert.Equal(1, camp.Memory.Read(EclPartyRules.PartySizeCell));
+        Assert.Equal(0, s.Left);
+    }
+
+    [Fact]
+    public void Speed_and_pictures_change_the_option_cells()
+    {
+        var m = new EclMemory();
+        var (t, s) = Context(new Script(
+            4, 2,                       // ALTER, SPEED (at 0: SLOWER EXIT)
+            -10,                        // Up: slower
+            0,                          // FASTER (FASTER SLOWER EXIT at 1)
+            1,                          // EXIT (SLOWER EXIT at 0)
+            4,                          // PICS
+            0, 1, 2,                    // MONSTERS, PORTRAITS, EXIT
+            5, 5), Member("ANNA"));
+        VenueScreens.Camp(Camp(t, m), null);
+        Assert.Equal(0, CampSettings.Speed(m));
+        Assert.True(CampSettings.MonsterPictures(m));
+        Assert.True(CampSettings.Portraits(m));
+        Assert.Equal(0, s.Left);
+    }
+
+    [Fact]
+    public void Save_picks_a_slot_then_asks_to_quit()
+    {
+        var saved = new List<char>();
+        var (t, s) = Context(new Script(
+            0, 1,                       // SAVE, slot B
+            1,                          // Quit to DOS? NO
+            5), Member("ANNA"));
+        VenueScreens.Camp(Camp(t, saved: saved), null);
+        Assert.Equal(['B'], saved);
+        Assert.Equal(0, s.Left);
+    }
+
+    [Fact]
+    public void Cast_cure_light_wounds_on_a_picked_member_uses_the_spell()
+    {
+        var a = Member("ANNA");
+        var b = Member("BORN");
+        a[0x17] = 3;                    // CLW memorised
+        b[0x32] = 10;                   // HP max 10
+        b[0x11B] = 2;                   // HP 2
+        var (t, s) = Context(new Script(
+            2, 0,                       // MAGIC, CAST
+            new ListAnswer(0, 1),       // spell 3 (row 0 is the heading)
+            null,                       // "casts" key
+            1,                          // Cast spell on whom: BORN
+            null,                       // the healed event's key
+            null,                       // nothing memorised now: "has no spells memorized" key
+            5, 5), a, b);
+        VenueScreens.Camp(Camp(t), null);
+        Assert.Equal(0, a[0x17]);
+        Assert.Equal(3, b[0x11B]);      // 1d8 with every draw 0 → 1
+        Assert.Equal(0, s.Left);
+    }
+
+    [Fact]
+    public void A_combat_only_spell_offers_to_lose_it()
+    {
+        var a = Member("ANNA");
+        a[0x17] = 15;
+        var (t, s) = Context(new Script(
+            2, 0, new ListAnswer(0, 1), // MAGIC, CAST, spell 15
+            0,                          // Lose it? YES
+            null,                       // nothing memorised now: message key
+            5, 5), a);
+        VenueScreens.Camp(Camp(t), null);
+        Assert.Equal(0, a[0x17]);
+        Assert.Equal(0, s.Left);
+    }
+}

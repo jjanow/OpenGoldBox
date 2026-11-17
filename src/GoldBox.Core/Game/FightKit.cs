@@ -21,6 +21,8 @@ public sealed class FightKit
     public required IReadOnlyList<byte> AiSteps { get; init; }
     /// <summary>The effect handlers' race-name tables; null = empty.</summary>
     public EffectNameTables? Names { get; init; }
+    /// <summary>The experience table (DS:409B, <see cref="EffectHandlers.ExperienceTable"/>); null = not loaded.</summary>
+    public int[]? Experience { get; init; }
     /// <summary>The turn-undead table (START.EXE); null = clerics can't turn.</summary>
     public TurnUndeadTable? TurnUndead { get; init; }
 
@@ -36,7 +38,10 @@ public sealed class FightKit
     {
         var map = new CombatMap(Tables);
         var effects = new EffectHandlers(random, Names);
+        effects.ExperienceTable = Experience;
         var ai = new MonsterAi(AiSteps, null, TurnUndead);
+        // The View / Use screens (0x21AED / 0x21F32) when the chooser also answers them.
+        screens ??= chooser is IItemScreenChooser itemChooser ? new FightItemScreens(itemChooser) : null;
         IFightController controller = chooser is null
             ? new AllQuickController(ai)
             : new MenuController(chooser, ai, screens, TurnUndead);

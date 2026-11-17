@@ -43,6 +43,14 @@ public enum GameAction
     PreviousMember,
     /// <summary>Shop, temple, loot, camp and view: the next party member (the original's End key).</summary>
     NextMember,
+    /// <summary>Combat: step or move the cursor up-left (the original's keypad Home / 7).</summary>
+    StepUpLeft,
+    /// <summary>Combat: up-right (keypad PgUp / 9).</summary>
+    StepUpRight,
+    /// <summary>Combat: down-left (keypad End / 1).</summary>
+    StepDownLeft,
+    /// <summary>Combat: down-right (keypad PgDn / 3).</summary>
+    StepDownRight,
 }
 
 /// <summary>The input device a binding or an input event belongs to.</summary>
@@ -91,6 +99,14 @@ public sealed class InputBindings
         // The shoulders are Look / Encamp while exploring; those screens never ask for both at once.
         b.Set(GameAction.PreviousMember, ["Home"], ["LeftShoulder"]);
         b.Set(GameAction.NextMember, ["End"], ["RightShoulder"]);
+        // Combat diagonals: the original's keypad (Home, PgUp, End, PgDn; the digits 7, 9, 1, 3). The pad steps
+        // diagonally with the left stick or D-pad held between two directions, or with the right stick turned 45°
+        // (up = up-right, right = down-right, down = down-left, left = up-left). Home / End double as the member keys,
+        // which combat does not read.
+        b.Set(GameAction.StepUpLeft, ["Home", "NumPad7"], ["RightThumbstickLeft"]);
+        b.Set(GameAction.StepUpRight, ["PageUp", "NumPad9"], ["RightThumbstickUp"]);
+        b.Set(GameAction.StepDownLeft, ["End", "NumPad1"], ["RightThumbstickDown"]);
+        b.Set(GameAction.StepDownRight, ["PageDown", "NumPad3"], ["RightThumbstickRight"]);
         return b;
     }
 

@@ -17,7 +17,8 @@ public sealed class ActionInput(InputBindings bindings)
     public static readonly TimeSpan RepeatDelay = TimeSpan.FromMilliseconds(400), RepeatInterval = TimeSpan.FromMilliseconds(180);
 
     private static readonly GameAction[] Repeating =
-        [GameAction.Forward, GameAction.TurnLeft, GameAction.TurnRight, GameAction.TurnAround, GameAction.MenuUp, GameAction.MenuDown, GameAction.MenuLeft, GameAction.MenuRight];
+        [GameAction.Forward, GameAction.TurnLeft, GameAction.TurnRight, GameAction.TurnAround, GameAction.MenuUp, GameAction.MenuDown, GameAction.MenuLeft, GameAction.MenuRight,
+         GameAction.StepUpLeft, GameAction.StepUpRight, GameAction.StepDownLeft, GameAction.StepDownRight];
 
     private static readonly Buttons[] AllButtons = Enum.GetValues<Buttons>();
 
@@ -45,6 +46,9 @@ public sealed class ActionInput(InputBindings bindings)
     public (InputDevice Device, string Name)? NewInput => _newInput;
 
     public bool Pressed(GameAction a) => _pressed.Contains(a);
+
+    /// <summary>The action's key or button is down this frame (pressed now or earlier and still held).</summary>
+    public bool Held(GameAction a) => _heldSince.ContainsKey(a);
 
     /// <summary>An action caused by the mouse (a click a screen turned into an action).</summary>
     public void Inject(GameAction a)

@@ -93,6 +93,12 @@ public class FightMenuTests
             Casts.Add((spell, target));
             return true;
         }
+        public bool ContinueCasting(Fight fight, EclCharacter caster, IReadOnlyList<EclCharacter> targets, (int X, int Y)? square)
+        {
+            Casts.Add((fight.Record(caster)[CombatRecord.SpellCast], targets.Count > 0 ? targets[0] : null));
+            FightRules.EndActions(fight.Record(caster));
+            return true;
+        }
         public bool UsableInCombat(int spell) => spell != 99;
         public int CastingTime(int spell) => castingTime;
     }

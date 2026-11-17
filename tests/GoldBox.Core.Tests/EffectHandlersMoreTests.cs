@@ -188,12 +188,12 @@ public class EffectHandlersMoreTests
     }
 
     [Fact]
-    public void Unmodelled_handlers_report_a_diagnostic()
+    public void Handler_88_has_no_table_entry_and_reports_a_diagnostic()
     {
         var (h, f) = Make(new Script());
         var c = new EclCharacter();
-        EffectHandlers.AddEffect(c, 83, 0, 0xFF, false);
+        EffectHandlers.AddEffect(c, 88, 0, 0xFF, false);
         h.Trigger(14, c, f);
-        Assert.Contains(h.Diagnostics, d => d.Contains("83"));
+        Assert.Contains(h.Diagnostics, d => d.Contains("88"));
     }
 }

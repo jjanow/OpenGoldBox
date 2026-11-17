@@ -66,9 +66,9 @@ Alt-M (0x32); other extended keys become 0 and are ignored (0x9FF3–0xA057, Pas
 | Key | Routine | Effect |
 |---|---|---|
 | M | 0xA1E6 | Move (below) |
-| V | 0x21AED, then 0x1351E | the character view screen (items, ready, trade …; not read `[?]`); then attacks left are recomputed (`combat-format.md` "Attacks left"); "done" is what the screen reports |
+| V | 0x21AED, then 0x1351E | the character view screen ("View / Use" below); then attacks left are recomputed (`combat-format.md` "Attacks left"); "done" is what the screen reports |
 | A | 0x15D53 | Aim (below) with range 0xFF ("from the weapon"), attack mode |
-| U | 0x21F32, then 0x1351E | use an item (not read `[?]`), then attacks left recomputed |
+| U | 0x21F32, then 0x1351E | the Items screen ("View / Use" below), then attacks left recomputed |
 | C | 0x14C0F | Cast (below) |
 | T | 0x13965, then START 0x31D7 | turn undead (below); actions end |
 | Q | 0xAA32, then the AI 0xABCF | the creature becomes computer-controlled (0x10F = 1; a remembered target +0x0A on its own side is forgotten), short pause, done, and the AI acts for it at once |
@@ -164,9 +164,28 @@ trigger 0 on the attacker and restored; yes when DS:681E is still 0.
 The spell list (0x239D6) picks a spell. A spell whose table entry (16 bytes at DS:3200 + 16 × spell) has byte 5 = 0
 can't be cast in a fight (a message that the spell is for camping only, nothing else). Casting time = byte 6 div 3:
 
-- 0: the spell is cast now (0x27C38; it picks its own targets) and the actions end (START 0x31D7).
+- 0: the spell is cast now (0x27C38, below) and the actions end (START 0x31D7).
 - Else: done, a message that casting has started, +0 = the spell, initiative − casting time when the initiative is larger,
-  else 1. The creature is picked again later in the round and step 2 of the menu casts the spell.
+  else 1. The creature is picked again later in the round and step 2 of the menu casts the spell (0x27C38 again, aimed
+  then, not when it was begun).
+
+**The player's aim for a spell** (0x27C38 → target pick 0x148BE with ai = 0 → 0x14611) — P, D (Sleep):
+
+- 0x27C38 in a fight loops on the pick: picked → the cast; not picked → for the player a yes/no question whether to
+  abort (0x27EF2): yes → message, the memorised copy is removed (START 0x202B), no cast; no → the pick (and the aim) runs
+  again. The AI (ai ≠ 0) loses the spell at once.
+- Pick mode = spell table byte 6 AND 0x0F: 0 → the caster, no aim; 0x0F → one aim with square mode 0; 8–0x0E → one aim
+  with square mode 1, the target list around DS:6DB9/6DBA; 1–7 → (byte 6 AND 3) + 1 aims (0x14AD1): an aim left without
+  a target uses up a pick, a creature already taken gives a message and is aimed again (no pick used).
+- 0x14611 for the player: Aim (0x15D53) with the creature, range = 0x27741 (the spell's range for the caster; 0 or 0xFF
+  becomes 1 in Aim), **attack mode 0**, the square mode; afterwards the caster's +0x0A = the aim's result creature (the
+  result is cleared at the start of Aim, so none after Exit). Done → DS:6DB9/6DBA = the result's square.
+- Aim in attack mode 0: Target is offered when the distance ≤ range (the creature itself included); Target (0x15438)
+  only stores the candidate and its square as the result and reports done — no attack-ally question, no attack.
+- After a pick, in a fight (0x27D9C–0x27E00): the caster **faces the aimed square** (the first direction whose cone,
+  0x300CD, holds DS:6DB9/6DBA; its own square gives 0) through 0x31232, so combat record +9 changes. **D**: Rhiannon's
+  +9 6 → 0 casting Sleep at the goblin north of her, DS:6DB9/6DBA = 26,12 afterwards (`fight_moves` s03, r01).
+- Manual squares (a bare square in square mode) are not modelled; the Core aims at candidates only `[?]`.
 
 ## Sweep attacks (0x1367D, attacker, defender) — P
 
@@ -214,6 +233,75 @@ after-combat step treats it as "not okay" `[?]` (not checked in a capture).
 the pick that followed (a sleeping goblin guard before another guard of the same initiative) matches two draws for
 the turn and not none. A capture with undead is still missing.
 
+## Replay of `fight_moves` — D
+
+`FightMovesReplayTests` replays the whole player-driven capture through the wired fight (`FightKit.Create`,
+`MenuController`, `FightMenu`) from `fight_quick/r0_start` (the arena seed found as `FightQuickReplayTests` does), with a
+chooser that presses the recorded keys: Darkstar M S S N Escape, M S S Return, D Delay; Thrender A Next Target;
+Bakshi D Quit; Phineas D Quit; Rhiannon C Sleep, aim Next Target; Sean T; Darkstar (delayed) A Next. Each key is asked
+for by the creature it was pressed for, in order; the 20 states taken at a prompt are compared with the replay at that
+prompt, `s03` and `t01` (taken in a message delay) with the snapshots between their draw and the next. All 22 states
+match (RandSeed, round, current creature, squares, HP, status, in play, Quick, memorised spells, effects, every
+combat record byte and remembered target), 240 draws.
+
+What the replay needed: the player's spell aim above (the menu passed no target, so the Sleep was lost) and the
+caster's facing after the pick; a spell begun earlier is now cast with `IFightSpells.ContinueCasting` (the menu used
+`Cast`, which with a casting time would only begin it again). Which candidate Darkstar's aim showed after Next is not
+dumped; a stack word at DS:C4FE that holds the aimed square in m09 (27,13, Thrender) and m10 (27,12, the goblin) holds
+28,13 in r01, Bakshi's square, as the replay shows (a stack slot, so only a hint `[?]`).
+
+## View / Use (0x21AED, 0x21F32) — P; checked under emulation in part
+
+Read in session 13 (2026-11-17). Code: `src/GoldBox.Core/Game/FightItemScreens.cs` (`FightItemScreens :
+IFightItemScreens`, asking an `IItemScreenChooser`; `FightKit` uses it when the menu's chooser also implements that
+interface). Both screens work on the current creature (DS:5D92; View copies it to DS:471A and its redraw 0x21084 to
+DS:4716). DS:49F3 tells where the screen is open: 1 shop, 5 fight (2, 3, 4, 6 other places `[?]`). "NPC in play"
+below means 0x84 ≥ 0x80, in play (0x10D ≠ 0) and status ≠ 1.
+
+**View** (0x21AED, var done): done = 0; loop until the key is Exit (or 0) or done: the menu (0x2CC8C) with
+
+| Entry | Shown when | Does |
+|---|---|---|
+| Items | the item list (0xC8) is not empty | the Items screen 0x21F32 (it may set done) |
+| Spells | a byte of 0x17–0x2B is non-zero | the memorised list (0x239D6 in show mode); nothing changes |
+| Trade | not an NPC in play, the character has money (a word of 0x88–0x94 ≠ 0), not in a fight | money trade 0x23190 `[?]` |
+| Drop | it has money | drop money 0x234E1 (below) |
+| Exit | always | |
+
+**Items** (0x21F32, var done; also the combat menu's U): loop until Exit, done, or the item count 0xC7 is 0: the
+entries, then the item list (0x2D669: an entry key and the item under the cursor):
+
+| Entry | Shown when | Does |
+|---|---|---|
+| Ready | always | ready / unready 0x2250A (`combat-ai.md` "Ready / unready") |
+| Use | in play, VM $49E5 = 0, and DS:49F3 is 2–4, or a fight with combat record +2 (item use allowed) ≠ 0 | not readied → "must be readied"; a scroll (0x2A255) or power 0x3D > 0 with kind 0x3E < 0x80 → item use 0x22AC4 (`combat-ai.md` "Item use"), done as it reports (outside a fight done is reset to 0); else nothing |
+| Trade | not an NPC in play, not in a fight | 0x21DAA, then 0x2276E `[?]` |
+| Drop | always | 0x21DAA, then "drop it?" → the item leaves the list (START 0x20A9) |
+| Halve | 0xC7 < 16 | 0x22827 |
+| Join | always | 0x228D7 |
+| Sell | not an NPC in play, in a shop | 0x21DAA, then 0x22D28 (`shop-format.md`) |
+| Id | in a shop | 0x22F8C `[?]` |
+
+After every choice START 0x1758 recalculates the creature. So in a fight the Items screen offers Ready, Use (when
+allowed), Drop, Halve, Join; only Use can end the turn.
+
+- **Let go** (0x21DAA): a readied item → "must be unreadied", no. A scroll with a spell byte 0x3C–0x3E above 0x7F
+  (flagged for scribing) → a yes/no question. Else yes.
+- **Halve** (0x22827): half = count 0x39 shr 1; 0 → a message. Else a new copy (GetMem 0x3F, Move) with count =
+  half and readied 0 is linked right after the item, which keeps count − half.
+- **Join** (0x228D7): total = the item's count; walking the current creature's list, every other item with count >
+  0 and the same 0x2F, 0x30, 0x31, 0x2E, 0x32, 0x33, 0x36 and word 0x37 and charges 0x3C < 2 is merged: total + its
+  count ≤ 255 → added, the item leaves (START 0x20A9); else the item being filled gets 255, the other keeps the rest
+  and becomes the one being filled. At the end that one gets the total. The program compares 0x3C, 0x3D and 0x3E of
+  the other item **with itself**, so only "0x3C < 2" filters; readied, hidden and value are not compared.
+- **Drop money** (0x234E1): until no money is left or the player stops: a coin kind among those held (list 0x2D669,
+  names DS:0FFA + 11·kind) and an amount (input 0x24F1D, bounded by what is held); 0x2568A: coins − amount, weight
+  0x102 − amount (0x24CA9); in a shop or with DS:49F3 = 6 the pool (DS:67F4 + 4·kind) gains them, in a fight they
+  are lost.
+
+**Checked under emulation** (`tools/scripts/por_ai_oracle.py`, `AiCastProgramTests`): Halve and Join on 160
+generated item lists match the program item for item; the item use 0x22AC4 on 120 cases (`combat-ai.md`).
+
 ## Random draws, in order
 
 - Menu, Done menu, Aim, Move, View: none of their own. The step, flee (0x13465: 1d2 on a speed tie), attacks,
@@ -222,11 +310,56 @@ the turn and not none. A capture with undead is still missing.
 - Turn undead: 1d12, 1d20, nothing else.
 - Quick / Alt-Q: the AI's draws.
 
+## The combat screen (Client) — D measured, drawing routines not read
+
+Measured on DOSBox-X screenshots (s13: save A, a random orc fight at 10,2 and its menus, Move, Aim, Manual, the Done
+and Speed menus, an AI attack at game speed 9). Code: `src/GoldBox.Client/Screens/CombatScreen.cs`,
+`Play/CombatPlayer.cs` (`CombatChooser`, an `IFightMenuChooser`), `Play/CombatArt.cs`, `Play/CombatText.cs`.
+
+- **Layout** (8 × 8 text cells): braid frame on rows 0 and 22 and columns 0, 22, 39, yellow corners where they meet;
+  the map window of 7 × 7 squares of 24 px at pixel (8, 8); the status panel in columns 23–38: the creature's name on
+  row 1 (party cyan, hostile yellow), hit points row 3, AC row 5, the readied weapon's name row 7 (none for a creature
+  with no weapon); attack messages from row 10. Row 23: Aim's range line; row 24: the menu, or Move's prompt in
+  green. A screen square (c, r) shows arena cell (view x + c, view y + r): no skew in the drawing.
+- **Palette**: EGA colours 0 and 8 are swapped for the whole screen (ground, panel and menu background dark grey,
+  the art's colour 8 black). Every DUNGCOM tile of a start screen matched pixel for pixel only with the swap
+  (25 367 against 11 158 matching pixels over the 49 squares). The palette write is not located `[?]`.
+- **Ground**: the terrain table's tile byte (DS:2744 + 4t + 3) indexes DUNGCOM block 1 (25 tiles of 24 × 24) in a
+  3D area; tile 22 is all colour 0. WILDCOM outdoors and the RANDCOM tiles for the rare terrains are not checked `[?]`.
+- **Icons**: player characters (record 0x84 < 0x80) get the party icon, other creatures the CPIC block = their icon slot's picture (LoadCombatIcon; a joined NPC not checked `[?]`), attack pose + 128 (seen in the AI
+  burst); party members are CBODY + CHEAD (head on the top rows) recoloured by 0xC1–0xC6, + 64 for icon size 2: all six
+  members of save A matched pixel for pixel (`CombatArt.Party`). Colour 0 is see-through. Facing 5–7 mirrors the
+  icon (party at 7 mirrored, orcs at 3 not, both pixel-exact); facing 0 and 4 `[?]`. The party's attack pose (+ 128)
+  is from the art only `[?]`.
+- **Cursor box**: under the icon of the creature whose menu is up (and of the aim candidate, the manual cursor): fill
+  colour 7, top row and left two columns white, right two columns and bottom row black (colour 8 before the swap).
+  None while moving or during the AI's turns.
+- **Menus**: the menu routine draws the prompt (colour 13) and the entries right after it with no space (Aim's prompt 0x15296 then
+  the first entry); the highlighted entry all white, the others with a white hotkey. Aim adds the range line on row 23;
+  Manual shows its own prompt (GAME.OVR 0x155E2) with Target (when the square's creature can be taken), Center, Exit,
+  and the panel shows the creature under the cursor (blank on an empty square). The speed menu's prompt is
+  0xA8D6 + the speed + ") : ".
+- **Attack messages** (strings 0x12A2D–0x12AEA): attacker name, the attacks word, defender name, then on a hit the
+  damage on two lines (the hitting word + the number; the points word + the damage word) or the misses word; a creature
+  that drops: a blank line, its name in light red, the down word (0x12AB3). A skull on red (COMSPR 11) covers the hit
+  defender's square while the message is up. When the program shows the dying or killed words (0x12ABD, 0x12AEA) instead is
+  not read `[?]`; the Client always shows the down word.
+- **Not read `[?]`**: the view's scrolling (0x310D0; the Client keeps the creature in the inner 3 × 3 squares and the
+  view inside the arena), the delays (the Client: speed × 225 ms per message, at least 600; steps 60 + 30 × speed ms),
+  the spell list 0x239D6 (the Client: a full-screen list; spell names from START.EXE's string array of the widest
+  entries, taken to start at spell 1), the Guard message, monster icon recolouring (orc icons matched unchanged).
+- **Manual in the Client**: the cursor picks a creature; the chooser then answers Next until the aim reaches it and
+  Target (Core aims only over its candidate list). Side effect `[?]`: every candidate stepped over runs the target
+  check (triggers 1 and 0), which the program's Manual runs only on the chosen square. A square with no creature
+  (square mode) is not offered.
+
 ## Open `[?]`
 
-- View (0x21AED) and Use (0x21F32) screens; the area search's order (0x3045B) and the path distance; the step
+- Trade (0x2276E, 0x23190), Sell (0x22D28) and Id (0x22F8C) on the item screens (not shown in a fight); the money
+  input 0x24F1D in detail; the area search's order (0x3045B) and the path distance; the step
   routines (0x130AD, 0x12F0D) and flee (0x13465) in detail (combat-map work).
-- Manual aim in the Core model.
+- Manual aim in the Core model (also a spell aimed at a bare square).
+- The abort question's wording and what it shows (0x27EF2); the 1–7 mode's repeat message (0x14B7F).
 - Sweep with a defender missing from the adjacent-enemy list.
 - Turn undead against real undead (no capture yet).
 - Status 8 after turn undead in the after-combat step.

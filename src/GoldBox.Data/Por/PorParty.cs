@@ -41,6 +41,40 @@ public static class PorParty
         return party;
     }
 
+    /// <summary>
+    /// Writes the party as save slot <paramref name="letter"/> (GAME.OVR 0x1FD3E's per-member save): member n's
+    /// 285-byte record to <c>CHRDAT&lt;letter&gt;n.SAV</c>; the old <c>.ITM</c> and <c>.SPC</c> are deleted and written
+    /// again only when the member has items or effects (records as they are, 63 / 9 bytes each, list order). Files of
+    /// members beyond the party stay (the program leaves them too). [?] The program also deletes the roster files
+    /// (<c>&lt;name&gt;.CHA/.ITM/.SPC</c>) of every member; its name-to-file rule is not read, so they are left.
+    /// </summary>
+    public static void Save(EclParty party, string folder, char letter)
+    {
+        Directory.CreateDirectory(folder);
+        for (int i = 0; i < party.Members.Count && i < 8; i++)
+        {
+            var c = party.Members[i];
+            var stem = Path.Combine(folder, PorSaveGame.Stem(letter, i + 1));
+            File.WriteAllBytes(stem + ".SAV", c.Record);
+            Replace(stem + ".ITM", c.Items);
+            Replace(stem + ".SPC", c.Effects);
+        }
+    }
+
+    private static void Replace(string path, List<byte[]> records)
+    {
+        // An absent file means "none" on load, so a stale one must go (any case of the name).
+        var dir = Path.GetDirectoryName(path)!;
+        var name = Path.GetFileName(path);
+        foreach (var f in Directory.EnumerateFiles(dir).Where(f => Path.GetFileName(f).Equals(name, StringComparison.OrdinalIgnoreCase)).ToList())
+            File.Delete(f);
+        if (records.Count == 0)
+            return;
+        using var s = File.Create(path);
+        foreach (var r in records)
+            s.Write(r);
+    }
+
     /// <summary>Loads the party a save names from the files in <paramref name="folders"/> (first match wins, any case).</summary>
     public static EclParty Load(PorSaveGame save, params string[] folders)
     {

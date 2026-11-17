@@ -122,3 +122,45 @@ save's script area this way (save offset 5121 + A − $9900; vector 4 runs on lo
 instruction in the real game. Session 10 used the same trick to put the party on another map (vector 4 =
 LOADFILES + LOADPIECES of a map of the same disk, party position at save offset 12801) with vectors that only count
 their runs, for the one-way wall steps, and added a real round trip out of the Slums and back (`door_relock`).
+
+## Fight captures for chosen encounters (s13)
+
+To test a rule in a fight the game does not offer where you need it, build the fight into a test save:
+
+- **Encounter.** Replace the save's script area (offset 5121) with vectors 1–4 → EXIT and vector 0 → `CLRMON;
+  LOADMON m, n, icon; …; COMBAT; EXIT` (`0B 00 m 00 n 00 icon` per LOADMON, `1C`, `24`, `00`). One step forward
+  runs vector 0 and the fight starts. `m` is a block of `MON<disk>CHA.DAX` (list them with `gbchar.py monsters`),
+  `icon` a block of `CPIC<disk>.DAX` (`dax.py list`; the area scripts use the monster id when it exists).
+- **Another disk.** Set save byte 0 and $6E12 to the disk, $49C5 to a map of that disk, the party position (offset
+  12801: x, y, facing, wall ahead, event byte from `geo.py dump`), and wall sets $4AFA–$4AFF to blocks that exist in
+  that disk's `WALLDEF`/`8X8D` files. The graveyard's own LOADPIECES 21/22/20 failed both from the saved cells and
+  from vector 4 (the game reports it cannot load the wall set); 1/3/20 loads (the 3D view looks wrong, the fight does not care: the
+  combat arena comes from the GEO map).
+- **Spells.** Edit the copied `CHRDAT*.SAV` records: memorised spell ids at 0x17–0x2B (`character-format.md`). The
+  cast list shows them in slot order, the highlight starts on the last; in DOSBox-X the arrow keys did not move it,
+  **Home** (keypad 7) moves it up one.
+- **Taking states.** With `savefile`, `compresssaveparts=false`, `forceloadstate=true` in `CONF_EXTRA`, a helper
+  sends F12+S, waits for the file, copies it and runs `dosbox_state.py fight`. F12+L on a copied state replays from
+  it: the game is deterministic from a state (a second run from the same state ended on the same RandSeed), so a
+  wrong key is undone by reloading, and a run can be repeated with denser states. A state taken while the game waits
+  at a party member's menu is exact; one taken during messages lies somewhere between two draws.
+- **All-Quick runs.** Take a state every ~2 s; when two in a row have the same RandSeed and the current creature is
+  a party member (list index from the DS:5D92 pointer), the game waits at a menu: press Q.
+- **VM cells.** `fight.json` holds DS only; the cells a fight reads from the VM ($49E5, $6DC1, $6DC6, $6DCB, $6E33,
+  $6E70–$6E72) go in `vm.json` from `dosbox_state.py dump --areas`.
+- **Tests.** `tests/GoldBox.Core.Tests/Support/FightCapture.cs` loads a state into a fight wired as `FightKit.Create`
+  on the captured arena and squares (no placement), with the remembered target +0x0A resolved from its far pointer;
+  `RunMenu` plays the captured keys through `MenuController` (a `ScriptedChooser`), `ContinueToNextMenu` goes on as
+  `Fight.Round` does until the next party menu, and `Fields`/`Diff` compare RandSeed, round, current creature,
+  squares, HP, status, Quick, memorised spells, effects and combat records. `GOLDBOX_FIGHT_TRACE` logs every draw.
+
+The s13 captures (fixtures README: `fight_casts`, `fight_mirror`, `fight_undead`) and what they settled:
+
+| Check | Capture | Original | Core |
+|---|---|---|---|
+| Level-1 Magic Missile | `fight_casts` b02 → b04 (Darkstar at a 5th-level MU) | 0 damage, **no draw**, copy removed; the caster faces the target (+9) and +0x0A points at it | same damage and draws (`FightCastCaptureTests`); facing / +0x0A not set (skipped test) |
+| Mirror Image cast | b05 → b07 | 1d4 = 4 images (1C 02 00 04), then the elf's handler 107 rolls 1d100 | matches (31 draws to the next menu); facing on a self cast 0 in DOSBox, unchanged in Core |
+| Effect minutes | b08 → q01 | the image's minutes 2 → 1 at the end of round 0 | not counted down (skipped test; clock 0x241A1 `[?]`) |
+| Melee hit on a Mirror Image caster | `fight_mirror` c03 → c04, c02 → c05 | 1d20, damage, then the image handler's 1d(param + 1); never absorbed by a weapon hit | matches, including the whole c02 → c05 stretch with both Charm Person casts (`FightMirrorImageCaptureTests`) |
+| Turn undead | `fight_undead` d04 → d06 | 1d12 = 11, 1d20 = 15: 4 skeletons and 3 zombies turned | matches (`TurnUndeadCaptureTests`) |
+| Monsters casting | `fight_casts` q01 → q34 | Charm Person on Sean, Magic Missile (level 5) on Phineas, Charm Person on Darkstar | round 1 matches to q12 (76 draws); then the MU casts nothing in Core (skipped test, `FightMonsterCastReplayTests`) |

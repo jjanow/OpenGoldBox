@@ -84,6 +84,36 @@ public sealed class TextWindow
         Row = Top;
     }
 
+    /// <summary>
+    /// Text at a fixed cell (the program's DisplayString at column, row, colour, as the camp's rest time and messages
+    /// use it); cut at the box edge. The cursor does not move.
+    /// </summary>
+    public void Put(int row, int col, string text, byte colour = ScriptColour)
+    {
+        if (row < Top || row > Bottom)
+            return;
+        for (int i = 0; i < text.Length; i++)
+        {
+            int c = col + i;
+            if (c < Left || c > Right)
+                continue;
+            _chars[row - Top, c - Left] = text[i];
+            _colours[row - Top, c - Left] = colour;
+        }
+    }
+
+    /// <summary>Blanks one row of the box.</summary>
+    public void ClearRow(int row)
+    {
+        if (row < Top || row > Bottom)
+            return;
+        for (int c = 0; c <= Right - Left; c++)
+        {
+            _chars[row - Top, c] = '\0';
+            _colours[row - Top, c] = 0;
+        }
+    }
+
     /// <summary>PRINTRET (GAME.OVR 0x3831): column 1 of the next row (the next print starts at the top if that is below the box).</summary>
     public void NewLine()
     {

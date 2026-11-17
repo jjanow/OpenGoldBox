@@ -61,6 +61,57 @@ public sealed class PorSaveGame
 
     public static PorSaveGame Open(string path) => new(File.ReadAllBytes(path));
 
+    /// <summary>
+    /// The save as the program writes it (GAME.OVR 0x1FD3E, docs/re/camp.md "Save"): the disk byte (also stored in
+    /// $6E12 first), the three word areas, the script area, the party position, the location type, the interface
+    /// state, the party size and the stems <c>CHRDAT&lt;letter&gt;&lt;n&gt;</c> (string[40] each; the bytes after a
+    /// stem and the unused slots are written as zero here, leftover memory in the program). The caller puts the game
+    /// speed, the picture flags and the wall sets into $49FC, $49FF and $4AFA–$4AFF before (the program copies them
+    /// from its variables).
+    /// </summary>
+    public static byte[] Build(EclMemory memory, int partySize, char letter, byte locationType, byte interfaceState)
+    {
+        letter = char.ToUpperInvariant(letter);
+        if (letter is < 'A' or > 'J')
+            throw new ArgumentOutOfRangeException(nameof(letter), "save slots are A..J");
+        memory.Write(0x6E12, memory.Disk);
+        var d = new byte[Size];
+        d[OffDisk] = memory.Disk;
+        WriteWords(d, Off4900, memory.Cells4900);
+        WriteWords(d, Off6B00, memory.Cells6B00);
+        WriteWords(d, Off9700, memory.Cells9700);
+        memory.ScriptArea.CopyTo(d.AsSpan(OffScript, EclLayout.AreaSize));
+        var p = memory.Position;
+        d[OffPosition] = p.X;
+        d[OffPosition + 1] = p.Y;
+        d[OffPosition + 2] = p.Facing;
+        d[OffPosition + 3] = p.WallAhead;
+        d[OffPosition + 4] = p.EventByte;
+        d[OffLocationType] = locationType;
+        d[OffInterface] = interfaceState;
+        int n = Math.Clamp(partySize, 0, 8);
+        d[OffPartySize] = (byte)n;
+        for (int i = 0; i < n; i++)
+        {
+            var stem = Stem(letter, i + 1);
+            d[OffNames + 41 * i] = (byte)stem.Length;
+            System.Text.Encoding.ASCII.GetBytes(stem).CopyTo(d, OffNames + 41 * i + 1);
+        }
+        return d;
+    }
+
+    /// <summary>The file stem of party member <paramref name="n"/> (1-based) in save slot <paramref name="letter"/>.</summary>
+    public static string Stem(char letter, int n) => $"CHRDAT{char.ToUpperInvariant(letter)}{n}";
+
+    /// <summary>The save file name of a slot (the program writes it lower case, <c>savgam&lt;letter&gt;.dat</c>).</summary>
+    public static string FileName(char letter) => $"SAVGAM{char.ToUpperInvariant(letter)}.DAT";
+
+    private static void WriteWords(byte[] data, int off, ReadOnlySpan<ushort> src)
+    {
+        for (int i = 0; i < src.Length; i++)
+            BinaryPrimitives.WriteUInt16LittleEndian(data.AsSpan(off + 2 * i), src[i]);
+    }
+
     private static void ReadWords(byte[] data, int off, ushort[] dst)
     {
         for (int i = 0; i < dst.Length; i++)

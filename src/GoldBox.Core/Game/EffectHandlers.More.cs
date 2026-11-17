@@ -4,11 +4,12 @@ namespace GoldBox.Core.Game;
 
 // Effect handlers 4, 7, 12/38, 73..126 and the item codes 128..139 (table DS:6828; file offsets in the overlay unit
 // that starts at GAME.OVR 0xEC5B). For the item codes the record passed is the 63-byte item (readied: apply, unreadied:
-// removed). Ids whose rules need the combat slots or long routines not read here are reported [?] and do nothing.
+// removed). Handlers 40, 73–77, 81–86 and 121 are in EffectHandlers.Holds.cs.
 public sealed partial class EffectHandlers
 {
-    /// <summary>Ids routed here that are not modelled [?] (combat-slot holds, level drain, gazes, fear, breath, acid, arena).</summary>
-    public static readonly byte[] UnmodelledHandlers = [40, 73, 74, 75, 76, 77, 81, 82, 83, 84, 85, 86, 88, 121];
+    /// <summary>Ids with no handler: 88 has no entry in DS:6828 (0x11DFD never writes it; [?] a creature carrying it
+    /// would far-call whatever the slot holds).</summary>
+    public static readonly byte[] UnmodelledHandlers = [88];
 
     /// <summary>DS:6821: set by the item handlers 131 and 132 (read elsewhere [?]).</summary>
     public byte ItemFlag { get; set; }
@@ -278,13 +279,13 @@ public sealed partial class EffectHandlers
                     return;
                 foreach (var it in o.Items)
                 {
-                    if (Cells.NoTarget != 0)
+                    if (F.TargetBlocked != 0)
                         break;
                     if (it[0x34] == 0)
                         continue;
                     for (int k = 1; k <= 3; k++)
                         if ((it[0x2E + k] == 0x98 && it[0x31] == 0xFC) || it[0x2E + k] == 0x76)
-                            Cells.NoTarget = 1;
+                            F.TargetBlocked = 1;
                 }
                 return;
             }
@@ -323,7 +324,11 @@ public sealed partial class EffectHandlers
                 return;
         }
         handled = false;
+        CallHoldHandlers(id, c, node, removed, ref handled);
     }
+
+    /// <summary>Handlers 40, 73–77, 81–86, 121 (EffectHandlers.Holds.cs).</summary>
+    partial void CallHoldHandlers(byte id, EclCharacter c, byte[]? node, bool removed, ref bool handled);
 
     /// <summary>0x2BD18: dice with the count stored in DS:681C first.</summary>
     private byte DamageDiceRoll(int count, int sides)

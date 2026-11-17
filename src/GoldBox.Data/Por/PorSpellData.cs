@@ -35,6 +35,31 @@ public static class PorSpellData
     }
 
     /// <summary>
+    /// The experience table DS:409B (8 classes × 14 levels of signed dwords at + 0x38·class + 4·level, plus one more
+    /// dword, as the program can read level 14), flat. Its DS offset is the immediate − 2 of GAME.OVR's
+    /// <c>mov dx,0x38 / mul dx / mov di,ax / add di,cx / cmp word [di+imm],0</c> (Restoration and level drain). Entries
+    /// for levels 0 and 1 are other data; the program reads them only for levels above 1. Null when not found.
+    /// </summary>
+    public static int[]? ExperienceTable(PorProgram p)
+    {
+        if (p.Overlay is not { } o)
+            return null;
+        ReadOnlySpan<byte> pat = [0xBA, 0x38, 0x00, 0xF7, 0xE2, 0x8B, 0xF8, 0x03, 0xF9, 0x83, 0xBD];
+        int i = o.AsSpan().IndexOf(pat);
+        if (i < 0 || i + pat.Length + 3 > o.Length || o[i + pat.Length + 2] != 0)
+            return null;
+        int ds = BinaryPrimitives.ReadUInt16LittleEndian(o.AsSpan(i + pat.Length)) - 2;
+        const int n = 8 * 14 + 1;
+        int start = p.DataSegment + ds;
+        if (start < 0 || start + n * 4 > p.Image.Length)
+            return null;
+        var t = new int[n];
+        for (int k = 0; k < n; k++)
+            t[k] = BinaryPrimitives.ReadInt32LittleEndian(p.Image.AsSpan(start + 4 * k));
+        return t;
+    }
+
+    /// <summary>
     /// The name lists of handlers 18, 26, 47 (DS tables found through their <c>mov cl,4 / shl di,cl / add di,imm /
     /// push ds / push di / lcall</c> (the name compare) in GAME.OVR, in handler order) and 48 (two strings in the code segment right before the handler).
     /// Each slot is read as the program compares it: 16 bytes, the first the length.

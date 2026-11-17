@@ -45,7 +45,12 @@ public static class GameClock
             memory.Write((ushort)(FirstCell + i), t[i]);
     }
 
-    private static void Normalise(ushort[] t, EclParty? party)
+    /// <summary>
+    /// 0x240BE: one carry pass over the seven cells of a clock-shaped array (the game clock, or the camp's rest time
+    /// DS:6DC2): a cell at or over its limit loses the limit and the next cell gains 1; the year cell does not wrap, it
+    /// ages every member of <paramref name="party"/> by one (record word 0x30).
+    /// </summary>
+    public static void Normalise(ushort[] t, EclParty? party)
     {
         for (int i = 0; i < Cells; i++)
         {

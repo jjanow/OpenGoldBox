@@ -47,8 +47,6 @@ public sealed class EffectCells
     public byte Spell { get; set; }
     /// <summary>DS:6820: the spell has several targets.</summary>
     public byte MultiTarget { get; set; }
-    /// <summary>DS:681E: the defender may not be targeted (invisibility, blinking).</summary>
-    public byte NoTarget { get; set; }
     /// <summary>DS:681F: the effect lock (handlers do not re-add effects while set).</summary>
     public byte Lock { get; set; }
     /// <summary>DS:682A: the saving-throw type being rolled.</summary>
@@ -158,6 +156,7 @@ public sealed partial class EffectHandlers : IFightEffects
     public void Attach(Fight fight)
     {
         _fight = fight.State;
+        _attached = fight;
         InCombat = true;
         List = () => fight.List;
         CurrentCharacter = () => fight.State.Current;

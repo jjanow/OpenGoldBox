@@ -340,35 +340,8 @@ public static class VenueScreens
     // ---- Camp (0x196A0) --------------------------------------------------------------------------------------------
 
     /// <summary>
-    /// The camp menu (DS:49F3 = 2): "The party makes camp..." in the text window, then the menu line from the program
-    /// (Save, View, Magic, Rest, Alter, Exit) with the "Camp:" prompt until E. Home / End select a member (only the
-    /// extended keys here: the letters are menu items). View works; Save, Magic, Rest and Alter are not built (TODO:
-    /// save 0x1FD3E, magic 0x18C22, rest 0x17FAB / 0x24A66, alter 0x1948A — not read). Returns whether a rest was
-    /// interrupted (never, until Rest exists).
+    /// The camp menu (DS:49F3 = 2): Save, View, Magic, Rest, Alter, Exit from the program's line (<see cref="CampScreens"/>).
+    /// Returns whether a rest was interrupted (the area loop then runs vector 3).
     /// </summary>
-    public static bool Camp(TradeContext t, string? menuLine)
-    {
-        // Our words when the program's line is not found.
-        var words = (menuLine ?? "SAVE VIEW MAGIC REST ALTER EXIT").Split(' ', StringSplitOptions.RemoveEmptyEntries)
-            .Select(w => w.ToUpperInvariant()).ToList();
-        t.Dialog.Show(t.Text[Msg.MakesCamp]);
-        while (true)
-        {
-            int i = t.Dialog.Menu(words, t.Text[Msg.CampPrompt], cancel: words.Count - 1, partySelect: true);
-            if (t.SelectMember(i))
-                continue;
-            char key = words[Math.Clamp(i, 0, words.Count - 1)][0];
-            switch (key)
-            {
-                case 'V':
-                    CharacterView.Run(t, Venue.Camp);
-                    break;
-                case 'E':
-                    return false;
-                default:
-                    t.Dialog.Say(words[i] + ": NOT IN THIS BUILD YET.", colour: 14);
-                    break;
-            }
-        }
-    }
+    public static bool Camp(CampContext c, string? menuLine) => CampScreens.Camp(c, menuLine);
 }

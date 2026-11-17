@@ -121,7 +121,7 @@ public sealed partial class EffectHandlers
                 return;
             case 25: // 0xF573 Invisibility: no target unless the current character sees invisible (0x18); attack − 4
                 if (Current is null || FindEffect(Current, 0x18) is null)
-                    Cells.NoTarget = 1;
+                    F.TargetBlocked = 1;
                 F.AttackRoll -= 4;
                 return;
             case 26: // 0xF5A2: like 18 with the dwarf list (8 slots)
@@ -193,7 +193,7 @@ public sealed partial class EffectHandlers
             case 37: // 0xF881 Blink: while the carrier's initiative is above 0, no target and attack roll −1
                 if (rec.InitiativeValue > 0)
                 {
-                    Cells.NoTarget = 1;
+                    F.TargetBlocked = 1;
                     F.AttackRoll = -1;
                 }
                 return;
@@ -326,7 +326,7 @@ public sealed partial class EffectHandlers
                 ParalysingHit(c, (ushort)(Dice(1, 9) + 10));
                 return;
             case 71: // 0x1037A: no target, attack − 4
-                Cells.NoTarget = 1;
+                F.TargetBlocked = 1;
                 F.AttackRoll -= 4;
                 return;
             case 72: // 0x1038B: 1d100 ≤ 95 → invisibility (0x19) for 1 minute, param 12

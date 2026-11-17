@@ -260,17 +260,16 @@ public class VenueTests
     }
 
     [Fact]
-    public void Camp_view_has_no_sell_and_other_commands_are_not_built()
+    public void Camp_view_has_no_sell()
     {
         var c = Member("ANNA");
         var (t, s) = Context(new Script(
-            3, null,                    // REST: not built, key
             1,                          // VIEW
             new ListAnswer(0, 0),       // ITEMS
             new ListAnswer(6, 0),       // EXIT (no SELL / ID in camp)
             new ListAnswer(4, 0),       // EXIT the view
             5), Party(c));              // EXIT
-        Assert.False(VenueScreens.Camp(t, null));
+        Assert.False(VenueScreens.Camp(CampScreenTests.Camp(t), null));
         Assert.Equal(0, s.Left);
         var items = s.Asked.OfType<ListRequest>().ElementAt(1);
         Assert.DoesNotContain("SELL", items.Actions);
@@ -294,6 +293,15 @@ public class ClientResourcesTests
         Assert.NotNull(r.CampMenu);
         Assert.Equal(6, r.CampMenu!.Split(' ').Length);
         Assert.NotNull(r.PagePrompt);
+        // The camp's DS strings (v1.3 offsets, trusted because DS:0508 holds the camp line).
+        Assert.Equal(6, r.MagicMenu?.Split(' ').Length);
+        Assert.Equal(6, r.AlterMenu?.Split(' ').Length);
+        Assert.Equal(2, r.OrderMenus?.Count);
+        Assert.All(Enumerable.Range(1, 56), id => Assert.NotNull(r.SpellName(id)));
+        Assert.NotNull(r.LevelName(1));
+        Assert.NotNull(r.Spells);
+        Assert.All(CampSpells.LabelledEffects, id => Assert.NotNull(r.Texts.EffectLabel(id)));
+        Assert.Equal(7, CampScreens.ParseMenu(r.Texts.Original(Msg.RestMenu)).Items.Count);
         Assert.NotNull(r.ItemWord(1));
     }
 }

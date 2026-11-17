@@ -26,6 +26,23 @@ public sealed class ClientSettings
         }
     }
 
+    /// <summary>
+    /// Where the camp's Save writes and <c>--save X</c> looks first: <c>$XDG_DATA_HOME/goldbox/por-saves/</c> (default
+    /// <c>~/.local/share/goldbox/por-saves/</c>). The files are the original's (<c>SAVGAMx.DAT</c>, <c>CHRDATxn.*</c>),
+    /// so they can be copied into the DOS game's folder; the game folder itself is never written.
+    /// </summary>
+    public static string SavesFolder
+    {
+        get
+        {
+            var xdg = Environment.GetEnvironmentVariable("XDG_DATA_HOME");
+            var root = string.IsNullOrWhiteSpace(xdg)
+                ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".local", "share")
+                : xdg;
+            return Path.Combine(root, "goldbox", "por-saves");
+        }
+    }
+
     private static string SettingsPath => Path.Combine(Folder, "client.json");
     private static string BindingsPath => Path.Combine(Folder, "bindings.json");
 

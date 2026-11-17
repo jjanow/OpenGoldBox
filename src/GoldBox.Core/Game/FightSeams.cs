@@ -131,8 +131,8 @@ public interface IFightSpells
     bool ContinueCasting(Fight fight, EclCharacter caster, IReadOnlyList<EclCharacter> targets, (int X, int Y)? square) => false;
 
     // Added for the menu's Cast (0x14C0F, s12, docs/re/combat-menu.md "Cast"); default bodies so implementations
-    // compile unchanged. The menu calls Cast(fight, caster, spell, null, null) both for a spell cast at once and for
-    // one begun earlier: 0x27C38 gets no target from the menu and picks its own.
+    // compile unchanged. The menu aims for the player first (0x14611 with ai = 0, FightMenu.CastNow) and then calls
+    // Cast / CastOn with what was aimed at, or ContinueCasting for a spell begun earlier.
 
     /// <summary>Spell table byte 5 (DS:3200 + 16 × spell + 5) ≠ 0: the spell can be cast in a fight (else the menu
     /// shows a "camp only" message). [?] Default: true.</summary>
@@ -155,6 +155,9 @@ public interface IFightSpells
     bool CastAuto(Fight fight, EclCharacter caster, int spell) => Cast(fight, caster, spell, null, null);
     /// <summary>0x22AC4: use a magic item (the AI's item pick 0xAFA4).</summary>
     void UseItem(Fight fight, EclCharacter user, byte[] item) { }
+    /// <summary>0xACEE: the AI's turn of a creature that began casting: 0x27C38(spell, ai = 1, 1), the program's own
+    /// target pick, then the actions end. Default: <see cref="ContinueCasting"/> with no targets.</summary>
+    bool ContinueCastingAuto(Fight fight, EclCharacter caster) => ContinueCasting(fight, caster, [], null);
 }
 
 /// <summary>No moves: every step is blocked (a fight with no combat map).</summary>

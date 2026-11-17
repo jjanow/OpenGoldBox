@@ -25,6 +25,8 @@ public enum FightNotice
 {
     MagicOn, MagicOff, DoesNotWork, Blocked, NotWithThatWeapon, Bandaged, Guarding, Sweeps, TurnsUndead, Turned,
     Destroyed, NothingHappens, CampOnlySpell, BeginsCasting, GodsIntervene,
+    /// <summary>A several-target spell aimed at a creature already taken (0x14B79).</summary>
+    AlreadyTargeted,
 }
 
 /// <summary>What the move mode (0xA1E6) reads: a direction 0–7 (0 N, clockwise), Return (keep the move) or Escape
@@ -36,7 +38,11 @@ public readonly record struct MoveInput(int Direction)
 }
 
 /// <summary>One aim candidate as the aim menu shows it (0x1529B).</summary>
-public sealed record AimView(EclCharacter Candidate, int Distance, int Range, bool TargetOffered);
+public sealed record AimView(EclCharacter Candidate, int Distance, int Range, bool TargetOffered)
+{
+    /// <summary>Attack mode (the menu's Aim); false for a spell's aim (0x14611), where Target only picks the creature.</summary>
+    public bool Attack { get; init; } = true;
+}
 
 /// <summary>
 /// The player's side of the menu: the Client's UI (or a test script) answers each question the program asks. Every
@@ -60,6 +66,8 @@ public interface IFightMenuChooser
     bool ConfirmAttackAlly(FightMenu menu, EclCharacter ally);
     /// <summary>The spell list (0x239D6): a spell id from <paramref name="castable"/>, or null to go back.</summary>
     int? ChooseSpell(FightMenu menu, IReadOnlyList<int> castable);
+    /// <summary>The spell's aim picked nothing: abort the spell (yes: it is lost; no: aim again; 0x27EF2).</summary>
+    bool ConfirmAbortSpell(FightMenu menu) => true;
     /// <summary>A message (<paramref name="who"/> is the creature it names, if any).</summary>
     void Notice(FightNotice notice, EclCharacter? who) { }
     /// <summary>The end-of-round "continue battle" question (0xA087).</summary>
@@ -67,7 +75,8 @@ public interface IFightMenuChooser
 }
 
 /// <summary>
-/// The character screens the menu opens: View (0x21AED) and Use (0x21F32), not read [?]. Each returns the "done"
+/// The character screens the menu opens: View (0x21AED) and Use (0x21F32), read in combat-menu.md "View / Use"
+/// (<see cref="FightItemScreens"/>). Each returns the "done"
 /// flag the screen reports (an action that used the turn).
 /// </summary>
 public interface IFightItemScreens
@@ -135,7 +144,8 @@ public sealed class FightMenu
     // ---- 0x9B21 -----------------------------------------------------------------------------------------------------
 
     /// <summary>
-    /// 0x9B21: out of play → actions end. A spell begun earlier (+0 &gt; 0): +0 = 0, cast now (0x27C38), actions end.
+    /// 0x9B21: out of play → actions end. A spell begun earlier (+0 &gt; 0): +0 = 0, cast now (0x27C38: aimed
+    /// now, <see cref="IFightSpells.ContinueCasting"/>), actions end.
     /// Else menu loop until an action reports done; each display runs trigger 0x0F first (0x9E7D).
     /// </summary>
     public void Run()
@@ -149,9 +159,9 @@ public sealed class FightMenu
         var rec = Record;
         if (rec[CombatRecord.SpellCast] > 0)
         {
-            int spell = rec[CombatRecord.SpellCast];
+            // 0x9B21 clears +0 before 0x27C38; ContinueCasting reads the spell from +0, so it is cleared after.
+            CastNow(rec[CombatRecord.SpellCast], true);
             rec[CombatRecord.SpellCast] = 0;
-            Fight.Spells.Cast(Fight, c, spell, null, null);
             Fight.EndActions(c);
             return;
         }
@@ -584,10 +594,23 @@ public sealed class FightMenu
     /// target check in the direction of travel. Target (when offered) attacks (<see cref="TargetAttack"/>) and rebuilds
     /// the list; Aim goes on while not done, until Exit. Returns "done". Manual aim (a cursor on squares) is not modelled.
     /// </summary>
-    public bool Aim()
+    public bool Aim() => AimAt(RangeFromWeapon, true, out _);
+
+    /// <summary>
+    /// 0x15D53 (creature, range, attack mode, square mode, done, result) on the candidate list; manual squares are not
+    /// modelled, so square mode changes nothing here. <paramref name="range"/> 0xFF = from the weapon
+    /// (<see cref="AimRange"/>); a range of 0 or 0xFF becomes 1 (0x15DC6). The result is cleared first (0x15D77). In
+    /// attack mode Target attacks (<see cref="TargetAttack"/>); otherwise (0x15438 with attack mode 0) it only takes
+    /// the candidate as the result and reports done. Aim goes on while not done, until Exit. Returns "done";
+    /// <paramref name="result"/> is the creature taken (null when none).
+    /// </summary>
+    private bool AimAt(int range, bool attack, out EclCharacter? result)
     {
         var c = Creature;
-        int range = AimRange(c, Fight.Items);
+        result = null;
+        range = range == RangeFromWeapon ? AimRange(c, Fight.Items) : (byte)range;
+        if (range is 0 or 0xFF)
+            range = 1;
         var list = FightSearch.Nearby(Fight, c, AimSearchRange);
         if (list.Count == 0)
             return false;
@@ -604,7 +627,8 @@ public sealed class FightMenu
                 continue;
             }
             skipped = 0;
-            var view = new AimView(cand, Fight.Geometry.Distance(c, cand), range, TargetOffered(cand, range));
+            bool offered = attack ? TargetOffered(cand, range) : Fight.Geometry.Distance(c, cand) <= range;
+            var view = new AimView(cand, Fight.Geometry.Distance(c, cand), range, offered) { Attack = attack };
             var key = Chooser.ChooseAim(this, view);
             switch (key)
             {
@@ -622,6 +646,11 @@ public sealed class FightMenu
                         if (Reject())
                             return true;
                         break;
+                    }
+                    if (!attack)
+                    {
+                        result = cand; // 0x15438 with attack mode 0: result = the candidate and its square, done
+                        return true;
                     }
                     done = TargetAttack(cand);
                     if (done)
@@ -668,8 +697,8 @@ public sealed class FightMenu
 
     /// <summary>
     /// 0x14C0F from the menu: a spell from the list (<see cref="IFightSpells.Castable"/>; none → not done). One not
-    /// usable in a fight: "camp only", not done. Casting time 0: cast now (<see cref="IFightSpells.Cast"/> with no
-    /// target: the spell code picks its own), actions end. Else "begins casting", +0 = the spell, initiative − the
+    /// usable in a fight: "camp only", not done. Casting time 0: cast now (<see cref="CastNow"/>: the player aims, then
+    /// <see cref="IFightSpells.Cast"/> / <see cref="IFightSpells.CastOn"/> with what was aimed at), actions end. Else "begins casting", +0 = the spell, initiative − the
     /// casting time when larger, else 1 (<see cref="Fight.Postpone"/>): cast at the creature's next pick this round.
     /// </summary>
     public bool Cast()
@@ -686,7 +715,7 @@ public sealed class FightMenu
         int time = Fight.Spells.CastingTime(spell);
         if (time == 0)
         {
-            Fight.Spells.Cast(Fight, c, spell, null, null);
+            CastNow(spell, false);
             Fight.EndActions(c);
             return true;
         }
@@ -696,6 +725,85 @@ public sealed class FightMenu
         int init = rec.InitiativeValue;
         Fight.Postpone(c, (sbyte)(init > time ? init - time : 1));
         return true;
+    }
+
+    /// <summary>
+    /// 0x27C38 in a fight for the player's creature: the target pick (0x148BE with ai = 0, which aims through
+    /// <see cref="AimSpell"/>) until a target is picked or the player answers yes to the abort question (0x27EF2; the
+    /// spell is then lost: <see cref="IFightSpells"/> is called with no target, so its pick fails, the memorised copy
+    /// goes). <paramref name="begun"/>: the spell begun earlier (<see cref="IFightSpells.ContinueCasting"/>).
+    /// </summary>
+    private void CastNow(int spell, bool begun)
+    {
+        var c = Creature;
+        while (true)
+        {
+            var (picked, targets, square) = AimSpell(spell);
+            if (!picked && !Chooser.ConfirmAbortSpell(this))
+            {
+                if (Reject())
+                    return;
+                continue;
+            }
+            if (begun)
+                Fight.Spells.ContinueCasting(Fight, c, targets, square);
+            else if (targets.Count > 1)
+                Fight.Spells.CastOn(Fight, c, spell, targets);
+            else
+                Fight.Spells.Cast(Fight, c, spell, targets.Count > 0 ? targets[0] : null, square);
+            return;
+        }
+    }
+
+    /// <summary>
+    /// The aim part of the target pick 0x148BE for the player (0x14611 with ai = 0). Mode = spell table byte 6 AND 0x0F
+    /// (<see cref="FightSpells"/>' table; another <see cref="IFightSpells"/> gives mode 0 [our choice]):
+    /// 0 → no aim (the caster). 0x0F → one aim (square mode 0). 8–0x0E → one aim (square mode 1), the list is built
+    /// around the aimed square. 1–7 → (byte 6 AND 3) + 1 aims (0x14AD1): an aim left with Exit uses up a pick, a
+    /// creature already taken is refused with a message and aimed again. Each aim is 0x15D53 with the spell's range
+    /// (0x27741), attack mode 0, and leaves the caster's +0x0A = the creature taken (none after Exit, 0x14648).
+    /// Returns picked, the creatures taken and the aimed square (DS:6DB9/6DBA).
+    /// </summary>
+    private (bool Picked, List<EclCharacter> Targets, (int X, int Y)? Square) AimSpell(int spell)
+    {
+        var c = Creature;
+        int mode = Fight.Spells is FightSpells fs ? fs.Table[spell].Area & 0x0F : 0;
+        var targets = new List<EclCharacter>();
+        if (mode == 0)
+            return (true, targets, null);
+        int range = Fight.Spells.Range(Fight, c, spell);
+        EclCharacter? AimOnce()
+        {
+            AimAt(range, false, out var t);
+            Record.Other = t; // 0x14648: +0x0A = the aim's result
+            return t;
+        }
+        if (mode >= 8)
+        {
+            if (AimOnce() is not { } t)
+                return (false, targets, null);
+            targets.Add(t);
+            return (true, targets, Fight.Map is { } map && mode != 0x0F ? map.Position(t) : null);
+        }
+        int picks = (Fight.Spells is FightSpells f2 ? f2.Table[spell].Area & 3 : 0) + 1;
+        while (picks > 0)
+        {
+            if (AimOnce() is not { } t)
+            {
+                picks--;
+                continue;
+            }
+            if (targets.Contains(t))
+            {
+                Notice(FightNotice.AlreadyTargeted, t);
+                if (Reject())
+                    break;
+                continue;
+            }
+            targets.Add(t);
+            picks--;
+        }
+        return (targets.Count > 0, targets, null);
     }
 }
 

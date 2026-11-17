@@ -1,0 +1,385 @@
+using GoldBox.Client.Input;
+using GoldBox.Client.Play;
+using GoldBox.Client.Screens;
+using GoldBox.Core.Ecl;
+using GoldBox.Core.Explore;
+using GoldBox.Core.Game;
+using GoldBox.Data.Por;
+using Microsoft.Xna.Framework;
+using Microsoft.Xna.Framework.Input;
+
+namespace GoldBox.Client.Tests;
+
+/// <summary>The combat screen's device-free parts.</summary>
+public class CombatScreenUnitTests
+{
+    private static ActionInput Input() => new(InputBindings.Defaults());
+
+    private static int? DirectionFor(KeyboardState k, GamePadState pad = default)
+    {
+        var i = Input();
+        i.Update(k, pad, default, TimeSpan.Zero, _ => null);
+        return CombatScreen.Direction(i);
+    }
+
+    [Fact]
+    public void Keys_give_the_programs_eight_directions()
+    {
+        Assert.Equal(0, DirectionFor(new KeyboardState(Keys.Up)));
+        Assert.Equal(2, DirectionFor(new KeyboardState(Keys.Right)));
+        Assert.Equal(4, DirectionFor(new KeyboardState(Keys.NumPad2)));
+        Assert.Equal(6, DirectionFor(new KeyboardState(Keys.Left)));
+        // The keypad's diagonals (0xA1E6: PgUp 1, PgDn 3, End 5, Home 7) and the digits.
+        Assert.Equal(1, DirectionFor(new KeyboardState(Keys.PageUp)));
+        Assert.Equal(3, DirectionFor(new KeyboardState(Keys.NumPad3)));
+        Assert.Equal(5, DirectionFor(new KeyboardState(Keys.End)));
+        Assert.Equal(7, DirectionFor(new KeyboardState(Keys.Home)));
+        Assert.Null(DirectionFor(new KeyboardState(Keys.Enter)));
+    }
+
+    [Fact]
+    public void Two_held_directions_make_a_diagonal_on_the_pad()
+    {
+        var pad = new GamePadState(new GamePadThumbSticks(new Vector2(-1, 1), Vector2.Zero), default, default, default);
+        Assert.True(pad.IsConnected);
+        var i = Input();
+        i.Update(default, pad, default, TimeSpan.Zero, _ => null);
+        Assert.Equal(7, CombatScreen.Direction(i));
+        // The right stick turned 45°: up = up-right.
+        var rs = new GamePadState(new GamePadThumbSticks(Vector2.Zero, new Vector2(0, 1)), default, default, default);
+        var j = Input();
+        j.Update(default, rs, default, TimeSpan.Zero, _ => null);
+        Assert.Equal(1, CombatScreen.Direction(j));
+    }
+
+    [Fact]
+    public void Direction_to_a_neighbour_square()
+    {
+        Assert.Equal(0, CombatScreen.DirectionTo((5, 5), (5, 4)));
+        Assert.Equal(3, CombatScreen.DirectionTo((5, 5), (6, 6)));
+        Assert.Equal(7, CombatScreen.DirectionTo((5, 5), (4, 4)));
+        Assert.Null(CombatScreen.DirectionTo((5, 5), (7, 5)));
+        Assert.Null(CombatScreen.DirectionTo((5, 5), (5, 5)));
+    }
+
+    [Fact]
+    public void The_view_follows_inside_the_arena()
+    {
+        var v = new CombatView { ViewX = 24, ViewY = 10 };
+        v.Follow(27, 13);                       // centred: no scroll
+        Assert.Equal((24, 10), (v.ViewX, v.ViewY));
+        v.Follow(30, 13);                       // past the inner 3 × 3: one square
+        Assert.Equal((26, 10), (v.ViewX, v.ViewY));
+        v.Follow(49, 24);                       // the arena's corner: clamped
+        Assert.Equal((CombatArena.Width - 7, CombatArena.Height - 7), (v.ViewX, v.ViewY));
+        v.Center(0, 0);
+        Assert.Equal((0, 0), (v.ViewX, v.ViewY));
+    }
+
+    [Fact]
+    public void The_combat_palette_swaps_colours_0_and_8()
+    {
+        var f = new IndexedFrame(3, 1);
+        f[0, 0] = 0;
+        f[1, 0] = 8;
+        f[2, 0] = 7;
+        CombatScreen.SwapGrey(f);
+        Assert.Equal(new byte[] { 8, 0, 7 }, f.Pixels);
+    }
+
+    [Fact]
+    public void Default_icon_colours_keep_the_art()
+    {
+        var c = new EclCharacter();
+        byte[] def = [0x91, 0xA2, 0xB3, 0xC4, 0xE6, 0xF7];
+        for (int k = 0; k < 6; k++)
+            c[CombatArt.IconColours + k] = def[k];
+        Assert.Equal(Enumerable.Range(0, 16).Select(i => (byte)i), CombatArt.ColourMap(c));
+        c[CombatArt.IconColours] = 0x5D;        // pair (1, 9) → 13, 5
+        var m = CombatArt.ColourMap(c);
+        Assert.Equal((13, 5), (m[1], m[9]));
+    }
+
+    [Fact]
+    public void Combat_texts_fall_back_to_our_words()
+    {
+        var t = new CombatText();
+        Assert.Equal(0, t.FromGame);
+        foreach (var id in Enum.GetValues<CombatMsg>())
+            Assert.NotEmpty(t[id]);
+        Assert.Equal(2, t.Words(CombatMsg.MenuViewAim).Count);
+        Assert.Equal(2, t.Words(CombatMsg.MenuQuickDone).Count);
+    }
+}
+
+/// <summary>A fight on the combat screen, headless, on save A of the player's files (skipped without GOLDBOX_POR_DIR).</summary>
+public class CombatScreenGameTests
+{
+    private static string? Dir()
+    {
+        var d = Environment.GetEnvironmentVariable("GOLDBOX_POR_DIR");
+        return string.IsNullOrWhiteSpace(d) || !Directory.Exists(d) ? null : d;
+    }
+
+    private sealed class NoHost : IScreenHost
+    {
+        public void Push(IScreen screen) { }
+        public void Pop() { }
+        public void Quit() { }
+        public void SaveBindings() { }
+    }
+
+    private sealed record Rig(ExploreScreen Screen, PorGame Game, ScriptRunner Runner, ActionInput Input, ClientPlayer Player);
+
+    private static Rig Start(uint seed)
+    {
+        var dir = new PorGameDirectory(Dir()!);
+        var art = PorViewArt.Load(dir);
+        var runner = new ScriptRunner();
+        PorGame? game = null;
+        var player = new ClientPlayer(runner, () => game!.Memory);
+        var program = PorProgram.Open(dir);
+        player.Chooser.Text = new CombatText(program);
+        player.Chooser.Pauses = false;
+        game = PorGame.FromSave(dir, art, dir.Find("SAVGAMA.DAT")!,
+            new PorPlayer(player, player, player, player, FightMenu: player.Chooser, QuickFight: true), seed);
+        var input = new ActionInput(InputBindings.Defaults());
+        return new Rig(new ExploreScreen(game, player, runner, new NoHost()), game, runner, input, player);
+    }
+
+    private static void Press(Rig r, GameAction a)
+    {
+        r.Input.Update(default, default, default, TimeSpan.Zero, _ => null);
+        r.Input.Inject(a);
+        r.Screen.Update(r.Input);
+    }
+
+    private static void Key(Rig r, Keys k)
+    {
+        r.Input.Update(new KeyboardState(k), default, default, TimeSpan.Zero, _ => null);
+        r.Screen.Update(r.Input);
+        r.Input.Update(default, default, default, TimeSpan.Zero, _ => null);
+    }
+
+    private static void Click(Rig r, int x, int y)
+    {
+        r.Input.Update(default, default, default, TimeSpan.Zero, _ => null);
+        if (r.Screen.MapClick(new ScreenClick(x, y, false)) is { } a)
+            r.Input.Inject(a);
+        r.Screen.Update(r.Input);
+    }
+
+    private static bool AtMainMenu(Rig r) =>
+        r.Player.FightView.Active && r.Runner.Pending is ChoiceRequest && r.Player.FightView.Mode == CombatMode.Menu;
+
+    /// <summary>
+    /// Save A to the Slums door at 10,2 N, bashed until it opens (the goblin fight), through the text to the first
+    /// combat menu. Random encounters on the way are fought on Quick.
+    /// </summary>
+    private static Rig ToFight()
+    {
+        for (uint seed = 1; seed < 40; seed++)
+        {
+            var r = Start(seed);
+            GameAction[] route =
+            [
+                GameAction.Forward, GameAction.TurnLeft, GameAction.Forward, GameAction.Forward, GameAction.Forward,
+                GameAction.TurnRight, GameAction.Forward, GameAction.TurnRight, GameAction.Forward, GameAction.Forward,
+                GameAction.Forward, GameAction.Forward, GameAction.Forward, GameAction.TurnLeft, GameAction.Forward,
+                GameAction.Forward, GameAction.Forward, GameAction.TurnRight, GameAction.Forward,
+            ];
+            bool clean = true;
+            foreach (var a in route)
+            {
+                Press(r, a);
+                if (r.Runner.Pending is not null && a != route[^1])
+                    clean = false; // an encounter on the way: try another seed
+            }
+            if (!clean || r.Runner.Pending is not ChoiceRequest door || door.Items[0] != "BASH")
+            {
+                r.Runner.Dispose();
+                continue;
+            }
+            Press(r, GameAction.Confirm);                 // Bash
+            for (int g = 0; g < 50 && r.Runner.Pending is { } p && !r.Player.FightView.Active; g++)
+                Press(r, p is ChoiceRequest { Items: ["BASH", ..] } ? GameAction.Confirm : GameAction.Confirm);
+            if (AtMainMenu(r))
+                return r;
+            r.Runner.Dispose();
+        }
+        throw new InvalidOperationException("no seed reached the goblin fight");
+    }
+
+    [Fact]
+    public void The_fight_shows_the_programs_menu_and_plays_to_the_end_on_the_screen()
+    {
+        if (Dir() is null)
+            return;
+        var r = ToFight();
+        var v = r.Player.FightView;
+        var menu = Assert.IsType<ChoiceRequest>(r.Runner.Pending);
+        // The program's words in its order (0x9E6D): Move first, Quick and Done last.
+        Assert.Equal("MOVE", menu.Items[0]);
+        Assert.Equal(["QUICK", "DONE"], menu.Items.TakeLast(2));
+        Assert.NotNull(v.Current);
+        Assert.Same(v.Current, v.Shown);
+
+        // Drawn as the program's combat screen: the menu row's background shows colour 8 (palette swap), the map
+        // window has ground tiles, the panel names the creature.
+        var f = new IndexedFrame(320, 200);
+        r.Screen.Draw(f, r.Input);
+        Assert.Equal(8, f[319, 199]);
+        Assert.Contains(f.Pixels.Skip(8 * 320).Take(168 * 320), p => p == 7);
+
+        // Move with the keypad, then Escape: back on the starting square (0xA1E6 undoes the whole move).
+        var map = (CombatMap)r.Player.FightView.Fight!.Map!;
+        var me = v.Current!;
+        var start = map.Position(me);
+        Key(r, Keys.M);
+        Assert.IsType<CombatMoveRequest>(r.Runner.Pending);
+        for (int d = 0; d < 8 && map.Position(me) == start; d++)
+            if (map.At(start.X + FightMenu.Steps[d].Dx, start.Y + FightMenu.Steps[d].Dy) is null)
+                Key(r, d switch { 0 => Keys.Up, 1 => Keys.PageUp, 2 => Keys.Right, 3 => Keys.PageDown, 4 => Keys.Down, 5 => Keys.End, 6 => Keys.Left, _ => Keys.Home });
+        Assert.NotEqual(start, map.Position(me));
+        Key(r, Keys.Escape);
+        Assert.Equal(start, map.Position(me));
+        Assert.True(AtMainMenu(r));
+
+        // Aim: the candidates through Next, Exit back to the menu.
+        Key(r, Keys.A);
+        var aim = Assert.IsType<ChoiceRequest>(r.Runner.Pending);
+        Assert.Equal(CombatMode.Aim, v.Mode);
+        Assert.NotNull(aim.MenuPrompt);
+        Assert.StartsWith("RANGE", v.StatusLine);
+        var first = v.Shown;
+        Key(r, Keys.N);
+        Assert.NotSame(first, v.Shown);
+        // Manual: a cursor; the panel shows the creature under it, nothing on an empty square; Exit returns to Aim.
+        Key(r, Keys.M);
+        Assert.IsType<CombatCursorRequest>(r.Runner.Pending);
+        var cs = r.Screen.Combat;
+        Assert.Same(map.At(v.Cursor!.Value.X, v.Cursor.Value.Y), cs.PanelCreature());
+        for (int k = 0; k < 6 && map.At(v.Cursor!.Value.X, v.Cursor.Value.Y) is not null; k++)
+            Key(r, Keys.Down);
+        Assert.Null(map.At(v.Cursor!.Value.X, v.Cursor.Value.Y));
+        Assert.Null(cs.PanelCreature());
+        Press(r, GameAction.Cancel);
+        Assert.Equal(CombatMode.Aim, v.Mode);
+
+        // A click on another creature shows it (no attack); a second click on it targets it and leaves Aim.
+        var hp = v.Fight!.List.Select(x => x[FightRules.Hp]).ToArray();
+        var other = v.Fight.List.First(x => map.OnMap(x) && !ReferenceEquals(x, v.Shown) && !ReferenceEquals(x, me)
+            && map.Position(x) is var (ox, oy) && ox - v.ViewX is >= 0 and < 7 && oy - v.ViewY is >= 0 and < 7);
+        (int, int) Pixel(EclCharacter x) =>
+            (CombatScreen.MapX + (map.Position(x).X - v.ViewX) * 24 + 12, CombatScreen.MapY + (map.Position(x).Y - v.ViewY) * 24 + 12);
+        var (px, py) = Pixel(other);
+        Click(r, px, py);
+        Assert.Equal(CombatMode.Aim, v.Mode);
+        Assert.Same(other, v.Shown);
+        Assert.Equal(hp, v.Fight.List.Select(x => x[FightRules.Hp]).ToArray());
+        if (r.Runner.Pending is ChoiceRequest { Items: var items } && items.Contains("TARGET"))
+        {
+            (px, py) = Pixel(other);
+            Click(r, px, py);
+            Assert.NotEqual(CombatMode.Aim, v.Mode);
+            // An ally on the player's side brings the attack-ally question: answer no.
+            if (v.Mode == CombatMode.Question)
+                Press(r, GameAction.Cancel);
+        }
+        else
+            Press(r, GameAction.Cancel);
+
+        // Everyone on Quick to the end; refuse to go on fighting.
+        for (int g = 0; g < 400 && v.Active; g++)
+        {
+            if (AtMainMenu(r))
+                Key(r, Keys.Q);
+            else if (r.Runner.Pending is ChoiceRequest { CancelIndex: not null } && v.Mode is CombatMode.Question or CombatMode.Aim)
+                Press(r, GameAction.Cancel);              // Continue battle: No; leave an aim menu
+            else
+                Press(r, GameAction.Confirm);
+        }
+        Assert.False(v.Active);
+        Assert.False(r.Game.Loop.Defeated);
+        r.Runner.Dispose();
+    }
+
+    [Fact]
+    public void The_game_files_give_the_programs_fight_texts_and_spell_names()
+    {
+        if (Dir() is null)
+            return;
+        var program = PorProgram.Open(new PorGameDirectory(Dir()!))!;
+        var t = new CombatText(program);
+        Assert.Equal(Enum.GetValues<CombatMsg>().Length, t.FromGame);
+        Assert.Equal(["MOVE", "VIEW", "AIM", "USE", "CAST", "TURN", "QUICK", "DONE"],
+            [.. t.Words(CombatMsg.MenuMove), .. t.Words(CombatMsg.MenuViewAim), .. t.Words(CombatMsg.MenuUse),
+             .. t.Words(CombatMsg.MenuCast), .. t.Words(CombatMsg.MenuTurn), .. t.Words(CombatMsg.MenuQuickDone)]);
+        var spells = new SpellNames(program.Image);
+        Assert.True(spells.Count >= SpellNames.MinRun);
+        Assert.All(Enumerable.Range(1, spells.Count), i => Assert.False(string.IsNullOrWhiteSpace(spells[i])));
+    }
+
+    [Fact]
+    public void Party_icons_are_composed_from_the_art()
+    {
+        if (Dir() is null)
+            return;
+        var dir = new PorGameDirectory(Dir()!);
+        var art = new CombatArt(dir);
+        Assert.Equal(25, art.Dungeon.Count);
+        Assert.NotNull(art.Ground(22, true));
+        Assert.All(art.Ground(22, true)!.Pixels, p => Assert.Equal(0, p)); // open ground: colour 0, shown grey
+        var party = PorParty.Load(Enumerable.Range(1, 6).Select(i => $"CHRDATA{i}"), dir.Find);
+        Assert.Equal(6, party.Members.Count);
+        foreach (var m in party.Members)
+        {
+            var icon = art.Party(m, false);
+            Assert.NotNull(icon);
+            Assert.Equal((24, 24), (icon!.Width, icon.Height));
+            Assert.Contains(icon.Pixels, p => p != 0);
+        }
+        Assert.NotNull(art.Monster(2, false));
+        Assert.NotNull(art.Monster(2, true));
+        Assert.NotNull(art.Sprite(CombatArt.HitMarker));
+    }
+}
+
+/// <summary>The controls screen with more actions than rows: the mouse reaches everything.</summary>
+public class ControlsScreenTests
+{
+    private sealed class Host : IScreenHost
+    {
+        public bool Quitted;
+        public void Push(IScreen screen) { }
+        public void Pop() { }
+        public void Quit() => Quitted = true;
+        public void SaveBindings() { }
+    }
+
+    [Fact]
+    public void Hovering_keeps_the_rows_still_and_the_extras_are_always_clickable()
+    {
+        var host = new Host();
+        var font = new TextFont(new byte[177 * 8]);
+        var screen = new ControlsScreen(font, host);
+        var input = new ActionInput(InputBindings.Defaults());
+        var before = new IndexedFrame(320, 200);
+        screen.Draw(before, input);
+        for (int pass = 0; pass < 3; pass++)
+            for (int row = 3; row <= 21; row++)
+                screen.Hover(20, row * 8 + 4);
+        var after = new IndexedFrame(320, 200);
+        screen.Draw(after, input);
+        // The action labels did not move (compare the label columns of rows 3–17, not the ">" marker).
+        for (int y = 3 * 8; y < 18 * 8; y++)
+            for (int x = 16; x < 320; x++)
+                Assert.Equal(before[x, y], after[x, y]);
+        // QUIT: the last extra, row 21.
+        input.Update(default, default, default, TimeSpan.Zero, _ => null);
+        if (screen.MapClick(new ScreenClick(20, 21 * 8 + 4, false)) is { } a)
+            input.Inject(a);
+        screen.Update(input);
+        Assert.True(host.Quitted);
+    }
+}

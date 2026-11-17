@@ -15,6 +15,9 @@ public sealed class ListPage
 {
     public const int ActionRow = 24;
 
+    /// <summary>Label rows in the vertical menu's prompt colour (light magenta, 13).</summary>
+    private const byte LabelColour = 13;
+
     /// <summary>Where each action word goes: the bottom line, or (when they do not fit in 40 columns) two lines, 23 and 24.</summary>
     private static List<(int Col, int Row)> ActionCells(IReadOnlyList<string> actions)
     {
@@ -52,6 +55,7 @@ public sealed class ListPage
             return;
         _shown = r;
         _row = Math.Clamp(r.Selected, 0, Math.Max(0, r.Rows.Count - 1));
+        _row = SkipLabels(r, _row, 1);
         _action = Math.Clamp(r.SelectedAction, 0, Math.Max(0, r.Actions.Count - 1));
         _top = 0;
         _clicked = null;
@@ -72,7 +76,21 @@ public sealed class ListPage
         _top = Math.Clamp(_top, 0, Math.Max(0, r.Rows.Count - v));
     }
 
-    private bool Usable(ListRequest r, int action) => r.Rows.Count > 0 || !r.RowActions.Contains(action);
+    private bool Usable(ListRequest r, int action) => Pickable(r) || !r.RowActions.Contains(action);
+
+    /// <summary>The list has a row that is not a label.</summary>
+    private static bool Pickable(ListRequest r) => r.Rows.Count > r.Labels.Count;
+
+    /// <summary>The first row from <paramref name="row"/> on (going <paramref name="step"/>, wrapping) that is not a label.</summary>
+    private static int SkipLabels(ListRequest r, int row, int step)
+    {
+        int n = r.Rows.Count;
+        if (n == 0 || !Pickable(r))
+            return Math.Clamp(row, 0, Math.Max(0, n - 1));
+        for (int k = 0; k < n && r.Labels.Contains(row); k++)
+            row = ((row + step) % n + n) % n;
+        return row;
+    }
 
     /// <summary>This frame's answer, or null.</summary>
     public ListAnswer? Update(ListRequest r, ActionInput input)
@@ -84,8 +102,8 @@ public sealed class ListPage
             return c;
         }
         int n = r.Rows.Count, m = r.Actions.Count;
-        if (input.Pressed(GameAction.MenuUp) && n > 0) _row = (_row + n - 1) % n;
-        if (input.Pressed(GameAction.MenuDown) && n > 0) _row = (_row + 1) % n;
+        if (input.Pressed(GameAction.MenuUp) && n > 0) _row = SkipLabels(r, (_row + n - 1) % n, -1);
+        if (input.Pressed(GameAction.MenuDown) && n > 0) _row = SkipLabels(r, (_row + 1) % n, 1);
         if (input.Pressed(GameAction.MenuLeft)) _action = (_action + m - 1) % m;
         if (input.Pressed(GameAction.MenuRight)) _action = (_action + 1) % m;
         Scroll(r);
@@ -108,7 +126,7 @@ public sealed class ListPage
     public void Hover(ListRequest r, int col, int row)
     {
         Sync(r);
-        if (RowAt(r, row) is { } i)
+        if (RowAt(r, row) is { } i && !r.Labels.Contains(i))
             _row = i;
         else if (ActionAt(r, col, row) is { } a)
             _action = a;
@@ -123,6 +141,8 @@ public sealed class ListPage
             return r.CancelAction is not null ? GameAction.Cancel : null;
         if (RowAt(r, row) is { } i)
         {
+            if (r.Labels.Contains(i))
+                return null;
             if (i == _row && Usable(r, 0))
                 _clicked = new ListAnswer(0, i);
             _row = i;
@@ -175,6 +195,11 @@ public sealed class ListPage
         for (int k = 0; k < v && _top + k < r.Rows.Count; k++)
         {
             int i = _top + k;
+            if (r.Labels.Contains(i))
+            {
+                Chrome.Text(f, font, 1, first + k, Fit(r.Rows[i], 38), LabelColour);
+                continue;
+            }
             bool sel = i == _row;
             Chrome.Text(f, font, 1, first + k, Fit(r.Rows[i], 38), sel ? Chrome.White : Chrome.Green);
             if (sel)

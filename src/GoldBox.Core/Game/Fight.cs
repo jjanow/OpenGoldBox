@@ -79,6 +79,18 @@ public sealed class Fight
     /// <summary>DS:49F4: when set, the "continue battle" question is not asked.</summary>
     public bool NoContinueQuestion { get; set; }
 
+    /// <summary>
+    /// Display hook (no game state): called when a creature becomes current in <see cref="Turn"/>, before it acts. A
+    /// front end shows the creature here. Draws nothing and changes nothing.
+    /// </summary>
+    public Action<EclCharacter>? TurnStarted { get; set; }
+
+    /// <summary>
+    /// Display hook (no game state): called at the end of <see cref="MakeAttack"/> with the attacker, the defender, the
+    /// outcome and the defender's hit points before the attack. Draws nothing and changes nothing.
+    /// </summary>
+    public Action<EclCharacter, EclCharacter, FightRules.AttackOutcome, int>? AttackMade { get; set; }
+
     public List<EclCharacter> List => Memory.Party?.Members ?? [];
     public CombatRecord Record(EclCharacter c) => State.Record(c);
 
@@ -147,6 +159,7 @@ public sealed class Fight
         if (rec.InitiativeValue > 0)
         {
             _delayed = false;
+            TurnStarted?.Invoke(c);
             Controller.Act(this, c, c[CombatRules.AutoCombat] != 0);
             // The program's menu loops until an action ends the turn (or Delay / Alt-Q set initiative 1 / 20). A
             // controller that returns without either would be picked again at once; end its actions instead.
@@ -251,6 +264,7 @@ public sealed class Fight
         aRec[CombatRecord.Facing] = (byte)Geometry.DirectionToward(attacker, defender);
         aRec.Other = defender;
         var outcome = new FightRules.AttackOutcome(false, defender[FightRules.InPlay] == 0, true, 0, 0);
+        int hpBefore = defender[FightRules.Hp];
         if (attacker[0x113] > 0 || attacker[0x114] > 0)
         {
             var saved = State.Current;
@@ -265,6 +279,7 @@ public sealed class Fight
         }
         if (outcome.ActionsDone)
             FightRules.EndActions(aRec);
+        AttackMade?.Invoke(attacker, defender, outcome, hpBefore);
         return outcome;
     }
 }

@@ -11,7 +11,8 @@ Status marks: **P** read in the program, **D** checked against DOSBox-X, `[?]` n
 Code: `src/GoldBox.Core/Game/MonsterAi.cs` (`MonsterAi : IFightController`). It acts through `Fight` (`Attack`,
 `EndActions`, `Guard`), `SweepAttack.Try`, `TurnUndead.Run` and the seams in `FightSeams.cs`: `IFightMap` (`Search`
 for 0x3045B, and for the AI `Line`, `Look`, `MoveCost`), `IFightMoves` (`Step`, and for the AI `Flee`) and
-`IFightSpells` (`ContinueCasting`, and for the AI `AiInfo`, `Range`, `FindCureTarget`, `CastAuto`, `UseItem`). The step pattern table is read from the player's START.EXE
+`IFightSpells` (`ContinueCasting`, and for the AI `AiInfo`, `Range`, `FindCureTarget`, `CastAuto`,
+`ContinueCastingAuto`, `UseItem`; `FightSpells.Ai.cs`). The step pattern table is read from the player's START.EXE
 (`PorProgram.AiStepOffsets`, found through the code at 0xB235).
 
 ## Data the AI uses
@@ -139,9 +140,12 @@ out of play → actions end; else the move (0x12F0D), out of play → actions en
 ## Items, spells, turning — P
 
 **Should cast** (0xAEAB, spell, minimum priority): priority (spell byte 13) below the minimum → no. Spell ≠ 3 with
-byte 14 = 0 → yes. Spell 3 with a cure target (0x143F3) → yes. Else the enemies within the spell's range (0x27741):
-none → no; area (byte 15) 0 → yes; else for each of them, the creatures within the area around its square
-(0x3045B, size 1): one not on the enemy side (the caster's side, including the caster) → no. Otherwise yes.
+byte 14 = 0 → yes. Spell 3 with a cure target (0x143F3) → yes. Else the enemies within the spell's range (0x27741,
+computed with DS:6DBF = 0, so an item's range here is the creature's own; START 0x2FD3): none → no; area (byte 15) 0 →
+yes; else for each of them (DS:6DE4) 0xAE15: the target list 0x3045B around its slot square with radius byte 15 and
+size 1; a creature in it whose 0x10E is not the side the current creature fights (START 0x2F57) → no. Otherwise yes.
+No draws. Spell 3 with no cure target goes on to the enemy test, so a cleric next to an enemy may still choose it; the
+aim then fails and the spell is lost (below).
 
 **Item** (0xAFA4): **1d7** always (n). With item use allowed (+2), enemies left (DS:6814[side]) and $49E5 = 0: passes
 1..n with priority 7, 6, …: the first readied item (0x34) in list order, not of base slot 11–13 (0x2A255), with 0x3E
@@ -153,6 +157,63 @@ each of up to three tries of **1d(count)**, until one should be cast. Cast with 
 party members cast only with quick magic on.
 
 **Turn undead** (0xADC3): +0x11 = 0, cleric level 0x96 > 0 (signed) and an undead target (0x13B4C) → 0x13965.
+
+## Casts by the AI (0x14C0F / 0x27C38 with ai = 1, aim 0x14611, pick 0x148BE, cure 0x143F3) — P, emulated
+
+The AI's cast is 0x14C0F(spell, ai = 1): a casting time ≠ 0 only begins the cast (`spells-effects.md`); later 0xACEE
+casts it with 0x27C38(spell, ai = 1, 1) and ends the actions. 0x27C38 hands the AI flag to the target pick 0x148BE
+(DS:6B84), which calls the aim 0x14611 with it. Code: `FightSpells.Ai.cs` (`PickAuto`, `AimAuto`, `CureTarget`,
+`CastAuto`, `ContinueCastingAuto`); the aimed square is the same DS:6DB9/6DBA cell the cast's facing reads.
+
+**Target pick** (0x148BE, spell, ai, var picked), the AI side: picked = 1, list DS:6C94 = 0, DS:6820 = 0, DS:6DB9/6DBA =
+the caster's square. Mode = area byte 6 AND 0x0F:
+- 0: the caster.
+- 0x0F: aim; failed → not picked. Else the caster's +0x0A when set, else the list around DS:6DB9/6DBA with radius
+  (mode shr 4) = 0, DS:6820 = 1. An aim of a spell with byte 14 = 0 does not write +0x0A, so a remembered target would
+  be taken (no PoR spell has both; spell 25 has mode 0x0F and byte 14 = 1).
+- 8–0x0E: aim; failed → not picked. Else the list around the aimed square with radius area AND 7, DS:6820 = 1.
+- 1–7: (area AND 3) + 1 aims; each successful aim adds its creature unless already listed; a repeat (the AI gets no
+  message) and a failed aim each use up a pick (0x30A0F marks the square: drawing only). Empty list → not picked.
+
+**Aim** (0x14611, spell, ai, square mode, var result {creature, x, y}) with ai ≠ 0:
+- Spell byte 14 = 0: result = the caster; spell 3: result = the cure target (0x143F3), none → fail.
+- Else up to **20 tries**: target search 0x15FDF(range 0x27741, not relaxed, **forget the old target**), so each try
+  draws its 1d(count) again and +0x0A ends as the last creature found (nil when none). None found → next try. The
+  creature T found is rejected when the target list around T's square with radius byte 15 (0x3045B, size 1) holds a
+  creature whose 0x10E is not START 0x2F57(caster) (the caster itself counts), or when T is helpless (START 0x1713)
+  and the spell's effect byte 10 is one of DS:286C–286F (0x33, 0x34, 0x35, 0x1F, the same table START 0x1713 walks).
+  Accepted → result = T and its square.
+- Success: DS:6DB9/6DBA = the result square. Failure: the result is zeroed (7 bytes).
+
+The player's side (ai = 0: the aim 0x15D53 with range 0x27741, then +0x0A = the result) is the menu's
+(`combat-menu.md`).
+
+**Cure target** (0x143F3, caster, var result): the nine cells around the caster's square (directions 0–7, then the
+square itself; DS:2736 / DS:273F), each looked up with 0x30BF8 (slot, ground):
+- A slot: its creature counts when 0x10E equals the caster's and HP 0x11B < max HP 0x32 (unsigned). It becomes the
+  best when its HP is below the best HP (start 255), or when it is the caster with HP < max shr 1.
+- No slot and ground 0x1F: the bodies list (DS:66D6 + 7k, k = 1..DS:6715) is searched for an entry still set, whose
+  creature's status 0x10C is not 6, 7 or 8 (Pascal set at 0x143D3) and whose square is this cell; the last match is
+  kept. No side test, so a monster cleric may pick a downed party member.
+- Result: the body's creature when a body was found and the best HP is ≥ 8 (or there is no living candidate); else
+  the best (possibly none). Returns result ≠ nil. No draws.
+
+## Item use (0x22AC4, item, var done) — P, emulated
+
+Used by the AI (0xAFA4) and the Items screen's Use (`combat-menu.md` "View / Use"). Code: `FightSpells.UseItemNow`.
+
+1. DS:6DBF = 0. A scroll (0x2A255): DS:6B80 = the item, the spell is chosen from it (spell list 0x239D6, mode 2).
+   Else an item with power 0x3D > 0 and kind 0x3E < 0x80: DS:6DBF = 1, spell = 0x3D. No spell → done = 0, return.
+2. A player in a fight (0x10F = 0): START 0x3728 (screen). Non-scrolls: spell above 0x38 → − 0x17 (item powers
+   57–67). A message naming the user and the item (drawing).
+3. **DS:6DBF = 1** (scrolls too: casting level 6, range per level × 6 + fixed, no memorised copy removed), then the
+   cast 0x27C38(spell, ai = the current creature's 0x10F, 0, var done) at once, whatever the casting time; done =
+   picked. DS:6DBF = 0.
+4. In a fight, spell byte 11 ≠ 0 → actions end (START 0x31D7) and done = 1 (its return value), **even when the aim
+   failed**: the charge is spent.
+5. Done: a scroll loses the spell (0x2A2A2: the last of 0x3C–0x3E equal in the low 7 bits is cleared, name word 0x30
+   − 1, below 0xD2 the scroll leaves the list). Else, charges 0x3C > 0: count 0x39 > 1 → count − 1; else charges − 1,
+   at 0 the item leaves the list (START 0x20A9 only unlinks it; 0xC7 is rewritten by the next recalculation).
 
 ## Weapons (0xBF8A, 0xBE4D, 0x2250A) — P
 
@@ -203,11 +264,19 @@ turn in round 0 needed the stat recalculation (START 0x1758): the weapon pick re
 gives the darts' 1d3 (checked under emulation on the captured RAM: the program's turn throws three darts in one
 attack call, the third at the goblin it has just wounded).
 
+## Checked under emulation
+
+`tools/scripts/por_ai_oracle.py` runs the v1.3 routines under unicorn on generated fights (effect handlers trapped to
+do nothing) and writes `tests/fixtures-private/por/program-v1.3/ai_cast.json`; `AiCastProgramTests` compares: 200
+cure-target cases with bodies (0x143F3); 240 AI picks, four per spell castable in a fight, with remembered targets,
+helpless creatures and DS:6DBF set or not: picked flag, target list, DS:6820, DS:6DB9/6DBA, +0x0A and RandSeed after
+(0x148BE → 0x14611 → 0x15FDF); 0xAEAB on the same fights; 120 item uses with the cast trapped (spell, AI flag, DS:6DBF,
+done, combat record, item list after); 160 Halve / Join cases. All match.
+
 ## Open `[?]`
 
 - Other writers of combat record +0x10 (effects?); the meaning of $49E5; key X (0x1638E).
-- 0xAE15 searches around the enemy's slot square with size 1; the code uses `Search` from the enemy (its footprint).
 - 0x14E38 with a nil target.
-- Spell casts by the AI: its aim (0x14611 for the AI) is not read, so `CastAuto` only finds targets for spells of
-  area mode 0; the cure-target test 0x143F3 and item use 0x22AC4 are not read (no casts in `fight_quick`: no NPCs,
-  quick magic off).
+- No DOSBox capture of an AI cast or item use yet (no casts in `fight_quick`: no NPCs, quick magic off); the rules
+  below "Casts by the AI" and "Item use" are checked under emulation only.
+- The spell 0x239D6 returns for a scroll, as 0x2A2A2 and 0x27C38 get it (bit 7 kept or not `[?]`).

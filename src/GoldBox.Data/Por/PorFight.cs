@@ -30,6 +30,7 @@ public static class PorFight
             Items = items,
             AiSteps = steps,
             Names = PorSpellData.Names(program),
+            Experience = PorSpellData.ExperienceTable(program),
             TurnUndead = program.TurnUndeadTable(),
         };
     }

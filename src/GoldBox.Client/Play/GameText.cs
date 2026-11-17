@@ -14,7 +14,24 @@ public enum Msg
     // Shop (0x6CF3–0x71E7)
     ShopTitle, ShopOverloaded, ShopNoMoney, ShopMoneyLeft, ShopGoBack,
     // Camp (0x19654)
-    MakesCamp, CampPrompt,
+    MakesCamp, CampPrompt, QuitToDos,
+    // Camp spells (0x17B33–0x18376)
+    NoMagicHere, NoCondition, CondCast, CondMemorise, CondScribe, NoSpellsMemorised, CanMemorise, ClericSpells,
+    MageSpells, MemoriseThese, CannotMemorise, MemoriseTheseAgain, ScribeThese, NoCopyableScrolls, AlreadyKnow,
+    AlreadyScribing, CannotScribe, ScribeTheseAgain,
+    // Camp display (0x186F1–0x187E4)
+    Funky, NoSpellEffects, DisplayTitle,
+    // Alter (0x18F71–0x19485)
+    PartyOrder, HasBeenSelected, QuitToDosDrop, WillBeGone, DropFromParty, BidsFarewell, DumpedInDitch, SighOfRelief,
+    GameSpeedIs, SpeedRange, Faster, Slower, SpeedExit, GameSpeedPrompt, AlterPrompt, MonstersOn, MonstersOff,
+    PortraitsOn, PortraitsOff, PicsExit,
+    // Rest (0x243AF–0x24A45)
+    RestTime, RestMenu, PartyHealed, HasMemorised, HasScribed, StopResting, Interrupted,
+    // Save (0x1FCAB–0x1FD11)
+    SaveWhich, SaveSlots, Saving,
+    // Spell lists and the cast (0x23973–0x27C16)
+    SpellsWord, InMemory, InSpellBook, OnScrolls, ToBeMemorised, ToBeScribed, ChooseSpell, CastAction, MemoriseAction,
+    ScribeAction, CastOnWhom, CombatOnly, LoseIt, Casts,
     // Character view (0x2103A–0x21AC7)
     Age, Str, Int, Wis, Dex, Con, Cha, Level, Exp, Status, Encumbrance, Movement, ViewPrompt,
     // Items (0x21D5A–0x22F70)
@@ -78,6 +95,72 @@ public sealed class GameText
         [Msg.ShopGoBack] = (0x71E7, "GO BACK FOR IT?"),
         [Msg.MakesCamp] = (0x19654, "CAMPING..."),
         [Msg.CampPrompt] = (0x1968C, "CAMP: "),
+        [Msg.QuitToDos] = (0x19693, "Quit the game "),
+        [Msg.NoMagicHere] = (0x17B33, "no magic works here"),
+        [Msg.NoCondition] = (0x17B53, "is unable to "),
+        [Msg.CondCast] = (0x17B6A, "cast"),
+        [Msg.CondMemorise] = (0x17B7A, "learn spells"),
+        [Msg.CondScribe] = (0x17B8A, "copy scrolls"),
+        [Msg.NoSpellsMemorised] = (0x17CBA, "has no spells ready"),
+        [Msg.CanMemorise] = (0x17DA1, "free spell slots:"),
+        [Msg.ClericSpells] = (0x17DAF, "            Cleric:"),
+        [Msg.MageSpells] = (0x17DC2, "              Mage:"),
+        [Msg.MemoriseThese] = (0x180F0, "Keep These? "),
+        [Msg.CannotMemorise] = (0x18108, "has no spell slots"),
+        [Msg.MemoriseTheseAgain] = (0x18123, "Keep These? "),
+        [Msg.ScribeThese] = (0x182EA, "Keep These? "),
+        [Msg.NoCopyableScrolls] = (0x18300, "has no scrolls to copy"),
+        [Msg.AlreadyKnow] = (0x18318, "Already in the book"),
+        [Msg.AlreadyScribing] = (0x18334, "Already being copied"),
+        [Msg.CannotScribe] = (0x18357, "Cannot copy it."),
+        [Msg.ScribeTheseAgain] = (0x18376, "Keep These? "),
+        [Msg.Funky] = (0x186F1, "Effect "),
+        [Msg.NoSpellEffects] = (0x187D0, " (none)"),
+        [Msg.DisplayTitle] = (0x187E4, "Effects"),
+        [Msg.PartyOrder] = (0x18F71, "Order: "),
+        [Msg.HasBeenSelected] = (0x18F9F, "is picked"),
+        [Msg.QuitToDosDrop] = (0x190A8, "Quit the game: "),
+        [Msg.WillBeGone] = (0x190B6, "will leave"),
+        [Msg.DropFromParty] = (0x190C3, "Remove? "),
+        [Msg.BidsFarewell] = (0x190D5, "leaves the party"),
+        [Msg.DumpedInDitch] = (0x190E7, "is left behind"),
+        [Msg.SighOfRelief] = (0x190FC, "Stays"),
+        [Msg.GameSpeedIs] = (0x19261, "Speed "),
+        [Msg.SpeedRange] = (0x1926F, " (0 fast, 9 slow)"),
+        [Msg.Faster] = (0x19286, " Fast"),
+        [Msg.Slower] = (0x1928E, " Slow"),
+        [Msg.SpeedExit] = (0x19296, " Exit"),
+        [Msg.GameSpeedPrompt] = (0x1929C, "Speed:"),
+        [Msg.AlterPrompt] = (0x19441, "Alter: "),
+        [Msg.MonstersOn] = (0x19449, "Mon pics on  "),
+        [Msg.MonstersOff] = (0x19457, "Mon pics off  "),
+        [Msg.PortraitsOn] = (0x19466, "Port on  "),
+        [Msg.PortraitsOff] = (0x19475, "Port off  "),
+        [Msg.PicsExit] = (0x19485, "Exit"),
+        [Msg.RestTime] = (0x243AF, "Resting:"),
+        [Msg.RestMenu] = (0x244A5, "Rest daYs Hrs Mins Inc Dec Exit"),
+        [Msg.PartyHealed] = (0x24623, "Everyone heals"),
+        [Msg.HasMemorised] = (0x246E3, "learned"),
+        [Msg.HasScribed] = (0x247A7, "copied"),
+        [Msg.StopResting] = (0x24A36, "Stop? "),
+        [Msg.Interrupted] = (0x24A45, "The rest is cut short!"),
+        [Msg.SaveWhich] = (0x1FCAB, "Save slot: "),
+        [Msg.SaveSlots] = (0x1FCBD, "A B C D E F G H I J"),
+        [Msg.Saving] = (0x1FD11, "Saving"),
+        [Msg.SpellsWord] = (0x239CE, "Spells "),
+        [Msg.InMemory] = (0x23973, "ready"),
+        [Msg.InSpellBook] = (0x2397D, "in the book"),
+        [Msg.OnScrolls] = (0x23995, "on scrolls"),
+        [Msg.ToBeMemorised] = (0x239AF, "to learn"),
+        [Msg.ToBeScribed] = (0x239BF, "to copy"),
+        [Msg.ChooseSpell] = (0x27053, "Spell: "),
+        [Msg.CastAction] = (0x27018, "Cast"),
+        [Msg.MemoriseAction] = (0x2701D, "Learn"),
+        [Msg.ScribeAction] = (0x27026, "Copy"),
+        [Msg.CastOnWhom] = (0x27A96, "Target"),
+        [Msg.CombatOnly] = (0x27BC6, "works only in a fight"),
+        [Msg.LoseIt] = (0x27BE0, "Forget it? "),
+        [Msg.Casts] = (0x27C16, "casts"),
         [Msg.Age] = (0x21040, "AGE"),
         [Msg.Str] = (0x21045, "STR"),
         [Msg.Int] = (0x2104A, "INT"),
@@ -143,10 +226,31 @@ public sealed class GameText
         foreach (var (id, (offset, _)) in Table)
             if (program.OverlayString(offset) is { } s)
                 _texts[id] = s;
+        for (int i = 0; i < EffectLabelOffsets.Length; i++)
+            _effectLabels[i] = program.OverlayString(EffectLabelOffsets[i]);
     }
 
     /// <summary>How many of the texts came from the game files.</summary>
     public int FromGame => _texts.Count;
+
+    /// <summary>The text with its original case (menu lines whose capitals are the hotkeys).</summary>
+    public string Original(Msg id) => _texts.TryGetValue(id, out var s) ? s : Table[id].Ours;
+
+    /// <summary>
+    /// The camp Display list's fixed effect texts (0x187ED: code-segment strings at these offsets, in the order of
+    /// <see cref="GoldBox.Core.Game.CampSpells.LabelledEffects"/>); null where the game files do not hold them.
+    /// </summary>
+    private static readonly int[] EffectLabelOffsets =
+        [0x186F9, 0x1871A, 0x18740, 0x1874D, 0x18756, 0x1875D, 0x1876B, 0x18781, 0x1878A, 0x18793, 0x187A0, 0x187B0, 0x187BA, 0x187C6];
+
+    private readonly string?[] _effectLabels = new string?[EffectLabelOffsets.Length];
+
+    /// <summary>The Display list's text for a labelled effect id (upper case), or null when not read.</summary>
+    public string? EffectLabel(byte id)
+    {
+        int i = Array.IndexOf(GoldBox.Core.Game.CampSpells.LabelledEffects, id);
+        return i >= 0 ? _effectLabels[i]?.ToUpperInvariant() : null;
+    }
 
     /// <summary>The text, upper case as the font draws it.</summary>
     public string this[Msg id] => (_texts.TryGetValue(id, out var s) ? s : Table[id].Ours).ToUpperInvariant();

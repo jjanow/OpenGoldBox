@@ -34,6 +34,10 @@ Code: `src/GoldBox.Core/Game/EffectHandlers*.cs` (`IFightEffects`, the DAMAGE ho
 | 6DBF | an item is being used |
 | 6828 + 4·id | effect handler table (ids 1..127 effects, 128..139 item codes; built at 0x11DFD) |
 | 6B84 + 4·id | spell routine table (id 0 = target pick: 0x27AA9 outside a fight, 0x148BE in one; built at 0x2A42B) |
+| 6DB9 / 6DBA | the aimed square (the caster's at the pick start, then the last aim; Lightning Bolt's rebound moves it) |
+| 6DBB | stinking-cloud list (19-byte GetMem nodes, see spell 34 / handler 40) |
+| 4845 | Enlarge's exceptional Strength; Dispel Magic writes each examined effect's level (param AND 0x0F) there |
+| 409B + 0x38·class + 4·level | experience table (8 classes × 14 signed dwords; levels 0/1 are other data) |
 
 ## Triggers — P
 
@@ -141,7 +145,7 @@ the creature's combat record +0x0A. Ids 5, 13, 19, 24, 27, 60, 63, 92, 127 share
 | 23 Spiritual Hammer | 0xF43B | find the hammer item (type 0x14, word 0x31 = 0xF3). Removed: it goes. Else without it and < 16 items: a new one (plus 1, props 23 / 137); stats recalculated |
 | 25 Invisible | 0xF573 | no target unless the current character sees invisible (0x18); attack − 4 |
 | 26 | 0xF5A2 | as 18 with an 8-slot list (DS:0372 + 16·i; the program reads 8 slots of a shorter list) |
-| 28 Mirror Image | 0xF61B | **1d(param + 1)** always; > 1 with a spell being cast and one target → damage and effect nullified, an image lost (param − 1; at 0 the effect goes). DS:681B is written only by the cast (0x27EC7 / 0x27ED9) and handler 84 (0x10BCB), so as read a weapon hit is never absorbed (not yet checked in DOSBox) |
+| 28 Mirror Image | 0xF61B | **1d(param + 1)** always; > 1 with a spell being cast and one target → damage and effect nullified, an image lost (param − 1; at 0 the effect goes). DS:681B is written only by the cast (0x27EC7 / 0x27ED9) and handler 84 (0x10BCB), so as read a weapon hit is never absorbed (DOSBox `fight_mirror`, s13: 1d5 rolled, images stay at 4) |
 | 29 | 0xF698 | damage − damage ÷ 4 |
 | 30 coughing | 0xF6C0 | item use and casting not allowed; stats recalculated; rear AC byte − 2 (at most down to 0x32), AC = rear AC |
 | 31, 51–53 | 0xFF9A | helpless, snake charm, paralysis, sleep: actions end (START 0x31D7) |
@@ -218,7 +222,19 @@ the program's data; `PorSpellData.Names` reads them from the player's program.
 | 132 | 0x11D00 | wrong alignment → unreadied, element 8, non-weapon damage 0x3D ÷ 16 |
 | 135 | 0x11D8F | Str < 19 → unreadied |
 | 137 | 0x11DD5 | removed → effect 0x17 removed |
-| 40, 73–77, 81–86, 88, 121 | | `[?]` not modelled: arena cells, holds and blood drain (combat slots), fear, gazes, level drain, breath (no table entry), acid |
+| 40 | 0xF91E | (only as a removal call) the caster's cloud numbered param ÷ 16 (first match in DS:6DBB); none → nothing. (Message) each clouded cell gets 0x1F when a body (DS:66D6 + 7k, k ≤ DS:6715, pointer set) lies on it, else the terrain it covered; the node is unlinked and freed; every remaining cloud's cells are set to 0x1E again |
+| 73 | 0x161CD | rake: DS:6823 = 2 hits in phase 1 and the last target in play → combat +4 = 2, 0x114 = 2, 0x116 = 2, 0x118 = 4, 0x113 = 0 (two 2d4 attacks in phase 2), message, MakeAttack (0x1407F, defender turns), actions end |
+| 74 | 0x16281 | hold (from 77), victim = DS:65B9[param]: removed or either out of play → victim's 0x3A goes, and unless removed this record goes (byte 4 cleared first). Else one 3d4 attack (0x113 = 1, 0x114 = 0, 0x115 = 3, 0x117 = 4), MakeAttack with the defender not turning, actions end; victim out of play → the record goes |
+| 75 | 0x103CA | blood drain (from 76), victim = DS:65B9[param]: removed or either out of play → victim's 0x3A goes, unless removed the record goes (byte 4 cleared), and with both in play combat +0x10 = 1. Else (message) 1d4 (count to 681C), element 0, non-weapon damage, actions end; victim in play and minutes ÷ 16 > damage → minutes − 16 × damage, else the record goes |
+| 76 | 0x10510 | attach: 0x4B on the creature (207 minutes, param = target's slot 0x31399, removal on); 0x3A on the target (permanent, param 255) and handler 58 on it |
+| 77 | 0x10590 | target Str < 19: 0x4A on the creature (permanent, slot, removal on), 0x3A on the target, handler 58, message |
+| 81 | 0x10705 | fight start: every creature in play on the other side (START 0x2F57) saves vs. 4 (one draw each); hit dice 0x73 0..3 → paralysis 0x34, 4–5 → Curse 2; permanent, param 12, save negates |
+| 82 | 0x10803 | fight start: each creature's first 0x52 goes (the carrier's too); in play on the other side: save vs. 0 with +1 when DS:6814 + its side ≥ 6 and +2 for race 7, then 0x34 for 1d4 min (after the save), param 12, save negates |
+| 83 | 0x10908 | gaze at the last target (message); gazer with 0x7F and a target's readied item with name word 0x76 (bytes 0x2F–0x31) → reflected (message), the gazer is the victim; victim fails a save vs. 1 → stone (0xECB3, status 7) |
+| 84 | 0x10AD2 | charm gaze: target check 0x13880 and sight 0x2FF74 (`[?]` range = an uninitialised stack byte; 255 taken); message; DS:681B = 10 and **left so** (a later weapon hit on a Mirror Image creature then counts as a spell, see 28); save vs. 4 with −2; charm 0x0B (permanent, param = hostile × 128 + 12, removal on, save negates); charm handler on it |
+| 85, 86 | 0x10FFF, 0x1101D | level drain (0x10D7D) of 1 / 2 on the last target: animated → gone (status 8), max HP 0. Else per level unless gone: 0x74 + 1; n = max HP ÷ Σ class levels (0 → divide error `[?]`); n × (max HP, 0xB1, HP − 1 floor 0; 0x75 + 1); 0x73 < 2 → gone, max HP 0, and draining 2 zeroes the top class's level; else the top class (0x10C5D: highest level, threshold ≥, last wins) − 1, HP 0 → dead, level stats 0x2AA87 `[?]`. Then 0x73 = top class level, XP 0xAC = its threshold (DS:409B, 0 for level ≤ 1), recalculation START 0x1758 |
+| 88 | — | no table entry: 0x11DFD never writes DS:6828 + 4·88 (`[?]` a carrier would far-call whatever is there) |
+| 121 | 0x11877 | acid breath: 1d100 ≤ 25 and the target nearer than 4 (START 0x30FB): actions end, message, 8d4 (count to 681C), save vs. 3 (after the dice), non-weapon damage halved when saved (element left as it was); this record and the first 0x50 go |
 
 ## The stat recalculation — `[?]`
 
@@ -252,7 +268,8 @@ begins casting: combat record +0 = spell, initiative − delay when above it, el
 (0x9B21) and the AI cast +0 (0x27C38) and the actions end. Damage before that clears +0 (0x12AF4 / 0x2C22E).
 
 **Cast** (0x27C38, in a fight): the target pick (DS:6B84 = 0x148BE). Not picked: the AI loses the spell at once
-(the menu asks first): message, memorised copy removed. Picked: facing and animation, the caster's invisibility goes
+(the menu asks first): message, memorised copy removed. Picked: the caster faces the aimed square (0x27D9C–0x27E00:
+the first direction whose cone 0x300CD holds it, 0x31232; its own square gives 0), animation, the caster's invisibility goes
 (0x2BEBC), the current character's first memorised copy is removed (START 0x202B; slots 0x17..0x2B, exact byte;
 not while an item is used), DS:681B = spell, the routine runs (DS:6B84 + 4·spell), DS:681B = DS:6820 = 0.
 
@@ -263,7 +280,8 @@ not while an item is used), DS:681B = spell, the routine runs (DS:6B84 + 4·spel
 - 8..0x0E: aim (bare square allowed); the target list around it with radius `area AND 7`; DS:6820 = 1.
 - 1..7: (area AND 3) + 1 aims, each a creature not already taken (a repeat is refused with a message, or skipped
   for the AI); an aborted aim uses up a pick. Empty list → not picked.
-The aim itself and the range check are the menu's / AI's (0x14611 `[?]`).
+The aim itself and the range check are the menu's / AI's (0x14611: player side in combat-menu.md, AI side in
+combat-ai.md "Casts by the AI").
 
 **Resolution** (0x278DB, spell, strength, removal flag, damage, element, message): element mask = element (0
 without damage); nothing without targets; strength 0 → the casting level. Per target in list order: a save (type
@@ -285,7 +303,7 @@ Draw order per target: save 1d20, attack 1d20, duration dice; and inside: handle
 | 12 Enlarge | 0x282BD | Str 18 / exceptional by level (1: 0, 2: 1, 3: 51, 4: 76, 5: 91, 6: 100; other levels keep the previous value `[?]`); raise (0x2C046); effect 0x0C, removal on, with the returned code |
 | 13 Reduce | 0x28386 | first target fails a save vs. 4 and loses an Enlarge → message |
 | 14 Friends | 0x283F0 | first target's Charisma + 2d4, at most 25; strength = the old Charisma, removal on |
-| 15 Magic Missile | 0x28451 | damage (level ÷ 2)d4 + level ÷ 2 (count to 681C), element 8 — **0 at level 1** (as read; not yet checked in DOSBox) |
+| 15 Magic Missile | 0x28451 | damage (level ÷ 2)d4 + level ÷ 2 (count to 681C), element 8 — **0 at levels 0–1, no draw** (checked under emulation for levels 0–12, and with an item level 6 = 3d4 + 3; the resolution then sees damage 0, so element 0 and no 0x2C22E: nothing happens. DOSBox `fight_casts` b02 → b04, s13: no damage, no draw) |
 | 20 Shocking Grasp | 0x284DF | damage level + 1d8, element 0x0C; range 255 → attack roll |
 | 21 Sleep | 0x28533 | DS:6820 = 1; budget 4d4; cost by hit-dice byte 0x73: ≤ 1 → 1, 2 → 2, 3 → 4, 4 → 6, 5 → 10 (race byte 0) or 20, else 20; animated, already asleep or unaffordable targets leave |
 | 23, 49 Hold Person | 0x2866F | modifier by target count (1 → −2 for 23 / −3 for 49, 2 → −1, 3–4 → 0); from the last target: save; type > 1 or size > 1 counts as saved; effect for the duration, strength = level, no removal call |
@@ -294,7 +312,39 @@ Draw order per target: save 1d20, attack 1d20, duration dice; and inside: handle
 | 28 Spiritual Hammer | 0x289DB | resolution with removal on; handler 0x17 on the first target |
 | 32 Mirror Image | 0x28AA2 | strength 1d4 |
 | 5, 6, 7, 8, 11, 16–19, 22, 24, 25, 29–31, 33, 50, 52–54 | shared | plain resolution (the table's effect) |
-| 34–48, 51, 55–67 | | `[?]` not read yet (stinking cloud, fireball and lightning need the map) |
+| 34 Stinking Cloud | 0x28B29 | DS:6820 = 1; a node at the end of DS:6DBB numbered by the current character's nodes **except the list's last** (the walk stops on it: a quirk, so numbers repeat); effect 0x28 on the current character for (level) minutes, param = number × 16 + level, removal on. Cells i = 1..4 at aim + direction DS:290D[i] (8, 2, 3, 4: a 2 × 2 block): slot kept; terrain > 0 with cost < 0xFF → clouded. Kept terrain: its own; under 0x1E the last earlier node's kept terrain ≠ 0x1E for that cell; under 0x1F the last body entry's on it. Clouded cells = 0x1E; message, redraw; terrain check 0x2B9D1 on each creature found |
+| 35 Strength | 0x28F59 | gain: MU level 0x9B > 0 → 1d4; cleric 0x96 or thief 0x9C > 0 → 1d6; fighter 0x98 > 0 → 1d8 (each rolled, the last kept; none → uninitialised `[?]`, 0 here); Str + gain > 18: fighter → 18 / min(100, excess × 10 + 0x16), others 18 / 0; raise 0x2C046 (message); effect 0x26 for the duration with the code, removal on |
+| 36 Animate Dead | 0x29087 | DS:6820 = 1, list emptied, budget = level; whole creature list while budget: status 6, type 0, 0x317E1 on its square → param = level + old hostile × 16; hostile = current's, 0x10F = 1, 0x76 = 2, 0x6B = 0, 0x72 = 6, memorised cleared, 0x84 → 0xB2 (> 0x7F) or 0xB3, type 4, in a fight +0x0A cleared; budget − 1; 0x2C753 with max HP → effect 0x20 (permanent, param, removal on) and status 1 |
+| 37 Cure Blindness | 0x2922F | first target loses 0x21 (0x2BF6B, message) → message |
+| 38, 44, 45, 61, 63 | 0x29275, 0x2961C, 0x29655, 0x29FB1, 0x2A042 | plain resolution |
+| 39 Cure Disease | 0x29347 → 0x292A2 | under the lock: first target loses (with message) 0x22; 0x2B, then its 0x2C and 0x1F; 0x32, then its 0x39; true when any of the three went |
+| 40 Cause Disease | 0x29364 | resolution with removal on (duration 1d6 × 10) |
+| 41, 46 Dispel Magic | 0x2939D | DS:6820 = 1; count times, always on the **first** target (reads DS:6C95 each pass, a quirk): each record with param < 255: DS:4845 = param AND 0x0F; chance 50 + 5 × (level − it), 50 − 2 × (it − level), or 50 (byte); 1d100 ≤ chance → removed (0x2AF10); any → message |
+| 42 Prayer | 0x294EE | strength = level + current's hostile × 16 (byte); plain |
+| 43 Remove Curse | 0x29558 | first target loses Bestow Curse 0x24 (message) → message; else its first item with 0x36 ≠ 0 gets 0 → message |
+| 47, 64 Fireball | 0x29683 | DS:6820 = 1; dice = 1d3 × 2 + 1 (64, wand) else level; VM $49E6 (word [DS:49D2]+0x1CC) = 0 → the list is rebuilt: 0x3045B around the aim, range 2, no cone, size 1, every slot listed; (draw 0x310D0); resolution with (dice)d6 (count to 681C), element 9 |
+| 48 Haste, 55 Slow | 0x298AA / 0x29C21 → 0x2977C | side = caster's (Haste) / other (Slow); DS:6820 = 1, budget = level; a target of the side while budget lasts uses one and leaves when it loses the opposite effect (Slow 0x2A / Haste 0x27, message); others leave; resolution; class 0x12 on each left |
+| 51 Lightning Bolt | 0x29BCF | damage (level)d6 (0x2BCCD, 681C untouched); 0x298D4 on the aimed square; the bolt 0x29973 (8, damage, 4, rebound bonus) |
+| 60 | 0x29F65 | 0x298D4 with 1d6 + 20 on the aimed square; then 0x29973 (3, 20, 4, no bonus) |
+| 56 Restoration | 0x29C5B | first target with 0x74 > 0: g = 0x75 ÷ 0x74; 0x32, HP, 0xB1 + g, 0x75 − g, 0x74 − 1; class (0..7) with 0 < level ≤ best (13), 0 < XP[level + 1] < lowest (10,000,000), not stopped by START 0x3AF7 → + 1 level; XP 0xAC raised to that threshold when below (also with no class found: the routine then adds 1 at an uninitialised index `[?]`); 0x2AA87; message |
+| 57 | 0x29E1A | first target losing Slow 0x2A (message) → done; else plain |
+| 58 | 0x29E65 | first target losing poison 0x37 → under the lock its 0x16 goes; else 0x292A2; nothing cured → heal 1d4 + 8 (no bypass), message |
+| 59 | 0x29EFD | raise to Str 21 / 0 (message); effect 0x26, duration 1d4 × 10 + 40, removal on |
+| 62 | 0x29FE8 | heal 2d4 + 2 (no bypass), message |
+| 65 | 0x2A070 | damage 2d4 + 2 (count to 681C), element 8 |
+| 66 | 0x2A0AA | nothing |
+| 67 | 0x2A0BA | strength 255, removal on (effect 4 for 1440) |
+
+**Bolt hit** (0x298D4, x, y, damage, save type, out rebound): cell 0x30BF8; terrain with cost 0xFF → rebound. A
+creature there: DS:6819 = 0x0C, save (type, 0), 0x2C22E halved when saved, DS:6819 = 0.
+
+**Bolt** (0x29973, length, damage, save type, bonus): nothing when the caster (0x31321 / 0x31349) stands on the aim.
+DS:6820 = 1, left = 2 × length, last slot = the aim's, direction 1. While left: line (0x2FCF2) from the aim to aim +
+(aim − caster) × direction × left; step (0x2FE1E) until the end, a slot ≠ last, terrain 0, cost > 1, or the line's
+distance ≥ left; last slot = that cell's; terrain 0 → left 0; (draw); bolt hit there. Rebound: the aim moves there, a
+line is walked back to the caster, and when the bonus is still on and that is ≤ 8 half squares the line's distance
++ 8; direction reversed, bonus off, last slot 0. Left − the line's **total** distance (not the part since the last
+hit), at least 0; without a rebound the same line goes on, else a new line. DS:6820 = 0.
 
 **Castable** (`FightSpells.Castable`): with cast allowed (+1), every distinct memorised id (bit 7 clear) whose "when"
 byte is not 0. `[?]` The menu's own list (0x239D6) is not read.
@@ -302,18 +352,32 @@ byte is not 0. `[?]` The menu's own list (0x239D6) is not read.
 ## Where the data is (`PorSpellData`)
 
 - Spell table: the immediate of START 0x3262's `mov cl,4 / shl di,cl / mov al,[di+imm] / cmp al,0 / jne`.
+- Experience table: the immediate − 2 of GAME.OVR's `mov dx,0x38 / mul dx / mov di,ax / add di,cx / cmp word
+  [di+imm],0` (113 dwords read).
 - Name lists of handlers 18, 26, 47: the immediates of `mov cl,4 / shl di,cl / add di,imm / push ds / push di /
   lcall` in GAME.OVR, in that order; handler 48's two names: the Pascal strings right before its code.
 
 ## Open `[?]`
 
-- The stat recalculation (above); START 0x2197 (where a created item goes, 0xC7); the camp/out-of-combat cast
-  (0x27AA9 target pick); the spell menu (0x239D6) and the aim (0x14611); the map target list 0x3045B (implemented by
+- The stat recalculation (above); START 0x2197 (where a created item goes, 0xC7); the spell menu (0x239D6; the camp's
+  out-of-combat cast and 0x27AA9 are in camp.md); the map target list 0x3045B (implemented by
   the map code through `IFightTargetList` / `IFightAuraRange`; without it auras in a fight are not found and area
   spells fall back to the map distance with a diagnostic).
-- Effect expiry: the clock (0x241A1) counting effect minutes down; in a fight one round is one minute.
-- Handlers 40, 73–77, 81–86, 88, 121; spell routines 34–48, 51, 55–67.
-- Everything else here is **P**; only the Sleep cast below is **D**.
+- Effect expiry in a fight: the clock (0x241A1) counting effect minutes down, one round = one minute (DOSBox
+  `fight_casts` q01 shows it; the expiry routine 0x23DCC itself is read, camp.md).
+- Level stats 0x2AA87 (table DS:3C7C; 0x2D, 0x73, 0xA1) and the race level limit START 0x3AF7: seams
+  `EffectHandlers.LevelStats` / `RaceLevelLimit`, not read. Handler 84's sight range; handler 88's missing entry.
+- Everything else here is **P**; the Sleep cast below is **D**; the routines under "Checked under emulation" are **E**.
+
+## Checked under emulation — E
+
+`tools/scripts/por_spell_oracle.py` runs the v1.3 routines under unicorn on generated creatures (fixture
+`tests/fixtures-private/por/program-v1.3/spells.json`, 487 cases; `FightSpellsProgramTests`): record bytes, effect
+lists, items, RandSeed (so the draws), and on a combat map the arena cells and the aim. Covered: spells 34 (twice,
+then handler 40 through the removal of 0x28), 35, 36, 37, 39, 41, 42, 43, 44, 46, 47, 48, 51, 55, 56, 57, 58, 59, 60,
+62, 64, 65, 67; handlers 81, 82, 83, 85, 86. Outside a fight (DS:49F3 = 0); text and drawing trapped; 0x2AA87 and
+START 0x1758 skipped, START 0x3AF7 answers "no limit" (the seams do the same). Handlers 73–77, 84, 121 need the
+fight's slots and attack: hand tests (`EffectHandlersHoldsTests`). Magic Missile: levels 0–12 and the item path.
 
 ## DOSBox — D
 

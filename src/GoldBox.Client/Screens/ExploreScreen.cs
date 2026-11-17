@@ -43,6 +43,11 @@ public sealed class ExploreScreen : IScreen
     /// <summary>A click already chose this answer (a party member, a key wait); given on the next update.</summary>
     private object? _clickAnswer;
     private bool _hasClickAnswer;
+    /// <summary>The combat screen: it takes over drawing and input while a fight runs (<see cref="CombatView.Active"/>).</summary>
+    private readonly CombatScreen _combat;
+
+    /// <summary>The combat screen this screen hands over to during a fight.</summary>
+    public CombatScreen Combat => _combat;
 
     public ExploreScreen(PorGame game, ClientPlayer player, ScriptRunner runner, IScreenHost host, char lastLetter = 'A')
     {
@@ -51,6 +56,11 @@ public sealed class ExploreScreen : IScreen
         _player = player;
         _runner = runner;
         _host = host;
+        _combat = new CombatScreen(player.FightView, new CombatArt(game.Directory), game.Art.Font, runner, player.Chooser.Text,
+            player.Resources.ItemWord)
+        {
+            Report = Report,
+        };
         _commands = game.Art.Program.ExploreCommands is { Count: > 0 } c
             ? [.. c.Select(w => w.ToUpperInvariant())]
             : ["AREA", "CAST", "VIEW", "ENCAMP", "SEARCH", "LOOK"];
@@ -121,6 +131,8 @@ public sealed class ExploreScreen : IScreen
 
     public GameAction? MapClick(ScreenClick click)
     {
+        if (_combat.Active)
+            return _combat.MapClick(click);
         Sync();
         if (_runner.Pending is { } request)
             return RequestClick(request, click);
@@ -143,6 +155,11 @@ public sealed class ExploreScreen : IScreen
 
     public void Hover(int x, int y)
     {
+        if (_combat.Active)
+        {
+            _combat.Hover(x, y);
+            return;
+        }
         Sync();
         if (_runner.Pending is ListRequest l)
             _list.Hover(l, x / 8, y / 8);
@@ -295,6 +312,13 @@ public sealed class ExploreScreen : IScreen
             _host.Push(new ControlsScreen(_game.Art.Font, _host));
             return;
         }
+        if (_combat.Active)
+        {
+            _combat.Update(input);
+            if (!_runner.Busy)
+                AfterCommand();
+            return;
+        }
         Sync();
         if (_runner.Pending is { } request)
         {
@@ -355,6 +379,11 @@ public sealed class ExploreScreen : IScreen
             case ListRequest l:
                 return _list.Update(l, input) is { } a ? new Reply(a) : null;
 
+            case DelayRequest { ReportInput: true }:
+                if (input.NewInput is not null || input.Clicks.Count > 0 || input.Pressed(GameAction.Confirm) || input.Pressed(GameAction.Cancel))
+                    return new Reply(true);
+                return _clock.Elapsed >= _delayEnd ? new Reply(false) : null;
+
             case DelayRequest:
                 return _clock.Elapsed >= _delayEnd || input.Pressed(GameAction.Confirm) ? new Reply(null) : null;
 
@@ -369,6 +398,10 @@ public sealed class ExploreScreen : IScreen
                     return new Reply(_selected);
                 if (input.Pressed(GameAction.Cancel) && c.CancelIndex is { } ci)
                     return new Reply(ci);
+                if (!c.Vertical && c.UpAnswer is { } up && input.Pressed(GameAction.MenuUp))
+                    return new Reply(up);
+                if (!c.Vertical && c.DownAnswer is { } down && input.Pressed(GameAction.MenuDown))
+                    return new Reply(down);
                 if (c.PartySelect && input.Pressed(GameAction.PreviousMember))
                     return new Reply(ChoiceRequest.PreviousMember);
                 if (c.PartySelect && input.Pressed(GameAction.NextMember))
@@ -383,7 +416,7 @@ public sealed class ExploreScreen : IScreen
                 // The original's hotkeys: the first letter of an item.
                 if (input.NewInput is (InputDevice.Keyboard, { Length: 1 } key))
                     for (int i = 0; i < n; i++)
-                        if (c.Items[i].Length > 0 && c.Items[i][0] == key[0])
+                        if (c.HotkeyOf(i) == key[0])
                             return new Reply(i);
                 return null;
             }
@@ -442,6 +475,11 @@ public sealed class ExploreScreen : IScreen
 
     public void Draw(IndexedFrame f, ActionInput input)
     {
+        if (_combat.Active)
+        {
+            _combat.Draw(f, input);
+            return;
+        }
         var font = _game.Art.Font;
         var pending = _runner.Pending;
         if (pending is ListRequest page)
@@ -497,7 +535,7 @@ public sealed class ExploreScreen : IScreen
             int start = MenuStart(h);
             if (h.MenuPrompt is { Length: > 0 } mp)
                 Chrome.Text(f, font, 0, MenuRow, mp, MenuPromptColour);
-            DrawLine(f, font, h.Items, _selected, start);
+            DrawLine(f, font, h.Items, _selected, start, h.HotkeyOf);
         }
         else if (pending is null)
             DrawLine(f, font, _commands, Array.FindIndex(_commands, w => w[0] == _lastLetter), 0);
@@ -595,7 +633,8 @@ public sealed class ExploreScreen : IScreen
     }
 
     /// <summary>A line of words on the bottom row as the original draws its menus: the highlighted item all white, the others with a white hotkey letter.</summary>
-    private static void DrawLine(IndexedFrame f, TextFont font, IReadOnlyList<string> items, int selected, int start)
+    private static void DrawLine(IndexedFrame f, TextFont font, IReadOnlyList<string> items, int selected, int start,
+        Func<int, char>? hotkey = null)
     {
         int col = start;
         for (int i = 0; i < items.Count; i++)
@@ -603,8 +642,9 @@ public sealed class ExploreScreen : IScreen
             var w = items[i];
             if (col + w.Length > 40)
                 break;
-            Chrome.Text(f, font, col, MenuRow, w[..1], Chrome.White);
-            Chrome.Text(f, font, col + 1, MenuRow, w[1..], i == selected ? Chrome.White : Chrome.Green);
+            int k = hotkey is null ? 0 : Math.Max(0, w.IndexOf(hotkey(i)));
+            Chrome.Text(f, font, col, MenuRow, w, i == selected ? Chrome.White : Chrome.Green);
+            Chrome.Text(f, font, col + k, MenuRow, w.Substring(k, 1), Chrome.White);
             col += w.Length + 1;
         }
     }

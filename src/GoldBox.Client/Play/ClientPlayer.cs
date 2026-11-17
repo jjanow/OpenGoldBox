@@ -131,7 +131,18 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
     public void Picture(ushort picture) { }
     public void LoadMap(int map) { }
     public void LoadOutdoorPicture() => Log.Add("LOADFILES outdoors (wilderness picture)");
-    public void LoadWallSet(int slot, int? set) { }
+    /// <summary>The wall sets loaded into slots 1..3 (the program's cache the save copies into $4AFA–$4AFF); null = as the memory had them.</summary>
+    private readonly int?[] _wallSets = new int?[3];
+    private readonly bool[] _wallSetKnown = new bool[3];
+
+    public void LoadWallSet(int slot, int? set)
+    {
+        if (slot is >= 1 and <= 3)
+        {
+            _wallSets[slot - 1] = set;
+            _wallSetKnown[slot - 1] = true;
+        }
+    }
     public void Clock(ushort minutes) { }
     public void Call(ushort routine) => Log.Add($"CALL {routine:X4}");
     public void Protect(ushort address) { } // the code wheel: imported modules skip it (PLAN 6)
@@ -181,7 +192,8 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
 
     public int ChooseParleyAttitude() => Choose(null, ["HAUGHTY", "SLY", "NICE", "MEEK", "ABUSIVE"]);
 
-    public void LoadCombatIcon(byte picture, int slot) { }
+    /// <summary>LoadCombatIcon: the combat screen draws the monsters of icon slot <paramref name="slot"/> (record 0xBF) with this CPIC.</summary>
+    public void LoadCombatIcon(byte picture, int slot) => FightView.IconPictures[slot] = picture;
 
     // ---- ICombatRunner ---------------------------------------------------------------------------------------------
     /// <summary>
@@ -191,14 +203,32 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
     public void Fight(EncounterState state) =>
         Acknowledge($"A FIGHT WITH {state.Monsters.Count} CREATURES. THE FIGHT IS NOT IN THIS BUILD YET: IT COUNTS AS WON.");
 
+    /// <summary>What the combat screen shows (<see cref="Screens.CombatScreen"/>); active while a fight runs.</summary>
+    public CombatView FightView { get; } = new();
+
+    private CombatChooser? _chooser;
+
+    /// <summary>The player's side of the combat menu (passed to the game as <c>PorPlayer.FightMenu</c>).</summary>
+    public CombatChooser Chooser => _chooser ??= new CombatChooser(runner.Ask, FightView);
+
     /// <summary>
-    /// The real fight (built by the game with every party member on Quick), run headless: there is no combat screen
-    /// yet, so a notice comes first and the after-combat step shows the outcome.
+    /// The real fight (arena and placement done): shown on the combat screen while it runs; party members not on Quick
+    /// get the combat menu (<see cref="Chooser"/>). The game speed starts from the saved options' $49FC [?] (as DELAY).
     /// </summary>
     public void Fight(EncounterState state, GoldBox.Core.Game.Fight fight)
     {
-        Acknowledge($"A FIGHT WITH {state.Monsters.Count} CREATURES. NO COMBAT SCREEN YET: THE PARTY FIGHTS ON QUICK.");
-        fight.Run();
+        int speed = memory().Read(0x49FC) & 0xFF;
+        FightView.Speed = (byte)(speed <= 9 ? speed : 0);
+        FightView.Dungeon = memory().ViewMode == 1; // [?] the tile set follows DS:49FA (combat-map.md 0xD815)
+        Chooser.Attach(fight);
+        try
+        {
+            fight.Run();
+        }
+        finally
+        {
+            Chooser.Detach(fight);
+        }
     }
 
     /// <summary>The NPC share window, the summary and the loot menu (<see cref="VenueScreens.Loot"/>), DS:49F3 = 6.</summary>
@@ -296,9 +326,18 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
             Notice = "NO AREA MAP HERE.";
     }
 
+    /// <summary>The program's camp and rest variables (DS:6DC2, DS:6DD8, DS:49FB, DS:471E, DS:6DD0), kept for the session.</summary>
+    public CampState CampState { get; } = new();
+
+    /// <summary>Where the camp's Save writes (the player's save folder; the game folder is never written).</summary>
+    public string? SaveFolder { get; set; }
+
+    /// <summary>Quit to DOS (the camp's Save and Drop questions): closes the Client.</summary>
+    public Action? Quit { get; set; }
+
     /// <summary>
-    /// The camp menu (0x196A0, <see cref="VenueScreens.Camp"/>) after vector 2. Rest is not built, so no rest is ever
-    /// interrupted (vector 3 does not run).
+    /// The camp menu (0x196A0, <see cref="VenueScreens.Camp"/>) after vector 2; true when a rest was interrupted (the
+    /// area loop then runs vector 3).
     /// </summary>
     public bool Camp()
     {
@@ -308,11 +347,68 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
         Interface = Venue.Camp;
         try
         {
-            return VenueScreens.Camp(t, Resources.CampMenu);
+            return VenueScreens.Camp(CampContextFor(t), Resources.CampMenu);
         }
         finally
         {
             Interface = before;
+        }
+    }
+
+    /// <summary>The camp's rules on this game: spell table, scroll test, the effect engine out of combat, the generator.</summary>
+    private CampContext CampContextFor(TradeContext t)
+    {
+        var mem = memory();
+        var game = Game();
+        Func<ushort, ushort> random = n => game is null ? (ushort)0 : game.Rng.Next(n);
+        var table = Resources.Spells ?? new SpellTable(new Dictionary<int, SpellInfo>());
+        var spells = new CampSpells(table, it => Resources.ItemSlot(it) is > 10 and < 14);
+        var effects = new EffectHandlers(random) { List = () => t.Party.Members, CurrentCharacter = () => t.Party.Current };
+        var rest = new CampRest(mem, CampState, spells, random, (c, e) => effects.RemoveEffect(c, e[0], e),
+            c => effects.RestoreHitPoints(c, 1, false));
+        return new CampContext
+        {
+            Trade = t,
+            State = CampState,
+            Spells = spells,
+            Rest = rest,
+            Memory = mem,
+            Cast = Resources.Spells is null ? null : new CampCast(new FightSpells(table, effects, random), t.Party),
+            Resources = Resources,
+            Save = SaveGame,
+            Quit = Quit,
+        };
+    }
+
+    /// <summary>
+    /// The camp's Save (0x1FD3E): the options and wall sets into $49FC/$49FF (already the cells here) and
+    /// $4AFA–$4AFF, then <c>SAVGAMx.DAT</c> (interface state 2, camp) and the member files into <see cref="SaveFolder"/>.
+    /// [?] The location type is 1 (3D area) in a 3D view, else 2 (the wilderness is not built).
+    /// </summary>
+    public string? SaveGame(char letter)
+    {
+        if (SaveFolder is null || memory().Party is not { } party || Game() is not { } game)
+            return "NO SAVE FOLDER.";
+        var mem = memory();
+        for (int k = 0; k < 3; k++)
+            if (_wallSetKnown[k])
+            {
+                mem.Write((ushort)(0x4AFA + k), (ushort)(_wallSets[k] is { } w ? w & 0xFFFF : 0xFFFF));
+                mem.Write((ushort)(0x4AFD + k), (ushort)(k + 1));
+            }
+        try
+        {
+            var bytes = GoldBox.Data.Por.PorSaveGame.Build(mem, party.Members.Count, letter,
+                (byte)(game.Loop.InView3D ? 1 : 2), 2);
+            Directory.CreateDirectory(SaveFolder);
+            File.WriteAllBytes(Path.Combine(SaveFolder, GoldBox.Data.Por.PorSaveGame.FileName(letter)), bytes);
+            GoldBox.Data.Por.PorParty.Save(party, SaveFolder, letter);
+            Log.Add($"saved slot {letter} to {SaveFolder}");
+            return null;
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            return "SAVE FAILED: " + e.Message;
         }
     }
 

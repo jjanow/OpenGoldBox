@@ -45,14 +45,21 @@ else
             Game = () => game,
         };
         player.InstallPaging();
-        var who = new PorPlayer(player, player, player, player, QuickFight: true);
+        player.SaveFolder = ClientSettings.SavesFolder;
+        var program = PorProgram.Open(dir);
+        player.Chooser.Text = new CombatText(program);
+        if (program is not null && new SpellNames(program.Image) is { Count: > 0 } spells)
+            player.Chooser.SpellName = id => spells[id];
+        var who = new PorPlayer(player, player, player, player, FightMenu: player.Chooser, QuickFight: true);
         // The game seeds its generator from the DOS clock at start-up.
         uint seed = (uint)Environment.TickCount64;
         string? savePath = null;
         if (options.Area is null)
         {
             var name = ClientOptions.SaveFileName(options.Save ?? "A");
-            savePath = dir.Find(name) ?? (File.Exists(name) ? name : null)
+            // The player's own saves (written by the camp) come first, then the game folder's.
+            var own = Path.Combine(ClientSettings.SavesFolder, name);
+            savePath = (File.Exists(own) ? own : null) ?? dir.Find(name) ?? (File.Exists(name) ? name : null)
                 ?? throw new FileNotFoundException($"save {name} not found in {gameDir}");
         }
         // The entry runs on the logic thread, so its menus or text (if any) wait for the window.
@@ -86,6 +93,8 @@ using var window = new GoldBoxGame(
     Problem = problem,
     Stretch43 = settings.Stretch43,
 };
+if (player is not null)
+    player.Quit = window.Exit;
 window.Run();
 runner.Dispose();
 return problem is null ? 0 : 1;

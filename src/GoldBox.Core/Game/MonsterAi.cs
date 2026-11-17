@@ -134,12 +134,13 @@ public sealed class MonsterAi : IFightController
         }
     }
 
-    /// <summary>0xACEE: a spell begun earlier (+0 &gt; 0) is cast now, 0x27C38(spell, 1, 1), which picks its own targets.</summary>
+    /// <summary>0xACEE: a spell begun earlier (+0 &gt; 0) is cast now, 0x27C38(spell, ai = 1, 1), which aims by itself
+    /// (<see cref="IFightSpells.ContinueCastingAuto"/>).</summary>
     private static bool CastBegun(Fight f, EclCharacter c)
     {
         if (f.Record(c)[CombatRecord.SpellCast] == 0)
             return false;
-        f.Spells.ContinueCasting(f, c, [], null);
+        f.Spells.ContinueCastingAuto(f, c);
         return true;
     }
 
@@ -613,12 +614,22 @@ public sealed class MonsterAi : IFightController
             return false;
         if (area == 0)
             return true;
-        int side = EnemySide(c);
-        // 0xAE15 searches around the enemy's slot square with size 1; [?] the search seam starts from the creature.
+        int side = EnemySide(f.State.Current ?? c);
         foreach (var e in list)
-            if (FightSearch.Nearby(f, e!, area).Any(o => o[FightRules.Hostile] != side))
+            if (AreaAround(f, e!, area).Any(o => o[FightRules.Hostile] != side))
                 return false;
         return true;
+    }
+
+    /// <summary>0xAE15's list: the target list 0x3045B around the creature's slot square with size 1 (no cone).</summary>
+    private static IReadOnlyList<EclCharacter> AreaAround(Fight f, EclCharacter e, int radius)
+    {
+        if (f.Geometry is IFightTargetList tl && f.Map is { } map)
+        {
+            var (x, y) = map.Position(e);
+            return tl.Around(x, y, radius);
+        }
+        return FightSearch.Nearby(f, e, radius); // [?] no combat map: the search from the creature's footprint
     }
 
     /// <summary>
@@ -852,17 +863,21 @@ public sealed class MonsterAi : IFightController
     /// 0x100 + its hands ≤ 2, its slot (0–8; ring slot 9 → the second ring; arrows 0x49 / bolts 0x1C → slots 11/12)
     /// is free and its class mask fits. Items with 0x3E &gt; 0x7F run their handler (0x2AEEA, <see cref="ItemHandler"/>).
     /// </summary>
-    public void Toggle(Fight f, EclCharacter c, byte[] item)
+    public void Toggle(Fight f, EclCharacter c, byte[] item) => ToggleReady(f, c, item, ItemHandler);
+
+    /// <summary>0x2250A as <see cref="Toggle"/>, with the item handler 0x2AEEA given (null = none). Returns the
+    /// refusal: 0 done, 1 class, 2 slot taken, 3 hands full (the message 0x2250A shows), 4 cursed.</summary>
+    public static int ToggleReady(Fight f, EclCharacter c, byte[] item, Action<EclCharacter, byte[], bool>? itemHandler)
     {
         bool magic = item[0x3E] > 0x7F;
         if (item[CombatRules.ItemEquipped] != 0)
         {
             if (item[0x36] != 0)
-                return;
+                return 4;
             item[CombatRules.ItemEquipped] = 0;
             if (magic)
-                ItemHandler?.Invoke(c, item, true);
-            return;
+                itemHandler?.Invoke(c, item, true);
+            return 0;
         }
         var eq = FightRules.Equipment(c, f.Items);
         int t = item[0x2E];
@@ -881,9 +896,10 @@ public sealed class MonsterAi : IFightController
         if ((f.Items[t, 13] & c[ClassMask]) == 0)
             result = 1;
         if (result != 0)
-            return; // messages only
+            return result; // messages only
         item[CombatRules.ItemEquipped] = 1;
         if (magic)
-            ItemHandler?.Invoke(c, item, false);
+            itemHandler?.Invoke(c, item, false);
+        return 0;
     }
 }

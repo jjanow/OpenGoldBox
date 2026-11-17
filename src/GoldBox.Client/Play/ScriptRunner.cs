@@ -27,6 +27,19 @@ public sealed record ChoiceRequest(string? Prompt, IReadOnlyList<string> Items, 
 
     /// <summary>Extra hotkeys that answer as <see cref="PreviousMember"/> / <see cref="NextMember"/> (G and O where the program tests them).</summary>
     public string? MemberLetters { get; init; }
+
+    /// <summary>
+    /// The hotkey of each item (one character per item), when it is not the item's first letter: the program's menu
+    /// routine takes every capital letter of its line as a hotkey ("daYs" → Y). Null = first letters.
+    /// </summary>
+    public string? Hotkeys { get; init; }
+
+    /// <summary>Items answered by the Up / Down actions of a horizontal menu (the rest-time menu's Inc / Dec); null = none.</summary>
+    public int? UpAnswer { get; init; }
+    public int? DownAnswer { get; init; }
+
+    /// <summary>The hotkey of item <paramref name="i"/>.</summary>
+    public char HotkeyOf(int i) => Hotkeys is { } h && i < h.Length ? h[i] : Items[i].Length > 0 ? Items[i][0] : '\0';
 }
 
 /// <summary>
@@ -57,6 +70,9 @@ public sealed record ListRequest(IReadOnlyList<ListLine> Lines, IReadOnlyList<st
 
     /// <summary>The menu also takes the party selection keys (see <see cref="ChoiceRequest.PartySelect"/>).</summary>
     public bool PartySelect { get; init; }
+
+    /// <summary>Rows that are labels (the spell lists' level headings, the Display list's names): shown, never picked.</summary>
+    public IReadOnlySet<int> Labels { get; init; } = new HashSet<int>();
 }
 
 /// <summary>The action picked on a <see cref="ListRequest"/> (or a member switch) and the row it applies to.</summary>
@@ -66,7 +82,14 @@ public sealed record ListAnswer(int Action, int Row);
 public sealed record TextRequest(string Prompt, bool Numeric, int MaxLength) : PlayerRequest;
 
 /// <summary>A pause (DELAY): answered by the screen when the time has passed.</summary>
-public sealed record DelayRequest(TimeSpan Duration) : PlayerRequest;
+public sealed record DelayRequest(TimeSpan Duration) : PlayerRequest
+{
+    /// <summary>
+    /// Answer <c>true</c> as soon as any key, button or click arrives, <c>false</c> when the time has passed (the rest
+    /// loop's key check 0x24B1D, polled by the camp); off = the plain DELAY (answered null either way).
+    /// </summary>
+    public bool ReportInput { get; init; }
+}
 
 /// <summary>Thrown inside the worker when the runner is shut down while it waits.</summary>
 public sealed class RunnerCancelledException() : Exception("the game logic was stopped");
