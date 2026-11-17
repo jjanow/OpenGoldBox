@@ -64,6 +64,8 @@ DENY = [
     "tools/scripts/amiga_por_art.py",
     "tools/scripts/por_art_compare.py",
     "docs/re/por-art-formats.md",
+    # Test-rig helper: holds a byte pattern of the game program's code-wheel check (DOSBox test copies only).
+    "tools/scripts/por_dosbox_game.py",
 ]
 # tools/public/<name> -> <name in the public tree>
 PUBLIC_FILES = {"README.md": "README.md", "LICENSE": "LICENSE", "gitignore": ".gitignore"}
