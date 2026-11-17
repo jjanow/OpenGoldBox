@@ -174,8 +174,25 @@ Post-combat routine at OVR 0x557E (v1.3), static read:
 4. Divide by (word at [DS:49D6]+67Ch − byte DS:84D5) (OVR 0x58A0–0x58BE): the per-character share. The
    divisor is presumably the number of characters sharing `[?]`.
 
-Before step 1 a separate branch (OVR 0x5584) returns `level_highest × 100` of the current character when the
-byte DS:84D4 and the word [DS:49D6]+5CCh are both set; what sets them is `[?]`.
+Before step 1 a separate branch (OVR 0x5584) returns `level_highest` (0x73) × 100 of the current character
+(DS:5D92) as the share, with no loot and no division, when the byte DS:84D4 and VM $6DE6 (word [DS:49D6]+5CCh) are
+both non-zero. What sets them (program read 2026-11-17, not tried in DOSBox-X):
+
+- ECL **CALL $8000** and **CALL $8001** (handler 0x3A15: $8000 → routine 0x8F42 with 1, $8001 → with 0). 0x8F42
+  sets DS:84D4 = 1 and $6DE6 = its argument, and takes out of the fight (+10Dh = 0) every party member whose name
+  differs from the current character's (string compare at 0x8F86; a member with the same name stays in). With 1 it also appends a copy of the current character to the party list as the enemy
+  (hostile, +84h = 0xB2, items copied, effects cleared). So $8000 is a one-on-one duel against the character's own
+  copy (Lee: "mirror duel"), and $8001 is the current character fighting the loaded monsters alone.
+- DS:84D4 is cleared by COMBAT after the fight (0x25F2) and at start-up (0xE9E0). $6DE6 is cleared at 0x6BE6
+  (Lee: combat results).
+- So the branch fires only after CALL $8000, and only the dueller gets XP (the award loop 0x58D3 skips members
+  with +10Dh = 0). v1.3 calls $8000 once (ECL3 block 11, $9CA6, then COMBAT) and $8001 twice (ECL1 block 18,
+  ECL8 block 16); each is followed by LOADMON and COMBAT, so DS:84D4 never outlives the fight. One script writes $6DE6 directly (ECL3 block 0, `SAVE #1, [$6DE6]` at $A76D, with $6DE3 = 1
+  before a COMBAT). DS:84D4 is 0 there, so the branch does not fire and the XP is normal.
+- After the fight (0x5AA5–0x5B2D), DS:84D4 set skips the "party defeated" loop and clears DS:49FF. Otherwise a
+  non-hostile player character (+84h < 0x80) with status 0, 1 or 3 clears DS:49FF; with $6DE6 = 1 any status
+  does. So the ECL3 block 0 fight never counts as a party wipe. (Members whose record pointer +108h has byte
+  +13h = 1 are skipped first; that field is not named here `[?]`.)
 
 So the multiplier is the disk byte 0xB1, not 0x32 (talonius `postcbt.pas` and DrEvil agree; Lee's bestiary totals
 use 0x32 and are off wherever the two differ: 14 monster records, e.g. goblin guards 5 vs 4, set 3 id 109 23 vs 35,

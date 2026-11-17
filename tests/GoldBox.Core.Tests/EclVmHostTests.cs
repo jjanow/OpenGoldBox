@@ -29,7 +29,7 @@ public class EclVmHostTests
             .Op(EclOpcodes.Damage, Imm8(1), Imm8(2), Imm8(6), Imm8(0), Imm8(0))
             .Op(EclOpcodes.SpriteOff)
             .Op(EclOpcodes.PrintRet)
-            .Op(EclOpcodes.Clock, Imm8(10))
+            .Op(EclOpcodes.Clock, Imm8(10)) // amount from operand index 0, not 10 (0x3807)
             .Op(EclOpcodes.AddNpc, Imm8(3), Imm8(80))
             .Op(EclOpcodes.LoadFiles, Imm8(18), Imm8(0), Imm8(1))
             .Op(EclOpcodes.LoadPieces, Imm8(1), Imm8(3), Imm8(5))
@@ -47,7 +47,7 @@ public class EclVmHostTests
         [
             "LoadCharacter 1", "LoadMonster 2 3 4", "SetupMonster 5 1 6", "Approach", "Picture 7", "Print A",
             "PrintClear B", "ClearMonsters", "Random 6", "Random 6", "Combat", "Treasure 1 2 3 4 5 6 7 8", "Rob 1 50 10",
-            "Call 8000", "Damage 1 2 6 0 0", "SpriteOff", "PrintReturn", "Clock 10", "AddNpc 3 80", "LoadMap 18",
+            "Call 8000", "Damage 1 2 6 0 0", "SpriteOff", "PrintReturn", "Clock 0", "AddNpc 3 80", "LoadMap 18",
             "LoadWallSet 1 1", "LoadWallSet 2 3", "LoadWallSet 3 5", "Who WHO", "Delay", "Spell 3", "Protect 9700",
             "ClearBox", "Program 9",
         ], rig.Host.Calls);

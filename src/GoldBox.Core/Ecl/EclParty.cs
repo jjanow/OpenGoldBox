@@ -12,8 +12,18 @@ public sealed class EclCharacter
     /// <summary>Longest name the record holds (Pascal string at offset 0, 16 bytes).</summary>
     public const int MaxNameLength = 15;
 
+    public const int EffectRecordSize = 9;
+
     public byte[] Record { get; }
     public List<byte[]> Items { get; } = [];
+    /// <summary>
+    /// The 9-byte effect records (docs/re/item-format.md "Effect record"), in list order. Byte 0 is the effect id;
+    /// the encounter menu's speed rule (GAME.OVR 0x9484) tests ids 0x27 and 0x2A.
+    /// </summary>
+    public List<byte[]> Effects { get; } = [];
+
+    /// <summary>True when an effect with this id is in <see cref="Effects"/> (START.EXE 00BA:2199 walks the list).</summary>
+    public bool HasEffect(byte id) => Effects.Any(e => e.Length > 0 && e[0] == id);
 
     public EclCharacter(byte[]? record = null)
     {

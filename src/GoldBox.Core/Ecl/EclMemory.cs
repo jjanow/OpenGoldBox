@@ -26,10 +26,15 @@ public sealed class EclMemory
     public const ushort Area6B00 = 0x6B00, Area6B00End = 0x6EFF;
     public const ushort Area9700 = 0x9700, Area9700End = 0x98FF;
 
-    /// <summary>Special addresses with a defined read (ecl-format.md). The position cells are served from <see cref="Position"/>.</summary>
+    /// <summary>
+    /// Special addresses with a defined read (reader GAME.OVR 0x82DF, ecl-format.md). The position cells and $033D
+    /// are served from <see cref="Position"/>; $00B1/$00FB/$00FC read DS words the program never writes (0).
+    /// </summary>
     public static readonly ushort[] SpecialReads = [0x00B1, 0x00FB, 0x00FC, 0x033D, 0xC04B, 0xC04C, 0xC04D, 0xC04E, 0xC04F];
-    /// <summary>Special addresses with a defined write.</summary>
+    /// <summary>Special addresses whose write the program stores somewhere (writer 0x814A).</summary>
     public static readonly ushort[] SpecialWrites = [0x03DE, 0x00B8, 0x00B9, 0xC04B, 0xC04C, 0xC04D, 0xC059, 0xC05F];
+    /// <summary>Special addresses with a write case that does nothing (writer 0x814A): $00FB, $00FC, $00B1, $D022.</summary>
+    public static readonly ushort[] SpecialNoOpWrites = [0x00FB, 0x00FC, 0x00B1, 0xD022];
 
     private readonly ushort[] _cells4900 = new ushort[1024];
     private readonly ushort[] _cells6B00 = new ushort[1024];
@@ -53,13 +58,18 @@ public sealed class EclMemory
     public bool Ds84D2 { get; set; }
 
     /// <summary>
-    /// Values for the special read addresses whose meaning is not decoded ($00B1, $00FB, $00FC, $033D direction).
-    /// [?] Their source in the game is not traced; the host or a test sets them. Missing = 0.
+    /// Last value written to each special write address (writer 0x814A): $03DE → DS:84CC (sound picked by CALL
+    /// $BA03: 8 or 10), $00B8 / $00B9 → DS:84CE / DS:84D0 (never read by the program), $C059 / $C05F → low byte to
+    /// DS:6F68 / DS:6F69 (3D-view background colour codes, applied at the next redraw; the script init sets them to
+    /// 0x41 / 9, <see cref="EclVm.InitScript"/>).
     /// </summary>
-    public Dictionary<ushort, ushort> SpecialReadValues { get; } = [];
-
-    /// <summary>Last value written to each special write address ($03DE, $00B8, $00B9, $C059, $C05F: settings `[?]`).</summary>
     public Dictionary<ushort, ushort> SpecialWriteValues { get; } = [];
+
+    /// <summary>
+    /// When set, the value an undefined read returns instead of <see cref="EclVmPolicy.UndefinedValue"/>: the VM sets
+    /// it to the stack residue it models (the previous COMPARE operand read) while COMPARE fetches its operands.
+    /// </summary>
+    public ushort? UndefinedReadResidue { get; set; }
 
     /// <summary>Raised for every write through <see cref="Write"/> and for record fields changed by side effects.</summary>
     public event Action<EclMemoryWrite>? Written;
@@ -116,18 +126,29 @@ public sealed class EclMemory
             return c;
         switch (a)
         {
-            case 0xC04B:
-                // [?] SignExtendX: the spec marks only y as signed.
-                return Policy.SignExtendX ? (ushort)(sbyte)Position.X : Position.X;
-            case 0xC04C: return (ushort)(sbyte)Position.Y; // signed (spec)
+            // P (reader 0x82DF): x and y are both sign-extended bytes (DS:6AAD / DS:6AAE).
+            case 0xC04B: return (ushort)(sbyte)Position.X;
+            case 0xC04C: return (ushort)(sbyte)Position.Y;
             case 0xC04D: return (ushort)(Position.Facing / 2);
             case 0xC04E: return Position.WallAhead;
             case 0xC04F: return Position.EventByte;
-            case 0x00B1 or 0x00FB or 0x00FC or 0x033D:
-                return SpecialReadValues.TryGetValue(a, out var v) ? v : (ushort)0;
+            // P: the 8-way facing byte DS:6AAF (0, 2, 4, 6), unsigned.
+            case 0x033D: return Position.Facing;
+            // P: DS:6F6E / DS:6F6A / DS:6F6C, which no program code writes (DOSBox: 0, also after a
+            // script wrote these addresses). Their writes are ignored.
+            case 0x00B1 or 0x00FB or 0x00FC: return 0;
         }
-        Diag($"[?] read of unlisted special address ${a:X4}: undefined, using {Policy.UndefinedValue}");
-        return Policy.UndefinedValue;
+        return UndefinedRead(a == 0x035F || a == 0xC059
+            ? $"read of ${a:X4}: the reader has a case for it but sets no value (stack residue)"
+            : $"read of unlisted special address ${a:X4}: undefined (stack residue)");
+    }
+
+    /// <summary>A read the program leaves undefined: the modelled residue if the VM set one, else the policy value.</summary>
+    private ushort UndefinedRead(string what)
+    {
+        var v = UndefinedReadResidue ?? Policy.UndefinedValue;
+        Diag($"[?] {what}, using {v}{(UndefinedReadResidue is null ? "" : " (previous COMPARE read)")}");
+        return v;
     }
 
     /// <summary>VM write (GAME.OVR 0x814A). Writes to unlisted special addresses are ignored (P) and logged.</summary>
@@ -161,10 +182,15 @@ public sealed class EclMemory
                 Written?.Invoke(new EclMemoryWrite(a, "special", old, (ushort)(value % 4)));
                 return;
             case 0x03DE or 0x00B8 or 0x00B9 or 0xC059 or 0xC05F:
+                // P (0x814A): words to DS:84CC / 84CE / 84D0; $C059 / $C05F store the low byte (DS:6F68 / 6F69).
+                if (a is 0xC059 or 0xC05F)
+                    value &= 0xFF;
                 SpecialWriteValues.TryGetValue(a, out old);
                 SpecialWriteValues[a] = value;
                 Written?.Invoke(new EclMemoryWrite(a, "special", old, value));
                 return;
+            case 0x00FB or 0x00FC or 0x00B1 or 0xD022:
+                return; // P: the writer has a case for these that stores nothing (0x814A)
         }
         Diag($"write ${a:X4} = {value} to an unlisted special address ignored");
     }

@@ -234,4 +234,28 @@ public class PorScriptTests(ITestOutputHelper output)
             output.WriteLine(f);
         Assert.Empty(faults);
     }
+
+    [PorFact]
+    public void Wilderness_035F_tables_match_neither_the_residue_nor_zero()
+    {
+        // ecl-format.md "VM memory map": the three wilderness scripts compare an undefined read of $035F with a table
+        // in a loop. In COMPARE that read returns the previous COMPARE read: the loop index (block 25) or the loop
+        // bound $6E7B (blocks 26: 28 or 19, 27: 8). No table holds that value or 0 (the VM's default), so the
+        // compare never matches in the game or in the VM.
+        var dir = PorData.Open();
+        (int Disk, int Block, ushort Table, int Length, int[] Residues)[] uses =
+        [
+            (6, 25, 0xADCE, 8, [0, 1, 2, 3, 4, 5, 6, 7]),
+            (7, 26, 0xB019, 29, [28]),
+            (7, 26, 0xB036, 20, [19]),
+            (8, 27, 0xAB9E, 8, [8]),
+        ];
+        foreach (var (disk, block, table, length, residues) in uses)
+        {
+            var b = dir.LoadBlock(disk, block)!;
+            var values = b.Skip(2 + table - EclLayout.Base).Take(length).Select(x => (int)x).ToList();
+            Assert.DoesNotContain(0, values);
+            Assert.Empty(values.Intersect(residues));
+        }
+    }
 }

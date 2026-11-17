@@ -201,6 +201,7 @@ not checked by us. Later.
 9. The game runs the script stored in the save, not a fresh copy: a copy of save A whose stored vector 0 was changed
    loaded with the changed vector in effect (DOSBox-X). So the ECL area matters on load; an importer that rebuilds
    it from the ECL file must produce the same bytes.
-10. No map state is saved: doors opened before a save are locked again after loading it (DOSBox-X, `geo-format.md`).
+10. No map state is saved: doors opened before a save are locked again after loading it (DOSBox-X), and every
+    LOADFILES of the map (entering the area) re-locks them too (program read; `geo-format.md`).
 
 Run: `python3 -I tools/scripts/gbchar.py check <gamedir>` repeats checks 1-3 and 5.

@@ -112,7 +112,7 @@ DS:70C8 + 256·k string slots; index from 1), and leaves the program counter on 
 | 0x03 | 2: `lo hi` | VM address; value = contents of that address |
 | 0x80 | 1 + n: `n`, then n packed bytes | Inline text (below). Fetched as a *value* it is treated like type 1: VM read at `n \| stale_hi << 8` (0x764D; never done in v1.3) |
 | 0x81 | 2: `lo hi` | VM address of a text (Lee: a C string in VM memory); as a *value* it is the 16-bit field itself |
-| other | 1 | Loader accepts it and stores the byte; the value fetch returns an undefined value `[?]`. Never used by the scripts |
+| other | 1 | Loader accepts it and stores the byte as the low byte. The value fetch has no case for it and returns its own uninitialised local (stack residue, undefined). Never used by the scripts |
 
 - **Types 1 and 3 are fetched the same way.** Lee calls 1 "address of an 8-bit value" and 3 "address of a 16-bit
   value"; in the program, the read width comes from the address region (next section), not from the type. Usage:
@@ -127,8 +127,9 @@ DS:70C8 + 256·k string slots; index from 1), and leaves the program counter on 
   characters 0x41–0x5F (code + 64: `A`..`Z`, `[`, `\`, `]`, `^`, `_`); codes 32–63 are ASCII 0x20–0x3F as is.
   Unpacker GAME.OVR 0x8626, character map 0x7BA6. So scripts only carry upper case, digits and punctuation.
   The decoded text goes to a 255-byte string slot. Lee 12.3.2 describes the same scheme.
-- **String slots count text operands only** (loader 0x74D3): the k-th operand of type 0x80 or 0x81 *in the
-  instruction* goes to slot k (DS:6FC8 + 256·k), whatever its operand position. A type-0x80 text of length 0 gives an
+- **String slots count text operands only** (loader 0x74D3): the k-th operand of type 0x80 or 0x81 *in one
+  loader call* (for a fixed-count opcode: in the instruction) goes to slot k (DS:6FC8 + 256·k), whatever its
+  operand position. A variadic tail is a second call and starts again at slot 1. A type-0x80 text of length 0 gives an
   empty slot. Type 0x81 reads the text from VM memory (0x87CE): one character per cell (low byte of each word cell, or each
   byte in the script area) until a cell that is 0; the address $6B00 instead gives the current character's name.
 
@@ -148,6 +149,14 @@ area loop 0x403E (checks at 0x4118–0x423B), which clears it on exit (0x4245); 
   the count from the last fixed operand **through the value fetch** (so a memory operand would be dereferenced), steps
   the PC back one byte and loads that many more operands. In v1.3 every such count is a type-0 immediate, so the length
   is static (`ecl.py check` fails on any other type).
+  - All four keep only the **low byte** of the count (ON 0x2663, VMENU 0x1C9D, HMENU 0x1E46).
+  - The second load is a fresh call of the loader, so the tail fills **operand slots 1..n** and, since the loader
+    starts its text counter at 0 on every call (0x74D3), **string slots from 1**. Before it, each handler takes what
+    it needs from the fixed part: ON its selector (0x2650), VMENU the destination and a copy of the prompt (slot 1,
+    0x1C70–0x1C90), HMENU the destination (0x1E36). Afterwards the fixed operands are gone from the slots.
+  - Each operand array has 64 entries; past 64 they run into the next array (type of operand 65 = high byte of
+    operand 1, and so on). No v1.3 instruction loads more than 64 operands; the VM keeps separate arrays and does not
+    model that overlap (only the reads of "operand 0" that CLOCK makes).
 - **IF.** The six IF opcodes (16–1B) take no operands. Each tests one of six flags (DS:6F78..6F7D for =, ≠, <, >,
   ≤, ≥). True: execution continues with the next instruction. False: the next instruction is skipped using a separate
   table of operand counts (column "Skip" below; routine GAME.OVR 0x9379). For six opcodes that table is short:
@@ -186,8 +195,12 @@ area loop 0x403E (checks at 0x4118–0x423B), which clears it on exit (0x4245); 
 - **ON GOTO / ON GOSUB:** if the selector value is < count, jump (or call) to the selector-th target; otherwise
   fall through. Selector and count are the low bytes of their values (0x263E); targets k = 0..count−1 are compared
   with the selector in turn.
-- **Opcode 0x1F and ≥ 0x3E have no case in the dispatcher.** The PC is not advanced, so the run loop would execute
-  the same byte forever `[?]` (not traced). None is reachable in v1.3.
+- **Opcode 0x1F and ≥ 0x3E hang the game.** The dispatcher has no case for them and returns without advancing the PC.
+  The run loop 0x3EB7 then executes the same byte again, and it only leaves when the stop flag DS:442E or DS:49FF
+  is set, which only the EXIT and NEWECL handlers (0xDE1, 0x19A0) and DAMAGE / the combat check do. Nothing polls
+  the keyboard in between, so the game freezes. DOSBox-X trace (2026-11-17, patched save D, vector 0 pointed at a 0x1F
+  byte): after one step key the trace repeated `A200 1F` without end (over a million lines), and later keys had no
+  effect. None is reachable in v1.3.
 
 ### Arithmetic, RANDOM and tables (program read 2026-11-17)
 
@@ -234,10 +247,114 @@ area loop 0x403E (checks at 0x4118–0x423B), which clears it on exit (0x4245); 
   overwrites it with 2, so 3 never occurs.) Which side each value describes is Lee's reading `[?]`. Roll order
   r1 then r2: confirmed by DOSBox (interrupted rest: from the captured seed, r1 = 1 and r2 = 3 give the captured
   $6DCB = 1; the other order would give 2).
-- **CLOCK** (0x3807): passes an uninitialised local byte as the operand index to the value fetch, so the amount
-  is undefined `[?]` (stack residue); it then adds that many minutes to the clock $49C6–$49CC (0x241A1, unit 1 =
-  minutes, the same routine rest uses). Used once in v1.3.
+- **CLOCK** (0x3807) loads its one operand, then fetches the amount with an uninitialised local byte as the operand
+  index, and adds that many minutes to the clock $49C6–$49CC (0x241A1, unit 1 = minutes, the same routine rest uses).
+  - The local is the high byte of the stack word just below the handler's frame, i.e. whatever the previous
+    handler left there. GOSUB (0xE57) leaves the word it passed to the GOSUB push: AL = 1 and AH = 0 (the operand
+    loader returns with AH = 0 after a type-1 operand). So **after GOSUB the index is 0**. Other handlers leave other
+    values `[?]` (an IF that skips leaves part of a far return address).
+  - The fetch reads operand k at type DS:7005+k, low byte DS:7085+k, high byte DS:7045+k. **Index 0** therefore reads
+    type DS:7005, which nothing writes (0), and low byte DS:7085, which is the high byte of operand slot 64. That
+    slot is written only by an instruction that loads 64 operands (none in v1.3), so the amount is 0.
+  - The one v1.3 use (ECL7 block 17 $9D37, the Nomad Camp) is reached only by GOSUB: **it adds 0 minutes**.
+  - DOSBox-X check (2026-11-17, patched save D): CLOCK right after GOSUB added 0 minutes; after an ON GOTO with 64
+    targets whose last one had high byte 5, the same CLOCK added 5 (10:50 → 10:55); DS:7005 = 0, DS:7085 = 5.
+- **PRINT / PRINTCLR of a number** (handler 0x174F): when the operand type is below 0x80, the value is fetched and
+  converted with Turbo Pascal's `Str` (START.EXE 0x1C13: the 16-bit value as an unsigned number, decimal, no
+  padding) **into string slot 1**, which is then printed as a text would be. So `PRINTCLR [$6E79]` (ECL1 block 18
+  $A0AB) prints the cell's value as digits, and slot 1 keeps the digits afterwards. DOSBox-X check (patched save D):
+  PRINTCLR 12345 then PRINT [x] with x = 5 showed `123455`, and slot 1 still held the digits' tail afterwards.
+  How the text box shows a text is still Lee's description (L).
 - **INPUTNUM / INPUTSTR** (0x1697 / 0x16DA): the length operand is loaded but never fetched.
+
+### Encounters (program read 2026-11-17)
+
+Handlers (GAME.OVR): SETUPMON 0x10FA, LOADMON 0x1196, APPROACH 0x155D, PICTURE 0x159C, CLRMON 0x1FA3,
+COMBAT 0x24E1, TREASURE 0x26F6, ENCMENU 0x2C3E, PARLEY 0x3311, SPRITEOFF 0x37E8. Code: `src/GoldBox.Core/Game`
+(`EncounterHost`, `EncounterRules`). VM cells touched: $6DC0, $6DC1, $6DCA, $6DE2, $6E6C and the ENCMENU / PARLEY
+destination. Everything else below lives in the data segment (DS), not in VM memory.
+
+**View distance** (routine 0x7955, called with the party's x, y, facing). Outdoors ($49E6 = 0) it returns 2 and also
+stores $6DC1 = 2 itself. Indoors it counts squares in the facing direction, at most 2: while the face of the square
+in that direction has wall type 0 (planes 0/1, accessor 0x2ED72), count one and move one square on. Any drawn wall
+stops it, also a door or an open door; the barrier plane is not read. Off the map the wall accessor wraps
+(`geo-format.md` "Edges").
+
+**SETUPMON v1 v2 v3** (0x10FA): DS:6F81 = low byte of v1 (the sprite, a `SPRIT<d>.DAX` block), $6DC0 = v2 (16 bits),
+DS:6F82 = low byte of v3 (the close-up), $6DC1 = min($6DC0, view distance), then the encounter is drawn (0x7A21:
+the sprite at distance 1–2; at distance 0 the close-up, from `PIC` when $6DE1 = 255, else head $6DE1 + body).
+The two cells are stored straight into the area, not through the VM writer. DOSBox: `encmenu_clamp` (ENCMENU uses
+the same start) holds $6DC0 = 2, $6DC1 = 1 with a wall one square ahead.
+
+**APPROACH** (0x155D): if $6DC1 > 0, $6DC1 − 1 and redraw. At 0 nothing.
+
+**LOADMON v1 v2 v3** (0x1196). Nothing when DS:4435 (monsters added since CLRMON) is ≥ 63. Else:
+1. Load monster v1 (low byte) with the monster loader 0x1EEAA: `MON<d>CHA.DAX` block v1 (285 bytes), then icon size
+   0xC0 by race byte 0x2E (1, 3, 5 → 1; 2, 4, 6, 7 → 2), then **five 1d6 rolls** (dice 0x2BCCD): bytes 0xC1, 0xC2,
+   0xC3, 0xC5, 0xC6 = (r + 8) · 16 + r, and 0xC4 = 0xC4; then effects (`MON<d>SPC`) and items (`MON<d>ITM`).
+2. Load combat icon v3 (`CPIC`) into icon slot DS:6F83.
+3. Append the record to the **party list** (DS:5D96; same list as the party), icon slot in byte 0xBF, DS:4435 + 1.
+   Then copies (not reloads, so no more rolls) for k = 2 .. max(low byte of v2, 1) while DS:4435 < 63.
+4. DS:6F83 + 1, DS:84E7 = 1 ("monsters loaded").
+
+So PARTYSTR, FINDITEM, PSURPRISE and ENCMENU's speed rule see the loaded monsters until the combat code removes them
+(`[?]` where; CLRMON does not). DOSBox (`loadmon_combat`, state taken on the fight screen, combat list read from the
+heap): CLRMON + LOADMON 2, 6, 2 gave six identical records after the six party members, byte 0xBF = 8, DS:4435 = 6,
+DS:6F83 = 9, DS:84E7 = 1, and colour bytes that are exactly the first five 1d6 rolls from the RandSeed at the menu,
+in the order 0xC1, 0xC2, 0xC3, 0xC5, 0xC6 (race 0 keeps 0xC0 = 0).
+
+**CLRMON** (0x1FA3): DS:4435 = 0, DS:84E7 = 0, DS:6F83 = 8 (first monster icon slot), the 28 bytes of money at
+DS:67F4 zeroed, the treasure item list DS:6810 freed. The monster records stay in the list (Lee says the same).
+
+**ENCMENU** (0x2C3E), operands: sprite, distance, close-up, destination a, five reactions (for combat, wait, flee,
+advance, parley), three texts (distance 0, 1, 2), move1, move2.
+1. Fastest and slowest movement over the whole party list (0x9484): record byte 0x11C, doubled when the creature has
+   effect 0x27, else halved when it has 0x2A. Quirk: both start from the first entry's byte before its effects.
+2. Start as SETUPMON ($6DC0, $6DC1, draw).
+3. Loop: text for $6DC1 = d is the first non-empty of slots d+1, d+2, … wrapping to slot 1 (so a missing text falls
+   back to the next *farther* one; Lee says the nearer one). Menu items: combat, wait, flee, advance when d > 0 indoors, else
+   combat, wait, flee, parley; the 4th item of the second menu is choice 4. Reaction r = low byte of the operand for the
+   choice:
+
+| r | Combat | Wait | Flee | Advance | Parley |
+|---|---|---|---|---|---|
+| 0 | 1 | 1 | 2 if slowest ≥ move1, else 1 | 1 | 1 |
+| 1 | 1 | message "both wait", again | 2 | close in (d > 0) or "both wait"; again | 3 if d = 0, else close in, again |
+| 2 | 1 if move2 ≤ fastest, else 0 + "monsters flee" | 0 + "monsters flee" | same | same | same |
+| 3 | 1 | close in or "both wait"; again | 2 | close in or "both wait"; again | 3 if d = 0, else close in, again |
+| 4 | 1 | 3 if d = 0, else close in, again | 2 | same as wait | same as wait |
+| ≥ 5 | the menu ends, nothing is written | | | | |
+
+   Numbers are the value written to a through the VM writer: 0 monsters flee, 1 combat, 2 party flees, 3 parley (Lee's
+   names). "Close in" = $6DC1 − 1 and redraw. "Again" re-enters the loop after the draw (0x2D8D), so the text and the
+   menu follow the new distance. The two messages are fixed program strings. While the loop runs DS:84E9 = 1. Every
+   reaction operand in v1.3 is an immediate 0–4.
+4. DOSBox (`trace_encmenu`, `encmenu_advance`): menu at $6DC0 = 2, $6DC1 = 1; Advance with reaction 1 gave $6DC1 = 0
+   and the parley menu; Flee with reaction 0 and move1 = 6 (slowest member 6) took the ONGOTO target for 2.
+
+**COMBAT** (0x24E1, the hand-off only; the fight 0x9881, the after-combat step 0x6AA5, the shop 0x7212 and the
+temple 0x5280 are not read):
+- If DS:84E7 = 0 (no LOADMON since CLRMON) and DS:84D4 = 0 (no duel): $6E6C = 1 → $6E6C = 0, shop; else $6DE2 = 1 →
+  $6DE2 = 0, temple; else the after-combat step alone. So shop and temple are checked only without monsters, shop first.
+- Else: $6DC1 = min($6DC1, view distance) (outdoors this leaves 2), fight, after-combat step, outdoors the outdoor
+  picture and three icons are reloaded, DS:84D4 = 0.
+- Always: DS:49F3 = 4 (3D) or 3, $6DCA = $6DCA AND 1, DS:84C8/84C9 and DS:84E0 cleared.
+
+**TREASURE v1..v8** (0x26F6): v1..v7 are stored (zero-extended) as the seven dwords at DS:67F4, replacing the old
+values (Lee: added). v8 (low byte) < 128: the records of `ITEM<d>.DAX` block v8 are put in front of the treasure
+list one by one (so they end up in reverse order; a missing file quits to DOS). 128–254: v8 − 128 random items; each
+type is rolled with 1d100 (≤ 60: a second 1d100 gives the type directly for 1–47 and 50–59, 45 becomes 59, 60–90
+a 1d10 picks 34–38, 91–94 → 73, 95–97 → 93, 98–100 → 77; 48 and 49 leave the variable unset `[?]`; 61–85 → 61;
+86–92 → 62; 93–98 a 1d16 picks 67/70/71/78/79/84/92; 99–100 → 69), the item itself is made by 0x25C99 (not read,
+`[?]` its draws), and afterwards START 00BA:0442 runs on every treasure item `[?]`. 255: no items.
+
+**PARLEY v1..v5 a** (0x3311): five-item menu (haughty, sly, nice, meek, abusive), low byte of the chosen value
+written to a.
+
+**PICTURE v** (0x159C): v ≠ 255 shows `PIC` block v when $6DE1 = 255, else head $6DE1 + body v (0x79E4); outdoors the
+window is cleared first. v = 255 redraws the view if a picture or the sprite is shown. Display only; no VM cell.
+
+**SPRITEOFF** (0x37E8): if the sprite is shown (DS:84E3), redraw the view and clear DS:84E3 and DS:84E0.
 
 ## Opcode table
 
@@ -257,16 +374,16 @@ only. `[?]` = unknown or unconfirmed.
 | 06 | DIV | DIVIDE | 3 | 3 | v1 v2 a | a = v1 / v2 unsigned, quotient only; v2 = 0 is a CPU divide fault | P | 29 |
 | 07 | MUL | MULTIPLY | 3 | 3 | v1 v2 a | a = low 16 bits of v1 · v2 | P | 12 |
 | 08 | RANDOM | RANDOM | 2 | 2 | v a | a = Random(v+1) = 0..v (v = low byte; 255 gives 0..254) | P | 144 |
-| 09 | SAVE | SAVE | 2 | 2 | v a | a = v; if v is text, store the text at a | P | 2341 |
+| 09 | SAVE | SAVE | 2 | 2 | v a | a = v; if v has type ≥ 0x80 (0x80, 0x81), store string slot 1 at a (0xFF6) | P | 2341 |
 | 0A | LOADCHAR | LOAD CHARACTER | 1 | 1 | v | Select current character (< 128) / add monster v−128 as ally (≥ 128) | L | 36 |
-| 0B | LOADMON | LOAD MONSTER | 3 | 3 | v v v | Add monster, count, picture to the encounter list | L | 330 |
-| 0C | SETUPMON | SETUP MONSTER | 3 | **2** | v v v | Start an encounter: monster, distance 0–2, picture (DOSBox: $6DC0 = distance; see open list) | L | 187 |
-| 0D | APPROACH | APPROACH | 0 | 0 | – | Encounter distance −1 ($6DC1, see open list) | L | 97 |
-| 0E | PICTURE | PICTURE | 1 | 1 | v | Show picture / head+body / 255 = back to the 3D view | L | 137 |
+| 0B | LOADMON | LOAD MONSTER | 3 | 3 | v v v | Load monster v1 (5 × 1d6 icon rolls), append max(v2, 1) copies to the combat list (cap 63), combat icon v3 ("Encounters") | P | 330 |
+| 0C | SETUPMON | SETUP MONSTER | 3 | **2** | v v v | Sprite v1, $6DC0 = v2, close-up v3; $6DC1 = min(v2, view distance) ("Encounters") | P | 187 |
+| 0D | APPROACH | APPROACH | 0 | 0 | – | If $6DC1 > 0: $6DC1 − 1 and redraw | P | 97 |
+| 0E | PICTURE | PICTURE | 1 | 1 | v | Picture v ($6DE1 = 255) or head $6DE1 + body v; 255 = back to the view | P (shape) | 137 |
 | 0F | INPUTNUM | INPUT NUMBER | 2 | 2 | v a | Read a number into a; v is ignored (input up to 6 characters, re-asked until 0..65536; low 16 bits stored) | P | 2 |
 | 10 | INPUTSTR | INPUT STRING | 2 | 2 | v a | Read text into a (SAVE-text rules); v is ignored: up to 40 characters 0x20–0x7A, upper-cased, empty input stored as one space | P | 20 |
-| 11 | PRINT | PRINT | 1 | 1 | s | Print to the text box | L | 289 |
-| 12 | PRINTCLR | PRINTCLEAR | 1 | 1 | s | Clear the text box, print | L | 1401 |
+| 11 | PRINT | PRINT | 1 | 1 | s | Print to the text box; a number (type < 0x80) is printed as decimal digits via slot 1 (P, 0x174F) | L | 289 |
+| 12 | PRINTCLR | PRINTCLEAR | 1 | 1 | s | Clear the text box, print (numbers as for PRINT) | L | 1401 |
 | 13 | RETURN | RETURN | 0 | 0 | – | Pop PC; empty stack: fall through | P | 440 |
 | 14 | CMPAND | COMPARE AND | 4 | 4 | v1 v2 v3 v4 | "=" if v1 = v2 and v3 = v4, else "≠"; other flags 0 | P | 65 |
 | 15 | VMENU | VERTICAL MENU | 3+n | **0** | a s n, s×n | Prompt s, list n choices, choice index → a | P (shape) | 15 |
@@ -276,31 +393,31 @@ only. `[?]` = unknown or unconfirmed.
 | 19 | IFGT | IF > | 0 | 0 | – | same, ">" | P | 281 |
 | 1A | IFLE | IF <= | 0 | 0 | – | same, "≤" | P | 24 |
 | 1B | IFGE | IF >= | 0 | 0 | – | same, "≥" | P | 127 |
-| 1C | CLRMON | CLEARMONSTERS | 0 | 0 | – | Reset encounter hostility and treasure | L | 251 |
+| 1C | CLRMON | CLEARMONSTERS | 0 | 0 | – | Monster count 0, "monsters loaded" off, icon slot 8, treasure cleared; records stay listed | P | 251 |
 | 1D | PARTYSTR | PARTYSTRENGTH | 1 | 1 | a | a = party strength (formula below) | P | 18 |
 | 1E | CHKPARTY | CHECKPARTY | 6 | 6 | v v a a a a | Min/max/avg of a party stat, or "anyone has effect" | L | 4 |
-| 1F | (none) | undefined | – | 2 | – | No handler; PC not advanced `[?]` | P | 0 |
+| 1F | (none) | undefined | – | 2 | – | No handler; PC not advanced, the game hangs (DOSBox) | P | 0 |
 | 20 | NEWECL | NEWECL | 1 | 1 | v | Load script v, stop the current run | P | 79 |
 | 21 | LOADFILES | LOAD FILES | 3 | 3 | v v v | 3D: load GEO map v1; outdoors: BACPAC picture (see below) | P | 61 |
 | 22 | PSURPRISE | PARTY SURPRISE | 2 | 2 | a a | a1 = 1 if a party member's class is ranger or cleric/ranger, else 0; a2 = 0 | P | 22 |
 | 23 | SURPRISE | SURPRISE | 4 | 4 | v v v v | Roll surprise, result 0–2 to $6DCB (formula below; 3 is never stored) | P | 22 |
-| 24 | COMBAT | COMBAT | 0 | 0 | – | Fight the loaded monsters, or enter temple/shop per flags | L | 245 |
+| 24 | COMBAT | COMBAT | 0 | 0 | – | Monsters loaded: limit $6DC1 to the view, fight, after-combat. Else shop ($6E6C = 1), temple ($6DE2 = 1) or after-combat. Then $6DCA AND= 1 | P (entry) | 245 |
 | 25 | ONGOTO | ON GOTO | 2+n | **0** | v n, t×n | Jump to target v if v < n, else fall through | P | 427 |
 | 26 | ONGOSUB | ON GOSUB | 2+n | **0** | v n, t×n | Same as a call | P | 37 |
-| 27 | TREASURE | TREASURE | 8 | 8 | v×8 | Coins ×5, gems, jewellery, item list for the next fight/shop | L | 77 |
+| 27 | TREASURE | TREASURE | 8 | 8 | v×8 | Set the 7 money values; v8 < 128 item list, 128–254 that many − 128 random items, 255 none | P (partly) | 77 |
 | 28 | ROB | ROB | 3 | 3 | v v v | v1 = 0: current character, else every party member; money × Real(100 − v2) / 100.0 (Real divide START.EXE 0xC10C; applied by 0x9196 `[?]` rounding), items by v2 (0x92C3) `[?]` item rule; v3 unused | P (partly) | 14 |
-| 29 | ENCMENU | ENCOUNTER MENU | 14 | 14 | v v v a v×5 s s s v v | Encounter menu with reactions, texts per distance, move thresholds | L | 94 |
+| 29 | ENCMENU | ENCOUNTER MENU | 14 | 14 | v v v a v×5 s s s v v | Start as SETUPMON, then the menu loop; result 0–3 → a ("Encounters") | P | 94 |
 | 2A | GETTABLE | GETTABLE | 3 | 3 | a v a | a2 = cell at (a1 + low byte of v) | P | 271 |
 | 2B | HMENU | HORIZONTAL MENU | 2+n | **0** | a n, s×n | Bottom-line menu, choice → a | P (shape) | 204 |
-| 2C | PARLEY | PARLAY | 6 | 6 | v×5 a | Choose a parley attitude, its value → a | L | 41 |
-| 2D | CALL | CALL | 1 | 1 | a | Run a built-in routine chosen by the raw address ($2C90, $8000, $8001, $BA03, $C018, $C01E; else nothing) | P (ids) | 180 |
+| 2C | PARLEY | PARLAY | 6 | 6 | v×5 a | Five-item menu; low byte of the chosen value → a | P | 41 |
+| 2D | CALL | CALL | 1 | 1 | a | Run a built-in routine chosen by the raw address ($2C90, $8000, $8001, $BA03, $C018, $C01E; else nothing). $8000 = mirror duel (a copy of the current character as the enemy, the others out of the fight), $8001 = solo fight; both GAME.OVR 0x8F42, which sets DS:84D4 (so the next COMBAT fights) and $6DE6 | P (ids; $8000/$8001) | 180 |
 | 2E | DAMAGE | DAMAGE | 5 | 5 | v×5 | Attack/damage characters, optional save | L | 48 |
 | 2F | AND | AND | 3 | 3 | v v a | a = low byte of v1 AND v2; "=" when the result is 0 | P | 356 |
 | 30 | OR | OR | 3 | 3 | v v a | a = low byte of v1 OR v2; flags as AND | P | 208 |
-| 31 | SPRITEOFF | SPRITE OFF | 0 | 0 | – | Remove the encounter sprite `[?]` exact | L | 56 |
+| 31 | SPRITEOFF | SPRITE OFF | 0 | 0 | – | If the encounter sprite is shown: redraw the view, clear the sprite/picture flags | P | 56 |
 | 32 | FINDITEM | FIND ITEM | 1 | 1 | v | "=" if a party member carries an item of type v, else "≠" | P | 7 |
 | 33 | PRINTRET | PRINT RETURN | 0 | 0 | – | New line in the text box | L | 20 |
-| 34 | CLOCK | ECL CLOCK | 1 | 1 | v | Advance the clock by n minutes; bug: n is fetched from an uninitialised operand index | P | 1 |
+| 34 | CLOCK | ECL CLOCK | 1 | 1 | v | Advance the clock by n minutes; bug: n comes from an uninitialised operand index, 0 after GOSUB, which gives n = high byte of operand slot 64 (0 in v1.3) | P | 1 |
 | 35 | SAVETABLE | SAVE TABLE | 3 | 3 | v a v | Store v1 at (a + v2), v2 full 16 bits | P | 17 |
 | 36 | ADDNPC | ADD NPC | 2 | **1** | v v | Add monster as NPC with morale | L | 8 |
 | 37 | LOADPIECES | LOAD PIECES | 3 | 3 | v v v | Load wall sets for slots 1–3 (same handler as 21; see below) | P | 35 |
@@ -324,9 +441,49 @@ The VM address space is 16-bit. The region classifier (GAME.OVR 0x7BCE), reader 
 | $6B00–$6EFF | 16-bit | 1024 words | Some addresses are redirected to the current character record or to program variables (list below); the rest is encounter/combat/shop/scratch state. Saved (offset 2049) |
 | $9700–$98FF | 16-bit | 512 words | Scratch (Lee). Saved (offset 4097) |
 | $9900–$B6FF | 8-bit | 7680 bytes | The script itself. Scripts read their tables here and may write into it. Saved (offset 5121) |
-| anything else | – | special | Read: $00B1, $00FB, $00FC, $033D (direction), $C04B x, $C04C y (signed), $C04D facing/2, $C04E, $C04F; other addresses return an undefined value `[?]`. Write: $03DE, $00B8, $00B9 (sound/other settings `[?]`), $C04B, $C04C, $C04D (value mod 4 → facing 0/2/4/6, by repeated subtraction of 4, 0x8264), $C059, $C05F; other addresses are ignored |
+| anything else | – | special | Listed below ("Special addresses"); other reads return stack residue, other writes are ignored |
 
-- Writes to $49FD/$49FE (sky/ceiling colour) have extra handling in the writer.
+- Writes to $49FD/$49FE (sky/ceiling colour) store the cell and set the redraw flag DS:84E8 (writer 0x8182).
+- $6BF2 (written by ECL2 block 15 vector 4) is a plain cell: neither the read list nor the write side effects
+  below have a case for it, and no code in GAME.OVR or START.EXE reads that cell directly. The write has no effect beyond the cell.
+
+**Special addresses** (outside the four areas; reader 0x82DF from 0x837A, writer 0x814A from 0x81E7; program read
+2026-11-17). Several are written by the scripts but ignored by the DOS program.
+
+| Address | Read | Write |
+|---|---|---|
+| $00B1, $00FB, $00FC | DS:6F6E, DS:6F6A, DS:6F6C (words). No program code writes them, so they read 0 (DOSBox: 0, also right after a script wrote 77/78/79) | Case present, stores nothing |
+| $033D | Facing byte DS:6AAF (0, 2, 4, 6), unsigned | Ignored |
+| $035F | Case present, sets no value: stack residue (see below) | Ignored |
+| $03DE | Residue | Word to DS:84CC: the sound CALL $BA03 plays (8 → one effect, 10 → another, 0x3AC6) |
+| $00B8, $00B9 | Residue | Words to DS:84CE, DS:84D0; no program code reads them (no effect) |
+| $C04B, $C04C | x, y: DS:6AAD, DS:6AAE, both sign-extended | Byte to x / y, and the redraw flag DS:84E6 |
+| $C04D | Facing / 2 | Value mod 4 (repeated subtraction of 4) → facing 0/2/4/6, redraw flag DS:84E6 |
+| $C04E, $C04F | DS:6AB0, DS:6AB1 (wall ahead, event byte) | Ignored |
+| $C059 | Case present, sets no value: residue | Low byte to DS:6F68, flag DS:84E5 |
+| $C05F | Residue | Low byte to DS:6F69, flag DS:84E5 |
+| $D022 | Residue | Case present, stores nothing |
+| others | Residue | Ignored |
+
+- **$C059 / $C05F are 3D-view background colour codes.** The redraw routine 0x2DCF4, when DS:84E5 is set, maps $C05F
+  to two EGA colours (8 → 0 and 8; 0x41 → 0 and 7; anything else → 15 and 7) and $C059 to one (0x0B → 8, 9 → 6,
+  0xDB → 6, 6 → 1, anything else → 6). The script init sets DS:6F68 = 0x41, DS:6F69 = 9 and the flag (0x76A3);
+  start-up sets 0xDB / 0xE8 (0xEA1F). CALL $2C90 redraws the view when any of the flags DS:84E0, 84E3,
+  84E5, 84E6, 84E8 is set (0x3A54).
+- **Stack residue.** For an address with no value (rows above), the reader returns its uninitialised local, i.e.
+  whatever the stack slot holds. That slot is the one every reader call made from the same depth uses, so the value
+  is the **last value read at that depth**, unless a deeper call in between overwrote it. In COMPARE (0xE6C) both
+  operand fetches call the reader from the same depth, and the handlers that run between two COMPAREs in the
+  scripts below have shallow stacks: an undefined read in COMPARE returns the previous COMPARE operand read. DOSBox-X
+  check (patched save D): after `COMPARE [x], #8`, `COMPARE [$035F], #3` gave "=" with x = 3 and ">" with x = 5.
+- **$035F in v1.3**: the three wilderness scripts (ECL6 block 25 $9A0E, ECL7 block 26 $9A77, ECL8 block 27 $9A33)
+  loop over a table after their direction ON GOSUB and set $6DC9 = 255 when `COMPARE [$035F], [$6E7A]` is equal.
+  The residue there is the loop index (block 25: the loop's `COMPARE [$6E79], #8`) or the loop bound $6E7B (block
+  26: 28 or 19; block 27: 8). No table entry equals it (nor 0), so **the test never fires** and $6DC9 is not set
+  there.
+- **$C059 in v1.3**: ECL4 block 10 vector 4 saves `[$C059]` into $4A16 when $4A00 = 0, and vector 0 writes $4A16 back
+  to $C059 right before NEWECL, whose script init resets DS:6F68. So the residue only ends up in $4A16 (saved with
+  the game); it has no visible effect. That SAVE's residue comes from LOADFILES/LOADPIECES' deeper calls `[?]`.
 
 **$6B00-area redirection** (program read 2026-11-17). "Record" = the current character's record (far pointer
 DS:5D92; offsets as in `character-format.md`). A **read** tries the list in routine 0x7C8F first and falls back to the
@@ -437,14 +594,23 @@ Area names as in `geo-format.md` (Lee's chapter 6).
 | 0x7814 | Script file loader (`ECL<d>.DAX`) |
 | 0x196A0 / 0x24A66 | Camp menu / rest loop (sets "rest interrupted") |
 | 0x2BCCD | Dice roll (count × (Random(sides)+1)) |
+| 0x7955 / 0x7A21 | Encounter view distance / encounter draw |
+| 0x9484 | Fastest / slowest movement of the party list |
+| 0x1EEAA | Monster loader (`MON<d>CHA/ITM/SPC`) |
+| 0x174F / 0x3807 | PRINT/PRINTCLR handler / CLOCK handler |
+| 0x2DCF4 | 3D-view redraw (applies the $C059/$C05F colour codes when DS:84E5 is set) |
+| START.EXE 0x1C13 | Number → text (`Str` of an unsigned 16-bit value, no padding), used by PRINT |
 
 Far calls `9a off seg` go through overlay stub segments in START.EXE (paragraph `seg` of the unpacked image): the
 stub header holds the unit's GAME.OVR file offset (dword at +4) and entry `off` holds the routine offset at
 `off + 2`; e.g. VM-helper stub 0x2B has file offset 0x74D3, so `2B:25` → 0x7609 and `2B:57` → 0x82DF.
 
 Data segment variables (DS = START.EXE load segment + 0xC7C): PC 49ED, vectors 49E3–49EB, script pointer 49DE,
-opcode 6F7F / previous 6F7E, compare flags 6F78–6F7D, GOSUB stack head 6F70, operand arrays 7006/7086/7046,
-string slots 6FC8 + 256·k, stop flag 442E, script-changed flag 442F, party-defeated flag 49FF, loading-a-save flag 49F8, disk number 5376
+opcode 6F7F / previous 6F7E, compare flags 6F78–6F7D, GOSUB stack head 6F70, operand arrays (operand k from 1:
+type 7005+k, high byte 7045+k, low byte 7085+k; so "operand 0" reads 7005, 7045 = type of operand 64, 7085 = high
+byte of operand 64), string slots 6FC8 + 256·k, special-address bytes ($C059 6F68, $C05F 6F69, $00FB 6F6A, $00FC
+6F6C, $00B1 6F6E, $03DE 84CC, $00B8 84CE, $00B9 84D0), redraw flags 84E0/84E3/84E5/84E6/84E8, stop flag 442E,
+script-changed flag 442F, party-defeated flag 49FF, loading-a-save flag 49F8, disk number 5376
 (previous 5377), game speed 49E2, RandSeed 4428/442A, current character pointer 5D92, party list head 5D96. The installed DOSBox-X has no debugger; `tools/scripts/dosbox_state.py` reads these from save
 states.
 
@@ -482,55 +648,58 @@ Run: `python3 -I tools/scripts/ecl.py check <gamedir>` on PoR DOS v1.3 (files as
 
 9. **DOSBox comparison** (2026-11-17, `goldbox-tools ecl-compare GAMEDIR`; method in
    `docs/re/dosbox-trace-method.md`): the C# VM replays every golden capture and reproduces it. The cells the VM
-   does not own are listed per capture (clock, wall-set slot $4AFF, encounter distance $6DC0/$6DC1).
+   does not own are listed per capture (clock, wall-set slot $4AFF). Since the encounter host (`EncounterHost`) the
+   distance $6DC0/$6DC1 is compared too.
    - Both E9 traces are followed instruction for instruction (PC, opcode, flags before each step): load + step,
      54/54, and then camp + interrupted rest, 96/96 (rolls found by search, since that boot's seed is unknown).
+     The encounter trace (load, camp, interrupted rest, ENCMENU, Advance, Flee) follows 95/95.
    - The state captures match cell for cell in the four VM areas, plus PC, opcode, previous opcode, flags, GOSUB
      stack (empty or not), disk, position and RandSeed: load A, step, encamp, interrupted rest, door pick, door
-     bash, load B and edge wrap.
+     bash, load B, edge wrap, the two encounter-menu states (`encmenu_clamp`, `encmenu_advance`) and the open-items save D (CLOCK, special reads, COMPARE residue; s9).
+   - The open-items trace (s9) is followed 34/34 up to the first instruction of the 0x1F hang, where the VM stops
+     with `UnhandledOpcode`.
    - No script runs for the turn. The fight is captured inside COMBAT in both states, so all its changes are
      host-side.
    - Draws by program code the VM does not model, found as the count that reproduces RandSeed:
      - 2 before vector 3 in the rest. That fits the rest loop as read, one 1d100 per 24-tick interval against
        $6DD3 = 24: from the captured seed the two rolls are 93 (no encounter at 12:50) and 12 (interrupted at
        14:50). This also checks the generator and the dice rule on rolls made by the program, not the VM.
-     - 6 for the failed pick and 3 for the bash: counts from RandSeed only; what they roll is not read.
+     - 6 for the failed pick and 3 for the bash: read from the door routines since (one 1d100 per member for
+       Pick, one 1d6 per member with Strength in the table for Bash, until a success; `geo-format.md` "Door menu").
 
 ## Open `[?]` (DOSBox trace items marked T)
 
 - Settled by program read 2026-11-17 (were T items): vector 2/3 roles, DS:49FF, DS:49F8, text COMPARE, CMPAND /
-  AND / OR / FINDITEM flags, LOADFILES/LOADPIECES cases, DS:5376 = $6E12, $6B00-area redirection. Checked by the
+  AND / OR / FINDITEM flags, LOADFILES/LOADPIECES cases, DS:5376 = $6E12, $6B00-area redirection.
+- Settled in session 9 (program read plus the open-items capture, patched save D): opcodes 0x1F / ≥ 0x3E hang;
+  the CLOCK amount (0 in v1.3); PRINT of a number; the special addresses ($00B1/$00FB/$00FC, $033D, $035F, $C059,
+  $C05F, $03DE, $00B8/$00B9, $D022, $C04B sign) and what $035F / $C059 give the v1.3 scripts; $6BF2 is a plain
+  cell; the variadic tail reloads operand and string slots from 1; menu counts take the low byte; SAVE copies text
+  for any type ≥ 0x80. Checked by the
   DOSBox comparison ("Verification" 9): RANDOM and the RandSeed formula, SURPRISE's formula and roll order,
   PARTYSTR, the script init on a save load.
-- SETUPMON / APPROACH and the encounter distance (DOSBox, 2026-11-17): after SETUPMON with distance d and k
-  APPROACHes, the captures hold $6DC0 = d and $6DC1 = 0 (interrupted rest: the script had put 2 in $6DC1 with
-  GETTABLE, then SETUPMON …, 2 and two APPROACHes; door bash: SETUPMON …, 1 and one APPROACH). That fits Lee 12.4.2
-  ($6DC0 requested, $6DC1 actual distance) and Lee's SETUPMON text (actual distance can be shorter because of
-  obstructions), but the handlers are not read. The VM leaves both cells to the host `[?]`.
-- Program-side random draws not modelled: how many draws the door pick (6 in the capture) and the bash (3) make,
-  and on what. The rest loop's draws follow its read rule.
+- Settled 2026-11-17 (program read + `encmenu_*` captures): the encounter distance, SETUPMON, APPROACH, LOADMON,
+  CLRMON, ENCMENU, COMBAT's entry, PARLEY, PICTURE, SPRITEOFF ("Encounters"). Still open there: where the combat code
+  removes the monsters LOADMON appended; the fight (0x9881), after-combat step (0x6AA5), shop (0x7212) and temple
+  (0x5280); TREASURE's item maker 0x25C99 and the per-item call 00BA:0442; the item type for a second roll of 48/49;
+  the icon slot DS:6F83 before the first CLRMON; COMBAT's $6DC1 limit is not discriminated by a capture (the
+  distance was already within the view).
+- Program-side random draws: the rest loop and the door menu follow their read rules (door model
+  `GoldBox.Core.Doors`, `geo-format.md`); the comparison harness still searches the door draw counts.
 - LOADPIECES with $49E7 and $49E8 both non-zero: whether an operand of 255 empties slot 1 or 3 there (the VM applies
   the same 255 rule) `[?]`.
-- String slots for variadic opcodes: whether the second operand load (the variadic tail) restarts the text count
-  at slot 1 `[?]` (the VM continues it; no v1.3 instruction depends on it).
 - PARTYSTR reads the level bytes as signed in the record; whether the routine treats −1 as −1 is not read (the VM
   reads them unsigned; party members never hold −1).
 - Which character is current right after a save is loaded (DS:5D92) `[?]`; the VM uses the first member.
 - The forward-step key sets $6DD5 only when the face ahead is not impassable (`geo-format.md`); the comparison
   harness does not read walls.
-- T: Opcode 0x1F / ≥ 0x3E really hang (PC not advanced); never reached in v1.3.
 - T: Which value $49E6 has at each wilderness LOADFILES 4/5/6/127/255 (scripts write it; not followed per path).
 - Meanings of DS:84D2 / DS:84D3 (set by writes of 0 to $6C00 / $6B00) and of the record bytes in the redirection
   table that `character-format.md` names differently from Lee.
-- CLOCK amount (uninitialised operand index; stack residue). One use in v1.3.
-- Still "L" (Lee only): LOADCHAR, LOADMON, SETUPMON, APPROACH, PICTURE, PRINT*, CLRMON, CHKPARTY, COMBAT, TREASURE,
-  ENCMENU, PARLEY, CALL details, DAMAGE bit fields, SPRITEOFF, PRINTRET, ADDNPC, WHO, SPELL, PROTECT, CLEARBOX; ROB's
-  item rule (0x92C3).
-- Values returned for reads of unlisted "special" addresses and for unknown operand types (undefined in the
-  program; a VM should log them).
+- CLOCK when the previous handler is not GOSUB: the operand index is other stack residue `[?]` (never in v1.3).
+- Still "L" (Lee only): LOADCHAR, PRINT* (the text box; the number case is P), CHKPARTY, CALL details, DAMAGE bit
+  fields, PRINTRET, ADDNPC, WHO, SPELL, PROTECT, CLEARBOX; ROB's item rule (0x92C3).
+- Stack residue outside COMPARE: what an undefined read returns in other handlers (e.g. block 10's `SAVE [$C059]`,
+  after LOADFILES/LOADPIECES) and what an unknown operand type's value fetch returns. The VM uses
+  `EclVmPolicy.UndefinedValue` and logs it; no v1.3 outcome depends on it.
 - Unreferenced data runs (10 single bytes) — padding or dead tables.
-- T (found by the C# VM's headless runs from save A, 2026-11-17): scripts **write** $00B1, $00FB and $00FC, which
-  this table lists as read-only specials (writes there would be ignored); the wilderness scripts 25, 26, 27 **read**
-  $035F (not listed); block 10 reads $C059 (listed as write-only); block 18 at $A0AB has PRINTCLR with a type-1
-  (memory) operand, so what PRINT does with a number is needed. Block 15 writes $6BF2 (inside Lee's
-  character-record range).

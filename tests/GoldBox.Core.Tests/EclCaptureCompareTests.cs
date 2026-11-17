@@ -52,6 +52,9 @@ public class EclCaptureCompareTests
     [InlineData("combat_win", CaptureOutcome.NoVmSteps, null)]  // both captures inside COMBAT
     [InlineData("load_saveB", CaptureOutcome.Match, null)]
     [InlineData("edge_wrap_patched", CaptureOutcome.Match, null)]
+    [InlineData("encmenu_clamp", CaptureOutcome.Match, 2)]      // ENCMENU at distance 2, view 1: $6DC1 = 1
+    [InlineData("encmenu_advance", CaptureOutcome.Match, 2)]    // then Advance: $6DC1 = 0, parley menu
+    [InlineData("ecl_open_items", CaptureOutcome.Match, null)]
     public void State_capture(string name, CaptureOutcome expected, int? hostDraws)
     {
         var r = Captures.Compare(PorGoldenCaptures.Find(name)!);
@@ -63,6 +66,7 @@ public class EclCaptureCompareTests
     [CaptureTheory]
     [InlineData("trace_load_step")]
     [InlineData("trace_camp_rest")]
+    [InlineData("trace_encmenu")]
     public void Trace_capture(string name)
     {
         var r = Captures.Compare(PorGoldenCaptures.Find(name)!);
@@ -72,12 +76,43 @@ public class EclCaptureCompareTests
     }
 
     [CaptureFact]
+    public void Open_items_capture_settles_clock_compare_residue_and_the_hang()
+    {
+        // Patched save D (fixture README): CLOCK after GOSUB passes 0, then 5 after a 64-target ON GOTO; COMPARE of
+        // $035F sees the previous COMPARE read; $00FB/$00FC/$00B1 read 0 after writes; 0x1F does not advance the PC.
+        var r = Captures.Compare(PorGoldenCaptures.Find("ecl_open_items")!);
+        Assert.True(r.Outcome == CaptureOutcome.Match, r.ToString());
+        Assert.Contains("CLOCK minutes passed to the host: 0, 5", r.Notes);
+        var t = Captures.Compare(PorGoldenCaptures.Find("trace_ecl_open_items")!);
+        Assert.True(t.Outcome == CaptureOutcome.Match, t.ToString());
+        Assert.Equal(t.TraceTotal, t.TraceMatched);
+        Assert.Equal("UnhandledOpcode", t.StopReason);
+    }
+
+    [CaptureFact]
     public void Rolls_from_the_captured_seed_reach_the_captured_seed()
     {
         // step_west: one RANDOM from the before-state RandSeed; the comparison checks the after RandSeed too.
         var r = Captures.Compare(PorGoldenCaptures.Find("step_west")!);
         Assert.Single(r.Rolls);
         Assert.Equal(CaptureOutcome.Match, r.Outcome);
+    }
+
+    [CaptureFact]
+    public void The_encounter_distance_is_checked_not_host_owned()
+    {
+        foreach (var name in new[] { "rest_interrupted", "door_bash", "encmenu_clamp", "encmenu_advance" })
+        {
+            var r = Captures.Compare(PorGoldenCaptures.Find(name)!);
+            Assert.DoesNotContain(r.HostOwned, h => h.StartsWith("$6DC0", StringComparison.Ordinal) || h.StartsWith("$6DC1", StringComparison.Ordinal));
+            Assert.Empty(r.Divergences);
+        }
+        // Without the Advance answer the replay stops at the first menu ($6DC1 = 1): the comparison must notice.
+        var s = PorGoldenCaptures.Find("encmenu_advance")!;
+        var broken = s with { Actions = s.Actions.Where(a => a is not AnswersAction).ToList() };
+        var rb = Captures.Compare(broken);
+        Assert.Equal(CaptureOutcome.Diverged, rb.Outcome);
+        Assert.Contains(rb.Divergences, d => d.StartsWith("$6DC1", StringComparison.Ordinal));
     }
 
     [CaptureFact]

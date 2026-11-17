@@ -54,9 +54,14 @@ public sealed class EclVm
     /// <summary>String slots DS:6FC8 + 256·k (k from 1); they keep their text until a later text operand replaces it.</summary>
     private readonly string[] _strings = Enumerable.Repeat("", SlotCount + 1).ToArray();
     private int _textOperands;
-    private readonly List<int> _loaded = [];
+    /// <summary>Operands loaded by the current instruction, as loaded (a variadic tail reuses slots 1..n).</summary>
+    private readonly List<EclTraceOperand> _loaded = [];
 
     private readonly Stack<ushort> _gosub = new();
+    /// <summary>Opcode dispatched by the current and by the previous step (not the IF-skipped one; CLOCK uses it).</summary>
+    private byte _lastHandler = 0xFF, _previousHandler = 0xFF;
+    /// <summary>Value of the last memory read made by a numeric COMPARE operand fetch: the reader's stack slot.</summary>
+    private ushort? _compareReadResidue;
     private EclTraceStep? _step;
     private long _seq;
     private bool _pendingNotLoaded;
@@ -156,12 +161,15 @@ public sealed class EclVm
     /// <summary>
     /// Script init (GAME.OVR 0x7689) on the script already in the area: PC = $9900, GOSUB stack and the six flags
     /// cleared, $6DE1 = 255, $6DD2 = $6DD3 = 0, $49E5 = 0, the five vectors read, $49E6 = 1; unless
-    /// <see cref="LoadingSave"/> (DS:49F8) is set, $4A00–$4A1F and $6E79–$6E82 are zeroed; DS:49F8 is cleared.
+    /// <see cref="LoadingSave"/> (DS:49F8) is set, $4A00–$4A1F and $6E79–$6E82 are zeroed; DS:49F8 is cleared. It also
+    /// resets the 3D-view colour bytes behind $C059 / $C05F (DS:6F68 = 0x41, DS:6F69 = 9, 0x76A3).
     /// </summary>
     public void InitScript()
     {
         _gosub.Clear();
         Array.Clear(Flags);
+        Memory.SpecialWriteValues[0xC059] = 0x41;
+        Memory.SpecialWriteValues[0xC05F] = 0x09;
         Memory.Write(0x6DE1, 255);
         Memory.Write(0x6DD2, 0);
         Memory.Write(0x6DD3, 0);
@@ -328,6 +336,8 @@ public sealed class EclVm
             var op = FetchByte(Pc, "opcode");
             PreviousOpcode = Opcode;
             Opcode = op;
+            _previousHandler = _lastHandler;
+            _lastHandler = op;
             step.Op = op;
             result = Execute(op);
         }
@@ -342,9 +352,7 @@ public sealed class EclVm
         {
             result = new EclRunResult(EclStopReason.AwaitingInput, 0, w.Message);
         }
-        foreach (var i in _loaded)
-            step.Operands.Add(new EclTraceOperand(_slotType[i], _slotLo[i],
-                HasHi(_slotType[i]) ? _slotHi[i] : null, _slotType[i] == 0x80 ? _strings[_slotString[i]] : null));
+        step.Operands.AddRange(_loaded);
         Array.Copy(Flags, step.Flags, 6);
         step.StackDepth = _gosub.Count;
         step.NextPc = Pc;
@@ -407,12 +415,13 @@ public sealed class EclVm
             case EclOpcodes.OnGoto:
             case EclOpcodes.OnGosub:
             {
-                // P (0x263E): selector and count are the low bytes of their values.
-                int count = LoadVariadic(info);
-                int sel = Value(1) & 0xFF;
+                // P (0x263E): selector and count are the low bytes of their values, fetched before the targets are
+                // loaded into slots 1..count.
+                int sel = 0;
+                int count = LoadVariadic(info, () => sel = Value(1) & 0xFF);
                 if (sel < count)
                 {
-                    var target = TargetWord(3 + sel);
+                    var target = TargetWord(1 + sel);
                     if (op == EclOpcodes.OnGosub)
                         _gosub.Push(Pc);
                     Pc = target;
@@ -442,9 +451,9 @@ public sealed class EclVm
                 return null;
             }
             case EclOpcodes.Save:
-                // P: a = v; a text source stores string slot 1 at a (SAVE-text rules, EclMemory.WriteText).
-                // [?] EclVmPolicy.SaveCopiesTextFrom81 for a type-0x81 source.
-                if (_slotType[1] == 0x80 || (_slotType[1] == 0x81 && Policy.SaveCopiesTextFrom81))
+                // P (0xFD8): a = v; a source of type >= 0x80 (0x80, 0x81, and any other high type) stores string
+                // slot 1 at a (SAVE-text rules, EclMemory.WriteText).
+                if (_slotType[1] >= 0x80)
                     Memory.WriteText(DestWord(2), _strings[1]);
                 else
                     Memory.Write(DestWord(2), Value16(1));
@@ -590,10 +599,12 @@ public sealed class EclVm
             // ---- Menus (shape P, meaning of the result [?]) -------------------------------------------------------
             case EclOpcodes.VMenu:
             {
-                int count = LoadVariadic(info);
-                var prompt = Text(2);
-                var choices = Enumerable.Range(4, count).Select(Text).ToList();
-                var dst = DestWord(1);
+                // P (0x1C4E): the destination and the prompt (string slot 1) are taken before the tail load; the
+                // choices then fill operand and string slots 1..count.
+                ushort dst = 0;
+                string prompt = "";
+                int count = LoadVariadic(info, () => { dst = DestWord(1); prompt = _strings[1]; });
+                var choices = Enumerable.Range(1, count).Select(Text).ToList();
                 ushort r = 0;
                 HostCall("VerticalMenu", [prompt, .. choices], () => Num(r), () => r = Host.VerticalMenu(prompt, choices));
                 Memory.Write(dst, r);
@@ -601,9 +612,10 @@ public sealed class EclVm
             }
             case EclOpcodes.HMenu:
             {
-                int count = LoadVariadic(info);
-                var choices = Enumerable.Range(3, count).Select(Text).ToList();
-                var dst = DestWord(1);
+                // P (0x1E17): destination taken before the tail load; the choices fill slots 1..count.
+                ushort dst = 0;
+                int count = LoadVariadic(info, () => dst = DestWord(1));
+                var choices = Enumerable.Range(1, count).Select(Text).ToList();
                 ushort r = 0;
                 HostCall("HorizontalMenu", [.. choices], () => Num(r), () => r = Host.HorizontalMenu(choices));
                 Memory.Write(dst, r);
@@ -632,8 +644,14 @@ public sealed class EclVm
             case EclOpcodes.Print:
             case EclOpcodes.PrintClr:
             {
-                // [?] op 11/12 (L)
-                var text = Text(1);
+                // [?] op 11/12 (L) for the display. P (0x174F): an operand of type < 0x80 is fetched as a number,
+                // converted with Str (START.EXE 0x1C13: unsigned 16-bit, decimal, no padding) into string slot 1,
+                // and printed from there (DOSBox: PRINTCLR 12345 then PRINT 5 shows "123455").
+                string text;
+                if (_slotType[1] < 0x80)
+                    _strings[1] = text = Value16(1).ToString(CultureInfo.InvariantCulture);
+                else
+                    text = _strings[1];
                 bool clear = op == EclOpcodes.PrintClr;
                 HostCall(clear ? "PrintClear" : "Print", [text], null, () => Host.Print(text, clear));
                 return null;
@@ -668,12 +686,13 @@ public sealed class EclVm
                 // [?] op 29 (L): every field meaning from Lee.
                 var menu = new EclEncounterMenu(Value16(1), Value16(2), Value16(3), DestWord(4), Values(5, 5),
                     [Text(10), Text(11), Text(12)], Value16(13), Value16(14));
-                ushort r = 0;
+                ushort? r = null;
                 HostCall("EncounterMenu",
                     [Num(menu.Monster), Num(menu.Distance), Num(menu.Picture), JsonlTraceWriter.Hex(menu.DestinationAddress),
                      .. menu.Reactions.Select(Num), .. menu.DistanceTexts, Num(menu.Move1), Num(menu.Move2)],
-                    () => Num(r), () => r = Host.EncounterMenu(menu));
-                Memory.Write(menu.DestinationAddress, r);
+                    () => r is { } x ? Num(x) : "none", () => r = Host.EncounterMenu(menu));
+                if (r is { } result) // P (0x2C3E): a reaction value of 5 or more writes nothing
+                    Memory.Write(menu.DestinationAddress, result);
                 return null;
             }
             case EclOpcodes.LoadChar:
@@ -772,10 +791,15 @@ public sealed class EclVm
                 return null;
             case EclOpcodes.Clock:
             {
-                // P: adds minutes to the clock. [?] The program fetches the amount with an uninitialised operand
-                // index (stack residue); the VM passes operand 1's value.
-                var v = Value16(1);
-                Diag("[?] CLOCK amount is undefined in the program; operand 1 used");
+                // P (0x3807): loads its operand, then fetches the amount with an uninitialised local as the operand
+                // index: the high byte of the stack word the previous handler left there. After GOSUB (the only v1.3
+                // case, ECL7 block 17 $9D37) that byte is 0. Operand index 0 aliases the bytes in front of the
+                // operand arrays: type = DS:7005 (never written: 0), low byte = DS:7085 = high byte of operand slot
+                // 64. So the amount is slot 64's high byte, 0 unless an instruction loaded 64 operands. DOSBox
+                // (2026-11-17): +0 minutes, then +5 after an ON GOTO whose 64th target had high byte 5.
+                if (_previousHandler != EclOpcodes.Gosub)
+                    Diag($"[?] CLOCK after opcode {_previousHandler:X2}, not GOSUB: the operand index is other stack residue; index 0 assumed");
+                ushort v = _slotHi[64];
                 HostCall("Clock", [Num(v)], null, () => Host.Clock(v));
                 return null;
             }
@@ -946,28 +970,32 @@ public sealed class EclVm
                     _slotLo[i] = FetchByte(pc++, "operand");
                     break;
             }
-            _loaded.Add(i);
+            _loaded.Add(new EclTraceOperand(t, _slotLo[i], HasHi(t) ? _slotHi[i] : null,
+                t == 0x80 ? _strings[_slotString[i]] : null));
         }
         Pc = (ushort)pc;
     }
 
     /// <summary>
-    /// Variadic opcodes: load the fixed part, take the count from the last fixed operand through the value fetch,
-    /// step the PC back one byte and load that many more operands (net effect: contiguous). [?] Whether the second
-    /// load restarts the string-slot count is not read; the VM continues it.
+    /// Variadic opcodes (P: ON 0x263E, VMENU 0x1C4E, HMENU 0x1E17): load the fixed part, take the low byte of the
+    /// last fixed operand's value (value fetch) as the count, let the handler read what it needs from the fixed
+    /// operands (<paramref name="beforeTail"/>), then step the PC back one byte and call the loader again for the
+    /// tail. That second load starts over: the tail fills operand slots 1..count and, as the loader's text counter
+    /// starts at 0 on every call (0x74D3), string slots from 1. So after the instruction the fixed operands are gone
+    /// from the slots.
     /// </summary>
-    private int LoadVariadic(EclOpcodeInfo info)
+    private int LoadVariadic(EclOpcodeInfo info, Action? beforeTail = null)
     {
         LoadOperands(1, info.FixedCount);
-        int count = Value(info.FixedCount);
+        int count = Value(info.FixedCount) & 0xFF;
         if (_slotType[info.FixedCount] != 0)
             Diag($"[?] variadic count from operand type {_slotType[info.FixedCount]:X2} (never in v1.3)");
-        if (info.Variadic == EclVariadic.On || Policy.VariadicCountLowByte)
-            count &= 0xFF; // P for ON (0x263E); [?] menus (EclVmPolicy.VariadicCountLowByte)
-        if (info.FixedCount + 1 + count > SlotCount)
+        if (count >= SlotCount)
             throw new EclVmFault($"variadic count {count} too large");
+        beforeTail?.Invoke();
         Pc--;
-        LoadOperands(info.FixedCount + 1, count);
+        _textOperands = 0;
+        LoadOperands(1, count);
         return count;
     }
 
@@ -1057,10 +1085,31 @@ public sealed class EclVm
         else
         {
             // P: unsigned 16-bit, operand 1 against operand 2 (flag setter 0x8DBE).
-            int a = Value(1), b = Value(2);
+            // The reader leaves an undefined read's value as whatever its stack slot holds. In COMPARE that slot is
+            // the one the previous COMPARE operand read used, so an undefined read returns that value (DOSBox,
+            // 2026-11-17: COMPARE [$035F] after COMPARE [x], #8 compared as x). Other deep handlers in between may
+            // overwrite the slot `[?]`.
+            int a = CompareOperand(1), b = CompareOperand(2);
             c = a.CompareTo(b);
         }
         SetFlags(c);
+    }
+
+    private int CompareOperand(int i)
+    {
+        if (_slotType[i] is not (1 or 3))
+            return Value(i);
+        Memory.UndefinedReadResidue = _compareReadResidue;
+        try
+        {
+            int v = Value(i);
+            _compareReadResidue = (ushort)v;
+            return v;
+        }
+        finally
+        {
+            Memory.UndefinedReadResidue = null;
+        }
     }
 
     /// <summary>Turbo Pascal string order: byte by byte (unsigned) over the shorter length, then the shorter is less.</summary>

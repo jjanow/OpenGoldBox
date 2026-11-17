@@ -89,7 +89,9 @@ as skip-if-absent tests (`tests/GoldBox.Core.Tests/EclCaptureCompareTests.cs`).
 4. **State compare.** The four areas cell by cell, PC, opcode, previous opcode, flags, GOSUB stack (empty or
    not: its links are far pointers), disk, script, position and RandSeed.
    - Cells the program changes outside the VM are listed as host-owned, with the reason, not counted: the clock
-     $49C6–$49CC, the wall-set slot $4AFF, and the encounter distance $6DC0/$6DC1 written inside SETUPMON/APPROACH.
+     $49C6–$49CC and the wall-set slot $4AFF. The replay runs the encounter opcodes in the game-side
+     `EncounterHost` (map walls from the capture's `geo_planes.bin`, or the `GEO` block after a save load), so the
+     encounter distance $6DC0/$6DC1 is compared like any other cell.
    - For each differing cell the report names the VM instruction that last wrote it.
 5. **Trace compare.** The VM's instruction stream (PC, opcode, flags before each step) is aligned with the E9
    lines.
@@ -106,4 +108,7 @@ GOTO), and the replay sets $6DD5 on the step key as the program does (`geo-forma
 `tests/fixtures-private/por/dosbox-v1.3/` (private: holds game data; excluded from the public export). Its
 `README.md` lists each capture, the exact inputs and what it shows: load save A, one step, one turn, encamp,
 interrupted rest, door pick/bash, a won fight, load of an in-game save, edge wrap, and two traces (load + step,
-encamp + rest).
+encamp + rest). Session 9 added a patched save whose script area holds test code (CLOCK, special reads, COMPARE
+residue, PRINT of a number), with a state taken at its menu and a trace that ends in the 0x1F hang. Patching a
+save's script area this way (save offset 5121 + A − $9900; vector 4 runs on load) is the quickest way to try one
+instruction in the real game.

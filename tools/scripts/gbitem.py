@@ -357,7 +357,8 @@ def decode_base(t, e):
         ac_d = None
     return {"type": t, "raw": e.hex(), "slot": e[0], "slot_name": SLOT.get(e[0]), "hands": e[1],
             "damage_large": [e[2], e[3], sb(e[4])], "rate_of_fire_x2": e[5], "ac_code": ac, "ac": ac_d,
-            "weapon_kind": e[7], "byte8": e[8], "damage_small_medium": [e[9], e[10], sb(e[11])],
+            "weapon_kind": e[7], "byte8": e[8],  # never read by the v1.3 program (item-format.md)
+            "damage_small_medium": [e[9], e[10], sb(e[11])],
             "range": e[12], "usable_mask": e[13], "usable_by": _bits(e[13], CLASS_BITS),
             "weapon_flags": e[14], "weapon_flag_names": _bits(e[14], WFLAG_BITS), "byte15": e[15]}
 

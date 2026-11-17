@@ -164,7 +164,7 @@ are never used. Lookups are `DS:5582 + 16·type + j`.
 | 5 | `rof_x2` | missile rate of fire in half-attacks per round | verified vs Lee 9.2 |
 | 6 | `ac_code` | ≥ 178: body armour/bracers, AC = 10 − (code − 178); 128..177: other AC bonus = code − 128; < 128: none | verified vs Lee 9.2.2 |
 | 7 | `weapon_kind` | 0 slashing, 1 piercing, 128 bashing (Lee notes several types look swapped) | Lee |
-| 8 | `byte8` | 0x80 on most weapons, else 0. No reader found: no `[reg+558Ah]` access in START.EXE or GAME.OVR, and the two code paths that copy a whole 16-byte entry (OVR 0xBE62 AI weapon scoring, 0x13D33 damage vs large) never read its byte 8. The search did not cover computed offsets (e.g. `5582h + j` with j in a register) | `[?]`, probably unused |
+| 8 | `byte8` | 0x80 on most weapons, else 0. **No reader in the program** (v1.3, settled 2026-11-17 by an exhaustive search). Every access to the table uses a displacement 0x5582–0x5591; a byte search of START.EXE (unpacked) and GAME.OVR for all of them finds no 0x558A. The 0x5582 sites are the loader (OVR 0xEBA0), ten reads of byte 0 with index `type shl 4` and nothing added (OVR 0xB05B, 0xC09E, 0xC157, 0x225C4, 0x274A1, 0x2A272, 0x2A288; START 0xDAD, 0xE5E, 0x1822), and two copies of a whole entry to the stack (OVR 0xBE62 AI weapon scoring, 0x13D33 damage vs large) whose copy of byte 8 is never read | unused by v1.3 |
 | 9–11 | `dmg_small_medium` | dice count, sides, signed bonus vs. small/medium | verified vs Lee 9.2 |
 | 12 | `range` | missile/throw range, exclusive (Lee's long range + 1) | verified vs Lee 9.2 |
 | 13 | `usable` | class bit mask: 1 magic-user, 2 cleric, 4 thief, 8 fighter, 16 druid, 32 monk, 64 paladin, 128 ranger | bit↔class verified: per-class bit array DS:05D6 (8 bytes) read against the class name array DS:0D38 + 27·k; the test `mask and bit ≠ 0` is DrEvil |
@@ -300,8 +300,8 @@ All found by code patterns, not fixed addresses (works on v1.1, v1.2 and v1.3):
 
 - Whether the Use menu offers the Flame Tongue (props 0, 22, 0) as a usable item.
 - Holy water: trigger-class lists not read; final damage of 1d1−1 against ordinary targets.
-- `byte29`; base `byte8` (no reader found); `weapon_kind` oddities.
+- `byte29`; `weapon_kind` oddities.
 - Effect id 0 record in `MON4SPC.DAX` block 105.
 
-Settled 2026-11-17 by code read: consumable vs worn (`3E`) and the handler codes; `save_bonus`; scroll
+Settled 2026-11-17 by code read: base `byte8` is never read; consumable vs worn (`3E`) and the handler codes; `save_bonus`; scroll
 self-identification (+96h = cleric level); holy water 1d6 + 1 against effect-117 creatures.

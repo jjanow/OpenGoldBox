@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text;
 using GoldBox.Core.Ecl;
+using GoldBox.Core.Game;
 
 namespace GoldBox.Data.Por.Dosbox;
 
@@ -157,6 +158,7 @@ public sealed class EclCaptureComparer(string fixturesDir, PorGameDirectory game
     {
         public required EclVm Vm { get; init; }
         public required ScriptedEclHost Host { get; init; }
+        public required EncounterHost Encounter { get; init; }
         public required ListTraceSink Sink { get; init; }
         public List<string> Notes { get; } = [];
         public List<(ushort Range, ushort Value)> Rolls { get; } = [];
@@ -184,9 +186,15 @@ public sealed class EclCaptureComparer(string fixturesDir, PorGameDirectory game
     {
         var memory = new EclMemory { Party = LoadParty(s.Party) };
         var host = new ScriptedEclHost { StopWhenInputMissing = true };
+        // The encounter opcodes run in the game-side host (docs/re/ecl-format.md "Encounters"); its menu answers come
+        // from the same queue as the other menus, in the order the player gave them.
+        var encounter = new EncounterHost(memory, host,
+            new ScriptedEncounterUi(host.MenuChoices) { StopWhenInputMissing = true }, new RecordingCombatRunner(),
+            new PorEncounterData(Game));
         var sink = new ListTraceSink();
-        var vm = new EclVm(memory, host) { Scripts = Game, Trace = extraSink is null ? sink : new TeeSink(sink, extraSink) };
-        var at = new Attempt { Vm = vm, Host = host, Sink = sink };
+        var vm = new EclVm(memory, encounter) { Scripts = Game, Trace = extraSink is null ? sink : new TeeSink(sink, extraSink) };
+        encounter.CurrentBlock = () => vm.CurrentScript;
+        var at = new Attempt { Vm = vm, Host = host, Encounter = encounter, Sink = sink };
 
         if (rollPrefix is not null)
         {
@@ -205,6 +213,8 @@ public sealed class EclCaptureComparer(string fixturesDir, PorGameDirectory game
         {
             var before = new DosboxVmState(CapturePath(s.Name, "before"));
             at.Notes.AddRange(before.ApplyTo(vm));
+            if (before.GeoPlanes is { } planes)
+                encounter.Map = new MapPlanes(planes);
             if (rollPrefix is null)
                 host.Rng = new TurboPascalRandom(before.RandSeed);
         }
@@ -219,6 +229,7 @@ public sealed class EclCaptureComparer(string fixturesDir, PorGameDirectory game
                     {
                         var save = PorSaveGame.Open(ResolveSave(l.SaveFile));
                         var r = save.LoadGame(vm);
+                        encounter.Map ??= GeoMap(memory);
                         at.Stop = r.Reason;
                         break;
                     }
@@ -269,6 +280,14 @@ public sealed class EclCaptureComparer(string fixturesDir, PorGameDirectory game
         return at;
     }
 
+    /// <summary>The current map's planes from <c>GEO&lt;disk&gt;.DAX</c> (block $49C5, 2-byte header dropped), or null.</summary>
+    private MapPlanes? GeoMap(EclMemory memory)
+    {
+        var path = Game.Find($"GEO{memory.Disk}.DAX");
+        var block = path is null ? null : Dax.DaxFile.Open(path).Block(memory.Read(0x49C5));
+        return block is { Length: >= 2 + 512 } ? new MapPlanes(block[2..]) : null;
+    }
+
     private void SetPosition(EclMemory memory, string capture)
     {
         var after = new DosboxVmState(CapturePath(capture, "after"));
@@ -316,6 +335,9 @@ public sealed class EclCaptureComparer(string fixturesDir, PorGameDirectory game
         var vm = at.Vm;
         var rep = new CaptureReport { Name = s.Name, VmSteps = at.Sink.Steps.Count, StopReason = at.Stop.ToString() };
         rep.Notes.AddRange(at.Notes);
+        var clock = at.Host.Calls.Where(c => c.StartsWith("Clock ", StringComparison.Ordinal)).Select(c => c[6..]).ToList();
+        if (clock.Count > 0)
+            rep.Notes.Add("CLOCK minutes passed to the host: " + string.Join(", ", clock));
         foreach (var (range, value) in at.Host.RandomLog)
             rep.Rolls.Add($"{range}→{value}");
 

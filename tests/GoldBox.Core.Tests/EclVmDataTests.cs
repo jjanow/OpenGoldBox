@@ -287,12 +287,37 @@ public class EclMemoryTests
     }
 
     [Fact]
-    public void Listed_special_reads_come_from_the_host_table()
+    public void Listed_special_reads_come_from_the_party_position_and_fixed_ds_words()
+    {
+        var m = new EclMemory(new EclVmPolicy { UndefinedValue = 0xBEEF });
+        var diags = new List<string>();
+        m.Diagnostic += diags.Add;
+        m.Position.Facing = 6;
+        m.Position.X = 0xFF;
+        Assert.Equal(6, m.Read(0x033D));           // 8-way facing byte DS:6AAF
+        Assert.Equal(0xFFFF, m.Read(0xC04B));      // x is sign-extended like y (0x82DF)
+        // $00B1/$00FB/$00FC read DS words nothing writes; their writes are no-ops (DOSBox: 0 after writes).
+        m.Write(0x00FB, 77);
+        m.Write(0x00FC, 78);
+        m.Write(0x00B1, 79);
+        Assert.Equal(0, m.Read(0x00FB));
+        Assert.Equal(0, m.Read(0x00FC));
+        Assert.Equal(0, m.Read(0x00B1));
+        Assert.Empty(diags);
+        // $035F and $C059 have reader cases that set no value: undefined.
+        Assert.Equal(0xBEEF, m.Read(0x035F));
+        Assert.Equal(0xBEEF, m.Read(0xC059));
+        Assert.Equal(2, diags.Count);
+    }
+
+    [Fact]
+    public void View_colour_writes_keep_the_low_byte()
     {
         var m = new EclMemory();
-        m.SpecialReadValues[0x033D] = 2;
-        Assert.Equal(2, m.Read(0x033D));
-        Assert.Equal(0, m.Read(0x00B1));
+        m.Write(0xC059, 0x1234);
+        m.Write(0xC05F, 8);
+        Assert.Equal(0x34, m.SpecialWriteValues[0xC059]);
+        Assert.Equal(8, m.SpecialWriteValues[0xC05F]);
     }
 
     [Fact]

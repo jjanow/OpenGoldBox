@@ -51,8 +51,12 @@ public interface IEclHost
     void Who(string prompt);
     /// <summary>PARLEY (0x2C): returns the value stored at dst. [?] L row 2C.</summary>
     ushort Parley(ushort haughty, ushort sly, ushort nice, ushort meek, ushort abusive);
-    /// <summary>ENCMENU (0x29): returns the value stored at the destination. [?] L row 29.</summary>
-    ushort EncounterMenu(EclEncounterMenu menu);
+    /// <summary>
+    /// ENCMENU (0x29): returns the value stored at the destination, or null for no write (P, GAME.OVR 0x2C3E: a
+    /// reaction value of 5 or more ends the menu without writing). <see cref="GoldBox.Core.Game.EncounterHost"/>
+    /// implements the program's rules.
+    /// </summary>
+    ushort? EncounterMenu(EclEncounterMenu menu);
 
     // ---- Party, monsters, encounters ----------------------------------------------------------------------------
     /// <summary>LOADCHAR (0x0A). [?] L row 0A.</summary>

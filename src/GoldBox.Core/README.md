@@ -10,9 +10,10 @@ A headless VM for the event scripts (ECL) of Pool of Radiance, DOS v1.3. Built f
 - **VM** (`EclVm`): decodes at run time from the live script area at the PC, so scripts that write into
   $9900–$B6FF behave as in the game. It keeps the program's details:
   - operand slots persist between instructions, so a type-0 operand used as an address keeps an old high byte;
-  - string slots: the k-th text operand of an instruction fills slot k and keeps it until a later text replaces
-    it (so a COMPARE of a text with a number sees an old slot 2, as in the game);
-  - variadic counts go through the value fetch;
+  - string slots: the k-th text operand of a loader call (an instruction, or a variadic tail, which starts again at
+    1) fills slot k and keeps it until a later text replaces it (so a COMPARE of a text with a number sees an old
+    slot 2, as in the game);
+  - variadic counts go through the value fetch (low byte); the tail reloads operand and string slots from 1;
   - the IF-skip uses its own, shorter operand counts for 0C, 36, 15, 25, 26 and 2B, and resumes inside the
     operands; the skipped opcode becomes the "previous opcode" (DOSBox);
   - RETURN on an empty stack falls through;
@@ -20,15 +21,19 @@ A headless VM for the event scripts (ECL) of Pool of Radiance, DOS v1.3. Built f
     only while DS:49F8 ("loading a save", `EclVm.LoadingSave`) is set;
   - NEWECL writes $49F2, loads and initialises the new script at once and stops the run; `FollowScriptChanges`
     then runs its vectors 4, 0 and 1;
-  - PROGRAM 9 ends the run after the camp, DIV by zero is a fault.
+  - PROGRAM 9 ends the run after the camp, DIV by zero is a fault;
+  - CLOCK passes the high byte of operand slot 64 (its operand index is 0 after GOSUB), PRINT of a number prints
+    its decimal text and leaves it in string slot 1.
 - **Memory** (`EclMemory`):
   - the 16-bit areas $4900, $6B00 and $9700, and the 8-bit script area (writes keep the low byte);
   - the disk byte DS:5376 (`Disk`), which is VM $6E12;
   - the $6B00-area redirection table: reads of the listed addresses come from the current character's record,
     writes store the cell and then apply the side effects; $6E22/$6E24/$6E26 load wall sets;
   - the text rules of SAVE and type-0x81 operands ($6B00 = the current character's name);
-  - the special addresses ($C04B–$C04F party position, plus the other listed reads and writes);
-  - reads of unlisted addresses return a policy value and are logged.
+  - the special addresses ($C04B–$C04F party position, $033D facing, $00B1/$00FB/$00FC reading 0 and ignoring
+    writes, the $C059/$C05F view colour bytes, the other listed writes);
+  - undefined reads ($035F, $C059, unlisted addresses) return the stack residue the VM models (inside COMPARE: the
+    previous COMPARE operand read) or else a policy value, and are logged.
 - **Party** (`EclParty`, `EclCharacter`): the 285-byte records and their item records. Used by the redirection
   table, PARTYSTR, PSURPRISE and FINDITEM. `GoldBox.Data.Por.PorParty` loads it from the files a save names.
 - **Random numbers** (`TurboPascalRandom`): the game's generator. Seed it from a capture to reproduce its rolls.
@@ -52,27 +57,48 @@ A headless VM for the event scripts (ECL) of Pool of Radiance, DOS v1.3. Built f
 | Kind | Opcodes |
 |---|---|
 | In the VM, checked in the program (P) | EXIT, GOTO, GOSUB, RETURN, COMPARE, IFEQ–IFGE, ON GOTO, ON GOSUB, SAVE, NEWECL, ADD, SUB, MUL, DIV, AND, OR, CMPAND, GETTABLE, SAVETABLE, RANDOM, PARTYSTR, PSURPRISE, SURPRISE, FINDITEM, LOADFILES, LOADPIECES (host loads the files), INPUTNUM, INPUTSTR (host reads the keys), PROGRAM 9's end of run |
-| Host, result written by the VM | VMENU, HMENU (shape P), CHKPARTY, PARLEY, ENCMENU, SPELL |
+| Host, result written by the VM | VMENU, HMENU (shape P), CHKPARTY, PARLEY, ENCMENU (null = no write), SPELL |
 | Host, no result | LOADCHAR, LOADMON, SETUPMON, APPROACH, PICTURE, PRINT, PRINTCLR, PRINTRET, CLEARBOX, DELAY, WHO, CLRMON, COMBAT, TREASURE, ROB, DAMAGE, SPRITEOFF, ADDNPC, CLOCK, CALL, PROGRAM, PROTECT |
-| No handler | 0x1F, ≥ 0x3E: logged, then the run stops (or hangs, by policy) |
+| Game-side host (`Game/EncounterHost`, P) | SETUPMON, APPROACH, LOADMON, CLRMON, ENCMENU, COMBAT entry, TREASURE, PARLEY, PICTURE, SPRITEOFF |
+| No handler | 0x1F, ≥ 0x3E: the original hangs; the VM logs it and stops with the PC on the byte (or spins, by policy) |
 
 Host opcodes taken from Lee alone carry a `[?]` comment that points to their row in the spec. PARTYSTR, PSURPRISE
 and FINDITEM fall back to the host when no party is attached (test hook).
+
+## Game-side encounter host (`Game/`)
+
+`EncounterHost` implements the encounter opcodes as read from the program (`ecl-format.md` "Encounters"). It wraps
+another `IEclHost` (for example `ScriptedEclHost`), which still answers text, the other menus, files and random
+numbers, so the LOADMON icon rolls and TREASURE's type rolls come from the same generator as RANDOM.
+
+- **State it owns:** the VM cells $6DC0/$6DC1 (requested and actual distance), $6DCA, $6DE2 and $6E6C. The
+  data-segment state (sprite, close-up, monster count, icon slot, "monsters loaded", duel flag, treasure money and
+  items, display flags) is in `EncounterState`. LOADMON appends the monster records to the party list, as the
+  program does.
+- **Rules** (`EncounterRules`, pure functions): view distance (walls from an `IWallMap`, e.g. `MapPlanes`), party
+  speed with effects 0x27/0x2A, distance texts, menu kind, the reaction table, icon colours, random item types.
+- **Interfaces:**
+  - `IEncounterUi` is the player-facing side (sprite and pictures, the encounter and parley menus, the two fixed
+    messages, combat icons); `ScriptedEncounterUi` is the headless one.
+  - `ICombatRunner` takes the fight, the after-combat step, the shop, the temple and the random item maker (all
+    unread); `RecordingCombatRunner` only logs.
+  - `IEncounterData` gives the monster and item-list records; `GoldBox.Data.Por.PorEncounterData` reads
+    `MON<d>CHA/ITM/SPC` and `ITEM<d>`.
+- `goldbox-tools ecl-compare` replays every capture through it.
 
 ## Undecided behaviour (`EclVmPolicy`)
 
 Every open choice the VM has to make is one named property of `EclVmPolicy`. The defaults are choices, not facts:
 
-- unhandled opcodes: stop (default) or hang;
-- the value returned for undefined reads;
-- SAVE from a type-0x81 source: copy the text or store the address (10 uses);
+- the value returned for undefined reads (stack residue outside COMPARE);
 - the longest text read from memory;
-- whether $C04B is signed;
-- the width of the VMENU/HMENU counts.
+- how an unhandled opcode is reported: stop at once (default) or spin until the step budget runs out (the
+  original hangs either way, so this one is not a `[?]`).
 
-Settled items (SUB order, flag rules, text compare, DIV by zero, the disk byte, the redirection table, …) have no
-switch. Other `[?]` marks in the code, with no switch: the IF-skip filling operand slots, the text slot count of
-a variadic tail, LOADPIECES' 255 rule when $49E7/$49E8 are set, PARTYSTR's level sign, CLOCK's amount, DS:84D2/84D3.
+Settled items (SUB order, flag rules, text compare, DIV by zero, the disk byte, the redirection table, $C04B sign,
+SAVE of a 0x81 text, menu count width, …) have no switch. Other `[?]` marks in the code, with no switch: the IF-skip
+filling operand slots, LOADPIECES' 255 rule when $49E7/$49E8 are set, PARTYSTR's level sign, CLOCK after anything
+but GOSUB, DS:84D2/84D3.
 
 ## Tools and tests
 
@@ -108,3 +134,11 @@ dotnet run --project src/GoldBox.Tools -- ecl-compare GAMEDIR [FIXTURES] [--capt
 
 Set `GOLDBOX_POR_DIR` to a folder holding your own PoR v1.3 files (`ECL1.DAX`–`ECL8.DAX`, `SAVGAMA.DAT`,
 `SAVGAMJ.DAT`, `CHRDATA1-6.*`), outside the repo. Traces of the real game contain its text: keep them out of the repo.
+
+## Doors (`Doors/`)
+
+`DoorRules` and `DoorMap` model the door menu of the 3D view (`docs/re/geo-format.md` "Door menu"): which choices
+it offers, the Bash / Pick / Knock rolls (same generator and draw order as the program, so a capture's RandSeed
+reproduces them), the menu flags, and the plane-3 edits (open both faces, seal one face). `DoorMap` also holds the
+step test that reads only the party's own face (one-way walls). `DoorRulesTests` replays the `door_pick_fail` and
+`door_bash` captures.

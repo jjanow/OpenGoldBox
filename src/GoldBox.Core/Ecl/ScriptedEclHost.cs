@@ -105,7 +105,7 @@ public sealed class ScriptedEclHost : IEclHost
         Log($"Parley {haughty} {sly} {nice} {meek} {abusive}");
         return ParleyResults.TryDequeue(out var r) ? r : Pick(5, "Parley");
     }
-    public ushort EncounterMenu(EclEncounterMenu menu)
+    public ushort? EncounterMenu(EclEncounterMenu menu)
     {
         Log($"EncounterMenu {menu.Monster} {menu.Distance} {menu.Picture}");
         return EncounterResults.TryDequeue(out var r) ? r : Pick(5, "EncounterMenu");

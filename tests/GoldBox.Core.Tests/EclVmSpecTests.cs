@@ -106,10 +106,14 @@ public class EclVmSpecTests
     [Fact]
     public void Text_slots_count_text_operands_only()
     {
-        // SAVE's text is operand 1 but VMENU's prompt (operand 2) is still the first text: slot 1.
-        var rig = RunOps(a => a.Op(EclOpcodes.VMenu, Mem(F), Text("PICK"), Imm8(1), Text("ONE")));
-        Assert.Equal("PICK", rig.Vm.StringSlot(1));
-        Assert.Equal("ONE", rig.Vm.StringSlot(2));
+        // VMENU's prompt (operand 2) is the first text: slot 1. The menu takes it, then the tail load starts over at
+        // operand and string slot 1 (loader 0x74D3, VMENU 0x1C4E), so the choice replaces it; slot 2 is untouched.
+        var rig = RunOps(a => a
+            .Op(EclOpcodes.Compare, Text("X"), Text("Y"))
+            .Op(EclOpcodes.VMenu, Mem(F), Text("PICK"), Imm8(1), Text("ONE")));
+        Assert.Contains("VerticalMenu PICK [ONE]", rig.Host.Calls);
+        Assert.Equal("ONE", rig.Vm.StringSlot(1));
+        Assert.Equal("Y", rig.Vm.StringSlot(2));
     }
 
     [Fact]
@@ -440,5 +444,110 @@ internal static class TestExtensions
     {
         f(x);
         return x;
+    }
+}
+
+/// <summary>Open items settled 2026-11-17 (s9): CLOCK, PRINT of a number, special reads, variadic tail.</summary>
+public class EclVmOpenItemTests
+{
+    private static VmRig RunOps(Action<EclAsm> body, Action<EclMemory>? setup = null)
+    {
+        var asm = new EclAsm();
+        body(asm);
+        asm.Op(EclOpcodes.Exit);
+        var rig = VmRig.Of(asm, null, setup);
+        rig.Run();
+        return rig;
+    }
+
+    [Fact]
+    public void Clock_after_gosub_adds_the_high_byte_of_operand_slot_64()
+    {
+        // 0x3807: operand index 0 after GOSUB; index 0 reads type DS:7005 (0) and lo DS:7085 = hi byte of slot 64.
+        // DOSBox 2026-11-17: +0, then +5 after an ON GOTO whose 64th target was type 1 with hi byte 5.
+        var targets = Enumerable.Repeat(Mem(0x0500), 64).ToArray();
+        var asm = new EclAsm()
+            .Op(EclOpcodes.Gosub, L("clock"))
+            .Op(EclOpcodes.OnGoto, [Imm8(255), Imm8(64), .. targets])
+            .Op(EclOpcodes.Gosub, L("clock"))
+            .Op(EclOpcodes.Exit)
+            .Label("clock")
+            .Op(EclOpcodes.Clock, Imm8(1))
+            .Op(EclOpcodes.Return);
+        var rig = VmRig.Of(asm);
+        Assert.Equal(EclStopReason.Exit, rig.Run().Reason);
+        Assert.Equal(["Clock 0", "Clock 5"], rig.Host.Calls.Where(c => c.StartsWith("Clock")));
+        Assert.DoesNotContain(rig.AllDiagnostics, d => d.Contains("CLOCK"));
+    }
+
+    [Fact]
+    public void Clock_not_after_gosub_is_flagged()
+    {
+        var rig = RunOps(a => a.Op(EclOpcodes.Clock, Imm8(1)));
+        Assert.Contains("Clock 0", rig.Host.Calls);
+        Assert.Contains(rig.AllDiagnostics, d => d.Contains("CLOCK after opcode"));
+    }
+
+    [Fact]
+    public void Print_of_a_number_prints_its_decimal_text_from_string_slot_1()
+    {
+        // 0x174F: type < 0x80 → Str(value) (START.EXE 0x1C13) into slot 1. DOSBox: "12345" then "5".
+        var rig = RunOps(a => a
+            .Op(EclOpcodes.Save, Imm8(5), Mem(0x9720))
+            .Op(EclOpcodes.PrintClr, Imm16(12345))
+            .Op(EclOpcodes.Print, Mem(0x9720))
+            .Op(EclOpcodes.Print, Imm16(0xFFFF)));
+        Assert.Equal(["PrintClear 12345", "Print 5", "Print 65535"], rig.Host.Calls.Where(c => c.StartsWith("Print")));
+        Assert.Equal("65535", rig.Vm.StringSlot(1));
+        Assert.DoesNotContain(rig.AllDiagnostics, d => d.Contains("[?]"));
+    }
+
+    [Fact]
+    public void Compare_of_an_undefined_read_sees_the_previous_compare_read()
+    {
+        // The reader leaves $035F's value as its stack slot, which in COMPARE holds the previous COMPARE read.
+        // DOSBox 2026-11-17: after COMPARE [x], #8 with x = 3, COMPARE [$035F], #3 was "="; with x = 5, ">".
+        var rig = RunOps(a => a
+            .Op(EclOpcodes.Save, Imm8(3), Mem(0x9720))
+            .Op(EclOpcodes.Compare, Mem(0x9720), Imm8(8))
+            .Op(EclOpcodes.Compare, Mem(0x035F), Imm8(3))
+            .Op(EclOpcodes.IfEq)
+            .Op(EclOpcodes.Save, Imm8(1), Mem(0x9722))
+            .Op(EclOpcodes.Save, Imm8(5), Mem(0x9720))
+            .Op(EclOpcodes.Compare, Mem(0x9720), Imm8(8))
+            .Op(EclOpcodes.Compare, Mem(0x035F), Imm8(3)));
+        Assert.Equal(1, rig[0x9722]);
+        Assert.Equal("010101", JsonlTraceWriter.FlagString(rig.Vm.Flags)); // ≠ > ≥
+    }
+
+    [Fact]
+    public void Save_of_any_high_type_copies_string_slot_1()
+    {
+        // 0xFD8: type >= 0x80 takes the text path (0x8426), so a 0x81 source copies its text.
+        var rig = RunOps(a => a.Op(EclOpcodes.Save, TextAt(0x9700), Mem(0x9710)), m => m.WriteText(0x9700, "HI"));
+        Assert.Equal('H', rig[0x9710]);
+        Assert.Equal('I', rig[0x9711]);
+        Assert.Equal(0, rig[0x9712]);
+    }
+
+    [Fact]
+    public void Variadic_tail_reuses_operand_slots_from_1()
+    {
+        // 0x263E: the targets go to slots 1..n. A later type-0 operand used as an address keeps slot 2's old high
+        // byte, which is now the second target's (0x97), not the count's.
+        var rig = RunOps(a => a
+            .Op(EclOpcodes.OnGoto, Imm8(9), Imm8(2), Mem(0x9800), Mem(0x9700))
+            .Op(EclOpcodes.Save, Imm8(7), Imm8(0x10))); // destination lo 0x10, stale hi 0x97 → $9710
+        Assert.Equal(7, rig[0x9710]);
+    }
+
+    [Fact]
+    public void Script_init_resets_the_view_colour_bytes()
+    {
+        var rig = RunOps(a => a.Op(EclOpcodes.Save, Imm8(8), Mem(0xC05F)));
+        Assert.Equal(8, rig.Memory.SpecialWriteValues[0xC05F]);
+        rig.Vm.InitScript();
+        Assert.Equal(0x41, rig.Memory.SpecialWriteValues[0xC059]);
+        Assert.Equal(9, rig.Memory.SpecialWriteValues[0xC05F]);
     }
 }

@@ -52,8 +52,19 @@ Each plane is row-major: byte `y*16 + x` belongs to square (x, y), 0 ≤ x, y �
     no wall on the other (wall seen from one side only): 540; impassable on one face, barrier 1 on the other: 44;
     other mixes: 74 (barrier 1 vs 2: 42; no wall vs barrier 1: 18; barrier 1 vs 3: 12; impassable vs 2: 2).
   - where both faces have a wall, the wall types differ on 1,605 of 5,408 edges (each face carries its own texture).
-- Movement checks only the face of the square the party stands on (talonius `MoveForward`; coab `WallDoorFlagsGet`),
-  so a one-sided wall is one-way. Opening a door changes both faces.
+- **One-way walls** (program read 2026-11-17). GEO has no one-way flag: a one-way wall is an edge whose two faces
+  differ, e.g. a wall with barrier 0 on one face and no wall on the other.
+  - Movement reads only the face of the square the party stands on. The forward-step check (0x17469) and the
+    edge test before it (0x16D58) call the barrier accessor (0x2EC47) with the party's own x, y and facing. The
+    step itself (0x16E06) checks nothing more.
+  - Inside the accessor, a face whose wall type is 0 (0x2ED72) leaves the result at 1 (passable), whatever plane 3
+    stores. The face on the other side of the edge is never read.
+  - So the walled side blocks (barrier 0: the step is refused) or opens the door menu (2, 3), and the other side
+    walks through. In the data (counts above) 584 edges are one-way (540 wall vs no wall, 44 wall vs barrier 1);
+    54 are doors from one side and open from the other (barrier 1 vs 2 or 3); 2 are doors from one side and walls
+    from the other. `geo.py ascii` draws one-way edges as `!`; `geo.py list` counts them. No one-way edge is in the
+    Slums, so this was not tried in DOSBox-X.
+  - Opening a door changes both faces (below).
 - **Edges: the map wraps** (checked 2026-11-17, program read and DOSBox-X).
   - The three map accessors (barrier GAME.OVR 0x2EC47, wall 0x2ED72, event 0x2EE71) wrap a coordinate outside
     0..15 to the other side, except that while the current ECL block (DS:84DC) is 0 or 10 they return 0 for a
@@ -98,33 +109,71 @@ Two bits per face, read only when that face's wall type is non-zero:
 
 - 88 faces without a wall store barrier 1 and 2 store barrier 2. The engine ignores these values, but `dump` reports them as
   stored.
-- At run time the engine edits plane 3 in memory. Opening a door sets the face to 1 and the facing face of the
-  next square too (0x167D4, called twice). When a locked door's menu would offer only Exit, that face is set to 0
-  (0x166CB): it becomes a plain wall.
-- **These edits are not saved.** The save game has no map data (`save-format.md`), and loading a save re-reads the
-  GEO block from the DAX (loader 0x2FA40). DOSBox-X check: the Slums door at (10,2) N was bashed open (plane 3 byte
-  0x16 → 0x15), the game saved to slot B and loaded again: the byte was 0x16 again (locked). Re-entering an area
-  runs LOADFILES, which reloads the map the same way, so doors should re-lock then too (code read, not tested).
+- At run time the engine edits plane 3 in memory.
+  - Opening a door sets the party's face to 1, and the facing face of the next square too (0x167D4, called twice
+    with (x + dx, y + dy, facing + 4 mod 8)). 0x167D4 ignores a square off the map (no wrap), so at the map edge only
+    the party's face changes.
+  - When a door's menu would offer only Exit, the party's face is set to 0 (0x166CB): it becomes a plain wall. Only
+    that face changes.
+- **These edits are not saved, and every map load undoes them.** The GEO loader (0x2F9BE) always reads the block from
+  `GEO<disk>.DAX` into the map memory; it does not check whether that map is already loaded. It runs in two places:
+  - **Load game** (0x1FBC4) reloads map $49C5 when DS:49FA ≤ 1. Vector 4 then runs, and a LOADFILES there loads
+    the map again.
+  - **LOADFILES** (ECL 0x21, 0x19F1–0x1A37) reloads it whenever the map operand is not 127 or 255 and $49E6 (3D
+    view) is set. Vector 4 runs every time a script is entered (0x3EFA, after NEWECL) and after every load
+    (0x403E). In the Slums it is `LOADFILES #20` at $9A8B; the `trace_load_step` trace passes there.
+  - Flow analysis from vector 4 alone (`ecl.py` rules): 27 of the 29 blocks reach a LOADFILES of a map from it.
+    Two of them choose the map: ECL1 block 24 loads 24 or 31, and ECL5 block 3 loads [$6E82]. ECL5 block 5 has
+    none in vector 4; it loads computed maps from vectors 0 and 1. ECL6 block 19 has no LOADFILES at all.
+  - So leaving an area and coming back re-locks its doors (code read; not tried in DOSBox-X). Some scripts also
+    reach a LOADFILES of their own map from vectors 0, 1 or 3, which re-locks the doors in the middle of a visit
+    when that path runs: ECL6 block 25, ECL7 block 26, ECL8 blocks 16, 27 and 29. Which events take those paths is
+    not traced `[?]`.
+  - The restored state is the barrier stored in the GEO block. DOSBox-X: the Slums door at (10,2) N was bashed
+    open (plane 3 byte 0x16 → 0x15). It stayed 0x15 through the fight that followed, the camp and the save to
+    slot B. After loading slot B it was 0x16 again (locked).
 
 **Door menu** (walking into a barrier 2 or 3 face; GAME.OVR 0x17443–0x1771B, door routines 0x1695F–0x16D57). The
 menu is built from three DS flags, DS:6DDE (Bash), DS:6DDF (Pick), DS:6DE0 (Knock), plus Exit, which is always there.
-Where the flags are set back to 1 is not traced `[?]` (they persist at least while the party stays at the door).
+All three are set to 1 after every completed step (FillChar at 0x16E74 in the step routine 0x16E06) and at start-up
+(0xE915). So they last while the party stays at the door (turning does not reset them), and a step through an
+opened door resets them. Nothing sets DS:6DE0 to 0. Model: `GoldBox.Core.Doors` (`DoorRules`, `DoorMap`).
 
-- **Shown:** Bash if DS:6DDE. Pick if DS:6DDF and someone in the party has a thief level. Knock: for barrier 2 if
-  DS:6DE0 and someone has spell 31 (Knock) memorised; for barrier 3 if DS:6DE0 and someone has a magic-user level.
-  If only Exit is left, the face becomes barrier 0 (above).
-- **Bash** (both types): party members are tried in order until one succeeds; a success opens the door and the
-  party steps through. Barrier 2: Strength 3–7 needs 1 on 1d6, 8–15 ≤ 2, 16–17 ≤ 3, 18/01–18/50 (and plain 18) ≤ 3,
-  18/51–18/99 ≤ 4, 18/00 ≤ 5; Strength 19 and up is not in the table and never succeeds (a quirk). Barrier 3:
-  18/91–18/99 needs 1 on 1d6, 18/00 ≤ 2, 19–20 ≤ 3, 21–22 ≤ 4, 23 ≤ 5, 24 ≤ 7 on 1d8, 25 always; any member tried
-  with less sets DS:6DDE = 0, so Bash leaves the menu for later tries.
-- **Pick**, barrier 2: members in order, success if 1d100 ≤ open-locks skill (creature 0x78) and status is okay
-  (0x10C = 0). After one try, successful or not, DS:6DDF = 0 and Pick leaves the menu. DOSBox-X: with save A's party
-  the menu showed Bash, Pick, Exit; Pick failed, and the next try showed Bash, Exit only; Bash then opened the door.
-  Barrier 3: choosing Pick only sets DS:6DDF = 0; it never opens the door.
-- **Knock** (both types): finds the first member with spell 31 memorised, clears that spell slot and opens the door;
-  without such a member nothing happens.
-- Dice: the game's dice routine (far call to GAME.OVR unit stub B0:48) with (count, sides).
+- **Shown:**
+  - Bash if DS:6DDE.
+  - Pick if DS:6DDF and some member has a thief level (creature 0x9C > 0, signed; 0x16901 with 6).
+  - Knock, barrier 2: if DS:6DE0 and some member has spell 31 (Knock) memorised. The slot byte must be exactly 31;
+    a slot chosen but not yet memorised (bit 7 set) does not count (0x16C76).
+  - Knock, barrier 3: if DS:6DE0 and some member has a magic-user level (0x9B > 0; 0x16901 with 5). Choosing it
+    still needs Knock memorised to open the door. Since DS:6DE0 is never cleared, a party with a magic-user always
+    keeps Knock in the menu, so the face is never sealed for it.
+  - If only Exit is left, the face becomes barrier 0 (above).
+- **Bash** (0x1695F, both types): party members in list order until one succeeds. Each member rolls once, and only
+  if their Strength is in the table. Status is not read, so dead or unconscious members try too. A success opens the
+  door and the party steps through.
+  - Barrier 2: Strength 3–7 needs 1 on 1d6, 8–15 ≤ 2, 16–17 ≤ 3, 18/01–18/50 (and plain 18) ≤ 3, 18/51–18/99 ≤ 4,
+    18/00 ≤ 5. Strength below 3 or above 18 is not in the table: no roll and no success (a quirk).
+  - Barrier 3: 18/91–18/99 needs 1 on 1d6, 18/00 ≤ 2, 19–20 ≤ 3, 21–22 ≤ 4, 23 ≤ 5, 24 ≤ 7 on 1d8; 25 succeeds
+    with no roll. A member with less makes no roll but sets DS:6DDE = 0, and the loop still goes on to the next
+    member in the same try. So a strong member later in the list can still open the door, but Bash then leaves the
+    menu for later tries.
+- **Pick** (0x16BAA), barrier 2: every member in list order rolls 1d100, thief or not, until one succeeds. Success
+  needs roll ≤ open-locks skill (creature 0x78) and status okay (0x10C = 0). After the try, successful or not,
+  DS:6DDF = 0 and Pick leaves the menu. Barrier 3 (0x176E0): choosing Pick only sets DS:6DDF = 0, with no roll; it
+  never opens the door.
+- **Knock** (0x16D13, both types): the first member with spell 31 memorised loses that spell slot (set to 0) and
+  the door opens. Without such a member nothing happens. No roll.
+- After a success the party steps (0x16E06, which resets the three flags). After a failure the step is not taken,
+  and the area loop goes on to vector 1 as after any step command.
+- Dice: the game's dice routine (far call to GAME.OVR unit stub B0:48, routine 0x2BCCD) with (count, sides). With
+  count 1 it is one draw of the generator (`ecl-format.md`, RANDOM).
+- **DOSBox-X check** (captures `door_pick_fail`, `door_bash`; save A's party, door at (10,2) N, barrier 2):
+  - The menu showed Bash, Pick, Exit. Pick made 6 draws, one per member: the five non-thieves have open locks 0, and
+    the thief (6th, 45 %) rolled 94. The 7th draw is vector 1's RANDOM. The next menu showed Bash, Exit only.
+  - Bash from that capture's RandSeed: members 1–3 (Strength 17, 18/90, 15) rolled 4, 6 and 2 against 3, 4 and 2,
+    so the third opened the door after exactly 3 draws, and RandSeed after the run equals the capture.
+  - Plane 3 afterwards equals the model's edit (only (10,2) changes; (10,1)'s S face was already 1).
+  - Tests: `tests/GoldBox.Core.Tests/DoorRulesTests.cs`.
 
 ### Event byte (plane 2)
 
@@ -328,8 +377,8 @@ the numbers below test the shipped code.
 
 **Not checked yet:**
 
-- One-way walls in DOSBox (the step code reads only the party's own face, GAME.OVR 0x17469, which supports them).
-- Where DS:6DDE/6DDF/6DE0 (door menu flags) are reset.
+- One-way walls in DOSBox-X (settled by program read; no one-way edge is reachable from save A's Slums).
+- Door re-lock after leaving and re-entering an area, in DOSBox-X (settled by program read; checked only for a save load).
 - Whether ECL 3 and 5 load GEO 3 and 5 through computed operands.
 - The WALLDEF piece layout.
 - The overland tile table.

@@ -31,7 +31,8 @@ can differ (one-way walls, different textures).
 ``ascii`` draws each square as 3 columns x 2 rows (FAQ style).  An edge is drawn from
 both faces: ' ' no wall on either face, '#' impassable from both faces, '+' passable
 wall (door, archway, scenery), '=' locked door (barrier 2 on a face), '%' barred door
-(barrier 3), '!' one-way (passable from one face only).  The outer frame shows only
+(barrier 3), '!' one-way (passable from one face only; the engine reads only the face of the square
+the party stands on, so the other face never blocks).  The outer frame shows only
 the inside face of each border square; the engine wraps most maps there.
 
 Decoder written from our own reading of the data; layout cross-checked against
@@ -81,6 +82,25 @@ class GeoMap:
     def passage(self, x, y):
         """Effective barrier per side as the engine sees it: 1 where there is no wall."""
         return [b if w else 1 for w, b in zip(self.walls(x, y), self.barrier(x, y))]
+
+    def can_step(self, x, y, facing):
+        """Forward step test of the engine (GAME.OVR 0x17469 -> barrier accessor 0x2EC47): only the face of the
+        party's own square is read, so the other side of the edge never matters (one-way walls).  facing is the
+        side index 0 N, 1 E, 2 S, 3 W.  True = the party walks; 2/3 open the door menu instead."""
+        return self.passage(x, y)[facing] == 1
+
+    def one_way_edges(self):
+        """Interior edges passable from exactly one side: (x, y, side) of the face that lets the party through."""
+        out = []
+        for y in range(H):
+            for x in range(W):
+                for k, (nx, ny, back) in ((1, (x + 1, y, 3)), (2, (x, y + 1, 0))):
+                    if nx >= W or ny >= H:
+                        continue
+                    a, b = self.can_step(x, y, k), self.can_step(nx, ny, back)
+                    if a != b and 0 in (self.passage(x, y)[k], self.passage(nx, ny)[back]):
+                        out.append((x, y, k) if a else (nx, ny, back))
+        return out
 
     def event(self, x, y):
         return self.planes[2][self.index(x, y)]
@@ -265,8 +285,8 @@ def main(argv):
             nwall = sum(1 for w, _ in sides if w)
             doors = sum(1 for w, b in sides if w and b >= 2)
             evs = sum(1 for c in range(256) if g.planes[2][c] & 0x7F)
-            print("%s id %3d  header %04X  wall sides %4d  locked/barred sides %3d  event squares %3d"
-                  % (os.path.basename(g.file), g.id, g.header, nwall, doors, evs))
+            print("%s id %3d  header %04X  wall sides %4d  locked/barred sides %3d  one-way edges %3d  event squares %3d"
+                  % (os.path.basename(g.file), g.id, g.header, nwall, doors, len(g.one_way_edges()), evs))
         return 0
     if cmd == "dump":
         if as_json:

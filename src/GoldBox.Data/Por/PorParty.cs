@@ -4,8 +4,8 @@ namespace GoldBox.Data.Por;
 
 /// <summary>
 /// Builds the VM's party from the character files a save names (docs/re/save-format.md "Loading"): for each stem
-/// <c>CHRDATxn</c>, the 285-byte <c>.SAV</c> record and the 63-byte item records of <c>.ITM</c> (absent = no items).
-/// Effects (<c>.SPC</c>) are not needed by the VM.
+/// <c>CHRDATxn</c>, the 285-byte <c>.SAV</c> record, the 63-byte item records of <c>.ITM</c> (absent = no items) and
+/// the 9-byte effect records of <c>.SPC</c> (absent = no effects).
 /// </summary>
 public static class PorParty
 {
@@ -28,6 +28,12 @@ public static class PorParty
                 var b = File.ReadAllBytes(itm);
                 for (int k = 0; k + EclCharacter.ItemRecordSize <= b.Length; k += EclCharacter.ItemRecordSize)
                     c.Items.Add(b[k..(k + EclCharacter.ItemRecordSize)]);
+            }
+            if (find(stem + ".SPC") is { } spc)
+            {
+                var b = File.ReadAllBytes(spc);
+                for (int k = 0; k + EclCharacter.EffectRecordSize <= b.Length; k += EclCharacter.EffectRecordSize)
+                    c.Effects.Add(b[k..(k + EclCharacter.EffectRecordSize)]);
             }
             party.Members.Add(c);
         }
