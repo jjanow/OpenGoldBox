@@ -12,6 +12,7 @@ namespace GoldBox.Tools;
 ///             [--menu 0,1,..] [--random 3,5,..] [--seed N] [--randseed HEX] [--out FILE.jsonl]
 ///   ecl-check GAMEDIR
 ///   ecl-compare GAMEDIR [FIXTURES] [--capture NAME] [--trace-out DIR]
+///   view-compare GAMEDIR SAVGAMx.DAT REF.bin [--map] [--dump]
 /// </code>
 /// ecl-run loads script SCRIPT (a block id of ECL1..8.DAX; its disk is found by id), optionally on top of a save
 /// game's VM state, runs the vector(s) headless with the scripted host and writes the JSONL trace (stdout by default).
@@ -27,6 +28,7 @@ public static class Program
                 "ecl-run" => EclRun(args[1..]),
                 "ecl-check" => EclCheck(args[1..]),
                 "ecl-compare" => EclCompare(args[1..]),
+                "view-compare" => ViewCommands.Compare(args[1..]),
                 _ => Usage(),
             };
         }
@@ -45,6 +47,7 @@ public static class Program
                                       [--menu 0,1,..] [--random 3,5,..] [--seed N] [--randseed HEX] [--out FILE.jsonl]
               goldbox-tools ecl-check GAMEDIR
               goldbox-tools ecl-compare GAMEDIR [FIXTURES] [--capture NAME] [--trace-out DIR]
+              goldbox-tools view-compare GAMEDIR SAVGAMx.DAT REF.bin [--map] [--dump]
             """);
         return 2;
     }
@@ -135,6 +138,7 @@ public static class Program
             return Usage();
         var dir = new PorGameDirectory(a[0]);
         int blocks = 0, insns = 0, hardErr = 0, specErr = 0, overlaps = 0, unhandled = 0, hazards = 0;
+        int bytes = 0, hardBytes = 0, specBytes = 0;
         foreach (var (disk, file) in dir.EclFiles())
         {
             foreach (var e in file.Entries)
@@ -147,11 +151,17 @@ public static class Program
                 overlaps += an.Overlaps.Count;
                 unhandled += an.Unhandled.Count;
                 hazards += an.Hazards.Count;
-                Console.WriteLine($"ECL{disk} block {e.Id,2}: {an.Instructions.Count,5} instructions, {an.HardErrors.Count()} hard errors, {an.Overlaps.Count} overlaps");
+                var cov = an.ByteCoverage();
+                bytes += cov.Hard + cov.Speculative + cov.Unreached;
+                hardBytes += cov.Hard;
+                specBytes += cov.Speculative;
+                Console.WriteLine($"ECL{disk} block {e.Id,2}: {an.Instructions.Count,5} instructions, bytes hard {cov.Hard,5} " +
+                                  $"spec {cov.Speculative,5} unreached {cov.Unreached,4}, {an.HardErrors.Count()} hard errors, {an.Overlaps.Count} overlaps");
             }
         }
         Console.WriteLine($"blocks {blocks}, instructions {insns}, hard errors {hardErr}, speculative errors {specErr}, " +
                           $"overlaps {overlaps}, unhandled {unhandled}, IF-skip hazards {hazards}");
+        Console.WriteLine($"script bytes {bytes}: hard {hardBytes}, speculative only {specBytes}, not reached {bytes - hardBytes - specBytes}");
         return hardErr == 0 && overlaps == 0 && unhandled == 0 ? 0 : 1;
     }
 

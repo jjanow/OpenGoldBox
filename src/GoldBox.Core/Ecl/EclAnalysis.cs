@@ -2,8 +2,9 @@ namespace GoldBox.Core.Ecl;
 
 /// <summary>
 /// Static flow analysis of one script block, the same as <c>tools/scripts/ecl.py</c> <c>Analysis</c>: pass 1 follows
-/// hard edges from the five vectors; pass 2 adds speculative edges (return after GOSUB is hard; ON fall-through and
-/// the IF-skip past a mis-skipped instruction are speculative). A speculative path stops where it reaches a byte some
+/// hard edges from the five vectors; pass 2 adds speculative edges. The instruction after a GOSUB or ON GOSUB is hard
+/// (the game resumes there when the routine returns, and ON GOSUB falls through when the selector is out of range);
+/// the ON GOTO fall-through and the IF-skip past a mis-skipped instruction are speculative. A speculative path stops where it reaches a byte some
 /// script operand addresses (a table); pass 2 repeats until that set is stable.
 /// </summary>
 public sealed class EclAnalysis
@@ -78,6 +79,28 @@ public sealed class EclAnalysis
         Overlaps = overlaps;
     }
 
+    /// <summary>
+    /// Script bytes (block minus the 2-byte prefix) by reach, as <c>ecl.py check</c> counts them: bytes of hard
+    /// instructions plus the 20-byte vector table, bytes of instructions reached only on speculative paths, the rest.
+    /// </summary>
+    public (int Hard, int Speculative, int Unreached) ByteCoverage()
+    {
+        var cov = new byte[Block.Length];
+        foreach (var (off, ins) in Instructions)
+            for (int k = off; k < off + ins.Size && k < cov.Length; k++)
+                cov[k] = Reached[off] == Reach.Hard ? (byte)1 : (byte)2;
+        for (int k = EclLayout.Prefix; k < EclLayout.Prefix + 4 * EclLayout.VectorCount; k++)
+            cov[k] = 1;
+        int hard = 0, spec = 0, none = 0;
+        for (int k = EclLayout.Prefix; k < cov.Length; k++)
+        {
+            if (cov[k] == 1) hard++;
+            else if (cov[k] == 2) spec++;
+            else none++;
+        }
+        return (hard, spec, none);
+    }
+
     private sealed class Pass
     {
         public Dictionary<int, EclInstruction> Insns { get; } = [];
@@ -136,7 +159,9 @@ public sealed class EclAnalysis
             return outs;
         if (ins.Op == EclOpcodes.Gosub)
             outs.Add((next, "after-gosub", true));
-        else if (ins.Op is EclOpcodes.OnGoto or EclOpcodes.OnGosub)
+        else if (ins.Op == EclOpcodes.OnGosub)
+            outs.Add((next, "after-on-gosub", true));
+        else if (ins.Op == EclOpcodes.OnGoto)
             outs.Add((next, "on-fallthrough", false));
         else
             outs.Add((next, "fall", true));

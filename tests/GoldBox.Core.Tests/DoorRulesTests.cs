@@ -221,4 +221,62 @@ public class DoorRulesTests
         Assert.Equal(0x15, Door("load_saveB", "before"));    // nor camping and saving
         Assert.Equal(0x16, Door("load_saveB", "after"));     // loading re-reads the GEO block
     }
+
+    /// <summary>
+    /// Leaving the Slums and coming back (capture <c>door_relock</c>, s10): the door at (9,2) W bashed open stays open
+    /// through a fight, is still open when the party steps off the east edge into New Phlan, and the map read on
+    /// re-entry is the GEO block again, byte for byte.
+    /// </summary>
+    [CaptureFact]
+    public void Capture_door_relocks_after_leaving_and_reentering_the_area()
+    {
+        DosboxVmState State(string side) => new(Path.Combine(Captures.Dir!, "door_relock", side));
+        const int door = DoorMap.BarrierPlane + 2 * 16 + 9;
+        var closed = State("closed");
+        Assert.Equal((9, 2, 6), (closed.Position.X, closed.Position.Y, closed.Position.Facing));
+        Assert.Equal(DoorBarrier.Locked, DoorMap.FaceBarrier(closed.GeoPlanes!, 9, 2, 6));
+
+        var open = State("open");
+        Assert.Equal(DoorBarrier.Passable, DoorMap.FaceBarrier(open.GeoPlanes!, 9, 2, 6));
+        var expected = closed.GeoPlanes!.ToArray();
+        DoorMap.Open(expected, 9, 2, 6);
+        Assert.Equal(expected, open.GeoPlanes);
+
+        var before = State("before");                        // at 15,4 facing E, after an orc fight
+        Assert.Equal(open.GeoPlanes![door], before.GeoPlanes![door]);
+        var away = State("away");                            // New Phlan, ECL3 block 0 / map 0
+        Assert.Equal((3, 0), (away.Disk, away.Script_));
+        var after = State("after");                          // back in the Slums
+        Assert.Equal((2, 20), (after.Disk, after.Script_));
+        Assert.Equal(closed.GeoPlanes![door], after.GeoPlanes![door]);
+
+        var game = PorData.Open();
+        var block = GoldBox.Data.Dax.DaxFile.Open(game.Find("GEO2.DAX")!).Block(20)!;
+        Assert.Equal(block[2..], after.GeoPlanes);
+    }
+
+    /// <summary>
+    /// One-way walls (captures <c>oneway_*</c>, patched saves E and F, s10): <see cref="DoorMap.CanStep"/> on the
+    /// captured map predicts each step, and the step from the other side of the same edge is refused.
+    /// </summary>
+    [CaptureTheory]
+    [InlineData("oneway_through", true)]
+    [InlineData("oneway_blocked", false)]
+    [InlineData("oneway_barrier_through", true)]
+    [InlineData("oneway_barrier_blocked", false)]
+    public void Capture_one_way_walls(string capture, bool moves)
+    {
+        var before = new DosboxVmState(Path.Combine(Captures.Dir!, capture, "before"));
+        var after = new DosboxVmState(Path.Combine(Captures.Dir!, capture, "after"));
+        var (x, y, f, _, _) = before.Position;
+        Assert.Equal(moves, DoorMap.CanStep(before.GeoPlanes!, x, y, f));
+        var expected = moves ? (x + DoorMap.DeltaX(f), y + DoorMap.DeltaY(f)) : (x, y);
+        Assert.Equal(expected, (after.Position.X, after.Position.Y));
+        // The far face of the edge reads the other way: a one-way edge.
+        int nx = x + DoorMap.DeltaX(f), ny = y + DoorMap.DeltaY(f);
+        Assert.Equal(!moves, DoorMap.CanStep(before.GeoPlanes!, nx, ny, (f + 4) % 8));
+        // Both vectors ran once on the step, refused or not (counters $9700/$9701 of the test script).
+        Assert.Equal(1, after.Area9700[0] - before.Area9700[0]);
+        Assert.Equal(1, after.Area9700[1] - before.Area9700[1]);
+    }
 }

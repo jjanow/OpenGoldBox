@@ -134,10 +134,22 @@ public sealed class ScriptedEclHost : IEclHost
     public (ushort Slot, ushort Character)? Spell(ushort spell) { Log($"Spell {spell}"); return null; }
 
     public void Picture(ushort picture) => Log($"Picture {picture}");
-    public void LoadMap(int map) => Log($"LoadMap {map}");
+    /// <summary>Called on LOADFILES with a map (the 3D view's area entry), after the call is logged.</summary>
+    public Action<int>? MapLoaded { get; set; }
+    /// <summary>Called on LOADPIECES / wall-set writes: (slot 1..3, WALLDEF id or null = empty), after logging.</summary>
+    public Action<int, int?>? WallSetLoaded { get; set; }
+
+    public void LoadMap(int map)
+    {
+        Log($"LoadMap {map}");
+        MapLoaded?.Invoke(map);
+    }
     public void LoadOutdoorPicture() => Log("LoadOutdoorPicture");
-    public void LoadWallSet(int slot, int? set) =>
+    public void LoadWallSet(int slot, int? set)
+    {
         Log($"LoadWallSet {slot} {(set is { } s ? s.ToString(CultureInfo.InvariantCulture) : "empty")}");
+        WallSetLoaded?.Invoke(slot, set);
+    }
     public void Clock(ushort minutes) => Log($"Clock {minutes}");
     public void Call(ushort routine) => Log($"Call {routine:X4}");
     public void Program(ushort program) => Log($"Program {program}");

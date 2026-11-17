@@ -39,3 +39,13 @@ public sealed class PorFactAttribute : FactAttribute
             Skip = PorData.SkipReason;
     }
 }
+
+/// <summary>A theory that needs the PoR files (<see cref="PorData"/>); skipped without them.</summary>
+public sealed class PorTheoryAttribute : TheoryAttribute
+{
+    public PorTheoryAttribute()
+    {
+        if (!PorData.Present)
+            Skip = PorData.SkipReason;
+    }
+}

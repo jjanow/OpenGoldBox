@@ -72,9 +72,16 @@ block offset  VM address     content
     vector 0 (0x4199), then (unless the script changed or the party is defeated) stores x, y in $49F0/$49F1, takes
     the step (0x17438) and runs vector 1 on the new square (0x4228). Confirmed by the DOSBox-X per-opcode trace
     (2026-11-17, one step west from save A): vector 0 ran to its EXIT, then vector 1 from its start. A turn key
-    (Left/Right) ran no script at all (RAM snapshot: PC unchanged, only the facing changed);
+    (Left/Right) ran no script at all (RAM snapshot: PC unchanged, only the facing changed). A step into an
+    impassable face still runs vector 0, the $49F0/$49F1 write and vector 1, on the same square (DOSBox-X, s10:
+    test vectors that count their runs, captures `oneway_blocked`, `oneway_barrier_blocked`);
   - after any run that switched scripts (NEWECL), routine 0x3EFA runs the new script's vector 4, then vector 0 and,
-    unless the script changed again, vector 1, and repeats while scripts keep changing;
+    unless the script changed again, vector 1, and repeats while scripts keep changing. Each pass first re-reads the
+    event byte DS:6AB1 ($C04F) from the map in memory and sets **$6DD5 = 0** (0x3F00–0x3F16), and after vector 4 the
+    view redraw (0x3FF5 → 0x2DCF4) re-reads it again, now from the map vector 4 loaded. DOSBox: `edge_exit_east`
+    (s10). `[?]` The script-changed flag is not tested after vector 4 (it is cleared at 0x3FFA before vector 0), so a
+    NEWECL inside a vector 4 would be followed by the new script's vectors 0 and 1, not its vector 4; the VM restarts
+    with vector 4 (not checked whether any v1.3 vector 4 switches scripts);
   - routine 0x3B19 (camp) runs vector 2, then the camp menu (0x196A0), which clears a "rest interrupted" flag and
     passes it to Rest (0x17FAB) and Memorise (0x18C22). Rest runs the rest loop 0x24A66, which returns the flag:
     each rest tick it increments a counter (DS:49FB, not a VM cell); when VM $6DD2 is non-zero and the counter reaches
@@ -297,8 +304,9 @@ the same start) holds $6DC0 = 2, $6DC1 = 1 with a wall one square ahead.
    Then copies (not reloads, so no more rolls) for k = 2 .. max(low byte of v2, 1) while DS:4435 < 63.
 4. DS:6F83 + 1, DS:84E7 = 1 ("monsters loaded").
 
-So PARTYSTR, FINDITEM, PSURPRISE and ENCMENU's speed rule see the loaded monsters until the combat code removes them
-(`[?]` where; CLRMON does not). DOSBox (`loadmon_combat`, state taken on the fight screen, combat list read from the
+So PARTYSTR, FINDITEM, PSURPRISE and ENCMENU's speed rule see the loaded monsters until the after-combat step removes
+them (GAME.OVR 0x672A, called from 0x6AA5: every creature past the party size $6E3E at the fight start, and every
+hostile one; `combat-format.md`). CLRMON does not. DOSBox (`loadmon_combat`, state taken on the fight screen, combat list read from the
 heap): CLRMON + LOADMON 2, 6, 2 gave six identical records after the six party members, byte 0xBF = 8, DS:4435 = 6,
 DS:6F83 = 9, DS:84E7 = 1, and colour bytes that are exactly the first five 1d6 rolls from the RandSeed at the menu,
 in the order 0xC1, 0xC2, 0xC3, 0xC5, 0xC6 (race 0 keeps 0xC0 = 0).
@@ -332,8 +340,8 @@ advance, parley), three texts (distance 0, 1, 2), move1, move2.
 4. DOSBox (`trace_encmenu`, `encmenu_advance`): menu at $6DC0 = 2, $6DC1 = 1; Advance with reaction 1 gave $6DC1 = 0
    and the parley menu; Flee with reaction 0 and move1 = 6 (slowest member 6) took the ONGOTO target for 2.
 
-**COMBAT** (0x24E1, the hand-off only; the fight 0x9881, the after-combat step 0x6AA5, the shop 0x7212 and the
-temple 0x5280 are not read):
+**COMBAT** (0x24E1, the hand-off; the fight 0x9881, the after-combat step 0x6AA5, the shop 0x7212 and the temple
+0x5280 are in `combat-format.md`):
 - If DS:84E7 = 0 (no LOADMON since CLRMON) and DS:84D4 = 0 (no duel): $6E6C = 1 → $6E6C = 0, shop; else $6DE2 = 1 →
   $6DE2 = 0, temple; else the after-combat step alone. So shop and temple are checked only without monsters, shop first.
 - Else: $6DC1 = min($6DC1, view distance) (outdoors this leaves 2), fight, after-combat step, outdoors the outdoor
@@ -346,7 +354,8 @@ list one by one (so they end up in reverse order; a missing file quits to DOS). 
 type is rolled with 1d100 (≤ 60: a second 1d100 gives the type directly for 1–47 and 50–59, 45 becomes 59, 60–90
 a 1d10 picks 34–38, 91–94 → 73, 95–97 → 93, 98–100 → 77; 48 and 49 leave the variable unset `[?]`; 61–85 → 61;
 86–92 → 62; 93–98 a 1d16 picks 67/70/71/78/79/84/92; 99–100 → 69), the item itself is made by 0x25C99 (not read,
-`[?]` its draws), and afterwards START 00BA:0442 runs on every treasure item `[?]`. 255: no items.
+`[?]` its draws), and afterwards START 00BA:0442 runs on every treasure item: that is the item naming routine
+(`item-format.md`, image 0x0FE2), which writes the cached name. 255: no items.
 
 **PARLEY v1..v5 a** (0x3311): five-item menu (haughty, sly, nice, meek, abusive), low byte of the chosen value
 written to a.
@@ -410,7 +419,7 @@ only. `[?]` = unknown or unconfirmed.
 | 2A | GETTABLE | GETTABLE | 3 | 3 | a v a | a2 = cell at (a1 + low byte of v) | P | 271 |
 | 2B | HMENU | HORIZONTAL MENU | 2+n | **0** | a n, s×n | Bottom-line menu, choice → a | P (shape) | 204 |
 | 2C | PARLEY | PARLAY | 6 | 6 | v×5 a | Five-item menu; low byte of the chosen value → a | P | 41 |
-| 2D | CALL | CALL | 1 | 1 | a | Run a built-in routine chosen by the raw address ($2C90, $8000, $8001, $BA03, $C018, $C01E; else nothing). $8000 = mirror duel (a copy of the current character as the enemy, the others out of the fight), $8001 = solo fight; both GAME.OVR 0x8F42, which sets DS:84D4 (so the next COMBAT fights) and $6DE6 | P (ids; $8000/$8001) | 180 |
+| 2D | CALL | CALL | 1 | 1 | a | Run a built-in routine chosen by the raw address ($2C90, $8000, $8001, $BA03, $C018, $C01E; else nothing). $8000 = mirror duel (a copy of the current character as the enemy, the others out of the fight), $8001 = solo fight; both GAME.OVR 0x8F42, which sets DS:84D4 (so the next COMBAT fights) and $6DE6. $C01E = one square forward with edge wrap (0x8EAE; the town scripts' edge exit, not the encounter flee). Table in `combat-format.md` "CALL ids" | P | 180 |
 | 2E | DAMAGE | DAMAGE | 5 | 5 | v×5 | Attack/damage characters, optional save | L | 48 |
 | 2F | AND | AND | 3 | 3 | v v a | a = low byte of v1 AND v2; "=" when the result is 0 | P | 356 |
 | 30 | OR | OR | 3 | 3 | v v a | a = low byte of v1 OR v2; flags as AND | P | 208 |
@@ -621,8 +630,12 @@ Run: `python3 -I tools/scripts/ecl.py check <gamedir>` on PoR DOS v1.3 (files as
 1. **Headers:** all 29 blocks start with u16 0x1388, followed by five `01` + type-1 operands, every vector inside
    the block.
 2. **Decode:** flow analysis from the five vectors reaches **16,015 instructions**. Of 176,207 script bytes
-   (blocks minus prefix): 158,974 (90.2 %) on hard paths (including the 20-byte vector tables), 13,859 (7.9 %) only on
-   speculative paths (fall-through after ON GOTO/ON GOSUB), 3,374 (1.9 %) not reached.
+   (blocks minus prefix): 164,522 (93.4 %) on hard paths (including the 20-byte vector tables), 8,311 (4.7 %) only on
+   speculative paths (fall-through after ON GOTO, IF-skip past a mis-skipped instruction), 3,374 (1.9 %) not reached.
+   The instruction after a GOSUB or ON GOSUB is a hard edge: the game resumes there when the routine returns, and
+   ON GOSUB also falls through when the selector is out of range (s10; before, ON GOSUB's next instruction was
+   counted as speculative: 158,974 hard, 13,859 speculative, same 16,015 instructions). `EclAnalysis.ByteCoverage`
+   gives the same three numbers (`PorScriptTests`).
    - **0 decode errors on hard paths, 0 on speculative paths, 0 overlapping instructions** (no jump or call target
      lands inside another instruction), 0 unknown opcodes reached, 0 type-0 jump targets.
    - The unreached bytes: 56 runs / 3,162 bytes are tables addressed by script operands; 61 runs / 202 bytes decode
@@ -655,7 +668,8 @@ Run: `python3 -I tools/scripts/ecl.py check <gamedir>` on PoR DOS v1.3 (files as
      The encounter trace (load, camp, interrupted rest, ENCMENU, Advance, Flee) follows 95/95.
    - The state captures match cell for cell in the four VM areas, plus PC, opcode, previous opcode, flags, GOSUB
      stack (empty or not), disk, position and RandSeed: load A, step, encamp, interrupted rest, door pick, door
-     bash, load B, edge wrap, the two encounter-menu states (`encmenu_clamp`, `encmenu_advance`) and the open-items save D (CLOCK, special reads, COMPARE residue; s9).
+     bash, load B, edge wrap, the three encounter-menu states (`encmenu_clamp`, `encmenu_advance`, and since s10 `encmenu_flee`, whose party move is script code: $C04B–$C04D from the flee path at $B225), the edge exit `edge_exit_east` (s10: CALL $C01E, NEWECL to ECL3 block 0 and its vectors), the open-items save D (CLOCK, special reads, COMPARE residue; s9), and the four one-way wall steps (patched saves E and F,
+     two walked through, two refused; s10).
    - The open-items trace (s9) is followed 34/34 up to the first instruction of the 0x1F hang, where the VM stops
      with `UnhandledOpcode`.
    - No script runs for the turn. The fight is captured inside COMBAT in both states, so all its changes are
@@ -679,11 +693,14 @@ Run: `python3 -I tools/scripts/ecl.py check <gamedir>` on PoR DOS v1.3 (files as
   DOSBox comparison ("Verification" 9): RANDOM and the RandSeed formula, SURPRISE's formula and roll order,
   PARTYSTR, the script init on a save load.
 - Settled 2026-11-17 (program read + `encmenu_*` captures): the encounter distance, SETUPMON, APPROACH, LOADMON,
-  CLRMON, ENCMENU, COMBAT's entry, PARLEY, PICTURE, SPRITEOFF ("Encounters"). Still open there: where the combat code
-  removes the monsters LOADMON appended; the fight (0x9881), after-combat step (0x6AA5), shop (0x7212) and temple
-  (0x5280); TREASURE's item maker 0x25C99 and the per-item call 00BA:0442; the item type for a second roll of 48/49;
-  the icon slot DS:6F83 before the first CLRMON; COMBAT's $6DC1 limit is not discriminated by a capture (the
-  distance was already within the view).
+  CLRMON, ENCMENU, COMBAT's entry, PARLEY, PICTURE, SPRITEOFF ("Encounters"). Settled in session 10
+  (`combat-format.md`): the monsters LOADMON appended are removed by the after-combat step (0x672A); the top level of
+  the fight (0x9881), the after-combat step (0x6AA5, with the class split of the experience checked against the
+  `combat_win` save), the structure of the shop (0x7212) and temple (0x5280); CALL $C01E (0x8EAE, step forward; the
+  encounter flee in ECL2 block 20 is script code, and `encmenu_flee` now replays); TREASURE's per-item call 00BA:0442
+  is the naming routine. Still open: the fight's actions and the loot/shop/temple details (`combat-format.md` "Open");
+  TREASURE's item maker 0x25C99; the item type for a second roll of 48/49; the icon slot DS:6F83 before the first
+  CLRMON; COMBAT's $6DC1 limit is not discriminated by a capture (the distance was already within the view).
 - Program-side random draws: the rest loop and the door menu follow their read rules (door model
   `GoldBox.Core.Doors`, `geo-format.md`); the comparison harness still searches the door draw counts.
 - LOADPIECES with $49E7 and $49E8 both non-zero: whether an operand of 255 empties slot 1 or 3 there (the VM applies

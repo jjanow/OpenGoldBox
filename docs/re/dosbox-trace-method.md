@@ -87,7 +87,7 @@ as skip-if-absent tests (`tests/GoldBox.Core.Tests/EclCaptureCompareTests.cs`).
    are a count, searched in a small range. The tool reports the count that reproduces the `after` state *and*
    RandSeed. Every RANDOM and SURPRISE roll comes from the generator, so RandSeed after the run is a strict check.
 4. **State compare.** The four areas cell by cell, PC, opcode, previous opcode, flags, GOSUB stack (empty or
-   not: its links are far pointers), disk, script, position and RandSeed.
+   not: its links are far pointers), disk, script, position (x, y, facing; since s10 also the wall ahead and event byte $C04E/$C04F) and RandSeed.
    - Cells the program changes outside the VM are listed as host-owned, with the reason, not counted: the clock
      $49C6–$49CC and the wall-set slot $4AFF. The replay runs the encounter opcodes in the game-side
      `EncounterHost` (map walls from the capture's `geo_planes.bin`, or the `GEO` block after a save load), so the
@@ -111,4 +111,6 @@ interrupted rest, door pick/bash, a won fight, load of an in-game save, edge wra
 encamp + rest). Session 9 added a patched save whose script area holds test code (CLOCK, special reads, COMPARE
 residue, PRINT of a number), with a state taken at its menu and a trace that ends in the 0x1F hang. Patching a
 save's script area this way (save offset 5121 + A − $9900; vector 4 runs on load) is the quickest way to try one
-instruction in the real game.
+instruction in the real game. Session 10 used the same trick to put the party on another map (vector 4 =
+LOADFILES + LOADPIECES of a map of the same disk, party position at save offset 12801) with vectors that only count
+their runs, for the one-way wall steps, and added a real round trip out of the Slums and back (`door_relock`).

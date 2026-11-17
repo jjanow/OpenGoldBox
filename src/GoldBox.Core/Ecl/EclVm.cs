@@ -284,10 +284,26 @@ public sealed class EclVm
         return result;
     }
 
+    /// <summary>VM $6DD5: set by the forward-step key when the step leaves the 16×16 map (geo-format.md "Edges").</summary>
+    public const ushort EdgeStepCell = 0x6DD5;
+
+    /// <summary>
+    /// The event accessor (0x2EE71) for the party's square on the map in memory, for the two re-reads at a script
+    /// switch: at the start of each pass (argument false: the old map is still in memory) and in the view redraw after
+    /// vector 4 (argument true: vector 4's LOADFILES has loaded the new map; 0x3FF5 → 0x2DD22). Null leaves
+    /// <see cref="EclPartyPosition.EventByte"/> as it is. [?] The redraw runs under conditions on DS:49F9/49FA/4431
+    /// that differ only in the wilderness blocks 25–27 (0x3F4C–0x3FF5); the VM always asks.
+    /// </summary>
+    public Func<bool, byte>? ScriptSwitchEventByte { get; set; }
+
     /// <summary>
     /// After a run that switched scripts (routine 0x3EFA): the new script is already loaded and initialised by
     /// NEWECL; run its vector 4, then vector 0 and, unless the script changed again, vector 1; repeat while scripts
-    /// keep changing (at most <paramref name="maxSwitches"/> times).
+    /// keep changing (at most <paramref name="maxSwitches"/> times). Each pass first reads the event byte of the
+    /// party's square again (<see cref="ScriptSwitchEventByte"/>) and clears the edge-step cell $6DD5 (0x3F00–0x3F16),
+    /// so the new script's vector 0 does not see the step that left the old map. [?] The program does not test the
+    /// script-changed flag after vector 4: a NEWECL in vector 4 is followed by the new script's vectors 0 and 1, not
+    /// its vector 4; this VM restarts with vector 4 (no v1.3 init vector is known to switch scripts; not checked).
     /// </summary>
     public EclRunResult FollowScriptChanges(int maxStepsPerRun = 100_000, int maxSwitches = 32)
     {
@@ -300,11 +316,16 @@ public sealed class EclVm
                 _pendingNotLoaded = false;
                 LoadScript(next);
             }
+            if (ScriptSwitchEventByte?.Invoke(false) is { } ev)
+                Memory.Position.EventByte = ev;
+            Memory.Write(EdgeStepCell, 0);
             last = RunVector(EclLayout.VectorInit, maxStepsPerRun);
             if (last.Reason == EclStopReason.NewScript)
                 continue;
             if (last.Reason is not EclStopReason.Exit)
                 return last;
+            if (ScriptSwitchEventByte?.Invoke(true) is { } ev2)
+                Memory.Position.EventByte = ev2;
             last = RunVector(0, maxStepsPerRun);
             if (last.Reason == EclStopReason.NewScript)
                 continue;

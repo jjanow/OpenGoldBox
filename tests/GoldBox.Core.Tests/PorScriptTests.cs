@@ -15,7 +15,7 @@ public class PorScriptTests(ITestOutputHelper output)
     public void Every_block_decodes_like_ecl_py_check()
     {
         var dir = PorData.Open();
-        int blocks = 0, insns = 0;
+        int blocks = 0, insns = 0, hardBytes = 0, specBytes = 0, unreached = 0;
         var types = new Dictionary<byte, int>();
         var ids = new List<int>();
         foreach (var (_, file) in dir.EclFiles())
@@ -35,6 +35,10 @@ public class PorScriptTests(ITestOutputHelper output)
                 blocks++;
                 ids.Add(e.Id);
                 insns += an.Instructions.Count;
+                var cov = an.ByteCoverage();
+                hardBytes += cov.Hard;
+                specBytes += cov.Speculative;
+                unreached += cov.Unreached;
                 foreach (var o in an.Instructions.Values.SelectMany(i => i.Operands))
                     types[o.Type] = types.GetValueOrDefault(o.Type) + 1;
             }
@@ -43,6 +47,8 @@ public class PorScriptTests(ITestOutputHelper output)
         Assert.Equal(29, blocks);
         Assert.Equal(Enumerable.Range(0, 30).Where(i => i != 12), ids.Order());
         Assert.Equal(16015, insns);
+        // ecl.py check: hard 164,522 (incl. vector tables), speculative only 8,311, not reached 3,374.
+        Assert.Equal((164522, 8311, 3374), (hardBytes, specBytes, unreached));
         Assert.Equal(new Dictionary<byte, int> { [0] = 9176, [1] = 13099, [2] = 43, [3] = 75, [0x80] = 2556, [0x81] = 263 }, types);
     }
 
@@ -158,8 +164,9 @@ public class PorScriptTests(ITestOutputHelper output)
                             seen.Add(s.Pc);
                             if (!known.Contains(s.Pc))
                             {
-                                // The analysis cuts speculative paths where an ON GOTO/GOSUB falls through into a
-                                // table; random state can take that path at run time. Anything else is a failure.
+                                // The analysis cuts speculative paths where an ON GOTO falls through into a table;
+                                // random state can take that path at run time. Anything else is a failure (the
+                                // instruction after an ON GOSUB is a hard edge, never cut).
                                 if (afterOnFallThrough)
                                     onFallThroughIntoData++;
                                 else
@@ -169,7 +176,7 @@ public class PorScriptTests(ITestOutputHelper output)
                                 }
                                 break; // the rest of this run is outside the decoded code
                             }
-                            afterOnFallThrough = s.Op is EclOpcodes.OnGoto or EclOpcodes.OnGosub
+                            afterOnFallThrough = s.Op == EclOpcodes.OnGoto
                                 && s.HostCalls.Count == 0 && s.NextPc == FallThrough(an, s.Pc);
                         }
                     }

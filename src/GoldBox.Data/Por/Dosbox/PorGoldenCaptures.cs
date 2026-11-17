@@ -28,6 +28,10 @@ public static class PorGoldenCaptures
             CaptureParty.SaveA, [], [Clock, WallSlot]),
         new("combat_win", "Enter, Q per character, N (fight won)", true,
             [], CaptureParty.SaveA, [], [], AllHost: true),
+        // Unpatched save A facing east at 15,4: vector 0 sees $6DD5 = 1, runs CALL $C01E (step forward with wrap) and
+        // NEWECL 0 on disk 3; the new script's vectors 4, 0, 1 follow. No program step after vector 0.
+        new("edge_exit_east", "save A: Down (face E), then Up off the east edge (CALL $C01E, NEWECL)", true,
+            [new ForwardKeyAction(), new RunVectorAction(0)], CaptureParty.SaveA, [], [Clock, WallSlot]),
         new("load_saveB", "restart, main menu → Load → B (in-game save after the fight)", false,
             [new LoadSaveAction("SAVGAMB.DAT")], CaptureParty.SaveB, [], []),
         new("edge_wrap_patched", "patched save C: Up off the east edge", true,
@@ -37,6 +41,9 @@ public static class PorGoldenCaptures
         new("encmenu_advance", "same, then A (advance) at the encounter menu", true,
             [new HostDrawsAction(0, 5, "rest loop 1d100 per interval"), new AnswersAction(3), new RunVectorAction(3)],
             CaptureParty.SaveA, [], [Clock]),
+        new("encmenu_flee", "same, then A (advance) and F (flee) at the encounter menu", true,
+            [new HostDrawsAction(0, 5, "rest loop 1d100 per interval"), new AnswersAction(3, 2), new RunVectorAction(3)],
+            CaptureParty.SaveA, [], [Clock], BeforeFrom: "encmenu_clamp"),
         new("trace_encmenu", "boot, Load A, E, R, H, I×8, R, A (advance), F (flee) (E9 trace)", false,
             [new LoadSaveAction("SAVGAMA.DAT"), new RunVectorAction(2), new AnswersAction(3, 2), new RunVectorAction(3)],
             CaptureParty.SaveA, ["trace_encmenu/trace.txt"], []),
@@ -47,6 +54,17 @@ public static class PorGoldenCaptures
             [new LoadSaveAction("SAVGAMA.DAT"), new ForwardKeyAction(), new RunVectorAction(0), new StepAction("step_west"), new RunVectorAction(1),
              new RunVectorAction(2), new RunVectorAction(3)],
             CaptureParty.SaveA, ["trace_load_step/trace.txt", "trace_camp_rest/trace.txt"], []),
+        // Patched saves E and F (s10): vector 4 loads another map of disk 2 (E: Mendor's Library, map 15; F: Stojanow
+        // Gate, map 9); vectors 0 and 1 count their runs in $9700/$9701. One-way edge walked through, then refused
+        // from the other side: the refused step still runs vector 0, the $49F0/$49F1 write and vector 1.
+        new("oneway_through", "patched save E: Up from 5,3 S (wall-less face) into 5,4", true,
+            [new ForwardKeyAction(), new RunVectorAction(0), new StepAction(), new RunVectorAction(1)], CaptureParty.SaveA, [], [Clock, WallSlot]),
+        new("oneway_blocked", "then Down (turn), Up from 5,4 N (wall, barrier 0): refused", true,
+            [new ForwardKeyAction(), new RunVectorAction(0), new StepAction(), new RunVectorAction(1)], CaptureParty.SaveA, [], [Clock, WallSlot]),
+        new("oneway_barrier_through", "patched save F: Up from 4,5 S (wall, barrier 1) into 4,6", true,
+            [new ForwardKeyAction(), new RunVectorAction(0), new StepAction(), new RunVectorAction(1)], CaptureParty.SaveA, [], [Clock, WallSlot]),
+        new("oneway_barrier_blocked", "then Down (turn), Up from 4,6 N (wall, barrier 0): refused", true,
+            [new ForwardKeyAction(), new RunVectorAction(0), new StepAction(), new RunVectorAction(1)], CaptureParty.SaveA, [], [Clock, WallSlot]),
         // Patched save D: vector 4 runs test code (CLOCK after GOSUB, special reads, PRINT of numbers) and waits in an
         // HMENU; vector 0 points at an 0x1F byte, which hangs (the trace keeps only the first of its lines).
         new("ecl_open_items", "patched save D: Load D, state at the HMENU of vector 4", false,

@@ -22,6 +22,21 @@ public sealed class PorGameDirectory : IEclScriptSource
     /// <summary>Full path of a file by name (any case), or null.</summary>
     public string? Find(string name) => _files.TryGetValue(name.ToUpperInvariant(), out var p) ? p : null;
 
+    private readonly Dictionary<string, DaxFile?> _dax = [];
+
+    /// <summary>A DAX file by name (any case), read once and kept; null when the folder has no such file.</summary>
+    public DaxFile? Dax(string name)
+    {
+        name = name.ToUpperInvariant();
+        if (!_dax.TryGetValue(name, out var f))
+        {
+            var path = Find(name);
+            f = path is null ? null : DaxFile.Open(path);
+            _dax[name] = f;
+        }
+        return f;
+    }
+
     /// <summary>ECL1.DAX .. ECL8.DAX that exist, as (disk, file).</summary>
     public IEnumerable<(int Disk, DaxFile File)> EclFiles()
     {

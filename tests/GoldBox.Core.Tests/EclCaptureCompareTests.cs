@@ -54,7 +54,13 @@ public class EclCaptureCompareTests
     [InlineData("edge_wrap_patched", CaptureOutcome.Match, null)]
     [InlineData("encmenu_clamp", CaptureOutcome.Match, 2)]      // ENCMENU at distance 2, view 1: $6DC1 = 1
     [InlineData("encmenu_advance", CaptureOutcome.Match, 2)]    // then Advance: $6DC1 = 0, parley menu
+    [InlineData("encmenu_flee", CaptureOutcome.Match, 2)]       // then Flee: the script moves the party ($C04B–$C04D)
+    [InlineData("edge_exit_east", CaptureOutcome.Match, null)]  // CALL $C01E, NEWECL, the new script's vectors
     [InlineData("ecl_open_items", CaptureOutcome.Match, null)]
+    [InlineData("oneway_through", CaptureOutcome.Match, null)]
+    [InlineData("oneway_blocked", CaptureOutcome.Match, null)]  // refused step: vectors 0 and 1 still run
+    [InlineData("oneway_barrier_through", CaptureOutcome.Match, null)]
+    [InlineData("oneway_barrier_blocked", CaptureOutcome.Match, null)]
     public void State_capture(string name, CaptureOutcome expected, int? hostDraws)
     {
         var r = Captures.Compare(PorGoldenCaptures.Find(name)!);

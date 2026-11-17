@@ -43,18 +43,27 @@ public interface IEncounterUi
 }
 
 /// <summary>
-/// What COMBAT hands over to (GAME.OVR 0x24E1). The fight itself, shops and temples are out of this host's scope.
+/// What COMBAT hands over to (GAME.OVR 0x24E1, docs/re/combat-format.md). The fight's actions, the loot menus, shops
+/// and temples are player-facing and stay outside the host; the after-combat rules (outcome, experience, removal of
+/// the monsters) run in the host (<see cref="AfterCombat"/>).
 /// </summary>
 public interface ICombatRunner
 {
     /// <summary>
-    /// The fight (0x9881), entered with $6DC1 already limited to the view. Owns the combat list: it must remove
-    /// the monsters <see cref="EncounterState.Monsters"/> from the party list when it is done ([?] where the
-    /// program does it is not read).
+    /// The fight (0x9881), entered with $6DC1 already limited to the view and the fight-start bookkeeping the host
+    /// models done (<see cref="EncounterState.NotParty"/>, $6DC6 ≤ 100, $6E33 = 0). It leaves each creature's status
+    /// (0x10C), in-play byte (0x10D) and hit points in the records; the host's after-combat step reads them.
     /// </summary>
     void Fight(EncounterState state);
-    /// <summary>After-combat step (0x6AA5), run after a fight and when COMBAT has no monsters, shop or temple (treasure, per Lee).</summary>
-    void AfterCombat(EncounterState state);
+    /// <summary>
+    /// The loot part of the after-combat step (0x6AD6–0x6AE7): [?] the NPCs' treasure share (0x6866, not read), the
+    /// summary screen (0x5E94) and the loot menu (0x644B), where the player takes money and items from
+    /// <see cref="EncounterState.Money"/> / <see cref="EncounterState.TreasureItems"/>. Not run when the party was
+    /// destroyed outside a duel.
+    /// </summary>
+    void Loot(EncounterState state, AfterCombatOutcome outcome);
+    /// <summary>The "party destroyed" screen (0x6B37–0x6BAA).</summary>
+    void PartyDestroyed(EncounterState state);
     /// <summary>Shop ($6E6C was 1; the host has cleared it) (0x7212).</summary>
     void Shop(EncounterState state);
     /// <summary>Temple ($6DE2 was 1; the host has cleared it) (0x5280).</summary>
@@ -103,12 +112,16 @@ public sealed class ScriptedEncounterUi(Queue<ushort>? choices = null) : IEncoun
     public void LoadCombatIcon(byte picture, int slot) => Calls.Add($"LoadCombatIcon {picture} {slot}");
 }
 
-/// <summary>An <see cref="ICombatRunner"/> that only records calls (no fight happens; monsters stay listed).</summary>
+/// <summary>
+/// An <see cref="ICombatRunner"/> that only records calls. No fight happens: every status stays as loaded, so the
+/// after-combat step sees the party okay and the monsters not fled (a won fight).
+/// </summary>
 public sealed class RecordingCombatRunner : ICombatRunner
 {
     public List<string> Calls { get; } = [];
     public void Fight(EncounterState state) => Calls.Add($"Fight {state.Monsters.Count}");
-    public void AfterCombat(EncounterState state) => Calls.Add("AfterCombat");
+    public void Loot(EncounterState state, AfterCombatOutcome outcome) => Calls.Add($"Loot {outcome.ExperienceShare}");
+    public void PartyDestroyed(EncounterState state) => Calls.Add("PartyDestroyed");
     public void Shop(EncounterState state) => Calls.Add("Shop");
     public void Temple(EncounterState state) => Calls.Add("Temple");
     public byte[] MakeRandomItem(byte type)

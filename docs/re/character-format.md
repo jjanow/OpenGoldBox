@@ -169,10 +169,12 @@ Post-combat routine at OVR 0x557E (v1.3), static read:
    the treasure list (always if the item value > 0, else on 1d10 ≤ 3 while fewer than 8 were taken).
 2. Add the treasure pool (OVR 0x57B1–0x5845): copper / 200 + silver / 20 + electrum / 2 + gold + platinum × 5 +
    gems × 250 + jewelry × 2200 (integer divisions on the pool totals).
-3. Add 400 × `plus` for every item in the treasure list with `plus` > 0 (OVR 0x5848–0x589E; one item, the
-   pointer at DS:5D9A, is skipped `[?]` what it is).
-4. Divide by (word at [DS:49D6]+67Ch − byte DS:84D5) (OVR 0x58A0–0x58BE): the per-character share. The
-   divisor is presumably the number of characters sharing `[?]`.
+3. Add 400 × `plus` for every item in the treasure list with `plus` > 0 (OVR 0x5848–0x589E). The walk **stops**
+   at the item DS:5D9A points to (s10 correction: not "skips"); the fight start sets DS:5D9A = nil (0xE475), so
+   without a pointer set during the fight every item counts. What sets it during a fight is not read `[?]`.
+4. Divide by ($6E3E − byte DS:84D5) (OVR 0x58A0–0x58BE; $6E3E = party size, word [DS:49D6]+67Ch), unsigned 16-bit
+   divisor: the per-character share. DS:84D5 is counted by the result check 0x5A47 (s10): party members with in
+   play (+10Dh) = 0 or status 1 (animated). So the divisor is the party members still in play and not animated.
 
 Before step 1 a separate branch (OVR 0x5584) returns `level_highest` (0x73) × 100 of the current character
 (DS:5D92) as the share, with no loot and no division, when the byte DS:84D4 and VM $6DE6 (word [DS:49D6]+5CCh) are
@@ -191,16 +193,17 @@ both non-zero. What sets them (program read 2026-11-17, not tried in DOSBox-X):
   before a COMBAT). DS:84D4 is 0 there, so the branch does not fire and the XP is normal.
 - After the fight (0x5AA5–0x5B2D), DS:84D4 set skips the "party defeated" loop and clears DS:49FF. Otherwise a
   non-hostile player character (+84h < 0x80) with status 0, 1 or 3 clears DS:49FF; with $6DE6 = 1 any status
-  does. So the ECL3 block 0 fight never counts as a party wipe. (Members whose record pointer +108h has byte
-  +13h = 1 are skipped first; that field is not named here `[?]`.)
+  does. So the ECL3 block 0 fight never counts as a party wipe. (These loops stop at the first creature whose combat
+  record, pointer +108h, has byte +13h = 1: the fight start (0xD8B2) sets it for every list position past the party
+  size $6E3E, i.e. the monsters LOADMON appended. `combat-format.md`.)
 
 So the multiplier is the disk byte 0xB1, not 0x32 (talonius `postcbt.pas` and DrEvil agree; Lee's bestiary totals
 use 0x32 and are off wherever the two differ: 14 monster records, e.g. goblin guards 5 vs 4, set 3 id 109 23 vs 35,
 set 7 id 68 0 vs 30). No code writes 0xB1 for monsters (see the table row). DOSBox check (2026-11-17, shipped
 save A, ECL2 block 20 fight: 8 × set 2 id 2 and 1 × set 2 id 12, party of 6): monsters 8 × (10 + 1 × 5) +
 (10 + 1 × 7) = 137, silver 8 × 18 + 24 = 168 → 8, the leader's armour with plus 1 → 400; 545 / 6 = 90, the
-share shown on screen. With 0x32 the result would be 537 / 6 = 89. How the share is then split over classes is
-not part of this routine.
+share shown on screen. With 0x32 the result would be 537 / 6 = 89. The split over classes is the award loop
+0x58D3 (`combat-format.md` "After combat"; checked against save B: +99/+30/+45/+99/+99/+99 for a share of 90).
 
 ## Movement recalculation (code read)
 
@@ -221,10 +224,10 @@ The ECL ADD NPC command (OVR 0x38C4) loads the monster record, sets 0x84 and 0x1
 (OVR 0x3933). **Combat monsters are recalculated too** (DOSBox-X, 2026-11-17, RAM read at the start of the Slums
 goblin fight from save A): the 8 goblin guards (set 2 id 2, readied 200-coin armour) and the goblin leader (id 12,
 150-coin armour with plus 1) hold 0x72 = 6 and 0x11C = 6 on disk but 0x11C = 9 in memory, which is exactly the rule
-above (200 → 9; 150 → 6, plus → +3 = 9). Where in the code that happens is not traced: the monster loader
-(OVR 0x1EEAA, called from 0x7917) does not call it. The routine at OVR 0xD8B2 walks the whole combat list
-(DS:5D96) and recalculates every entry, but its callers (and so the moment it runs) were not traced; the other
-combat-side call sites (e.g. OVR 0xC35D, 0x13D84, 0x14299) were not followed either.
+above (200 → 9; 150 → 6, plus → +3 = 9). The monster loader (OVR 0x1EEAA, called from 0x7917) does not call it.
+It happens at the fight start: OVR 0xD8B2, called from the fight-start routine 0xE402 (program read 2026-11-17, s10;
+`combat-format.md`), walks the whole combat list (DS:5D96) and recalculates every entry before it gives each one a
+combat record. The other combat-side call sites (e.g. OVR 0xC35D, 0x13D84, 0x14299) were not followed.
 
 ## MONnCHA.DAX, MONnITM.DAX, MONnSPC.DAX
 

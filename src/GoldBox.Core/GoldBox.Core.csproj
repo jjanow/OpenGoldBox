@@ -1,6 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
-  <!-- Engine core: ECL virtual machine, game-state memory model, host interfaces. No graphics, no file formats. -->
+  <!-- Engine core: ECL virtual machine, game-state memory model, host interfaces, exploring rules and the 3D view composed
+       as palette-index frames. No graphics library, no file formats. -->
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>

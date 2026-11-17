@@ -18,7 +18,8 @@ public class LoadmonCaptureTests
     private sealed class StopAtFight : ICombatRunner
     {
         public void Fight(EncounterState state) => throw new EclAwaitingInput("fight");
-        public void AfterCombat(EncounterState state) { }
+        public void Loot(EncounterState state, AfterCombatOutcome outcome) { }
+        public void PartyDestroyed(EncounterState state) { }
         public void Shop(EncounterState state) { }
         public void Temple(EncounterState state) { }
         public byte[] MakeRandomItem(byte type) => new byte[EclCharacter.ItemRecordSize];

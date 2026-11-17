@@ -6,7 +6,7 @@
 TARGET must not exist or must be an empty folder. The tree is built from an **allow-list** of git-tracked files:
 
 - our code: `src/**`, `tests/**` (minus any `private/` or `fixtures-private/` folder), `tools/scripts/**`
-  (the reference extraction tools), `*.sln` / `*.slnx` / `Directory.Build.*` at the root;
+  (the reference extraction tools), `play.sh` (the Client launcher), `*.sln` / `*.slnx` / `Directory.Build.*` at the root;
 - our docs: `docs/module-format.md`, `docs/schemas/**`, `docs/re/**/*.md` (format specs written by us);
 - the public `README.md`, `LICENSE` and `.gitignore` from `tools/public/` (copied to the tree root).
 
@@ -48,6 +48,7 @@ ALLOW = [
     "*.slnx",
     "Directory.Build.props",
     "Directory.Build.targets",
+    "play.sh",
     "docs/module-format.md",
     "docs/schemas/**",
     "docs/re/**.md",

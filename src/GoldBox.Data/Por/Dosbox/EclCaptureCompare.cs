@@ -23,8 +23,10 @@ public sealed record StepAction(string? PositionFrom = null) : CaptureAction;
 
 /// <summary>
 /// The forward-step key before vector 0 (geo-format.md "Edges", 0x16D58): the program clears $6DD5 and sets it to 1
-/// when the step would leave the 16×16 grid. [?] The program sets it only when the face ahead is not impassable;
-/// the harness does not read walls and assumes a passable face (true for every capture that uses it).
+/// when the step would leave the 16×16 grid. The program sets it only when the face ahead is not impassable; the
+/// harness does not read walls, so it matches the program whenever the step stays on the map (all captures so far,
+/// including the refused steps <c>oneway_blocked</c> and <c>oneway_barrier_blocked</c>). [?] An impassable face on
+/// the map edge would give 1 here and 0 in the game.
 /// </summary>
 public sealed record ForwardKeyAction : CaptureAction;
 
@@ -58,6 +60,8 @@ public enum CaptureParty
 /// <param name="TraceFiles">Port-E9 traces (fixture-relative) the VM's instruction stream must follow, concatenated.</param>
 /// <param name="HostCells">Cells written by program code outside the VM (clock, wall-set slot, …): differences there are reported, not counted.</param>
 /// <param name="AllHost">Every change between the captures is program code outside the VM (a capture taken inside one host call).</param>
+/// <param name="BeforeFrom">Take the start state from this capture's <c>before/</c> dump instead of this capture's own
+/// (for a capture whose own <c>before</c> is taken inside a host call, e.g. waiting in ENCMENU, which the VM cannot resume).</param>
 public sealed record CaptureScenario(
     string Name,
     string Input,
@@ -66,7 +70,8 @@ public sealed record CaptureScenario(
     CaptureParty Party,
     IReadOnlyList<string> TraceFiles,
     IReadOnlyList<(ushort From, ushort To, string Why)> HostCells,
-    bool AllHost = false)
+    bool AllHost = false,
+    string? BeforeFrom = null)
 {
     public bool IsTrace => TraceFiles.Count > 0;
 }
@@ -194,6 +199,12 @@ public sealed class EclCaptureComparer(string fixturesDir, PorGameDirectory game
         var sink = new ListTraceSink();
         var vm = new EclVm(memory, encounter) { Scripts = Game, Trace = extraSink is null ? sink : new TeeSink(sink, extraSink) };
         encounter.CurrentBlock = () => vm.CurrentScript;
+        vm.ScriptSwitchEventByte = afterInit =>
+        {
+            if (afterInit)
+                encounter.Map = GeoMap(memory) ?? encounter.Map; // the new script's LOADFILES loaded GEO<disk> block $49C5
+            return encounter.EventByteHere();
+        };
         var at = new Attempt { Vm = vm, Host = host, Encounter = encounter, Sink = sink };
 
         if (rollPrefix is not null)
@@ -211,7 +222,9 @@ public sealed class EclCaptureComparer(string fixturesDir, PorGameDirectory game
 
         if (s.StartFromBefore)
         {
-            var before = new DosboxVmState(CapturePath(s.Name, "before"));
+            var before = new DosboxVmState(CapturePath(s.BeforeFrom ?? s.Name, "before"));
+            if (s.BeforeFrom is not null)
+                at.Notes.Add($"start state from {s.BeforeFrom}/before");
             at.Notes.AddRange(before.ApplyTo(vm));
             if (before.GeoPlanes is { } planes)
                 encounter.Map = new MapPlanes(planes);
@@ -384,6 +397,7 @@ public sealed class EclCaptureComparer(string fixturesDir, PorGameDirectory game
         var p = after.Position;
         var m = vm.Memory.Position;
         Check("position", $"{m.X},{m.Y} f{m.Facing}", $"{p.X},{p.Y} f{p.Facing}");
+        Check("wall ahead / event byte ($C04E/$C04F)", $"{m.WallAhead}/{m.EventByte}", $"{p.Wall}/{p.Event}");
         if (at.Host.Rng is { } rng)
         {
             if (rng.Seed != after.RandSeed)

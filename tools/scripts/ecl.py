@@ -24,8 +24,10 @@ confirmed in GAME.OVR, see the spec for addresses):
     smaller than the real one, so the game resumes inside the instruction.
 
 Flow analysis starts at the five vectors and follows GOTO/GOSUB/ON targets,
-IF-true and IF-skip edges and fall-through.  Edges that the game takes only
-in some states (return after GOSUB, fall-through after ON GOTO when the
+IF-true and IF-skip edges and fall-through.  The instruction after a GOSUB
+or ON GOSUB is a hard edge: the game resumes there when the routine returns
+(and ON GOSUB also falls through when the selector is out of range).  Edges
+that the game takes only in some states (fall-through after ON GOTO when the
 selector is out of range, IF-skip past a mis-skipped instruction) are marked
 speculative; decode failures on those paths are reported separately.  A
 speculative path also stops where it reaches a byte that a script operand
@@ -364,7 +366,11 @@ class Analysis:
             return out
         if op == 0x02:
             out.append((nxt, "after-gosub", True))
-        elif op in (0x25, 0x26):
+        elif op == 0x26:
+            # ON GOSUB resumes here either way: after the called routine returns, or at once when the
+            # selector is out of range.  Hard, like the return after GOSUB.
+            out.append((nxt, "after-on-gosub", True))
+        elif op == 0x25:
             out.append((nxt, "on-fallthrough", False))
         else:
             out.append((nxt, "fall", True))

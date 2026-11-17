@@ -62,8 +62,17 @@ Each plane is row-major: byte `y*16 + x` belongs to square (x, y), 0 ≤ x, y �
   - So the walled side blocks (barrier 0: the step is refused) or opens the door menu (2, 3), and the other side
     walks through. In the data (counts above) 584 edges are one-way (540 wall vs no wall, 44 wall vs barrier 1);
     54 are doors from one side and open from the other (barrier 1 vs 2 or 3); 2 are doors from one side and walls
-    from the other. `geo.py ascii` draws one-way edges as `!`; `geo.py list` counts them. No one-way edge is in the
-    Slums, so this was not tried in DOSBox-X.
+    from the other. `geo.py ascii` draws one-way edges as `!`; `geo.py list` counts them.
+  - **Confirmed in DOSBox-X** (2026-11-17, s10; captures `oneway_through`, `oneway_blocked`,
+    `oneway_barrier_through`, `oneway_barrier_blocked`). No one-way edge is in the Slums, so the test used copies of
+    save A whose script area loads another map of disk 2 and whose vectors only count their runs (fixture
+    `saves/SAVGAME.DAT`, `SAVGAMF.DAT`). Both kinds of one-way edge:
+    - Mendor's Library (map 15), wall vs no wall: from 5,3 facing S (no wall) the party walks to 5,4; turned round,
+      from 5,4 facing N (wall, barrier 0) the step is refused.
+    - Stojanow Gate (map 9), barrier 1 vs barrier 0: from 4,5 facing S (wall, barrier 1) the party walks to 4,6;
+      from 4,6 facing N (wall, barrier 0) the step is refused.
+    - A refused step is not silent for the script: vector 0 runs, $49F0/$49F1 get the (unchanged) position and
+      vector 1 runs on the same square; only the move and the clock minute are skipped.
   - Opening a door changes both faces (below).
 - **Edges: the map wraps** (checked 2026-11-17, program read and DOSBox-X).
   - The three map accessors (barrier GAME.OVR 0x2EC47, wall 0x2ED72, event 0x2EE71) wrap a coordinate outside
@@ -125,10 +134,36 @@ Two bits per face, read only when that face's wall type is non-zero:
   - Flow analysis from vector 4 alone (`ecl.py` rules): 27 of the 29 blocks reach a LOADFILES of a map from it.
     Two of them choose the map: ECL1 block 24 loads 24 or 31, and ECL5 block 3 loads [$6E82]. ECL5 block 5 has
     none in vector 4; it loads computed maps from vectors 0 and 1. ECL6 block 19 has no LOADFILES at all.
-  - So leaving an area and coming back re-locks its doors (code read; not tried in DOSBox-X). Some scripts also
-    reach a LOADFILES of their own map from vectors 0, 1 or 3, which re-locks the doors in the middle of a visit
-    when that path runs: ECL6 block 25, ECL7 block 26, ECL8 blocks 16, 27 and 29. Which events take those paths is
-    not traced `[?]`.
+  - So leaving an area and coming back re-locks its doors. **Confirmed in DOSBox-X** (2026-11-17, s10, capture
+    `door_relock`): in the Slums the door at (9,2) W was bashed open (plane 3 at (9,2) 0x80 → 0x40, party through to
+    8,2). It stayed open through an orc fight and the walk back to 15,4. One step east left the Slums (vector 0 sees
+    $6DD5 = 1 and runs NEWECL #0 on disk 3, New Phlan, map 0); one step west from New Phlan's 0,4 ran NEWECL #20 back.
+    In the Slums again, (9,2) read 0x80 (locked) and all four planes equalled GEO2 block 20.
+  - Mid-visit reloads (script read, s10). Over all 29 blocks, eight scripts reach a LOADFILES that loads a GEO map
+    from vectors 0, 1 or 3 on hard paths (`ecl.py` rules; LOADFILES #127/#255, and #4/#5/#6 with $49E6 = 0, load no
+    map). ECL3 blocks 0 and 11 reach their vector-4 LOADFILES #0 from vector 3 only through an ON GOTO fall-through
+    after a two-choice HMENU, which never happens. What each one does:
+    - the three wilderness scripts (ECL6 block 25, ECL7 block 26, ECL8 block 27): a random find of a small lair (a
+      cave in the west and east, a wooded grove in the centre), answered with Enter, sets $49E6 = 1 and loads GEO map
+      25 / 26 / 27, the 3D lair, at a start square from a table. Leaving the lair sets $49E6 = 0 and runs LOADFILES
+      #4/#5/#6, which loads a BACPAC picture, not a map, then NEWECL to the same wilderness script;
+    - Lizardman Keep (ECL8 block 16): the hidden tunnel down loads map 30 (catacombs); the stairs or tunnel up load
+      map 16. The event table at $9B00 sends events 0x0B–0x0F (all on map 16) down and 0x11–0x17 (all on map 30) up;
+    - Kuto's Well (ECL8 block 29): climbing down the rungs of the well (29 → 32), climbing back up (32 → 29) and
+      being robbed and set free by the bandits after losing to them (32 → 29);
+    - Temple of Bane / Wealthy Area (ECL1 block 24): stepping off the map edge (vector 0, $6DD5 = 1) loads the map
+      named by a facing table: 24 → 31, 31 → 24, or 14 / 26 before the NEWECL to those areas (an ordinary area
+      entry: Kovel Mansion's map 14 has locked doors, which are fresh anyway);
+    - Valjevo inner tower (ECL5 block 7): leaving the tower loads map 3;
+    - Valjevo hedge maze (ECL5 block 5, maps 3–6): stepping off a map edge loads the map from a per-map facing table
+      ($9AEB–$9AFA). On the castle's outer edges the table names **the same map** (map 3 N and W, 4 N and E, 5 E and
+      S, 6 S and W), so the map is re-read in place. A "disorientation" event (vector 1, $9C8A) loads a random map
+      3 + Random(4), which can also be the current one.
+    - So only the hedge-maze script reloads the map the party is on; all the others enter another map, whose doors
+      are as stored in GEO. Maps 16, 24–27, 29–32 and 6 have no locked or barred face (`geo.py list`); maps 3, 4, 5
+      and 7 do (2, 1, 2 and 1 faces), so in Valjevo Castle these paths re-lock doors in the middle of a visit
+      `[?]` (which squares and events take them in play is not traced). None of this was tried in DOSBox-X: all
+      need late-game positions.
   - The restored state is the barrier stored in the GEO block. DOSBox-X: the Slums door at (10,2) N was bashed
     open (plane 3 byte 0x16 → 0x15). It stayed 0x15 through the fight that followed, the camp and the save to
     slot B. After loading slot B it was 0x16 again (locked).
@@ -377,8 +412,6 @@ the numbers below test the shipped code.
 
 **Not checked yet:**
 
-- One-way walls in DOSBox-X (settled by program read; no one-way edge is reachable from save A's Slums).
-- Door re-lock after leaving and re-entering an area, in DOSBox-X (settled by program read; checked only for a save load).
 - Whether ECL 3 and 5 load GEO 3 and 5 through computed operands.
 - The WALLDEF piece layout.
 - The overland tile table.

@@ -202,7 +202,7 @@ public sealed class EncounterHost : IEclHost
             }
             else
             {
-                CombatRunner.AfterCombat(State);
+                AfterCombatStep();
             }
         }
         else
@@ -210,13 +210,157 @@ public sealed class EncounterHost : IEclHost
             int view = ViewDistance();
             if (view < Memory.Read(Distance))
                 Memory.Write(Distance, (ushort)view);
+            StartFight();
             CombatRunner.Fight(State);
-            CombatRunner.AfterCombat(State);
+            AfterCombatStep();
             State.Duel = false;
         }
         Memory.Write(SearchMode, (ushort)(Memory.Read(SearchMode) & 1));
         State.SpriteShown = false;
         State.PictureShown = false;
+    }
+
+    /// <summary>VM cells the fight start writes (GAME.OVR 0xE48C–0xE4AD): $6E33 = 0, morale threshold $6DC6 ≤ 100.</summary>
+    public const ushort AttackedAllies = 0x6E33, MoraleThreshold = 0x6DC6;
+
+    /// <summary>
+    /// The parts of the fight start (GAME.OVR 0xE402) that later rules read: $6E33 = 0, $6DC6 limited to 100, and per
+    /// creature (0xD8B2) the combat-record flag +0x13 for list positions past $6E3E; a friendly creature past the
+    /// party whose morale (0x84 AND 0x7F) is 0 or above 102 becomes an NPC with 0x84 = $6DC6 + 0x80. [?] The rest
+    /// (stat recalculation, facing, placement, the arena) belongs to the fight.
+    /// </summary>
+    private void StartFight()
+    {
+        Memory.Write(AttackedAllies, 0);
+        if (Memory.Read(MoraleThreshold) > 100)
+            Memory.Write(MoraleThreshold, 100);
+        State.NotParty.Clear();
+        var list = Memory.Party?.Members ?? [];
+        int partySize = Memory.Read(AfterCombat.PartySize);
+        for (int i = 0; i < list.Count; i++)
+        {
+            var c = list[i];
+            if (i + 1 > partySize)
+                State.NotParty.Add(c);
+            int morale = c[CombatRules.Npc] & 0x7F;
+            if (c[CombatRules.Hostile] == 0 && State.NotParty.Contains(c) && (morale == 0 || morale > 102))
+                c[CombatRules.Npc] = (byte)(Memory.Read(MoraleThreshold) + 0x80);
+        }
+    }
+
+    /// <summary>Set when the after-combat step leaves DS:49FF set (party destroyed): the VM's run loop stops.</summary>
+    public Action? PartyDefeated { get; set; }
+
+    /// <summary>The after-combat step (GAME.OVR 0x6AA5): <see cref="AfterCombat"/>, then the loot or defeat screen.</summary>
+    private void AfterCombatStep()
+    {
+        var step = new AfterCombat(Memory, State, Random, Diagnostics);
+        var outcome = step.Run();
+        if (!outcome.PartyDefeated || State.Duel)
+            CombatRunner.Loot(State, outcome);
+        else
+            CombatRunner.PartyDestroyed(State);
+        step.Finish(outcome);
+        if (outcome.PartyDefeated)
+            PartyDefeated?.Invoke();
+    }
+
+    // ---- CALL ids the game program implements (handler GAME.OVR 0x3A15) -------------------------------------------
+
+    /// <summary>CALL ids handled here; others go to the inner host.</summary>
+    public const ushort CallStepForward = 0xC01E, CallMirrorDuel = 0x8000, CallSoloFight = 0x8001, CallRedraw = 0x2C90;
+
+    /// <summary>Combat icon (<c>CPIC</c> block) the mirror duel loads for the copy (GAME.OVR 0x8FC3).</summary>
+    public const byte MirrorIcon = 11;
+
+    public void Call(ushort routine)
+    {
+        switch (routine)
+        {
+            case CallStepForward:
+                StepForward();
+                break;
+            case CallMirrorDuel:
+                SetUpDuel(true);
+                break;
+            case CallSoloFight:
+                SetUpDuel(false);
+                break;
+            case CallRedraw:
+                // 0x3A44: the event byte is read again from the map; the redraw itself is the inner host's.
+                Memory.Position.EventByte = EventByteHere();
+                Inner.Call(routine);
+                break;
+            default:
+                Inner.Call(routine);
+                break;
+        }
+    }
+
+    /// <summary>
+    /// CALL $C01E (GAME.OVR 0x8EAE): one square forward in the facing direction, wrapping at the map edge (0 ↔ 15);
+    /// a facing other than 0/2/4/6 does not move. Then the event byte ($C04F, plane 2 at the new square, accessor
+    /// 0x2EE71) and the wall type ahead ($C04E, accessor 0x2ED72) are read again. Used by vector 0 of the town
+    /// scripts when the step leaves the map ($6DD5 set), before NEWECL.
+    /// </summary>
+    private void StepForward()
+    {
+        var p = Memory.Position;
+        int x = (sbyte)p.X, y = (sbyte)p.Y;
+        switch (p.Facing)
+        {
+            case 0: y = y > 0 ? y - 1 : 15; break;
+            case 2: x = x < 15 ? x + 1 : 0; break;
+            case 4: y = y < 15 ? y + 1 : 0; break;
+            case 6: x = x > 0 ? x - 1 : 15; break;
+        }
+        p.X = (byte)x;
+        p.Y = (byte)y;
+        p.EventByte = EventAt(x, y);
+        p.WallAhead = (byte)EncounterRules.WallAt(Map, x, y, p.Facing, CurrentBlock());
+    }
+
+    /// <summary>The event byte of the party's square on <see cref="Map"/> (accessor 0x2EE71), e.g. for <see cref="EclVm.ScriptSwitchEventByte"/>.</summary>
+    public byte EventByteHere() => EventAt((sbyte)Memory.Position.X, (sbyte)Memory.Position.Y);
+
+    /// <summary>The event accessor 0x2EE71 for an on-map square: plane 2 of the map. [?] Null map or no plane 2: 0.</summary>
+    private byte EventAt(int x, int y) =>
+        Map is MapPlanes { Planes.Length: >= 768 } m && x is >= 0 and <= 15 && y is >= 0 and <= 15 ? m.Planes[512 + y * 16 + x] : (byte)0;
+
+    /// <summary>
+    /// CALL $8000 / $8001 (GAME.OVR 0x8F42, docs/re/character-format.md "XP award"): DS:84D4 = 1 (the next COMBAT
+    /// fights even without LOADMON), $6DE6 = 1 for $8000 / 0 for $8001, and every party member whose name differs from
+    /// the current character's is taken out of the fight (0x10D = 0). With $8000 combat icon <c>CPIC</c> 11 is loaded
+    /// into icon slot DS:6F83 and a copy of the current character is appended as the enemy: in play, computer
+    /// controlled, hostile, 0x84 = 0xB2, icon slot DS:6F83, items copied, no effects. [?] The program also renames the
+    /// copy (a fixed program string, not reproduced here); DS:6F83 is not advanced.
+    /// </summary>
+    private void SetUpDuel(bool mirror)
+    {
+        State.Duel = true;
+        Memory.Write(AfterCombat.MirrorDuel, (ushort)(mirror ? 1 : 0));
+        var party = Memory.Party;
+        var cur = party?.Current;
+        if (party is null || cur is null)
+        {
+            Diagnostics.Add("CALL duel: no current character");
+            return;
+        }
+        foreach (var c in party.Members)
+            if (c.Name != cur.Name)
+                c[CombatRules.InPlay] = 0;
+        if (mirror)
+        {
+            Ui.LoadCombatIcon(MirrorIcon, State.IconSlot);
+            var copy = new EclCharacter(cur.Record);
+            copy.Items.AddRange(cur.Items.Select(i => (byte[])i.Clone()));
+            copy[CombatRules.InPlay] = 1;
+            copy[CombatRules.AutoCombat] = 1;
+            copy[CombatRules.Hostile] = 1;
+            copy[CombatRules.Npc] = 0xB2;
+            copy[0xBF] = (byte)State.IconSlot;
+            party.Members.Add(copy);
+        }
     }
 
     public void Treasure(IReadOnlyList<ushort> values)
@@ -295,7 +439,6 @@ public sealed class EncounterHost : IEclHost
     public void LoadOutdoorPicture() => Inner.LoadOutdoorPicture();
     public void LoadWallSet(int slot, int? set) => Inner.LoadWallSet(slot, set);
     public void Clock(ushort minutes) => Inner.Clock(minutes);
-    public void Call(ushort routine) => Inner.Call(routine);
     public void Program(ushort program) => Inner.Program(program);
     public void Protect(ushort address) => Inner.Protect(address);
     public ushort Random(ushort range) => Inner.Random(range);

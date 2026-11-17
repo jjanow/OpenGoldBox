@@ -50,6 +50,7 @@ public class EncounterHostTests
             {
                 var c = new EclCharacter();
                 c[EncounterRules.MovementOffset] = (byte)(partyMovement + i * 3);
+                c[CombatRules.InPlay] = 1;
                 party.Members.Add(c);
             }
             party.CurrentIndex = 0;
@@ -62,6 +63,7 @@ public class EncounterHostTests
             Memory.Position.X = 5;
             Memory.Position.Y = 5;
             Memory.Position.Facing = 6; // west
+            Memory.Write(AfterCombat.PartySize, 2);
         }
 
         public EclRunResult Run() => Vm.RunVector(0, 1000);
@@ -306,7 +308,7 @@ public class EncounterHostTests
             .Op(EclOpcodes.Save, Imm8(3), Mem(0x6DCA))
             .Op(EclOpcodes.Combat).Op(EclOpcodes.Combat).Op(EclOpcodes.Combat).Op(EclOpcodes.Exit));
         rig.Run();
-        Assert.Equal(["Shop", "Temple", "AfterCombat"], rig.Combat.Calls);
+        Assert.Equal(["Shop", "Temple", "Loot 0"], rig.Combat.Calls);
         Assert.Equal(0, rig[0x6E6C]);
         Assert.Equal(0, rig[0x6DE2]);
         Assert.Equal(1, rig[0x6DCA]);
@@ -322,9 +324,14 @@ public class EncounterHostTests
             .Op(EclOpcodes.Combat).Op(EclOpcodes.Exit));
         rig.Map.Walls[(4, 5, 6)] = 1; // view 1
         rig.Run();
-        Assert.Equal(["Fight 2", "AfterCombat"], rig.Combat.Calls);
+        Assert.Equal(["Fight 2", "Loot 0"], rig.Combat.Calls);
         Assert.Equal(1, rig[0x6DC1]);
         Assert.Equal(1, rig[0x6E6C]);
+        // The after-combat step removed the two monsters (out of play: counted in $6DC8); the party size stays.
+        Assert.Equal(2, rig.Memory.Party!.Members.Count);
+        Assert.Empty(rig.Host.State.Monsters);
+        Assert.Equal(2, rig[0x6DC8]);
+        Assert.Equal(2, rig[0x6E3E]);
     }
 
     [Fact]

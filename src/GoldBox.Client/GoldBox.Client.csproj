@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The MonoGame front end. It draws from the player's own Pool of Radiance install (no art ships or is built in):
+    no content pipeline, no fonts or pictures in the project; the game's 8×8 font and tiles are read at start-up.
+  -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <RollForward>Major</RollForward>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>GoldBox.Client</RootNamespace>
+    <!-- tools/scripts/client_xvfb.sh finds the running Client by this file name. -->
+    <AssemblyName>GoldBox.Client</AssemblyName>
+    <TieredCompilation>false</TieredCompilation>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="GoldBox.Client.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="MonoGame.Framework.DesktopGL" Version="3.8.6.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\GoldBox.Core\GoldBox.Core.csproj" />
+    <ProjectReference Include="..\GoldBox.Data\GoldBox.Data.csproj" />
+  </ItemGroup>
+
+</Project>

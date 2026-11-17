@@ -1,0 +1,138 @@
+using System.Text.Json;
+using System.Text.Json.Serialization;
+
+namespace GoldBox.Client.Input;
+
+/// <summary>
+/// Everything the player can do, whatever the device. Screens ask for actions, never for keys or buttons, so every
+/// action works from the keyboard, the mouse and the pad (PLAN.md section 3, decided s6).
+/// </summary>
+public enum GameAction
+{
+    /// <summary>Step forward (the original's Up key).</summary>
+    Forward,
+    /// <summary>Turn left (Left key).</summary>
+    TurnLeft,
+    /// <summary>Turn right (Right key).</summary>
+    TurnRight,
+    /// <summary>About-face (Down key).</summary>
+    TurnAround,
+    /// <summary>Toggle the area map (the original's A command).</summary>
+    AreaMap,
+    /// <summary>Open the controls screen (rebinding, quit).</summary>
+    Controls,
+    /// <summary>Menus: move the selection up.</summary>
+    MenuUp,
+    /// <summary>Menus: move the selection down.</summary>
+    MenuDown,
+    /// <summary>Menus: choose.</summary>
+    Confirm,
+    /// <summary>Menus: back out.</summary>
+    Cancel,
+}
+
+/// <summary>The input device a binding or an input event belongs to.</summary>
+public enum InputDevice
+{
+    Keyboard,
+    Mouse,
+    Gamepad,
+}
+
+/// <summary>
+/// The rebindable bindings: per action, the keys and pad buttons that trigger it, by name (MonoGame's <c>Keys</c> and
+/// <c>Buttons</c> member names, e.g. "Up", "NumPad8", "DPadUp", "LeftThumbstickUp", "Y"). This type holds no MonoGame
+/// types so the rules can be tested without a window; <see cref="ActionInput"/> maps the names. Saved as JSON.
+/// </summary>
+public sealed class InputBindings
+{
+    public sealed class Binding
+    {
+        public List<string> Keys { get; set; } = [];
+        public List<string> Buttons { get; set; } = [];
+    }
+
+    [JsonInclude]
+    public Dictionary<GameAction, Binding> Actions { get; private set; } = [];
+
+    /// <summary>The defaults: the original's keys first (arrows, A), then common alternatives; the pad's D-pad and left stick move.</summary>
+    public static InputBindings Defaults()
+    {
+        var b = new InputBindings();
+        b.Set(GameAction.Forward, ["Up", "NumPad8"], ["DPadUp", "LeftThumbstickUp"]);
+        b.Set(GameAction.TurnLeft, ["Left", "NumPad4"], ["DPadLeft", "LeftThumbstickLeft"]);
+        b.Set(GameAction.TurnRight, ["Right", "NumPad6"], ["DPadRight", "LeftThumbstickRight"]);
+        b.Set(GameAction.TurnAround, ["Down", "NumPad2"], ["DPadDown", "LeftThumbstickDown"]);
+        b.Set(GameAction.AreaMap, ["A"], ["Y"]);
+        b.Set(GameAction.Controls, ["F1"], ["Back"]);
+        b.Set(GameAction.MenuUp, ["Up"], ["DPadUp", "LeftThumbstickUp"]);
+        b.Set(GameAction.MenuDown, ["Down"], ["DPadDown", "LeftThumbstickDown"]);
+        b.Set(GameAction.Confirm, ["Enter"], ["A"]);
+        b.Set(GameAction.Cancel, ["Escape"], ["B"]);
+        return b;
+    }
+
+    private void Set(GameAction a, List<string> keys, List<string> buttons) => Actions[a] = new Binding { Keys = keys, Buttons = buttons };
+
+    public IReadOnlyList<string> Keys(GameAction a) => Actions.TryGetValue(a, out var b) ? b.Keys : [];
+    public IReadOnlyList<string> Buttons(GameAction a) => Actions.TryGetValue(a, out var b) ? b.Buttons : [];
+
+    /// <summary>
+    /// Rebinds the action's first key (keyboard) or first button (pad) to <paramref name="name"/>. Other actions keep
+    /// their bindings: menu actions and movement share keys on purpose (each screen asks only for its own actions).
+    /// </summary>
+    public void Rebind(GameAction a, InputDevice device, string name)
+    {
+        if (!Actions.TryGetValue(a, out var b))
+            Actions[a] = b = new Binding();
+        var list = device switch
+        {
+            InputDevice.Keyboard => b.Keys,
+            InputDevice.Gamepad => b.Buttons,
+            _ => throw new ArgumentException("the mouse has no rebindable bindings", nameof(device)),
+        };
+        list.Remove(name);
+        if (list.Count == 0)
+            list.Add(name);
+        else
+            list[0] = name;
+    }
+
+    /// <summary>The actions whose bindings for <paramref name="device"/> include <paramref name="name"/>.</summary>
+    public IEnumerable<GameAction> ActionsFor(InputDevice device, string name) =>
+        Actions.Where(kv => (device == InputDevice.Keyboard ? kv.Value.Keys : kv.Value.Buttons).Contains(name)).Select(kv => kv.Key);
+
+    /// <summary>Fills actions missing from a saved file with their defaults (a newer Client may add actions).</summary>
+    private void CompleteFrom(InputBindings defaults)
+    {
+        foreach (var (a, b) in defaults.Actions)
+            if (!Actions.ContainsKey(a))
+                Actions[a] = new Binding { Keys = [.. b.Keys], Buttons = [.. b.Buttons] };
+    }
+
+    private static readonly JsonSerializerOptions Json = new()
+    {
+        WriteIndented = true,
+        Converters = { new JsonStringEnumConverter() },
+    };
+
+    public string ToJson() => JsonSerializer.Serialize(this, Json);
+
+    /// <summary>Reads saved bindings; a broken or empty file gives the defaults.</summary>
+    public static InputBindings FromJson(string? json)
+    {
+        var defaults = Defaults();
+        if (string.IsNullOrWhiteSpace(json))
+            return defaults;
+        try
+        {
+            var b = JsonSerializer.Deserialize<InputBindings>(json, Json) ?? defaults;
+            b.CompleteFrom(defaults);
+            return b;
+        }
+        catch (JsonException)
+        {
+            return defaults;
+        }
+    }
+}

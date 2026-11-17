@@ -30,9 +30,15 @@ public sealed class EncounterState
 
     /// <summary>
     /// Monster records LOADMON appended to the combat list (the same list as the party, DS:5D96), in order. CLRMON
-    /// does not remove them; the combat code does ([?] where, not read).
+    /// does not remove them; the after-combat step does (GAME.OVR 0x672A, <see cref="AfterCombat"/>).
     /// </summary>
     public List<EclCharacter> Monsters { get; } = [];
+
+    /// <summary>
+    /// Creatures whose combat record has byte +0x13 = 1: list positions past the party size $6E3E when the fight
+    /// started (GAME.OVR 0xD8B2). The after-combat step removes them without lowering $6E3E.
+    /// </summary>
+    public HashSet<EclCharacter> NotParty { get; } = new(ReferenceEqualityComparer.Instance);
 
     /// <summary>TREASURE operands 1–7 (DS:67F4, seven dwords; Lee: copper, silver, electrum, gold, platinum, gems, jewellery).</summary>
     public uint[] Money { get; } = new uint[7];
