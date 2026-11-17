@@ -45,4 +45,11 @@ public sealed class EclVmPolicy
     /// string); what the reader does past that is not read `[?]`.
     /// </summary>
     public int MaxMemoryTextLength { get; set; } = 255;
+
+    /// <summary>
+    /// [?] SPELL (GAME.OVR 0x3949) tests its "found" byte [bp−8] before ever setting it: stack residue. Non-zero
+    /// (default, as DOSBox showed after a SAVE: results 1 and 0, capture <c>party_opcodes</c>) skips the search; 0 runs
+    /// it over the first party member. The results go to $00xx addresses either way, so no v1.3 outcome depends on it.
+    /// </summary>
+    public byte SpellFoundResidue { get; set; } = 1;
 }

@@ -11,7 +11,8 @@ namespace GoldBox.Client;
 /// <c>--game</c> is the player's Pool of Radiance (DOS) folder; it is remembered in the settings, so it is needed once
 /// (the environment variable <c>GOLDBOX_POR_DIR</c> also works). Without <c>--save</c> or <c>--area</c> the Client
 /// loads save A (<c>SAVGAMA.DAT</c>). <c>--area N --at X,Y,F</c> enters area script N at square X,Y facing F (N, E, S,
-/// W) with no save. <c>--scale</c> sets the window size (default 3 × 320×200).
+/// W) with no save. <c>--scale</c> sets the window size (default 3 × 320×200). <c>--stretch</c> switches on the QoL 4:3
+/// display (remembered; <c>--no-stretch</c> switches it off).
 /// </summary>
 public sealed record ClientOptions
 {
@@ -20,8 +21,10 @@ public sealed record ClientOptions
     public int? Area { get; init; }
     public (int X, int Y, int Facing)? At { get; init; }
     public int Scale { get; init; } = 3;
+    /// <summary>--stretch / --no-stretch: 4:3 display (remembered).</summary>
+    public bool? Stretch43 { get; init; }
 
-    public const string Usage = "usage: GoldBox.Client [--game DIR] [--save A|FILE] [--area N --at X,Y,F] [--scale K]";
+    public const string Usage = "usage: GoldBox.Client [--game DIR] [--save A|FILE] [--area N --at X,Y,F] [--scale K] [--stretch|--no-stretch]";
 
     public static ClientOptions Parse(IReadOnlyList<string> args)
     {
@@ -36,6 +39,8 @@ public sealed record ClientOptions
                 "--area" => o with { Area = int.Parse(Next(), CultureInfo.InvariantCulture) },
                 "--at" => o with { At = ParseAt(Next()) },
                 "--scale" => o with { Scale = int.Parse(Next(), CultureInfo.InvariantCulture) },
+                "--stretch" => o with { Stretch43 = true },
+                "--no-stretch" => o with { Stretch43 = false },
                 _ => throw new ArgumentException($"unknown argument {args[i]}"),
             };
         }

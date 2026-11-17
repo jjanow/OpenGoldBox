@@ -171,7 +171,7 @@ Post-combat routine at OVR 0x557E (v1.3), static read:
    gems × 250 + jewelry × 2200 (integer divisions on the pool totals).
 3. Add 400 × `plus` for every item in the treasure list with `plus` > 0 (OVR 0x5848–0x589E). The walk **stops**
    at the item DS:5D9A points to (s10 correction: not "skips"); the fight start sets DS:5D9A = nil (0xE475), so
-   without a pointer set during the fight every item counts. What sets it during a fight is not read `[?]`.
+   without a pointer set during the fight every item counts. During a fight it is set to the copy of a spent thrown weapon dropped into the list (OVR 0x14279; `combat-format.md` "Thrown weapons").
 4. Divide by ($6E3E − byte DS:84D5) (OVR 0x58A0–0x58BE; $6E3E = party size, word [DS:49D6]+67Ch), unsigned 16-bit
    divisor: the per-character share. DS:84D5 is counted by the result check 0x5A47 (s10): party members with in
    play (+10Dh) = 0 or status 1 (animated). So the divisor is the party members still in play and not animated.

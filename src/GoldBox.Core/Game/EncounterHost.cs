@@ -234,6 +234,7 @@ public sealed class EncounterHost : IEclHost
         Memory.Write(AttackedAllies, 0);
         if (Memory.Read(MoraleThreshold) > 100)
             Memory.Write(MoraleThreshold, 100);
+        State.LastThrownItem = null; // DS:5D9A = nil (0xE476)
         State.NotParty.Clear();
         var list = Memory.Party?.Members ?? [];
         int partySize = Memory.Read(AfterCombat.PartySize);
@@ -248,8 +249,19 @@ public sealed class EncounterHost : IEclHost
         }
     }
 
-    /// <summary>Set when the after-combat step leaves DS:49FF set (party destroyed): the VM's run loop stops.</summary>
+    /// <summary>NPCs the last NPC treasure share (GAME.OVR 0x6866) named as taking their share (empty: no message).</summary>
+    public List<EclCharacter> NpcsTakingShare { get; private set; } = [];
+
+    /// <summary>Called when the after-combat step leaves DS:49FF set (party destroyed): the VM's run loop stops.</summary>
     public Action? PartyDefeated { get; set; }
+
+    /// <summary>
+    /// The VM whose run loop reads DS:49FF (<see cref="EclVm.ExternalStop"/>). The after-combat check (GAME.OVR 0x5A47)
+    /// writes DS:49FF on every fight: 1 when no party member is left standing, else 0 (always 0 in a duel); the run loop
+    /// 0x3EB7 then stops before the next instruction while it is set. The area loop clears it when it ends (0x4245);
+    /// that is the caller's part.
+    /// </summary>
+    public EclVm? Vm { get; set; }
 
     /// <summary>The after-combat step (GAME.OVR 0x6AA5): <see cref="AfterCombat"/>, then the loot or defeat screen.</summary>
     private void AfterCombatStep()
@@ -257,10 +269,16 @@ public sealed class EncounterHost : IEclHost
         var step = new AfterCombat(Memory, State, Random, Diagnostics);
         var outcome = step.Run();
         if (!outcome.PartyDefeated || State.Duel)
+        {
+            // 0x6866: the NPCs take their shares of the coins before the summary.
+            NpcsTakingShare = FightRules.NpcTreasureShare(Memory.Party?.Members ?? [], State.Money);
             CombatRunner.Loot(State, outcome);
+        }
         else
             CombatRunner.PartyDestroyed(State);
         step.Finish(outcome);
+        if (Vm is not null)
+            Vm.ExternalStop = outcome.PartyDefeated;
         if (outcome.PartyDefeated)
             PartyDefeated?.Invoke();
     }
@@ -268,7 +286,8 @@ public sealed class EncounterHost : IEclHost
     // ---- CALL ids the game program implements (handler GAME.OVR 0x3A15) -------------------------------------------
 
     /// <summary>CALL ids handled here; others go to the inner host.</summary>
-    public const ushort CallStepForward = 0xC01E, CallMirrorDuel = 0x8000, CallSoloFight = 0x8001, CallRedraw = 0x2C90;
+    public const ushort CallStepForward = 0xC01E, CallMirrorDuel = 0x8000, CallSoloFight = 0x8001, CallRedraw = 0x2C90,
+        CallWallAhead = 0xC018;
 
     /// <summary>Combat icon (<c>CPIC</c> block) the mirror duel loads for the copy (GAME.OVR 0x8FC3).</summary>
     public const byte MirrorIcon = 11;
@@ -279,6 +298,16 @@ public sealed class EncounterHost : IEclHost
         {
             case CallStepForward:
                 StepForward();
+                break;
+            case CallWallAhead:
+                // 0x3AFA: in the 3D view (DS:49FA = 1) the wall type ahead DS:6AB0 is read again (0x2ED72).
+                if (Memory.ViewMode == 1 && Map is null)
+                    Diagnostics.Add("CALL $C018: no map; wall ahead left as it is");
+                else if (Memory.ViewMode == 1)
+                {
+                    var p = Memory.Position;
+                    p.WallAhead = (byte)EncounterRules.WallAt(Map, (sbyte)p.X, (sbyte)p.Y, p.Facing, CurrentBlock());
+                }
                 break;
             case CallMirrorDuel:
                 SetUpDuel(true);
@@ -381,15 +410,32 @@ public sealed class EncounterHost : IEclHost
         }
         else if (id < 255)
         {
-            byte type = 0; // [?] the program's variable is unset before the first item
+            // [?] The type variable ([bp-0x65] of the handler, GAME.OVR 0x26F7) is written only by the type roll, so
+            // a second roll of 48/49 keeps the previous item's type; for the first item of a TREASURE it holds
+            // whatever an earlier routine left in that stack slot. FirstItemTypeResidue stands in for it.
+            byte type = FirstItemTypeResidue;
+            ItemMaker ??= new TreasureMaker(Data?.RandomItemTable);
             for (int k = 1; k <= id - 128; k++)
             {
                 type = EncounterRules.RandomItemType(n => Random((ushort)n), type);
-                State.TreasureItems.Insert(0, CombatRunner.MakeRandomItem(type));
+                State.TreasureItems.Insert(0, ItemMaker.Make(type, n => Random((ushort)n)));
             }
-            // [?] Then START 00BA:0442 runs on every treasure item (not read).
+            // Then the naming routine (START 0x0FE2) runs over the whole treasure list with the current character
+            // (0x2AAC–0x2AF1): it only writes the name cache, which the engine composes when it shows an item.
         }
     }
+
+    /// <summary>
+    /// The random item maker (GAME.OVR 0x25C99). Null until the first random TREASURE, which builds it from
+    /// <see cref="IEncounterData.RandomItemTable"/>.
+    /// </summary>
+    public TreasureMaker? ItemMaker { get; set; }
+
+    /// <summary>
+    /// [?] The type a random TREASURE's first item gets when its second roll is 48 or 49: stack residue in the
+    /// program (docs/re/item-format.md "Random treasure"). 0 here, which makes a blank item of type 0.
+    /// </summary>
+    public byte FirstItemTypeResidue { get; set; }
 
     public void Picture(ushort picture)
     {
@@ -441,6 +487,46 @@ public sealed class EncounterHost : IEclHost
     public void Clock(ushort minutes) => Inner.Clock(minutes);
     public void Program(ushort program) => Inner.Program(program);
     public void Protect(ushort address) => Inner.Protect(address);
+    public int? PickCharacter(string prompt) => Inner.PickCharacter(prompt);
+    public void DrawGlyphs(ushort address, IReadOnlyList<byte> glyphs) => Inner.DrawGlyphs(address, glyphs);
+    public void DamageReport(EclDamageReport report) => Inner.DamageReport(report);
+
+    /// <summary>
+    /// ADDNPC's record (GAME.OVR 0x1F248, docs/re/ecl-format.md "Party, damage and text-box opcodes"): the monster
+    /// loader (five 1d6), record 0xAB = Random(256), then the portrait: one of the classes with a level above 0
+    /// (bytes 0x96..0x9C, signed; none: class 2) picked by 1d(count); body 0xBC from the DS table for that class
+    /// [5 × gender + 1d5], head 0xBB from DS:08C7 [8 × gender + 1d8] (<see cref="IEncounterData.NpcPortraitByte"/>;
+    /// without the tables the rolls are still drawn and the bytes stay as loaded). The VM appends it and makes it current.
+    /// </summary>
+    public EclCharacter? CreateNpc(ushort monster)
+    {
+        var c = LoadMonsterRecord((byte)monster);
+        c[0xAB] = (byte)Random(256);
+        var classes = new List<int>();
+        for (int k = 0; k <= 6; k++)
+            if ((sbyte)c[0x96 + k] > 0)
+                classes.Add(k);
+        if (classes.Count == 0)
+            classes.Add(2);
+        int pick = classes[Dice(classes.Count) - 1];
+        int gender = (sbyte)c[0x9E];
+        int table = pick switch { 0 => 0x8D7, 5 => 0x8EB, 6 => 0x8F5, _ => 0x8E1 };
+        int body = Dice(5);
+        SetPortrait(c, 0xBC, table + 5 * gender + body);
+        int head = Dice(8);
+        SetPortrait(c, 0xBB, 0x8C7 + 8 * gender + head);
+        return c;
+    }
+
+    private int Dice(int sides) => Random((ushort)(byte)sides) + 1;
+
+    private void SetPortrait(EclCharacter c, int offset, int dsOffset)
+    {
+        if (Data?.NpcPortraitByte(dsOffset) is { } b)
+            c[offset] = b;
+        else
+            Diagnostics.Add($"ADDNPC: no portrait table byte DS:{dsOffset:X4}; record byte {offset:X2} left as loaded");
+    }
     public ushort Random(ushort range) => Inner.Random(range);
     public void ScriptChanging(ushort script) => Inner.ScriptChanging(script);
 }

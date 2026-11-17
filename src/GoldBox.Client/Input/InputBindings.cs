@@ -21,10 +21,20 @@ public enum GameAction
     AreaMap,
     /// <summary>Open the controls screen (rebinding, quit).</summary>
     Controls,
+    /// <summary>Search mode on/off (the original's S command: steps take 10 minutes).</summary>
+    Search,
+    /// <summary>Look around this square (L: 10 minutes, the square's search event).</summary>
+    Look,
+    /// <summary>Encamp (E).</summary>
+    Encamp,
     /// <summary>Menus: move the selection up.</summary>
     MenuUp,
     /// <summary>Menus: move the selection down.</summary>
     MenuDown,
+    /// <summary>Menus: move the selection left (menus on the bottom line; text entry: delete).</summary>
+    MenuLeft,
+    /// <summary>Menus: move the selection right (text entry: add the picked character).</summary>
+    MenuRight,
     /// <summary>Menus: choose.</summary>
     Confirm,
     /// <summary>Menus: back out.</summary>
@@ -65,6 +75,11 @@ public sealed class InputBindings
         b.Set(GameAction.TurnAround, ["Down", "NumPad2"], ["DPadDown", "LeftThumbstickDown"]);
         b.Set(GameAction.AreaMap, ["A"], ["Y"]);
         b.Set(GameAction.Controls, ["F1"], ["Back"]);
+        b.Set(GameAction.Search, ["S"], ["X"]);
+        b.Set(GameAction.Look, ["L"], ["RightShoulder"]);
+        b.Set(GameAction.Encamp, ["E"], ["LeftShoulder"]);
+        b.Set(GameAction.MenuLeft, ["Left"], ["DPadLeft", "LeftThumbstickLeft"]);
+        b.Set(GameAction.MenuRight, ["Right"], ["DPadRight", "LeftThumbstickRight"]);
         b.Set(GameAction.MenuUp, ["Up"], ["DPadUp", "LeftThumbstickUp"]);
         b.Set(GameAction.MenuDown, ["Down"], ["DPadDown", "LeftThumbstickDown"]);
         b.Set(GameAction.Confirm, ["Enter"], ["A"]);

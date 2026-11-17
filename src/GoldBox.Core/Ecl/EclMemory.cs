@@ -52,10 +52,16 @@ public sealed class EclMemory
     /// <summary>Previous disk number DS:5377 (set on a write to $6E12).</summary>
     public byte PreviousDisk { get; set; }
 
-    /// <summary>[?] DS:84D3, set by a write of 0 to $6B00 (meaning not read).</summary>
+    /// <summary>DS:84D3, set by a write of 0 to $6B00; with DS:84D2 it arms LOADCHAR's removal (bit 0x80). Cleared by the script init.</summary>
     public bool Ds84D3 { get; set; }
-    /// <summary>[?] DS:84D2, set by a write of 0 to $6C00 (meaning not read).</summary>
+    /// <summary>DS:84D2, set by a write of 0 to $6C00; see <see cref="Ds84D3"/>.</summary>
     public bool Ds84D2 { get; set; }
+
+    /// <summary>
+    /// DS:49FA, the view mode: 1 = 3D view (start-up, and set before every vector 4 of a script switch); 2/3/4 after a
+    /// switch into block 25/26/27 with $49E6 = 0 (GAME.OVR 0x3F28–0x3F99). CALL $C018 and the step act only at 1.
+    /// </summary>
+    public byte ViewMode { get; set; } = 1;
 
     /// <summary>
     /// Last value written to each special write address (writer 0x814A): $03DE → DS:84CC (sound picked by CALL
@@ -315,7 +321,7 @@ public sealed class EclMemory
         {
             case 0x6B00:
                 if (value == 0)
-                    Ds84D3 = true; // [?] meaning of DS:84D3
+                    Ds84D3 = true; // arms LOADCHAR bit 0x80 (removal)
                 return;
             case 0x6E12:
                 PreviousDisk = Disk;
@@ -331,7 +337,7 @@ public sealed class EclMemory
         if (!hasEffect)
             return;
         if (a == 0x6C00 && value == 0)
-            Ds84D2 = true; // [?] meaning of DS:84D2
+            Ds84D2 = true; // arms LOADCHAR bit 0x80 (removal)
         var c = CurrentCharacter(a);
         if (c is null)
             return;

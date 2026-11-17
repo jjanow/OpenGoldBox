@@ -44,6 +44,23 @@ public sealed class PorEncounterData(PorGameDirectory game) : IEncounterData
             Records(File($"MON{disk}SPC.DAX")?.Block(id), EclCharacter.EffectRecordSize));
     }
 
+    private ushort[]? _randomTable;
+    private bool _randomTableRead;
+
+    /// <summary>The random item array from the player's START.EXE / GAME.OVR (<see cref="PorProgram"/>), or null.</summary>
+    public IReadOnlyList<ushort>? RandomItemTable
+    {
+        get
+        {
+            if (!_randomTableRead)
+            {
+                _randomTableRead = true;
+                _randomTable = PorProgram.Open(game)?.RandomItemTable();
+            }
+            return _randomTable;
+        }
+    }
+
     public IReadOnlyList<byte[]>? ItemList(int disk, int id)
     {
         var b = File($"ITEM{disk}.DAX")?.Block(id);

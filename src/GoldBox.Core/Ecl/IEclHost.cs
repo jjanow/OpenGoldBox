@@ -7,7 +7,7 @@ namespace GoldBox.Core.Ecl;
 /// </summary>
 public sealed class EclAwaitingInput(string request) : Exception("awaiting input: " + request);
 
-/// <summary>Result of CHKPARTY (0x1E): written to the four destination addresses. [?] Lee only.</summary>
+/// <summary>Result of CHKPARTY (0x1E): written to the four destination addresses (program read, GAME.OVR 0x217B).</summary>
 public readonly record struct EclPartyCheck(ushort Min, ushort Max, ushort Average, ushort Any);
 
 /// <summary>Arguments of ENCMENU (0x29), operand values as fetched. [?] Lee only: meanings of every field.</summary>
@@ -25,9 +25,9 @@ public interface IEclHost
     // ---- Text box -----------------------------------------------------------------------------------------------
     /// <summary>PRINT (0x11) / PRINTCLR (0x12, <paramref name="clearFirst"/>). [?] L row 11/12.</summary>
     void Print(string text, bool clearFirst);
-    /// <summary>PRINTRET (0x33): new line. [?] L row 33.</summary>
+    /// <summary>PRINTRET (0x33): text cursor to column 1 of the next line (P, 0x3831).</summary>
     void PrintReturn();
-    /// <summary>CLEARBOX (0x3D). [?] L row 3D.</summary>
+    /// <summary>CLEARBOX (0x3D): clear the picture window (1,1)–(15,15) (P, 0x385A; the next PROTECT draws inside it).</summary>
     void ClearBox();
     /// <summary>DELAY (0x3A): pause for game speed (DS:49E2, 0–9) × 225 ms; speed 0 = none (P).</summary>
     void Delay();
@@ -47,7 +47,7 @@ public interface IEclHost
     /// upper-cased, empty stored as one space). The length operand is never fetched, so it is not passed.
     /// </summary>
     string InputString();
-    /// <summary>WHO (0x39): player picks a character, who becomes current. [?] L row 39.</summary>
+    /// <summary>WHO (0x39): called by the default <see cref="PickCharacter"/> (display only).</summary>
     void Who(string prompt);
     /// <summary>PARLEY (0x2C): returns the value stored at dst. [?] L row 2C.</summary>
     ushort Parley(ushort haughty, ushort sly, ushort nice, ushort meek, ushort abusive);
@@ -59,7 +59,7 @@ public interface IEclHost
     ushort? EncounterMenu(EclEncounterMenu menu);
 
     // ---- Party, monsters, encounters ----------------------------------------------------------------------------
-    /// <summary>LOADCHAR (0x0A). [?] L row 0A.</summary>
+    /// <summary>LOADCHAR (0x0A) when no party is attached (the VM applies the program's rule itself when one is).</summary>
     void LoadCharacter(ushort index);
     /// <summary>LOADMON (0x0B). [?] L row 0B.</summary>
     void LoadMonster(ushort monster, ushort count, ushort picture);
@@ -74,15 +74,15 @@ public interface IEclHost
     /// records when one is). Test hook.
     /// </summary>
     ushort PartyStrength();
-    /// <summary>CHKPARTY (0x1E). [?] L row 1E.</summary>
+    /// <summary>CHKPARTY (0x1E) when no party is attached (the VM computes it when one is).</summary>
     EclPartyCheck CheckParty(ushort field, ushort effect);
     /// <summary>COMBAT (0x24). [?] L row 24.</summary>
     void Combat();
     /// <summary>TREASURE (0x27): eight values. [?] L row 27.</summary>
     void Treasure(IReadOnlyList<ushort> values);
-    /// <summary>ROB (0x28). [?] L row 28.</summary>
+    /// <summary>ROB (0x28) when no party is attached (the VM applies it when one is).</summary>
     void Rob(ushort wholeParty, ushort moneyPercent, ushort itemChance);
-    /// <summary>DAMAGE (0x2E). [?] L row 2E.</summary>
+    /// <summary>DAMAGE (0x2E) when no party is attached (the VM applies it when one is).</summary>
     void Damage(ushort attack, ushort dice, ushort sides, ushort bonus, ushort extra);
     /// <summary>SPRITEOFF (0x31). [?] L row 31.</summary>
     void SpriteOff();
@@ -91,9 +91,9 @@ public interface IEclHost
     /// someone carries an item whose byte 0x2E is <paramref name="item"/>. Test hook.
     /// </summary>
     bool FindItem(ushort item);
-    /// <summary>ADDNPC (0x36). [?] L row 36.</summary>
+    /// <summary>ADDNPC (0x36) when <see cref="CreateNpc"/> gives no record (log only).</summary>
     void AddNpc(ushort monster, ushort morale);
-    /// <summary>SPELL (0x3B): null = no write (Lee: no-op in practice); else (slot, character) for the two dsts. [?] L row 3B.</summary>
+    /// <summary>SPELL (0x3B) when no party is attached: null = no write; else (index, count) for the two low-byte destinations.</summary>
     (ushort Slot, ushort Character)? Spell(ushort spell);
 
     // ---- World, files, programs ---------------------------------------------------------------------------------
@@ -117,7 +117,7 @@ public interface IEclHost
     void Call(ushort routine);
     /// <summary>PROGRAM (0x38): 0 training hall, 8 end game, 9 camp, else nothing (ids P, effects [?]). After 9 the VM ends the run (P).</summary>
     void Program(ushort program);
-    /// <summary>PROTECT (0x3C): copy-protection check from the raw address. [?] L row 3C.</summary>
+    /// <summary>PROTECT (0x3C): called by the default <see cref="DrawGlyphs"/>.</summary>
     void Protect(ushort address);
     /// <summary>
     /// Turbo Pascal Random(<paramref name="range"/>): a value in 0..range−1 (P). Used by RANDOM (range = v + 1, or
@@ -127,4 +127,31 @@ public interface IEclHost
     ushort Random(ushort range);
     /// <summary>NEWECL (0x20) was executed; the VM loads the script itself through its script source.</summary>
     void ScriptChanging(ushort script);
+
+    // ---- Added in s11 (program read; default implementations keep older hosts working) -------------------------
+    /// <summary>
+    /// WHO (0x39, GAME.OVR 0x3879): the character pick menu with <paramref name="prompt"/>; returns the 0-based index of
+    /// the chosen party-list member, which the VM makes current, or null for no change. [?] What Escape leaves.
+    /// </summary>
+    int? PickCharacter(string prompt)
+    {
+        Who(prompt);
+        return null;
+    }
+
+    /// <summary>
+    /// PROTECT (0x3C, GAME.OVR 0x3BC3): draw one line of glyph codes (VM bytes at <paramref name="address"/> + 1, up to
+    /// a byte 0 or 255) at the text cursor; used for the rune texts.
+    /// </summary>
+    void DrawGlyphs(ushort address, IReadOnlyList<byte> glyphs) => Protect(address);
+
+    /// <summary>
+    /// ADDNPC (0x36, GAME.OVR 0x1F248) with room in the party: load monster <paramref name="monster"/> as a new party
+    /// member (monster loader rolls, Random(256) to 0xAB, the portrait rolls). The VM appends it and makes it current.
+    /// Null: the host cannot build it (then <see cref="AddNpc"/> is called instead).
+    /// </summary>
+    EclCharacter? CreateNpc(ushort monster) => null;
+
+    /// <summary>DAMAGE (0x2E) hit one creature: the text-box line ("dies" / "is hit FOR n points of Damage").</summary>
+    void DamageReport(EclDamageReport report) { }
 }

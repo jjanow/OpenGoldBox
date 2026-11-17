@@ -11,6 +11,9 @@ public sealed class ClientSettings
 {
     public string? GameDirectory { get; set; }
 
+    /// <summary>QoL, off = original: show the 320×200 screen stretched to 4:3 (pixels 1.2 times taller, as on a CRT).</summary>
+    public bool Stretch43 { get; set; }
+
     public static string Folder
     {
         get

@@ -45,7 +45,11 @@ public sealed class PorArea
         EntryCalls = calls;
         MapGuessed = guessed;
         Roster = mem.Party;
+        _c059 = (byte)(mem.SpecialWriteValues.TryGetValue(0xC059, out var a) ? a : BackdropRule.InitC059);
+        _c05F = (byte)(mem.SpecialWriteValues.TryGetValue(0xC05F, out var b) ? b : BackdropRule.InitC05F);
     }
+
+    private readonly byte _c059, _c05F;
 
     /// <summary>The EGA sky colour of the party's square: the sky list entry of $49FD, or of $49FE on an event byte ≥ 0x80.</summary>
     public byte SkyColour(IReadOnlyList<byte> skyColours)
@@ -55,11 +59,11 @@ public sealed class PorArea
     }
 
     /// <summary>
-    /// The four backdrop colours. The sky follows the script's cells; the two horizon bands and the ground are
-    /// [?]: RefreshView sets them from DS:6F68/6F69 only while DS:84E5 is set, otherwise they keep earlier values not
-    /// traced yet. The values here are the ones measured in DOSBox-X screenshots of the Slums.
+    /// The four backdrop colours (<see cref="BackdropRule"/>): the sky from the script's cells, the horizon bands and
+    /// the ground from the $C05F / $C059 colour bytes as the entry left them.
     /// </summary>
-    public Backdrop Backdrop(PorViewArt art) => new(SkyColour(art.Program.SkyColours), 15, 7, 6);
+    public Backdrop Backdrop(PorViewArt art) => new(SkyColour(art.Program.SkyColours),
+        BackdropRule.Horizon1(_c05F), BackdropRule.Horizon2(_c05F), BackdropRule.Ground(_c059));
 
     /// <summary>The 88×88 view at the party's square as the program draws it: the 3D view, or the area map.</summary>
     public IndexedFrame RenderView(PorViewArt art, bool areaMap)

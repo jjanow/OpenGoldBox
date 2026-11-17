@@ -93,8 +93,15 @@ public sealed class EclVm
 
     /// <summary>Stop flag (DS:442E).</summary>
     public bool StopFlag { get; private set; }
-    /// <summary>Script-changed flag (DS:442F).</summary>
+    /// <summary>
+    /// Script-changed flag (DS:442F): set by NEWECL and, as in the program, not cleared by the run loop; only
+    /// <see cref="FollowScriptChanges"/> (0x3FFA) and <see cref="RunLoadedGame"/> (area entry, 0x4062) clear it. After
+    /// running vector 0 or 1 for a command, a caller follows the switch whenever this is set (0x41A1, 0x4230, 0x4159).
+    /// </summary>
     public bool ScriptChanged { get; private set; }
+    private bool _newEclThisRun;
+    /// <summary>Between a Load (0x403E) and the first command read: DS:4436 is stale.</summary>
+    private bool _afterLoadBeforeCommand;
     /// <summary>DS:49FF "party defeated": while set, the run loop stops (set by DAMAGE and the after-combat check in the game).</summary>
     public bool ExternalStop { get; set; }
     /// <summary>
@@ -113,10 +120,22 @@ public sealed class EclVm
     /// <summary>Count of all diagnostics since construction.</summary>
     public int DiagnosticCount { get; private set; }
 
+    /// <summary>The party opcodes read from the program (LOADCHAR, CHKPARTY, SPELL, ROB, DAMAGE); draws go through the host.</summary>
+    public EclPartyRules PartyRules { get; }
+
     public EclVm(EclMemory memory, IEclHost host)
     {
         Memory = memory;
         Host = host;
+        PartyRules = new EclPartyRules(memory, range =>
+        {
+            ushort r = 0;
+            HostCall("Random", [Num(range)], () => Num(r), () => r = Host.Random((ushort)range));
+            return r;
+        });
+        PartyRules.Diagnostic += Diag;
+        PartyRules.Damaged += d => HostCall("DamageReport", [d.Target.Name, Num(d.Damage), d.Dies ? "dies" : "hit"], null,
+            () => Host.DamageReport(d));
         Memory.Written += w => _step?.Writes.Add(w);
         Memory.Diagnostic += Diag;
         Memory.WallSetRequested += (slot, set) =>
@@ -167,6 +186,8 @@ public sealed class EclVm
     public void InitScript()
     {
         _gosub.Clear();
+        Memory.Ds84D2 = false; // 0x7699
+        Memory.Ds84D3 = false;
         Array.Clear(Flags);
         Memory.SpecialWriteValues[0xC059] = 0x41;
         Memory.SpecialWriteValues[0xC05F] = 0x09;
@@ -214,6 +235,16 @@ public sealed class EclVm
     /// </summary>
     public EclRunResult RunLoadedGame(int maxSteps = 100_000)
     {
+        // Area entry 0x403E: DS:4430 and DS:442F cleared (0x404E, 0x4062). A NEWECL in this vector 4 runs nothing
+        // further now: the program goes on to read a command with DS:442F still set, so the next command's vector 0
+        // (or 1) is followed by FollowScriptChanges (ecl-format.md "Steps, doors and script switches").
+        if (Memory.Party is { } party)
+        {
+            party.ChangedByScript = false;
+            party.Selected = null; // DS:4436 is stale until the command read after vector 4 (CommandRead)
+        }
+        _afterLoadBeforeCommand = true;
+        ScriptChanged = false;
         LoadingSave = true;
         InitScript();
         Trace?.Event("restore", new Dictionary<string, string>
@@ -222,7 +253,20 @@ public sealed class EclVm
             ["disk"] = CurrentDisk.ToString(CultureInfo.InvariantCulture),
             ["vectors"] = string.Join(",", Vectors.Select(JsonlTraceWriter.Hex)),
         });
-        return RunVector(EclLayout.VectorInit, maxSteps);
+        var r = RunVector(EclLayout.VectorInit, maxSteps);
+        CommandRead();
+        return r;
+    }
+
+    /// <summary>
+    /// The area loop reads a command (0x40DB / 0x4179): the current character is remembered as the selected one
+    /// (DS:4436), which EXIT and PROGRAM restore after a LOADCHAR. Call before running vector 0 or 1 for a key.
+    /// </summary>
+    public void CommandRead()
+    {
+        _afterLoadBeforeCommand = false;
+        if (Memory.Party is { } party)
+            party.Selected = party.Current;
     }
 
     // ---------------------------------------------------------------------------------------------------------------
@@ -241,7 +285,7 @@ public sealed class EclVm
     {
         Pc = pc;
         StopFlag = false;
-        ScriptChanged = false;
+        _newEclThisRun = false;
         Trace?.Event("run", new Dictionary<string, string>
         {
             ["script"] = CurrentScript.ToString(CultureInfo.InvariantCulture),
@@ -254,7 +298,7 @@ public sealed class EclVm
         {
             if (StopFlag)
             {
-                result = new EclRunResult(ScriptChanged ? EclStopReason.NewScript : EclStopReason.Exit, steps);
+                result = new EclRunResult(_newEclThisRun ? EclStopReason.NewScript : EclStopReason.Exit, steps);
                 break;
             }
             if (ExternalStop)
@@ -297,18 +341,53 @@ public sealed class EclVm
     public Func<bool, byte>? ScriptSwitchEventByte { get; set; }
 
     /// <summary>
-    /// After a run that switched scripts (routine 0x3EFA): the new script is already loaded and initialised by
-    /// NEWECL; run its vector 4, then vector 0 and, unless the script changed again, vector 1; repeat while scripts
-    /// keep changing (at most <paramref name="maxSwitches"/> times). Each pass first reads the event byte of the
-    /// party's square again (<see cref="ScriptSwitchEventByte"/>) and clears the edge-step cell $6DD5 (0x3F00–0x3F16),
-    /// so the new script's vector 0 does not see the step that left the old map. [?] The program does not test the
-    /// script-changed flag after vector 4: a NEWECL in vector 4 is followed by the new script's vectors 0 and 1, not
-    /// its vector 4; this VM restarts with vector 4 (no v1.3 init vector is known to switch scripts; not checked).
+    /// After a run that switched scripts (routine 0x3EFA), while the script-changed flag DS:442F is set: the new script
+    /// is already loaded and initialised by NEWECL. Each pass reads the event byte of the party's square again
+    /// (<see cref="ScriptSwitchEventByte"/>), clears the edge-step cell $6DD5 (0x3F00–0x3F16), saves the current
+    /// character, sets the view mode DS:49FA = 1 and runs vector 4. The flag is **not** tested after vector 4: the view
+    /// mode becomes 2/3/4 for blocks 25/26/27 with $49E6 = 0, the redraw re-reads the event byte, the flag is cleared
+    /// (0x3FFA) and vector 0 of the script now loaded runs (after a NEWECL in vector 4 that is the newest script's, whose
+    /// vector 4 is skipped); unless vector 0 set the flag again, vector 1 runs and the saved current character is
+    /// restored (0x4016). Repeats while the flag is set (at most <paramref name="maxSwitches"/> passes).
     /// </summary>
     public EclRunResult FollowScriptChanges(int maxStepsPerRun = 100_000, int maxSwitches = 32)
     {
         var last = new EclRunResult(EclStopReason.Exit, 0);
-        for (int i = 0; i < maxSwitches && PendingScript is { } next; i++)
+        for (int i = 0; i < maxSwitches && ScriptChanged; i++)
+        {
+            LoadPending();
+            if (ScriptSwitchEventByte?.Invoke(false) is { } ev)
+                Memory.Position.EventByte = ev;
+            Memory.Write(EdgeStepCell, 0);
+            var saved = Memory.Party?.Current;
+            Memory.ViewMode = 1;
+            last = RunVector(EclLayout.VectorInit, maxStepsPerRun);
+            if (last.Reason is not (EclStopReason.Exit or EclStopReason.NewScript))
+                return last;
+            LoadPending();
+            if (ReadMem(0x49E6) == 0 && CurrentScript is >= 25 and <= 27)
+                Memory.ViewMode = (byte)(CurrentScript - 23);
+            if (ScriptSwitchEventByte?.Invoke(true) is { } ev2)
+                Memory.Position.EventByte = ev2;
+            ScriptChanged = false;
+            last = RunVector(0, maxStepsPerRun);
+            if (last.Reason is not (EclStopReason.Exit or EclStopReason.NewScript))
+                return last;
+            if (ScriptChanged)
+                continue;
+            last = RunVector(1, maxStepsPerRun);
+            if (Memory.Party is { } party)
+                party.SetCurrent(saved);
+            if (last.Reason is not (EclStopReason.Exit or EclStopReason.NewScript))
+                return last;
+        }
+        return last;
+    }
+
+    /// <summary>Loads the script a NEWECL named when no script source was attached at the time.</summary>
+    private void LoadPending()
+    {
+        if (PendingScript is { } next)
         {
             PendingScript = null;
             if (_pendingNotLoaded)
@@ -316,24 +395,7 @@ public sealed class EclVm
                 _pendingNotLoaded = false;
                 LoadScript(next);
             }
-            if (ScriptSwitchEventByte?.Invoke(false) is { } ev)
-                Memory.Position.EventByte = ev;
-            Memory.Write(EdgeStepCell, 0);
-            last = RunVector(EclLayout.VectorInit, maxStepsPerRun);
-            if (last.Reason == EclStopReason.NewScript)
-                continue;
-            if (last.Reason is not EclStopReason.Exit)
-                return last;
-            if (ScriptSwitchEventByte?.Invoke(true) is { } ev2)
-                Memory.Position.EventByte = ev2;
-            last = RunVector(0, maxStepsPerRun);
-            if (last.Reason == EclStopReason.NewScript)
-                continue;
-            if (last.Reason is not EclStopReason.Exit)
-                return last;
-            last = RunVector(1, maxStepsPerRun);
         }
-        return last;
     }
 
     /// <summary>Executes one instruction. Returns a result when the step ended the run abnormally, else null.</summary>
@@ -380,7 +442,7 @@ public sealed class EclVm
         if (result is not null)
             step.End = result.Reason.ToString();
         else if (StopFlag)
-            step.End = ScriptChanged ? nameof(EclStopReason.NewScript) : nameof(EclStopReason.Exit);
+            step.End = _newEclThisRun ? nameof(EclStopReason.NewScript) : nameof(EclStopReason.Exit);
         _step = null;
         Trace?.Step(step);
         return result;
@@ -469,6 +531,7 @@ public sealed class EclVm
                 PendingScript = script;
                 StopFlag = true;
                 ScriptChanged = true;
+                _newEclThisRun = true;
                 return null;
             }
             case EclOpcodes.Save:
@@ -688,8 +751,18 @@ public sealed class EclVm
                 return null;
             case EclOpcodes.Who:
             {
-                var prompt = Text(1); // [?] op 39 (L)
-                HostCall("Who", [prompt], null, () => Host.Who(prompt));
+                // P (0x3879): the pick menu writes the chosen record into DS:5D92 (DS:4430 not set: survives EXIT).
+                var prompt = Text(1);
+                int? pick = null;
+                HostCall("PickCharacter", [prompt], () => pick?.ToString(CultureInfo.InvariantCulture) ?? "none",
+                    () => pick = Host.PickCharacter(prompt));
+                if (pick is { } k && Memory.Party is { } party)
+                {
+                    if (k >= 0 && k < party.Members.Count)
+                        party.CurrentIndex = k;
+                    else
+                        Diag($"WHO: host picked {k}, not a party-list member");
+                }
                 return null;
             }
             case EclOpcodes.Parley:
@@ -718,8 +791,19 @@ public sealed class EclVm
             }
             case EclOpcodes.LoadChar:
             {
-                var v = Value16(1); // [?] op 0A (L)
-                HostCall("LoadCharacter", [Num(v)], null, () => Host.LoadCharacter(v));
+                // P (0x1026): select list member v AND 0x7F; bit 0x80 with DS:84D2/84D3 removes it (EclPartyRules).
+                var v = Value16(1);
+                if (Memory.Party is not null)
+                {
+                    var removed = PartyRules.LoadCharacter(v & 0xFF);
+                    if (removed is not null)
+                        _step?.HostCalls.Add(new EclTraceHostCall("RemoveFromParty", [removed.Name], null));
+                }
+                else
+                {
+                    Diag("LOADCHAR with no party attached: host call only");
+                    HostCall("LoadCharacter", [Num(v)], null, () => Host.LoadCharacter(v));
+                }
                 return null;
             }
             case EclOpcodes.LoadMon:
@@ -742,12 +826,23 @@ public sealed class EclVm
                 return null;
             case EclOpcodes.ChkParty:
             {
-                // [?] op 1E (L)
-                ushort field = Value16(1), effect = Value16(2);
+                // P (0x217B): the selector is the raw field for a type-1 operand, else its value; e = low byte of v2.
+                ushort field = _slotType[1] == 1 ? RawWord(1) : Value16(1);
+                ushort effect = (ushort)(Value(2) & 0xFF);
                 var dsts = new[] { DestWord(3), DestWord(4), DestWord(5), DestWord(6) };
                 EclPartyCheck r = default;
-                HostCall("CheckParty", [Num(field), Num(effect)], () => $"{r.Min},{r.Max},{r.Average},{r.Any}",
-                    () => r = Host.CheckParty(field, effect));
+                if (Memory.Party is not null)
+                {
+                    if (PartyRules.CheckParty(field, effect) is not { } c)
+                        return null; // other selectors write nothing
+                    r = c;
+                }
+                else
+                {
+                    Diag("CHKPARTY with no party attached: host answer used");
+                    HostCall("CheckParty", [Num(field), Num(effect)], () => $"{r.Min},{r.Max},{r.Average},{r.Any}",
+                        () => r = Host.CheckParty(field, effect));
+                }
                 Memory.Write(dsts[0], r.Min);
                 Memory.Write(dsts[1], r.Max);
                 Memory.Write(dsts[2], r.Average);
@@ -765,32 +860,53 @@ public sealed class EclVm
             }
             case EclOpcodes.Rob:
             {
-                var v = Values(1, 3); // P (partly): money rounding and item rule [?]; the host applies it
-                HostCall("Rob", v.Select(Num).ToArray(), null, () => Host.Rob(v[0], v[1], v[2]));
+                // P (0x2AF7): v1 who, v2 the money percentage and the item chance (operand 2 fetched twice); v3 unused.
+                var v = Values(1, 2);
+                if (Memory.Party is not null)
+                    PartyRules.Rob(v[0] & 0xFF, v[1] & 0xFF);
+                else
+                {
+                    Diag("ROB with no party attached: host call only");
+                    HostCall("Rob", [Num(v[0]), Num(v[1]), Num(v[1])], null, () => Host.Rob(v[0], v[1], v[1]));
+                }
                 return null;
             }
             case EclOpcodes.Damage:
             {
-                var v = Values(1, 5); // [?] op 2E (L)
-                HostCall("Damage", v.Select(Num).ToArray(), null, () => Host.Damage(v[0], v[1], v[2], v[3], v[4]));
+                // P (0x34BB): flags, dice count, sides, bonus, to-hit / save type (low bytes); EclPartyRules.Damage.
+                var v = Values(1, 5);
+                if (Memory.Party is not null)
+                {
+                    if (PartyRules.Damage(v[0] & 0xFF, v[1] & 0xFF, v[2] & 0xFF, v[3] & 0xFF, v[4] & 0xFF))
+                        ExternalStop = true; // DS:49FF: no list member left in play
+                }
+                else
+                {
+                    Diag("DAMAGE with no party attached: host call only");
+                    HostCall("Damage", v.Select(Num).ToArray(), null, () => Host.Damage(v[0], v[1], v[2], v[3], v[4]));
+                }
                 return null;
             }
             case EclOpcodes.SpriteOff:
                 HostCall("SpriteOff", [], null, Host.SpriteOff); // [?] op 31 (L)
                 return null;
             case EclOpcodes.AddNpc:
-            {
-                var v = Values(1, 2); // [?] op 36 (L)
-                HostCall("AddNpc", v.Select(Num).ToArray(), null, () => Host.AddNpc(v[0], v[1]));
+                DoAddNpc();
                 return null;
-            }
             case EclOpcodes.Spell:
             {
-                // [?] op 3B (L): Lee says no-op in practice.
-                var spell = Value16(1);
-                ushort d1 = DestWord(2), d2 = DestWord(3);
+                // P (0x3949): both destinations keep only the low byte of their raw field ($00xx: outside every VM
+                // area), so v1.3's use writes nothing; the search covers the first member only ([?] residue byte).
+                int spell = Value(1) & 0xFF;
+                ushort d1 = (ushort)(RawWord(2) & 0xFF), d2 = (ushort)(RawWord(3) & 0xFF);
                 (ushort, ushort)? r = null;
-                HostCall("Spell", [Num(spell)], () => r is { } x ? $"{x.Item1},{x.Item2}" : "none", () => r = Host.Spell(spell));
+                if (Memory.Party is not null)
+                {
+                    var (index, count) = PartyRules.Spell(spell, Policy.SpellFoundResidue);
+                    r = (index, count);
+                }
+                else
+                    HostCall("Spell", [Num(spell)], () => r is { } x ? $"{x.Item1},{x.Item2}" : "none", () => r = Host.Spell((ushort)spell));
                 if (r is { } res)
                 {
                     Memory.Write(d1, res.Item1);
@@ -832,6 +948,7 @@ public sealed class EclVm
             }
             case EclOpcodes.Program:
             {
+                RestoreSelected(); // 0x3B5C, before the operand is loaded
                 var v = Value16(1); // ids P; effects [?]
                 HostCall("Program", [Num(v)], null, () => Host.Program(v));
                 if (v == 9)
@@ -840,18 +957,97 @@ public sealed class EclVm
             }
             case EclOpcodes.Protect:
             {
-                var a = DestWord(1); // [?] op 3C (L)
-                HostCall("Protect", [JsonlTraceWriter.Hex(a)], null, () => Host.Protect(a));
+                // P (0x3BC3): glyph g = (VM read at a + i) + 1 as a byte, drawn while g > 1.
+                var a = RawWord(1);
+                var glyphs = new List<byte>();
+                for (int i = 0; i < 256; i++)
+                {
+                    byte g = (byte)(ReadMem((ushort)(a + i)) + 1);
+                    if (g <= 1)
+                        break;
+                    glyphs.Add(g);
+                }
+                HostCall("DrawGlyphs", [JsonlTraceWriter.Hex(a), string.Join(" ", glyphs)], null, () => Host.DrawGlyphs(a, glyphs));
                 return null;
             }
         }
         throw new InvalidOperationException($"opcode {op:X2} has a table row but no case");
     }
 
+    /// <summary>
+    /// ADDNPC (P, 0x38C4): with $6E3E ≤ 7 the host builds the record (0x1F248: monster loader, Random(256), portrait
+    /// rolls), which is appended to the party list and becomes current: icon slot 0xBF = lowest of 0..7 unused,
+    /// $6E3E + 1. Then, added or not, the current record gets 0x84 = (low byte of v2 / 2) OR 0x80 and 0x10E = 1 when
+    /// the monster is 24, else 0.
+    /// </summary>
+    private void DoAddNpc()
+    {
+        int monster = Value(1) & 0xFF;
+        var party = Memory.Party;
+        if (party is null)
+        {
+            var v = Values(1, 2);
+            Diag("ADDNPC with no party attached: host call only");
+            HostCall("AddNpc", v.Select(Num).ToArray(), null, () => Host.AddNpc(v[0], v[1]));
+            return;
+        }
+        if (ReadMem(EclPartyRules.PartySizeCell) <= 7)
+        {
+            EclCharacter? npc = null;
+            HostCall("CreateNpc", [Num(monster)], () => npc?.Name ?? "none", () => npc = Host.CreateNpc((ushort)monster));
+            if (npc is null)
+            {
+                var v = Values(1, 2);
+                Diag("ADDNPC: the host built no record; AddNpc called instead");
+                HostCall("AddNpc", v.Select(Num).ToArray(), null, () => Host.AddNpc(v[0], v[1]));
+            }
+            else
+            {
+                var used = party.Members.Select(m => (int)m[0xBF]).Where(x => x < 8).ToHashSet();
+                byte slot = 0;
+                while (slot < 8 && used.Contains(slot))
+                    slot++;
+                npc[0xBF] = slot;
+                party.Members.Add(npc);
+                party.CurrentIndex = party.Members.Count - 1;
+                Memory.Write(EclPartyRules.PartySizeCell, (ushort)(ReadMem(EclPartyRules.PartySizeCell) + 1));
+            }
+        }
+        int morale = Value(2) & 0xFF;
+        if (party.Current is { } cur)
+        {
+            cur[EclPartyRules.Morale] = (byte)((morale >> 1) | 0x80);
+            cur[EclPartyRules.Hostile] = (byte)(monster == 24 ? 1 : 0);
+        }
+        else
+            Diag("ADDNPC: no current character for the morale byte");
+    }
+
     private void DoExit()
     {
+        RestoreSelected(); // 0xDAC
         _gosub.Clear();
         StopFlag = true;
+    }
+
+    /// <summary>EXIT (0xDAC) and PROGRAM (0x3B5C): after a LOADCHAR (DS:4430) the selected character (DS:4436) is current again.</summary>
+    private void RestoreSelected()
+    {
+        if (Memory.Party is { ChangedByScript: true } party)
+        {
+            if (party.Selected is { } sel && party.Members.Contains(sel))
+                party.SetCurrent(sel);
+            else if (_afterLoadBeforeCommand)
+            {
+                // After a Load, DS:4436 still holds a pointer from before the load until the first command read, so
+                // the restore leaves no party record current (DOSBox s11, party_opcodes).
+                Diag("EXIT/PROGRAM after LOADCHAR before the first command after a Load: DS:4436 is stale; no current character");
+                party.CurrentIndex = -1;
+            }
+            else
+                Diag("EXIT/PROGRAM after LOADCHAR with no selected character noted (CommandRead not called): current kept");
+            party.ChangedByScript = false;
+        }
     }
 
     /// <summary>

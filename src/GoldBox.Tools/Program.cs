@@ -12,7 +12,8 @@ namespace GoldBox.Tools;
 ///             [--menu 0,1,..] [--random 3,5,..] [--seed N] [--randseed HEX] [--out FILE.jsonl]
 ///   ecl-check GAMEDIR
 ///   ecl-compare GAMEDIR [FIXTURES] [--capture NAME] [--trace-out DIR]
-///   view-compare GAMEDIR SAVGAMx.DAT REF.bin [--map] [--dump]
+///   view-compare GAMEDIR SAVGAMx.DAT REF.bin [--map] [--dump] [--keys ULRDSK]
+///   save-area    GAMEDIR SAVGAMx.DAT OUT.DAT SCRIPT X,Y,F [--flag0 N] [--walls A,B,C]
 /// </code>
 /// ecl-run loads script SCRIPT (a block id of ECL1..8.DAX; its disk is found by id), optionally on top of a save
 /// game's VM state, runs the vector(s) headless with the scripted host and writes the JSONL trace (stdout by default).
@@ -29,6 +30,7 @@ public static class Program
                 "ecl-check" => EclCheck(args[1..]),
                 "ecl-compare" => EclCompare(args[1..]),
                 "view-compare" => ViewCommands.Compare(args[1..]),
+                "save-area" => ViewCommands.SaveArea(args[1..]),
                 _ => Usage(),
             };
         }
@@ -47,7 +49,8 @@ public static class Program
                                       [--menu 0,1,..] [--random 3,5,..] [--seed N] [--randseed HEX] [--out FILE.jsonl]
               goldbox-tools ecl-check GAMEDIR
               goldbox-tools ecl-compare GAMEDIR [FIXTURES] [--capture NAME] [--trace-out DIR]
-              goldbox-tools view-compare GAMEDIR SAVGAMx.DAT REF.bin [--map] [--dump]
+              goldbox-tools view-compare GAMEDIR SAVGAMx.DAT REF.bin [--map] [--dump] [--keys ULRDSK]
+              goldbox-tools save-area    GAMEDIR SAVGAMx.DAT OUT.DAT SCRIPT X,Y,F [--flag0 N] [--walls A,B,C]
             """);
         return 2;
     }

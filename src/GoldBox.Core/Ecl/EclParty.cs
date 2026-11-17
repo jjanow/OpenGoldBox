@@ -83,4 +83,16 @@ public sealed class EclParty
     public int CurrentIndex { get; set; } = -1;
 
     public EclCharacter? Current => CurrentIndex >= 0 && CurrentIndex < Members.Count ? Members[CurrentIndex] : null;
+
+    /// <summary>
+    /// DS:4436: the character the player had selected, stored each time the area loop reads a command (GAME.OVR 0x40EA,
+    /// 0x4188; <see cref="EclVm.CommandRead"/>). EXIT and PROGRAM restore it when <see cref="ChangedByScript"/> is set.
+    /// </summary>
+    public EclCharacter? Selected { get; set; }
+
+    /// <summary>DS:4430: set by LOADCHAR; EXIT (0xDAC) and PROGRAM (0x3B5C) then restore <see cref="Selected"/> and clear it.</summary>
+    public bool ChangedByScript { get; set; }
+
+    /// <summary>Makes <paramref name="c"/> current (by reference); null or a record no longer listed gives no current character.</summary>
+    public void SetCurrent(EclCharacter? c) => CurrentIndex = c is null ? -1 : Members.IndexOf(c);
 }

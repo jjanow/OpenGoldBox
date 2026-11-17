@@ -153,11 +153,16 @@ Four full-width bands of the 88-row view:
 
 - **Sky:** the sky list entry of $49FD, or of $49FE when the party's square has an event byte ≥ 0x80
   (`geo-format.md` "Event byte"). Slums: $49FD = 11, $49FE = 9 (cyan and white).
-- **Horizon 1, horizon 2, ground:** `[?]` RefreshView recomputes these from DS:6F68/6F69 only while DS:84E5 is set;
-  otherwise they keep values whose origin is not traced. The screenshots give 15, 7 and 6.
-  - With other horizon colours the open views at 9,8 E and 4,12 E differ by 24 pixels, so these bands are visible
-    and the values are checked.
-  - Other areas may use other colours.
+- **Horizon 1, horizon 2, ground** (program read s11, redraw 0x2DCF4): computed from the colour bytes behind $C05F
+  (DS:6F69) and $C059 (DS:6F68) while DS:84E5 is set:
+  - horizon 1 (0x2DC4E): $C05F 8 or 0x41 → 0, else 15;
+  - horizon 2 (0x2DC82): $C05F 8 → 8, else 7;
+  - ground (0x2DCB6): $C059 0x0B → 8, 6 → 1, else (9, 0xDB, …) 6.
+  - The script init sets 0x41 / 9 and the flag (0x76A3), so every area starts with 15, 7, 6 (the Slums values
+    measured in DOSBox-X). Writes to $C059/$C05F set the flag (0x82BB/0x82CD); CALL $2C90 clears it after its redraw
+    (0x3A8D). The backdrop bytes DS:6A60–6A63 are written only by this redraw (0x2DD63/6F/7B and 0x2EA4C, called from
+    it alone), so the colours always follow the current bytes. Scripts that write them: ECL4 block 10 (Valhingen
+    Graveyard: $C05F = 8, $C059 = 11 → 0, 8, 8) and ECL8 block 29 (Kuto's Well). Code: `BackdropRule`.
 
 ## DrawAreaMap
 
@@ -182,11 +187,45 @@ Four full-width bands of the 88-row view:
   - 2 or 3: the door menu (`GoldBox.Core.Doors`).
 - **Edge.** A step that leaves the grid sets $6DD5 = 1, and the area script's step vector may then take the party
   elsewhere. Unhandled, the party wraps.
-- Not modelled yet in the Client:
-  - the area script's step vectors (0 and 1), so events and exits don't run;
-  - the door menu;
-  - the clock;
-  - Search mode's double time cost.
+- The area loop around these keys (vectors, step, doors, clock) is below ("Area loop").
+
+## Area loop (GAME.OVR 0x403E; program read s11)
+
+Code: `GoldBox.Core.Explore.AreaLoop` (one command at a time), `GameClock`, `AreaHost`; session
+`GoldBox.Data.Por.PorGame`. Replays of `step_west`, `turn_left`, the four `oneway_*`, `door_bash` and
+`edge_exit_east` from their `before` dumps give the `after` dumps cell for cell, clock and RandSeed included
+(`AreaLoopTests`).
+
+- **Command routine 0x17054.** Every command read starts with $6DC9 = 0. With the 3D command line (DS:04B6):
+  - A: area map on/off (DS:6AAC) when $49FB = 0, else a short message (cs:0x97B, colour 14);
+  - C cast (0x17CD2, needs status 0), V view (0x21AED): not built;
+  - S: $6DCA bit 0 toggles (Search mode); no time;
+  - L (Look): $6DCA |= 2, 10 minutes (clock unit 2), the routine returns;
+  - E (Encamp): returns;
+  - arrows: Left/Right/Down turn (facing + 6 / + 2 / + 4, wall ahead read again, view redrawn, no script, no time);
+    Up calls the forward key 0x16D58 and returns;
+  - other keys: 0x23819 (party member selection `[?]`, not read).
+- **Area loop 0x40DB.** After a command returns, $49F2 = the current block. While $6DCA > 1 or the key was E (and
+  DS:49FF is clear): E runs the camp (0x3B19); otherwise $6DCA bit 0 is kept, $6DCA = 1, the view redrawn, vector 1
+  runs alone, then $6DCA = the kept bit (Look). Else vector 0 runs; unless the script changed or the party is
+  defeated, $49F0/$49F1 = x, y, the step 0x17438, a redraw, vector 1.
+- **Forward key 0x16D58.** $6DD5 = 0; if the party's own face is not impassable and the square ahead is off the grid,
+  $6DD5 = 1 and the position is clamped to the edge (where it already is). An impassable face on the map edge leaves
+  $6DD5 = 0.
+- **Step 0x17438.** If $6DC9 ≥ 255 (set by the script in vector 0) the step is cancelled and $6DC9 = 0. Otherwise
+  barrier 1 moves; 2 or 3 opens the door menu (`geo-format.md`, one try per step); 0 refuses. A refusal or failed
+  try plays the bump sound (DS:2622).
+- **Move 0x16E06.** One square ahead with wrap; wall ahead (0x2ED72) and event byte (0x2EE71) read again; door flags
+  set to 1; clock + 1 minute (unit 1), or **+ 10 minutes** (unit 2) when $6DCA bit 0 (Search) is set.
+- **Clock 0x241A1** (count, unit): cells $49C6–$49CC (segment, minute ones, minute tens, hour, day, month, year); adds
+  1 to cell `unit` `count` times, carrying after each add with the limits at DS:363A (10, 10, 6, 24, 30, 12, 256); a
+  year cell at 256 or more is not wrapped, every creature of the party list gets record word 0x30 (age) + 1 instead.
+  Then 0x23DCC(count, unit) runs `[?]` (not read; likely effect durations).
+- **Redraw 0x2DCF4** (3D): reads the event byte of the party's square again (DS:6AB1), switches the area map off
+  where $49FB ≠ 0, recomputes the backdrop.
+- `[?]` The camp menu 0x196A0 (rest, memorise, …) is not built; the Client runs vector 2 and a stand-in menu.
+- The time is not drawn on the explore screen in our DOSBox-X screenshots of save A (the position line holds only
+  x,y and facing).
 
 ## Font
 
@@ -208,5 +247,18 @@ Four full-width bands of the 88-row view:
   command line are identical too (0 differing pixels). The braided frame is a stand-in `[?]`, and the text window
   holds our help lines.
 
-Not checked: other areas, especially the three-block New Phlan set and the two-block sets, and the bounded maps of
-scripts 0 and 10.
+**Other areas (s11).** Save A's party placed in another area (`PorSaveGame.PlaceInArea`, tool `goldbox-tools
+save-area`; the load also needs the disk in cell $6E12 and the area's wall-set ids at $4AFA–$4AFC), loaded from the
+main menu in DOSBox-X, screenshots reduced with `tools/scripts/ega_screen.py`, compared with `view-compare` (`--keys U`
+replays a step through the area loop). 0 differing pixels in all 11, pinned in `OtherAreaViewTests`:
+- New Phlan (script 0, bounded map, three-block wall set 127 → WALLDEF3 0) at 2,4 E: view and area map;
+- Valhingen Graveyard (script 10, bounded, two-block set 21 with the two-flag rule, $C05F = 8 / $C059 = 11) at 0,4 E
+  and 9,9 E: view, area map, and one step on (vector 0 sets $49FD = 8: black sky);
+- Kobold Caves (script 13, $49FB set) at 14,14 N: view, A refused (view stays), one step.
+- The Client's whole screen for New Phlan equals DOSBox-X except the braided frame (stand-in `[?]`) and our help lines.
+
+**Position line** (START.EXE 0x34AB, program read s11): "x,y " only where $49FB = 0, the facing, HH:MM (both padded
+to two digits), then " camping" (DS:49F3 = 2) or " search" ($6DCA bit 0). In Kobold Caves the line is the facing, the time and the search word. The
+command line highlights the item whose hotkey is the last letter key read (after loading slot C: CAST).
+
+Not checked yet: the Valjevo Castle and wilderness-lair areas, the frame picture.

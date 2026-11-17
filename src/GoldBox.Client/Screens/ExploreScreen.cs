@@ -1,4 +1,7 @@
+using System.Diagnostics;
+using System.Globalization;
 using GoldBox.Client.Input;
+using GoldBox.Client.Play;
 using GoldBox.Core.Explore;
 using GoldBox.Data.Por;
 
@@ -6,34 +9,119 @@ namespace GoldBox.Client.Screens;
 
 /// <summary>
 /// The exploring screen of a 3D area, laid out like the original (DOSBox-X, PoR v1.3 EGA): the 88×88 view at pixel
-/// (24, 24), the party list on the right, the position line under it, a text window, and the command line at the
-/// bottom. Movement as the program's command loop does it (docs/re/view3d.md "Movement"); the area script's step
-/// vectors, doors, the clock and the other commands are not in yet.
+/// (24, 24), the party list on the right, the position line under it, the text window, and the command line at the
+/// bottom. Commands go to the area loop (<see cref="AreaLoop"/>) on the logic thread (<see cref="ScriptRunner"/>);
+/// while the logic waits for the player, the menu, text entry or pause it asked for is shown here. Every request
+/// works with keyboard, mouse and pad alone.
 /// </summary>
-public sealed class ExploreScreen(PorArea area, PorViewArt art, IScreenHost host) : IScreen
+public sealed class ExploreScreen : IScreen
 {
     private const int ViewX = 24, ViewY = 24;
-    private const int StatusRow = 15, TextRow = 17, HelpRow = 21, MenuRow = 24;
+    private const int StatusRow = 15, TextRow = 17, TextRows = 6, HelpRow = 21, MenuRow = 24;
+
+    private readonly PorGame _game;
+    private readonly ClientPlayer _player;
+    private readonly ScriptRunner _runner;
+    private readonly IScreenHost _host;
+    private readonly Stopwatch _clock = Stopwatch.StartNew();
+
+    /// <summary>The command line, read from the player's START.EXE (the first word is the area map); our stand-in when not found.</summary>
+    private readonly string[] _commands;
 
     /// <summary>
-    /// The command line, read from the player's START.EXE (the first word is the area map); our own one-word stand-in
-    /// when it is not found. Only the area map works so far; the others answer that they are not in yet.
+    /// The command line's highlighted item: the one whose hotkey is the last letter key the program read (DOSBox-X:
+    /// after loading slot C, CAST; after S, SEARCH; arrows leave it), starting with the save slot's letter.
     /// </summary>
-    private readonly string[] Commands =
-        art.Program.ExploreCommands is { Count: > 0 } c ? [.. c.Select(w => w.ToUpperInvariant())] : ["MAP"];
+    private char _lastLetter;
 
-    private bool _areaMap;
-    private string _message = "";
+    // State of the request on screen.
+    private PlayerRequest? _shown;
+    private int _selected;
+    private string _typed = "";
+    private TimeSpan _delayEnd;
 
-    public PorArea Area => area;
-    public bool ShowingAreaMap => _areaMap;
+    public ExploreScreen(PorGame game, ClientPlayer player, ScriptRunner runner, IScreenHost host, char lastLetter = 'A')
+    {
+        _lastLetter = char.ToUpperInvariant(lastLetter);
+        _game = game;
+        _player = player;
+        _runner = runner;
+        _host = host;
+        _commands = game.Art.Program.ExploreCommands is { Count: > 0 } c
+            ? [.. c.Select(w => w.ToUpperInvariant())]
+            : ["AREA", "CAST", "VIEW", "ENCAMP", "SEARCH", "LOOK"];
+    }
+
+    public PorGame Game => _game;
+    public bool ShowingAreaMap => _game.Loop.ShowAreaMap;
+
+    // ---------------------------------------------------------------------------------------------------------------
+    // Commands
+    // ---------------------------------------------------------------------------------------------------------------
+
+    private void Run(AreaCommand command)
+    {
+        if (_runner.Busy || _game.Loop.Defeated)
+            return;
+        _player.Notice = null;
+        _lastLetter = command switch
+        {
+            AreaCommand.AreaMap => 'A',
+            AreaCommand.Encamp => 'E',
+            AreaCommand.Search => 'S',
+            AreaCommand.Look => 'L',
+            _ => _lastLetter,
+        };
+        if (command == AreaCommand.Forward)
+            _player.Text.Clear(); // [?] when the original clears the text window is not read; we clear on a step
+        _runner.Start(() => _game.Loop.Execute(command));
+        if (_runner.Fault is { } e)
+            Report(e);
+        AfterCommand();
+    }
+
+    /// <summary>The area loop ended (party destroyed, DS:49FF): the main menu would follow; not built yet.</summary>
+    private void AfterCommand()
+    {
+        if (_game.Loop.Ended)
+            _player.Notice = "THE PARTY IS DESTROYED. RESTART THE GAME.";
+    }
+
+    private void Report(Exception e)
+    {
+        Console.Error.WriteLine("game logic: " + e);
+        _player.Notice = "ERROR: " + e.Message.ToUpperInvariant();
+    }
+
+    /// <summary>A command-line word by its first letter (the original's hotkeys).</summary>
+    private GameAction? CommandAction(string word) => word[0] switch
+    {
+        'A' => GameAction.AreaMap,
+        'E' => GameAction.Encamp,
+        'S' => GameAction.Search,
+        'L' => GameAction.Look,
+        _ => NotYet(word),
+    };
+
+    private GameAction? NotYet(string command)
+    {
+        _lastLetter = command[0];
+        _player.Notice = command + ": NOT IN THIS BUILD YET.";
+        return null;
+    }
+
+    // ---------------------------------------------------------------------------------------------------------------
+    // Mouse
+    // ---------------------------------------------------------------------------------------------------------------
 
     public GameAction? MapClick(ScreenClick click)
     {
+        Sync();
+        if (_runner.Pending is { } request)
+            return RequestClick(request, click);
         if (click.Right)
             return null;
         int col = click.X / 8, row = click.Y / 8;
-        // The view: thirds left / right turn; the middle steps forward, its bottom third turns about.
         if (click.X >= ViewX && click.X < ViewX + 88 && click.Y >= ViewY && click.Y < ViewY + 88)
         {
             int vx = click.X - ViewX, vy = click.Y - ViewY;
@@ -41,74 +129,266 @@ public sealed class ExploreScreen(PorArea area, PorViewArt art, IScreenHost host
             if (vx >= 59) return GameAction.TurnRight;
             return vy >= 59 ? GameAction.TurnAround : GameAction.Forward;
         }
-        if (row == MenuRow && CommandAt(col) is { } cmd)
-            return cmd == 0 ? GameAction.AreaMap : NotYet(Commands[cmd]);
-        if (row == HelpRow + 1)
+        if (row == MenuRow && WordAt(_commands, col) is { } cmd)
+            return CommandAction(_commands[cmd]);
+        if (row == HelpRow + 1 && _player.Text.IsEmpty)
             return GameAction.Controls;
         return null;
     }
 
-    private GameAction? NotYet(string command)
+    public void Hover(int x, int y)
     {
-        _message = command + ": NOT IN THIS BUILD YET.";
-        return null;
+        Sync();
+        if (_runner.Pending is ChoiceRequest c && ItemAt(c, x / 8, y / 8) is { } i)
+            _selected = i;
+        else if (_runner.Pending is TextRequest t && CellAt(t, x / 8, y / 8) is { } k)
+            _selected = k;
     }
 
-    /// <summary>The command under a column of the command line (words separated by one space).</summary>
-    private int? CommandAt(int col)
+    private GameAction? RequestClick(PlayerRequest request, ScreenClick click)
+    {
+        switch (request)
+        {
+            case ChoiceRequest c:
+                if (click.Right)
+                    return c.CancelIndex is not null ? GameAction.Cancel : null;
+                if (ItemAt(c, click.X / 8, click.Y / 8) is { } i)
+                {
+                    _selected = i;
+                    return GameAction.Confirm;
+                }
+                return null;
+            case TextRequest t:
+                if (click.Right)
+                {
+                    Backspace();
+                    return null;
+                }
+                if (CellAt(t, click.X / 8, click.Y / 8) is { } k)
+                {
+                    _selected = k;
+                    return GameAction.Confirm;
+                }
+                return null;
+            default:
+                return null;
+        }
+    }
+
+    /// <summary>The word under a column of a line of words separated by one space.</summary>
+    private static int? WordAt(IReadOnlyList<string> words, int col)
     {
         int c = 0;
-        for (int i = 0; i < Commands.Length; i++)
+        for (int i = 0; i < words.Count; i++)
         {
-            if (col >= c && col < c + Commands[i].Length)
+            if (col >= c && col < c + words[i].Length)
                 return i;
-            c += Commands[i].Length + 1;
+            c += words[i].Length + 1;
         }
         return null;
     }
+
+    private const int ListFirstRow = TextRow + 1, ListRows = TextRows - 1;
+
+    private int ListTop(ChoiceRequest c) => Math.Clamp(_selected - ListRows + 1, 0, Math.Max(0, c.Items.Count - ListRows));
+
+    private int? ItemAt(ChoiceRequest c, int col, int row)
+    {
+        if (!c.Vertical)
+            return row == MenuRow ? WordAt(c.Items, col) : null;
+        int top = ListTop(c);
+        int i = top + row - ListFirstRow;
+        return row >= ListFirstRow && row < ListFirstRow + ListRows && i < c.Items.Count && col >= 1 ? i : null;
+    }
+
+    // ---------------------------------------------------------------------------------------------------------------
+    // Text entry: typing on the keyboard, or a character grid for pad and mouse
+    // ---------------------------------------------------------------------------------------------------------------
+
+    private const string Letters = "ABCDEFGHIJKLM" + "NOPQRSTUVWXYZ" + "0123456789 -.";
+    private const string Digits = "0123456789";
+    private const int GridCols = 13, GridFirstRow = TextRow + 1;
+
+    private static string Charset(TextRequest t) => t.Numeric ? Digits : Letters;
+
+    /// <summary>Grid cells: the characters, then DEL and OK. Cell k is at (column, row).</summary>
+    private static (int Col, int Row, string Label) Cell(TextRequest t, int k)
+    {
+        var cs = Charset(t);
+        if (k < cs.Length)
+            return (2 + 2 * (k % GridCols), GridFirstRow + k / GridCols, cs[k] == ' ' ? "_" : cs[k].ToString());
+        int lastRow = GridFirstRow + (cs.Length + GridCols - 1) / GridCols;
+        return k == cs.Length ? (2, lastRow, "DEL") : (8, lastRow, "OK");
+    }
+
+    private static int CellCount(TextRequest t) => Charset(t).Length + 2;
+
+    private static int? CellAt(TextRequest t, int col, int row)
+    {
+        for (int k = 0; k < CellCount(t); k++)
+        {
+            var (c, r, label) = Cell(t, k);
+            if (row == r && col >= c && col < c + label.Length)
+                return k;
+        }
+        return null;
+    }
+
+    private void Backspace()
+    {
+        if (_typed.Length > 0)
+            _typed = _typed[..^1];
+    }
+
+    private void Type(TextRequest t, char ch)
+    {
+        if (_typed.Length < t.MaxLength && Charset(t).Contains(ch, StringComparison.Ordinal))
+            _typed += ch;
+    }
+
+    private static char? KeyChar(string name) => name switch
+    {
+        { Length: 1 } when char.IsAsciiLetterUpper(name[0]) => name[0],
+        { Length: 2 } when name[0] == 'D' && char.IsAsciiDigit(name[1]) => name[1],
+        _ when name.StartsWith("NumPad", StringComparison.Ordinal) && name.Length == 7 => name[6],
+        "Space" => ' ',
+        "OemMinus" or "Subtract" => '-',
+        "OemPeriod" or "Decimal" => '.',
+        _ => null,
+    };
+
+    // ---------------------------------------------------------------------------------------------------------------
+    // Update
+    // ---------------------------------------------------------------------------------------------------------------
 
     public void Update(ActionInput input)
     {
-        var p = area.Party;
         if (input.Pressed(GameAction.Controls))
         {
-            host.Push(new ControlsScreen(art.Font, host));
+            _host.Push(new ControlsScreen(_game.Art.Font, _host));
             return;
         }
-        if (input.Pressed(GameAction.AreaMap))
+        Sync();
+        if (_runner.Pending is { } request)
         {
-            if (area.AreaMapAllowed)
+            if (Answer(request, input) is { } answer)
             {
-                _areaMap = !_areaMap;
-                _message = "";
+                _runner.Answer(answer.Value);
+                if (_runner.Fault is { } e)
+                    Report(e);
+                if (!_runner.Busy)
+                    AfterCommand();
             }
-            else
-                _message = "NO AREA MAP HERE.";
+            return;
         }
-        if (input.Pressed(GameAction.TurnLeft)) Turn(p.TurnLeft);
-        if (input.Pressed(GameAction.TurnRight)) Turn(p.TurnRight);
-        if (input.Pressed(GameAction.TurnAround)) Turn(p.TurnAround);
-        if (input.Pressed(GameAction.Forward))
+
+        if (input.Pressed(GameAction.AreaMap)) Run(AreaCommand.AreaMap);
+        else if (input.Pressed(GameAction.Search)) Run(AreaCommand.Search);
+        else if (input.Pressed(GameAction.Look)) Run(AreaCommand.Look);
+        else if (input.Pressed(GameAction.Encamp)) Run(AreaCommand.Encamp);
+        else if (input.Pressed(GameAction.TurnLeft)) Run(AreaCommand.TurnLeft);
+        else if (input.Pressed(GameAction.TurnRight)) Run(AreaCommand.TurnRight);
+        else if (input.Pressed(GameAction.TurnAround)) Run(AreaCommand.TurnAround);
+        else if (input.Pressed(GameAction.Forward)) Run(AreaCommand.Forward);
+    }
+
+    /// <summary>A new request on screen starts with its first item selected and nothing typed.</summary>
+    private void Sync()
+    {
+        var request = _runner.Pending;
+        if (ReferenceEquals(request, _shown))
+            return;
+        _shown = request;
+        _selected = 0;
+        _typed = "";
+        if (request is DelayRequest d)
+            _delayEnd = _clock.Elapsed + d.Duration;
+    }
+
+    private readonly record struct Reply(object? Value);
+
+    /// <summary>The answer to the request this frame, or null while the player has not answered.</summary>
+    private Reply? Answer(PlayerRequest request, ActionInput input)
+    {
+        switch (request)
         {
-            var r = p.StepForward(area.Map);
-            _message = r.Outcome switch
+            case DelayRequest:
+                return _clock.Elapsed >= _delayEnd || input.Pressed(GameAction.Confirm) ? new Reply(null) : null;
+
+            case ChoiceRequest c:
             {
-                StepOutcome.Door => "A DOOR. DOOR MENU NOT IN THIS BUILD YET.",
-                StepOutcome.Moved when r.LeftMap => "OFF THE MAP EDGE: WRAPPED (EXITS NOT IN YET).",
-                _ => "",
-            };
+                int n = c.Items.Count;
+                bool back = input.Pressed(c.Vertical ? GameAction.MenuUp : GameAction.MenuLeft);
+                bool fwd = input.Pressed(c.Vertical ? GameAction.MenuDown : GameAction.MenuRight);
+                if (back) _selected = (_selected + n - 1) % n;
+                if (fwd) _selected = (_selected + 1) % n;
+                if (input.Pressed(GameAction.Confirm))
+                    return new Reply(_selected);
+                if (input.Pressed(GameAction.Cancel) && c.CancelIndex is { } ci)
+                    return new Reply(ci);
+                // The original's hotkeys: the first letter of an item.
+                if (input.NewInput is (InputDevice.Keyboard, { Length: 1 } key))
+                    for (int i = 0; i < n; i++)
+                        if (c.Items[i].Length > 0 && c.Items[i][0] == key[0])
+                            return new Reply(i);
+                return null;
+            }
+
+            case TextRequest t:
+            {
+                int cells = CellCount(t);
+                if (input.NewInput is (InputDevice.Keyboard, var name))
+                {
+                    if (name == "Enter")
+                        return new Reply(_typed);
+                    if (name == "Back")
+                    {
+                        Backspace();
+                        return null;
+                    }
+                    if (KeyChar(name) is { } ch)
+                    {
+                        Type(t, ch);
+                        return null;
+                    }
+                    if (name is "Up" or "Down" or "Left" or "Right" or "Escape")
+                    {
+                        // fall through to the grid moves below
+                    }
+                    else
+                        return null;
+                }
+                if (input.Pressed(GameAction.MenuLeft)) _selected = (_selected + cells - 1) % cells;
+                if (input.Pressed(GameAction.MenuRight)) _selected = (_selected + 1) % cells;
+                if (input.Pressed(GameAction.MenuUp)) _selected = Math.Max(0, _selected - GridCols);
+                if (input.Pressed(GameAction.MenuDown)) _selected = Math.Min(cells - 1, _selected + GridCols);
+                if (input.Pressed(GameAction.Cancel))
+                    Backspace();
+                if (input.Pressed(GameAction.Confirm))
+                {
+                    var cs = Charset(t);
+                    if (_selected < cs.Length)
+                        Type(t, cs[_selected]);
+                    else if (_selected == cs.Length)
+                        Backspace();
+                    else
+                        return new Reply(_typed);
+                }
+                return null;
+            }
+
+            default:
+                return new Reply(null);
         }
     }
 
-    private void Turn(Action turn)
-    {
-        turn();
-        _message = "";
-    }
+    // ---------------------------------------------------------------------------------------------------------------
+    // Draw
+    // ---------------------------------------------------------------------------------------------------------------
 
     public void Draw(IndexedFrame f, ActionInput input)
     {
-        var font = art.Font;
+        var font = _game.Art.Font;
         f.Clear(0);
         // Frame cells as on the original screen: outer box, the divider under the view and party list, the divider
         // between view and party list, the view's own box, the box over the command line.
@@ -119,24 +399,123 @@ public sealed class ExploreScreen(PorArea area, PorViewArt art, IScreenHost host
         foreach (var (c, r) in new[] { (16, 0), (0, 16), (16, 16), (39, 16) })
             Chrome.BraidCell(f, c, r, true);
 
-        area.DrawView(f, ViewX, ViewY, art, _areaMap);
+        DrawView(f, font);
         DrawRoster(f, font);
 
-        var p = area.Party;
-        Chrome.Text(f, font, 17, StatusRow, $"{p.X},{p.Y} {Facing.Letter(p.Facing)}", Chrome.Green);
+        Chrome.Text(f, font, 17, StatusRow, StatusLine(_game, _player.Camping), Chrome.Green);
 
-        if (_message.Length > 0)
-            Chrome.Text(f, font, 1, TextRow, _message.Length > 38 ? _message[..38] : _message, Chrome.White);
-        DrawHelp(f, font, input);
-
-        int col = 0;
-        // As in the original's menu line: the highlighted item (the first) all white, the others with a white hotkey letter.
-        for (int i = 0; i < Commands.Length; i++)
+        var pending = _runner.Pending;
+        int row = TextRow;
+        if (_player.Notice is { } notice)
+            Chrome.Text(f, font, 1, row++, Fit(notice, 38), Chrome.Yellow);
+        switch (pending)
         {
-            var cmd = Commands[i];
-            Chrome.Text(f, font, col, MenuRow, cmd[..1], Chrome.White);
-            Chrome.Text(f, font, col + 1, MenuRow, cmd[1..], i == 0 ? Chrome.White : Chrome.Green);
-            col += cmd.Length + 1;
+            case ChoiceRequest { Vertical: true } v:
+                DrawVertical(f, font, v);
+                break;
+            case TextRequest t:
+                DrawTextEntry(f, font, t);
+                break;
+            default:
+                if (pending is ChoiceRequest { Prompt: { } prompt })
+                    Chrome.Text(f, font, 1, row++, Fit(prompt, 38), Chrome.White);
+                foreach (var line in _player.Text.Visible)
+                {
+                    if (row >= TextRow + TextRows)
+                        break;
+                    Chrome.Text(f, font, 1, row++, line, Chrome.White);
+                }
+                if (pending is null && _player.Text.IsEmpty && _player.Notice is null)
+                    DrawHelp(f, font, input);
+                break;
+        }
+
+        if (pending is ChoiceRequest { Vertical: false } h)
+            DrawLine(f, font, h.Items, _selected, true);
+        else if (pending is null)
+            DrawLine(f, font, _commands, Array.FindIndex(_commands, w => w[0] == _lastLetter), false);
+        else if (pending is TextRequest tr)
+            Chrome.Text(f, font, 0, MenuRow, Fit(tr.Prompt + (tr.Prompt.Length > 0 ? " " : "") + _typed + "_", 40), Chrome.White);
+    }
+
+    /// <summary>
+    /// The position line (START.EXE 0x34AB, program read s11): "x,y " only where the area map is allowed ($49FB = 0),
+    /// the facing, the time as HH:MM (hours padded to two digits), then " CAMPING" in camp (DS:49F3 = 2) or " SEARCH"
+    /// while Search is on ($6DCA bit 0). Drawn at row 15, column 17, in green.
+    /// </summary>
+    public static string StatusLine(PorGame game, bool camping)
+    {
+        var m = game.Memory;
+        var p = m.Position;
+        string s = m.Read(AreaLoop.NoAreaMap) == 0 ? $"{p.X},{p.Y} " : "";
+        s += Facing.Letter(p.Facing) + " " + GameClock.Format(m);
+        if (camping)
+            s += " CAMPING";
+        else if (game.Loop.SearchOn)
+            s += " SEARCH";
+        return s;
+    }
+
+    private void DrawView(IndexedFrame f, TextFont font)
+    {
+        if (!_game.Loop.InView3D)
+        {
+            // [?] Outdoors ($49E6 = 0) the program shows the wilderness picture and the overland map; not built.
+            Chrome.Text(f, font, 3, 5, "WILDERNESS", Chrome.Cyan);
+            Chrome.Text(f, font, 3, 7, "NOT IN THIS", Chrome.Cyan);
+            Chrome.Text(f, font, 3, 8, "BUILD YET", Chrome.Cyan);
+            return;
+        }
+        _game.DrawView(f, ViewX, ViewY, _game.Loop.ShowAreaMap);
+        if (_player.ViewOverlay is { } lines)
+        {
+            for (int y = 0; y < 88; y++)
+                for (int x = 0; x < 88; x++)
+                    f[ViewX + x, ViewY + y] = 0;
+            for (int i = 0; i < lines.Length && i < 11; i++)
+                Chrome.Text(f, font, 3, 3 + i, Fit(lines[i], 11), Chrome.Yellow);
+        }
+    }
+
+    /// <summary>A line of words on the bottom row as the original draws its menus: the highlighted item all white, the others with a white hotkey letter.</summary>
+    private static void DrawLine(IndexedFrame f, TextFont font, IReadOnlyList<string> items, int selected, bool menu)
+    {
+        int col = 0;
+        for (int i = 0; i < items.Count; i++)
+        {
+            var w = items[i];
+            if (col + w.Length > 40)
+                break;
+            Chrome.Text(f, font, col, MenuRow, w[..1], Chrome.White);
+            Chrome.Text(f, font, col + 1, MenuRow, w[1..], i == selected ? Chrome.White : Chrome.Green);
+            col += w.Length + 1;
+        }
+        _ = menu;
+    }
+
+    private void DrawVertical(IndexedFrame f, TextFont font, ChoiceRequest c)
+    {
+        if (c.Prompt is { Length: > 0 } p)
+            Chrome.Text(f, font, 1, TextRow, Fit(p, 38), Chrome.White);
+        int top = ListTop(c);
+        for (int r = 0; r < ListRows && top + r < c.Items.Count; r++)
+        {
+            int i = top + r;
+            Chrome.Text(f, font, 2, ListFirstRow + r, Fit(c.Items[i], 37), i == _selected ? Chrome.White : Chrome.Green);
+            if (i == _selected)
+                Chrome.Text(f, font, 1, ListFirstRow + r, ">", Chrome.Yellow);
+        }
+    }
+
+    private void DrawTextEntry(IndexedFrame f, TextFont font, TextRequest t)
+    {
+        Chrome.Text(f, font, 1, TextRow, "TYPE, OR PICK BELOW:", Chrome.Grey);
+        for (int k = 0; k < CellCount(t); k++)
+        {
+            var (c, r, label) = Cell(t, k);
+            Chrome.Text(f, font, c, r, label, k == _selected ? Chrome.White : Chrome.Green);
+            if (k == _selected)
+                Chrome.Text(f, font, c - 1, r, ">", Chrome.Yellow);
         }
     }
 
@@ -145,18 +524,22 @@ public sealed class ExploreScreen(PorArea area, PorViewArt art, IScreenHost host
         Chrome.Text(f, font, 17, 2, "NAME", Chrome.White);
         Chrome.TextRight(f, font, 34, 2, "AC", Chrome.White);
         Chrome.TextRight(f, font, 38, 2, "HP", Chrome.White);
-        if (area.Roster is not { } party)
+        if (_game.Memory.Party is not { } party)
             return;
-        for (int i = 0; i < party.Members.Count && i < 8; i++)
+        int shown = 0;
+        for (int i = 0; i < party.Members.Count && shown < 8; i++)
         {
             var m = party.Members[i];
-            byte colour = i == 0 ? Chrome.White : Chrome.Cyan;
+            if (i >= 8)
+                break;
+            byte colour = i == party.CurrentIndex ? Chrome.White : Chrome.Cyan;
             var name = m.Name.Length > 15 ? m.Name[..15] : m.Name;
             Chrome.Text(f, font, 17, 4 + i, name, colour);
             // [?] AC shown as 60 − record byte 0x111 and HP as record byte 0x11B (PARTYSTR's fields, ecl-format.md);
             // checked only against the six members of save A.
-            Chrome.TextRight(f, font, 34, 4 + i, (60 - m[0x111]).ToString(System.Globalization.CultureInfo.InvariantCulture), Chrome.Green);
-            Chrome.TextRight(f, font, 38, 4 + i, m[0x11B].ToString(System.Globalization.CultureInfo.InvariantCulture), Chrome.Green);
+            Chrome.TextRight(f, font, 34, 4 + i, (60 - m[0x111]).ToString(CultureInfo.InvariantCulture), Chrome.Green);
+            Chrome.TextRight(f, font, 38, 4 + i, m[0x11B].ToString(CultureInfo.InvariantCulture), Chrome.Green);
+            shown++;
         }
     }
 
@@ -176,9 +559,15 @@ public sealed class ExploreScreen(PorArea area, PorViewArt art, IScreenHost host
                 : four.SequenceEqual(["DPAD UP", "DPAD LEFT", "DPAD RIGHT", "DPAD DOWN"]) ? "MOVE: DPAD OR LEFT STICK"
                 : "MOVE: " + string.Join("/", four);
         }
-        Chrome.Text(f, font, 1, HelpRow, move, Chrome.Grey);
         string area = d == InputDevice.Mouse ? "CLICK AREA" : L(GameAction.AreaMap);
         string controls = d == InputDevice.Mouse ? "CLICK HERE" : L(GameAction.Controls);
-        Chrome.Text(f, font, 1, HelpRow + 1, $"MAP: {area}  CONTROLS: {controls}", Chrome.Grey);
+        Chrome.Text(f, font, 1, HelpRow - 1, Fit(move + "  MAP: " + area, 38), Chrome.Grey);
+        string cmds = d == InputDevice.Mouse
+            ? "COMMANDS: CLICK THE BOTTOM LINE"
+            : $"SEARCH {L(GameAction.Search)} LOOK {L(GameAction.Look)} CAMP {L(GameAction.Encamp)}";
+        Chrome.Text(f, font, 1, HelpRow, Fit(cmds, 38), Chrome.Grey);
+        Chrome.Text(f, font, 1, HelpRow + 1, Fit("CONTROLS: " + controls, 38), Chrome.Grey);
     }
+
+    private static string Fit(string s, int n) => s.Length > n ? s[..n] : s;
 }

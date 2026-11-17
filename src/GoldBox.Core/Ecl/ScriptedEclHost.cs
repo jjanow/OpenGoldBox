@@ -173,4 +173,25 @@ public sealed class ScriptedEclHost : IEclHost
         return r;
     }
     public void ScriptChanging(ushort script) => Log($"ScriptChanging {script}");
+
+    /// <summary>WHO answers: party-list index picked (empty queue: no change, or awaiting input when set).</summary>
+    public Queue<int> CharacterPicks { get; } = new();
+    public int? PickCharacter(string prompt)
+    {
+        Log("PickCharacter " + prompt);
+        if (CharacterPicks.TryDequeue(out var k))
+            return k;
+        if (StopWhenInputMissing)
+            throw new EclAwaitingInput("PickCharacter");
+        return null;
+    }
+    public void DrawGlyphs(ushort address, IReadOnlyList<byte> glyphs) => Log($"DrawGlyphs {address:X4} {string.Join(" ", glyphs)}");
+    /// <summary>ADDNPC record builder for tests (null = none built).</summary>
+    public Func<ushort, EclCharacter?>? NpcFactory { get; set; }
+    public EclCharacter? CreateNpc(ushort monster)
+    {
+        Log($"CreateNpc {monster}");
+        return NpcFactory?.Invoke(monster);
+    }
+    public void DamageReport(EclDamageReport report) => Log($"Damage {report.Target.Name} {report.Damage}{(report.Dies ? " dies" : "")}");
 }

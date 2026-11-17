@@ -138,9 +138,9 @@ item.name := s (max 40)
   34 use different spellings (bracketed plurals, other capitalisation). The treasure loader does not rename them;
   the display paths do. An engine must always compose names and never trust the stored string.
 
-**Identify** (verified unless marked). Shop identify (OVR ≈0x22FF0–0x23110), in this order: confirm prompt;
-if the selected character has ≥ 200 gp, deduct 200 from them, else if the money array at DS:67F4 (Lee: treasure money; here presumably the shop pool `[?]`) has
-≥ 200, deduct it there, else show a "not enough money" message and stop. Only after paying: if `hidden` = 0,
+**Identify** (verified unless marked). Shop identify (OVR 0x22F8C–0x23131; money rules `shop-format.md`), in this order: confirm prompt;
+if the selected character has ≥ 200 gp, deduct 200 from them, else if the pool DS:67F4 has
+≥ 200, deduct it there (money rules: `shop-format.md`), else show a "not enough money" message and stop. Only after paying: if `hidden` = 0,
 show an "already identified" message (the 200 gp are not refunded in this routine; whether the UI ever offers
 this case is `[?]`); else `hidden` := 0 and re-run the naming routine. Reading a scroll (OVR 0x27466–0x274AC;
 reader = current character DS:5D92, scroll = DS:6B80) clears `hidden` if `HasEffect(reader, 0x10)` (any scroll;
@@ -188,11 +188,20 @@ scores holy water at 8 against targets with a non-zero turn-undead index (OVR 0x
 
 ## Random treasure (verified in code unless marked)
 
-**Item-class roll** (OVR ≈0x28A9, one pass per item; `1dN` = the program's dice routine):
+TREASURE with `k` = 0x81..0xFE (handler OVR 0x26F7; `ecl-format.md`) makes `k − 0x80` items. Per item: the
+item-class roll below (OVR 0x28A9–0x2A13), then the generator 0x25C99 builds the record in a local buffer, and the
+handler copies it to a new 63-byte heap record that becomes the head of the treasure list DS:6810. After the loop
+the naming routine (START 0x0FE2; current character DS:5D92, all flags 0) runs over **the whole treasure list**,
+items placed earlier included (OVR 0x2AAC–0x2AF1). The ITEM-block branch (`k` < 0x80) names nothing. The money
+operands are set (not added) as 16-bit values with a zero high word (0x270B). Code: `src/GoldBox.Core/Game/`
+`EncounterRules.RandomItemType`, `TreasureMaker`, `EncounterHost.Treasure`.
+
+**Item-class roll** (OVR 0x28A9, one pass per item; `1dN` = the program's dice routine 0x2BCCD, one Random(N) + 1
+per die):
 
 | 1d100 | Base type chosen |
 |---|---|
-| 1–60 | second 1d100: 1–47 and 50–59 → that type (45 → 59, the shield); 60–90 → 1d10: 1–4 → 36, 5–7 → 35, 8 → 34, 9 → 37, 10 → 38; 91–94 → 73; 95–97 → 93; 98–100 → 77; 48–49 → nothing assigned (the type variable keeps its previous value or garbage) |
+| 1–60 | second 1d100: 1–47 and 50–59 → that type (45 → 59, the shield); 60–90 → 1d10: 1–4 → 36, 5–7 → 35, 8 → 34, 9 → 37, 10 → 38; 91–94 → 73; 95–97 → 93; 98–100 → 77; 48–49 → nothing assigned (below) |
 | 61–85 | 61 (magic-user scroll) |
 | 86–92 | 62 (cleric scroll) |
 | 93–98 | 1d16: 1–7 → 71, 8–9 → 70, 10 → 84, 11–12 → 78, 13–14 → 79, 15 → 92, 16 → 67 |
@@ -200,26 +209,94 @@ scores holy water at 8 against targets with a non-zero turn-undead index (OVR 0x
 
 (91–92 of the class roll are already taken by the cleric-scroll range, as Lee notes.)
 
-**Per-type generator** (OVR 0x25C99, argument = base type): zero the record, `hidden` := 6, `type` := argument.
-- Types 1–59, 73, 77, 93: `plus` from 1d20 (1–14 → +1, 15–19 → +2, 20 → +3; OVR 0x25C5B). Word slots: weapons
-  `31` = type, `30` = 0xA1 + plus; armour types 50–58 add a suffix word in `30` and put the plus word in `2F`
-  (`hidden` := 4); 73 and 93 use fixed first words; 77 (bracers) turns plus into 2·plus + 2 and picks one of three
-  fixed `2F` words. Weight is a per-type constant (darts get `count` 5, ammunition `count` 10); value =
-  plus × a per-family multiplier.
-- Type 21 (javelin): 1d5; on 5 the magic number is set to 0x90 instead of a valid one (Lee's "typo"). 0x90 is not
-  of the form 1 + 8k, so the copy reads 8 words starting one word *before* the 19th entry: `2F` gets the last word
-  of entry 18, the remaining fields get entry 19 shifted by one word. Reproduce, don't fix (parity).
-- Types 61/62 (scrolls, OVR 0x26219–0x26375): 1d3 spells; first word 0xD1 (type 61) or 0xD0 (type 62), second
-  word 0xD1 + spell count, `plus` 1, weight 25, `count` 0. Each spell: 1d3 for level, then a uniform id in the
-  level's range: type 61 → 1d13+8 (9–21), 1d7+28 (29–35), 1d11+44 (45–55); type 62 → 1d8 (1–8), 1d7+21
-  (22–28), 1d9+35 (36–44), so spell 56 never appears. The id goes to `props[spell#]`; value += 300 × level.
-- Other types map to a **magic number** n (1, 9, 17 … 145 = 1 + 8k) and copy entry k of the random item array.
-  Mapping (second-stage rolls in OVR 0x26378–0x26494): 63 → 73; 67 → 145; 69 → 1d10: 1 → 41, 2–6 → 121,
-  7–10 → 129; 78 → 1d3+1: 2 → 65, 3 → 113, 4 → none (so n = 49 is unreachable); 79 → 57; 84 → 9; 92 → 97;
-  71 → 1d11: 1–5 → 17, 6–8 → 1, 9 → 25, 10 → 81, 11 → none; 70 → 1d10: 1–7 → 89, 8–10 → 137.
-  n = 33 and n = 105 are never produced, and n = 73 only through the type-63 path, which the class roll never
-  picks (so gauntlets are never random, as Lee says). With "none" the record keeps only its type (blank item).
-- After the list is built, every item is named (naming routine, `show_ready` = 0).
+**Second roll 48 or 49.** The type is the handler's local byte [bp−0x65], and the only writes to it are the
+branches of this roll (0x28EF–0x2A0F; checked by listing every access in 0x26F7–0x2AF6). So within one TREASURE a 48
+or 49 gives **the previous item's type again** (and its generator rolls again: a new plus, new scroll spells …). For
+the **first** item of a TREASURE the byte is never initialised: it holds whatever an earlier routine left in that
+stack slot (the handler's 0x174-byte frame is not cleared; the dispatcher calls every opcode handler at the same
+depth, so it is residue of earlier instructions' calls) `[?]`. The engine takes it as a setting
+(`EncounterHost.FirstItemTypeResidue`, default 0); type 0 makes no rolls and gives a blank item (type 0, `hidden` 6).
+Chance per item: 0.6 × 0.02 = 1.2 %.
+
+**Per-type generator** (OVR 0x25C99, arguments: base type, item pointer). Order of work and of the dice:
+
+1. Zero the 63 bytes (and again `props`, `next`, the three word slots), `equipped` 0, `hidden` := 6 (words 2 and
+   3 hidden), `cursed` 0, `type` := argument, magic number n := 0.
+2. **Types 1–59, 73, 77, 93** (the "plussed" items): `plus` from **1d20** (0x25C5B: 1–14 → +1, 15–19 → +2, 20 →
+   +3). Then the words (`31`, `30`, `2F`; P = 0xA1 + plus, the "+1/+2/+3" words):
+
+   | Type | `31` | `30` | `2F` | other |
+   |---|---|---|---|---|
+   | 21 (javelin) | 21 | P | 0 | a **1d5** right after the plus roll; 5 → n := 0x90 |
+   | 28 | 28 | P | 0 | |
+   | 50, 51 | type | 0x31 | P | `hidden` := 4 (only the plus word hidden) |
+   | 52 | 52 | 0x32 | P | `hidden` := 4 |
+   | 53–58 | type | 0x30 | P | `hidden` := 4 |
+   | 73 | 0x3D | P | 0 | |
+   | 77 (bracers) | 0x4F | 0xA7 | 0xDD / 0xDE / 0xDC for plus 4 / 6 / 8 | `plus` := 2·plus + 2 |
+   | 93 | 0x42 | 0xE0 | P | |
+   | any other (1–59 incl. 48, 49, 59) | type | P | 0 | |
+
+   `save_bonus` 0, `count` 0, then the **weight** (word 37) by type, tested in this order (0x25F1E–0x26126):
+
+   | Types | Weight | Count |
+   |---|---|---|
+   | 1, 13, 14, 35 | 75 | |
+   | 2, 20, 29, 31, 32, 33, 39, 42, 44, 46, 59 | 50 | |
+   | 3, 24, 40 | 125 | |
+   | 4, 15, 23, 34, 43, 45, 51 | 100 | |
+   | 5, 12, 17, 19, 50 | 150 | |
+   | 6 | 15 | |
+   | 7 | 30 | |
+   | 8, 77 | 10 | |
+   | 9 | 25 | 5 |
+   | 10, 26, 36 | 60 | |
+   | 11, 16, 25, 27, 41, 47 | 80 | |
+   | 18 | 175 | |
+   | 21 | 20 | |
+   | 22, 30 | 40 | |
+   | 37 | 35 | |
+   | 38, 53 | 250 | |
+   | 52 | 200 | |
+   | 54, 56 | 400 | |
+   | 55 | 300 | |
+   | 57 | 350 | |
+   | 58 | 450 | |
+   | 93 (and 47, unreachable: 47 matched the 80 list first) | 1 | |
+   | any other (28, 48, 49, 73) | 40 | 10 |
+
+   Then the **value** (word 3A) = plus × multiplier, the 16-bit product of the sign-extended plus (for bracers the
+   doubled plus; 0x2612E–0x26207): 59 → 2500; 73, 28 → 150; 53, 54 → 3000; 55, 56 → 3500; 57 → 4000; 58 → 5000;
+   77 → 3000; every other type → 2000.
+3. **Types 61/62** (scrolls, OVR 0x26219–0x26375): **1d3** spells; first word `31` 0xD1 (type 61) or 0xD0 (type
+   62), second word `30` 0xD1 + spell count, `2F` 0, `plus` 1, weight 25, `count` 0, value 0. Each spell: **1d3**
+   for the level, then a uniform id in the level's range: type 61 → 1d13+8 (9–21), 1d7+28 (29–35), 1d11+44
+   (45–55); type 62 → 1d8 (1–8), 1d7+21 (22–28), 1d9+35 (36–44), so spell 56 never appears. Spell i (1-based)
+   goes to `props[i − 1]`; value += 300 × level (16-bit).
+4. **Other types** map to a **magic number** n (1, 9, 17 … 145 = 1 + 8k; second-stage rolls in OVR
+   0x26378–0x26494): 63 → 73; 67 → 145; 69 → **1d10**: 1 → 41, 2–6 → 121, 7–10 → 129; 78 → **1d3** + 1: 2 → 65,
+   3 → 113, 4 → none (so n = 49 is unreachable); 79 → 57; 84 → 9; 92 → 97; 71 → **1d11**: 1–5 → 17, 6–8 → 1, 9 →
+   25, 10 → 81, 11 → none; 70 → **1d10**: 1–7 → 89, 8–10 → 137. n = 33 and n = 105 are never produced, and n = 73
+   only through the type-63 path, which the class roll never picks (so gauntlets are never random, as Lee says).
+   Any other type (0, 60, 64–66, 68, 72, 74–76, 80–83, 85–91, 94+) makes no roll and nothing is set: the record
+   keeps only its type and `hidden` 6 (a blank item).
+5. If n ≠ 0 (types of step 4, or the javelin's 0x90), copy from the random item array (0x2649D–0x26561): bytes
+   `2F`, `30`, `31` = low bytes of words n, n+1, n+2; `plus` := 1 and `save_bonus` := 1 (both 2 when n = 97);
+   weight = word n+3; `count` := 0; value = word n+4; `props` 3C–3E = low bytes of words n+5..n+7. This overwrites
+   what step 2 set for a javelin.
+
+**DOSBox (s11, `treasure_shop` captures)**: two seeded runs of `TREASURE …, 0x88` (8 random items each, from a
+patched save) match `TreasureMaker` byte for byte from 0x2E to 0x3E, item for item, and the RandSeed after the
+eight items equals the program's (`TreasureShopCaptureTests`): **D** for the class roll, the generator and the draw
+order (weapons, a ring, both scroll kinds, a type-93 item; neither run hit a second roll of 48/49).
+
+So the draws per item are: the class roll (1–3 dice), then 1d20 for a plussed item (and 1d5 for a javelin), or
+1d3 + 2 per spell for a scroll, or one sub-roll for types 69, 78, 71, 70. A replay must keep this order: every die
+is one Random call on the shared generator (RandSeed).
+
+- Type 21 (javelin) with 0x90: 0x90 is not of the form 1 + 8k, so the copy reads 8 words starting one word
+  *before* the 19th entry: `2F` gets the last word of entry 18, the remaining fields get entry 19 shifted by one
+  word. Reproduce, don't fix (parity).
 
 **Random item array** (DS:0972, 19 entries × 8 words; code indexes `DS:0970 + 2·(n + field)`, copy at OVR
 0x264A6):
@@ -302,6 +379,8 @@ All found by code patterns, not fixed addresses (works on v1.1, v1.2 and v1.3):
 - Holy water: trigger-class lists not read; final damage of 1d1−1 against ordinary targets.
 - `byte29`; `weapon_kind` oddities.
 - Effect id 0 record in `MON4SPC.DAX` block 105.
+- The type of a random TREASURE's first item when its second roll is 48/49 (stack residue; see "Random treasure").
 
 Settled 2026-11-17 by code read: base `byte8` is never read; consumable vs worn (`3E`) and the handler codes; `save_bonus`; scroll
-self-identification (+96h = cleric level); holy water 1d6 + 1 against effect-117 creatures.
+self-identification (+96h = cleric level); holy water 1d6 + 1 against effect-117 creatures; the random item maker 0x25C99 in full (weights, value
+multipliers, draw order, naming pass).

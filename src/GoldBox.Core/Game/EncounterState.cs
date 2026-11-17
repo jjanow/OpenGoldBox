@@ -45,6 +45,13 @@ public sealed class EncounterState
     /// <summary>Treasure items (DS:6810 list, 63-byte records), head first.</summary>
     public List<byte[]> TreasureItems { get; } = [];
 
+    /// <summary>
+    /// DS:5D9A: the copy of the last thrown weapon a fight dropped into <see cref="TreasureItems"/> (GAME.OVR 0x14279,
+    /// <see cref="FightRules.DropSpentWeapon"/>); nil at the fight start (0xE476). The experience for the items' plus
+    /// stops at this item (0x5865). Compared by reference, like the program's far pointer.
+    /// </summary>
+    public byte[]? LastThrownItem { get; set; }
+
     /// <summary>Display bookkeeping (DS:84E3 sprite on screen, DS:84E0 picture on screen). Not compared with captures.</summary>
     public bool SpriteShown { get; set; }
     public bool PictureShown { get; set; }

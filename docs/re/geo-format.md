@@ -80,7 +80,8 @@ Each plane is row-major: byte `y*16 + x` belongs to square (x, y), 0 â‰¤ x, y â‰
     square off the map. That rule only matters for lookups beyond the edge (e.g. the 3D view); the party's own
     square is always on the map.
   - On a forward step (Up key, 0x16D58) the engine first clears VM $6DD5, and when the face is not impassable and
-    the step would leave the grid it sets **$6DD5 = 1** ("left the map") without moving. Then vector 0 (move) runs;
+    the step would leave the grid it sets **$6DD5 = 1** ("left the map") without moving. A face that is impassable leaves
+    $6DD5 = 0 even on the map edge (0x16D8B skips the test; program read s11). Then vector 0 (move) runs;
     a script that handles the exit sets $6DC9 = 255, which cancels the step (0x17443) and loads another area. If the
     script does nothing, the step routine (0x16E06) moves the party and wraps x/y to the other side.
   - DOSBox-X test: a copy of save A with the Slums script's vector 0 pointed at an EXIT (so the exit is not handled),

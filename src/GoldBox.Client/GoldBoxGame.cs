@@ -29,6 +29,9 @@ public sealed class GoldBoxGame : Game, IScreenHost
     /// <summary>Shown in the window title when there is nothing to play (no game folder): the reason.</summary>
     public string? Problem { get; init; }
 
+    /// <summary>QoL option: show the frame at 4:3 (each pixel 1.2 times taller), off = square pixels.</summary>
+    public bool Stretch43 { get; init; }
+
     public GoldBoxGame(Func<IScreenHost, IScreen?> firstScreen, InputBindings bindings, int scale)
     {
         _firstScreen = firstScreen;
@@ -43,6 +46,16 @@ public sealed class GoldBoxGame : Game, IScreenHost
         IsMouseVisible = true;
         Window.AllowUserResizing = true;
         Window.Title = "Gold Box: Pool of Radiance";
+    }
+
+    protected override void Initialize()
+    {
+        if (Stretch43)
+        {
+            _graphics.PreferredBackBufferHeight = 240 * _scale;
+            _graphics.ApplyChanges();
+        }
+        base.Initialize();
     }
 
     protected override void LoadContent()
@@ -111,8 +124,18 @@ public sealed class GoldBoxGame : Game, IScreenHost
         _texture!.Upload(_frame);
 
         var vp = GraphicsDevice.Viewport;
-        int scale = Math.Max(1, Math.Min(vp.Width / FrameWidth, vp.Height / FrameHeight));
-        int w = FrameWidth * scale, h = FrameHeight * scale;
+        int w, h;
+        if (Stretch43)
+        {
+            // 320 × 240 per scale step: whole multiples of the width, height 1.2 × (rows repeat unevenly, as on a CRT).
+            int scale = Math.Max(1, Math.Min(vp.Width / FrameWidth, vp.Height / 240));
+            (w, h) = (FrameWidth * scale, 240 * scale);
+        }
+        else
+        {
+            int scale = Math.Max(1, Math.Min(vp.Width / FrameWidth, vp.Height / FrameHeight));
+            (w, h) = (FrameWidth * scale, FrameHeight * scale);
+        }
         _dest = new Rectangle((vp.Width - w) / 2, (vp.Height - h) / 2, w, h);
 
         GraphicsDevice.Clear(Color.Black);

@@ -80,8 +80,8 @@ numbers, so the LOADMON icon rolls and TREASURE's type rolls come from the same 
 - **Interfaces:**
   - `IEncounterUi` is the player-facing side (sprite and pictures, the encounter and parley menus, the two fixed
     messages, combat icons); `ScriptedEncounterUi` is the headless one.
-  - `ICombatRunner` takes the fight, the after-combat step, the shop, the temple and the random item maker (all
-    unread); `RecordingCombatRunner` only logs.
+  - `ICombatRunner` takes the fight, the after-combat step, the shop and the temple; the random item maker is
+    `TreasureMaker` (GAME.OVR 0x25C99, its array read from START.EXE by `GoldBox.Data.Por.PorProgram`); `RecordingCombatRunner` only logs.
   - `IEncounterData` gives the monster and item-list records; `GoldBox.Data.Por.PorEncounterData` reads
     `MON<d>CHA/ITM/SPC` and `ITEM<d>`.
 - `goldbox-tools ecl-compare` replays every capture through it.

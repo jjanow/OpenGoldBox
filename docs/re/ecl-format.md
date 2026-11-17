@@ -79,9 +79,9 @@ block offset  VM address     content
     unless the script changed again, vector 1, and repeats while scripts keep changing. Each pass first re-reads the
     event byte DS:6AB1 ($C04F) from the map in memory and sets **$6DD5 = 0** (0x3F00–0x3F16), and after vector 4 the
     view redraw (0x3FF5 → 0x2DCF4) re-reads it again, now from the map vector 4 loaded. DOSBox: `edge_exit_east`
-    (s10). `[?]` The script-changed flag is not tested after vector 4 (it is cleared at 0x3FFA before vector 0), so a
-    NEWECL inside a vector 4 would be followed by the new script's vectors 0 and 1, not its vector 4; the VM restarts
-    with vector 4 (not checked whether any v1.3 vector 4 switches scripts);
+    (s10). The script-changed flag is not tested after vector 4 (it is cleared at 0x3FFA before vector 0), so a
+    NEWECL inside a vector 4 is followed by the new script's vectors 0 and 1, not its vector 4; the VM does the same
+    since s11. One v1.3 vector 4 can do it (ECL5 block 7; "Steps, doors and script switches");
   - routine 0x3B19 (camp) runs vector 2, then the camp menu (0x196A0), which clears a "rest interrupted" flag and
     passes it to Rest (0x17FAB) and Memorise (0x18C22). Rest runs the rest loop 0x24A66, which returns the flag:
     each rest tick it increments a counter (DS:49FB, not a VM cell); when VM $6DD2 is non-zero and the counter reaches
@@ -365,6 +365,144 @@ window is cleared first. v = 255 redraws the view if a picture or the sprite is 
 
 **SPRITEOFF** (0x37E8): if the sprite is shown (DS:84E3), redraw the view and clear DS:84E3 and DS:84E0.
 
+### Party, damage and text-box opcodes (program read s11, 2026-11-17)
+
+Handlers (GAME.OVR): LOADCHAR 0x1026, CHKPARTY 0x217B, ROB 0x2AF7, DAMAGE 0x34BB, PRINTRET 0x3831, CLEARBOX
+0x385A, WHO 0x3879, ADDNPC 0x38C4, SPELL 0x3949, CALL 0x3A15, PROTECT 0x3BC3. "Party list" = DS:5D96 (the party
+plus any creatures LOADMON appended), next pointer at record +0x104; "current" = DS:5D92. These replace Lee's
+descriptions; where they differ from Lee it is said.
+
+**LOADCHAR v** (0x1026). DS:4430 = 1. n = low byte of v AND 0x7F; walk n steps along the party list from the head
+(stopping at the end); if the walk ends on a record, it becomes current (so n ≥ list length leaves the current
+character unchanged). If bit 0x80 of v is set **and** DS:84D2 and DS:84D3 are both set (a write of 0 to $6C00 and
+one to $6B00 since the script init, which clears both at 0x7699): if the current character is the one the player
+had selected (DS:4436) DS:4430 is cleared; the current character is **removed from the party list** (0x1CC10 with
+(0, 1)): unlinked, its combat icon slot freed (0x31BBA with record 0xBF), the record freed, the predecessor (or the
+new head when it was first) becomes current, and $6E3E (party size) − 1; then START.EXE 0x1307 (`[?]` not read, presumably a display refresh) and DS:84D2 / DS:84D3 are cleared. So bit 0x80 is "dismiss this NPC" (the v1.3 scripts write
+`SAVE #0 [$6B00]`, `SAVE #0 [$6C00]`, then `LOADCHAR n+128`); Lee's "add monster v−128 as an ally" is wrong.
+Without both flags bit 0x80 only selects (e.g. ECL1 block 18 $AD24, after editing a loaded monster).
+- DS:4436 is set to the current character each time the area loop reads a command (0x40EA, 0x4188). **EXIT
+  (0xDAC) and PROGRAM (0x3B5C) restore** the current character from DS:4436 when DS:4430 is set, and clear it;
+  NEWECL does not. The area entry 0x403E clears DS:4430. **After a Load, DS:4436 is stale** until the command read
+  that follows vector 4: DOSBox (`party_opcodes`, s11) loaded a save whose vector 4 ran LOADCHAR and EXIT, and
+  DS:5D92 then held 4000:05AF (the value DS:4436 had at the main menu), which is no party record. The VM gives no
+  current character there (`EclParty.Selected` = null until `EclVm.CommandRead`). DOSBox also showed LOADCHAR #1,
+  `SAVE #0` to $6B00 and $6C00, LOADCHAR #129 removing the second member ($6E3E 6 → 5). After a script switch, 0x3EFA restores the character that
+  was current at the start of the pass, after vector 1 (0x4016).
+
+**WHO s** (0x3879): clears the text area (1,17)–(38,22), then the character pick menu (START.EXE 0x37E8, prompt
+= string slot 1, no Exit item) writes the chosen record straight into DS:5D92. DS:4430 is not set, so the choice
+outlives EXIT. The menu walks the list with two keys and ends on Select / Return. `[?]` What Escape returns there
+(the routine stores nil for key 0 or "E"; whether the menu can return them without an Exit item is not read).
+
+**CHKPARTY s, v, a1..a4** (0x217B). The selector s is the raw field when operand 1 has type 1 (an address names the
+field), else its value; e = low byte of v.
+- s = 0: "does anyone have effect e": walk the party list until a member has an effect with id e (effect list at
+  record +0x7F, id byte 0, next at +5; START.EXE 0x2D39). a1 = a2 = a3 = 0, a4 = 1 or 0.
+- s = $6BA7 (record byte 0x79, find/remove traps) or $6C1B (record 0x11C, movement): over the whole party list, a1 = minimum (start
+  255), a2 = maximum (start 0), a3 = sum div count (byte), a4 = 0.
+- Any other s: nothing is written. Writes go through the VM writer in the order a1, a2, a3, a4 (a later one wins
+  when the addresses repeat). v1.3 uses exactly these three selectors (4 uses).
+
+**ADDNPC v1, v2** (0x38C4). Monster m = low byte of v1. If $6E3E ≤ 7 (0x1F248): a new record is loaded as LOADMON
+does (0x1EEAA: `MON<d>CHA/ITM/SPC` block m, icon size, **five 1d6** icon colours), then record 0xAB = Random(256)
+(START.EXE 0xC140), and the portrait: the classes with a level byte 0x96 + k > 0 (k = 0..6, signed) are listed
+(none: class 2), **1d(count)** picks one; record 0xBC = DS table (0x8D7 for class 0, 0x8EB for 5, 0x8F5 for 6,
+0x8E1 otherwise) [5·g + **1d5**] (portrait body), g = record 0x9E (gender, signed); record 0xBB (portrait head) = DS:0x8C7 [8·g + **1d8**] (DS tables in START.EXE's data segment). The record is
+appended at the end of the party list and **becomes current** (0x1F42C: icon slot 0xBF = lowest of 0..7 not used by
+a list member, $6E3E + 1, then 0x2AA87, `[?]` presumably the stat recalculation, not read), then 0x1E468 (`[?]` the
+combat icon load, by its calls; no random draws in it). Then, whether or not a record was added: current record 0x84
+(morale) = (low byte of v2 / 2) OR 0x80, record 0x10E (hostile) = 1 if m = 24 else 0, and START.EXE 0x1758 and 0x1307
+(`[?]` not read; 0x1307 is called after most changes to a character, presumably a display refresh). With a full party the morale lands on whoever is current.
+
+**SPELL v, a1, a2** (0x3949). Lee: "no-op in practice"; the program shows why. Both destinations are taken as the
+**low byte only** of their raw fields (`mov [bp−9], al`), so the writes go to $00xx, which is outside every VM
+area (ignored, except the special cells $00B1/$00B8/$00B9/$00FB/$00FC). The search: the "found" byte [bp−8] is
+never initialised; the party loop runs only while it is 0 (stack residue `[?]`). When it runs, it scans the
+**first** list member only: index i = 1, 2, … compares record byte 0x17 + i with the low byte of v; a match stops
+the scan, and after i = 0x52 the index becomes 255 and the scan stops too, both by setting "found", which also ends
+the member loop. Then VM write ($00 | low(a1)) = i, VM write ($00 | low(a2)) = member count (1 after one member;
+0 when the loop did not run, with i = 1). The one v1.3 use (ECL3 block 14 $9ECA, "cast knock" at the Kovel Mansion
+door) writes to $007D / $007E, so $6E7D keeps its value (0 from the script init unless set) and the script's
+"no one has knock" test (`COMPARE [$6E7D], #255`) never fires: the door then opens through `LOADCHAR [$6E7E]` and
+`SAVETABLE #0, [$6B20], [$6E7D]`.
+- DOSBox (`party_opcodes`, s11): `SPELL #40, [$6EB8], [$6EB9]` after a SAVE wrote 1 to $00B8 and 0 to $00B9 (DS:84CE /
+  84D0) and left $6EB8/$6EB9 alone: the residue was non-zero there and the search did not run. The VM's policy
+  default follows that (`EclVmPolicy.SpellFoundResidue`).
+
+**DAMAGE f, n, s, b, t** (0x34BB). Values as low bytes. Damage d = n d s + b (dice 0x2BCCD), **rolled first**.
+- f AND 0x40: whole party; else a target index r = 1d($6E3E) is rolled next (also in the attack form).
+- f AND 0x80 (spell/trap with a saving throw): bonus = f AND 0x1F, save type = t AND 7.
+  - Whole party: for each list member, f AND 0x20: d to everyone, no save; else d unless the member saves.
+  - Else, t AND 0x80: the current character; save type (t AND 7) − 1, no save when t AND 7 = 0.
+  - Else the r-th list member (walk from the head; r ≤ 1 is the head): d unless it saves.
+  - The save (0x2BC4D): 1d20; 1 fails, 20 saves; else roll + record 0x101 (signed) + bonus (signed byte), after the
+    effect handlers of trigger class 12 (0x2B1E4: ids 8, 9, 10, 0x11, 0x14, 0x21, 0x24, 0x2D, 0x2E, 0x31, 0x3D,
+    0x6F, 0x7D, 0x5A, 0x61) may change it, saves when ≥ record 0x6D + type.
+- Else (attack form): f attacks (none when f = 0). Each: r = 1d($6E3E), the r-th list member; to-hit 0x2BB39: 1d20
+  (≤ 1 misses; 20 counts as 100), effect handlers of trigger class 16 (ids 0x19, 0x47, 0x25, 0x2F, 0x30, 0x59) may
+  change it; hits when roll + t > record 0x111 (AC byte); on a hit d is applied. After every attack d is rolled
+  again (also after the last).
+- Applying d (0x959F, then START.EXE 0x2DC8): nothing for a creature with status 6 (dead). A death message
+  when HP + 10 < d (16-bit), else a "hit for d points" message (text box). Then, with d as a **byte**:
+  HP ≥ d: HP − d; else over = d − HP, new HP 0. Status: 6 (dead) if over > 9, or new HP 0 and status was 1
+  (animated); else 5 (dying) if over > 0; else 4 (unconscious) if new HP = 0. A creature whose status is then not
+  0 or 1 gets in play (0x10D) = 0 and HP 0 (in combat also the side count DS:6814); otherwise HP = new HP.
+- DOSBox (`party_opcodes`): `DAMAGE #128, #1, #1, #0, #128` hit the current character for 1 (hit message,
+  HP 11 → 10) with exactly two draws (1d1, then the target 1d6 that the current-character form ignores).
+- Afterwards DS:49FF = 1 unless some list member has in play ≠ 0 (that ends the run and the area loop): then the
+  party-killed end screen and a 3-second pause. The current character is restored.
+- `[?]` The effect handlers of the two trigger classes (not read; they live with the combat code).
+
+**ROB v1, v2, v3** (0x2AF7). v1 = 0: the current character; else every list member. Money: each of the seven
+words 0x88, 0x8A, …, 0x94 = Trunc(word × r), r = Real(100 − low(v2)) / 100.0 (six-byte Real, START.EXE 0xC11A /
+0xC10C / 0xC106 / 0xC11E = Trunc). Items (0x92C3), with chance c = low byte of **v2** (operand 2 is fetched again;
+v3 is never read): for each item of the character in list order, **c is first reduced** (and the reduced value is
+kept for the following items): by 90 (floor 0) when item weight (+0x37) > 255, else by 50 (floor 0) when > 24;
+then 1d100 ≤ c loses the item (START.EXE 0x20A9: unlinked and freed, no stat recalculation). One 1d100 per item,
+also when c = 0. The Real arithmetic gives floor(word · (100 − v2) / 100): DOSBox (`party_opcodes`) ROB #0, #10 took
+10 copper to 9 (r = 0.9 is inexact; a chopped product would give 8), 5 silver to 4 and 2 platinum to 1, with one
+roll per item (RandSeed).
+
+**PRINTRET** (0x3831) and **CLEARBOX** (0x385A) load no operands (they step the PC themselves).
+- The text cursor is DS:5E24 (column) / DS:5E25 (line); EXIT puts it at column 1, line 17 and clears DS:84DE.
+- PRINTRET: column 1, line + 1, DS:84DF = 0.
+- CLEARBOX: clears the **picture window** (1,1)–(15,15) (not the text box) and sets DS:84DE = 1.
+- **PROTECT a** (0x3BC3) is not a copy-protection check: it draws a line of glyphs. 84C8/84C9 and 84E0 cleared; if
+  DS:84DE is set and the line is > 13, the cursor goes to column 2, line 5 (inside the cleared window) and DS:84E2
+  = 1; DS:84DF = 1; then for i = 0, 1, …: g = (VM read at raw a + i) + 1 as a byte; while g > 1 draw glyph g at the
+  cursor (START.EXE 0x726F, colour 15) and column + 1; then line + 1. v1.3 uses it for the rune texts after CLEARBOX
+  (e.g. ECL4 block 21 $9BD8: the parchment). EXIT, when DS:84E2 is set, shows a prompt and redraws (0xD4D–0xDA7, display only).
+
+**CALL $C018** (0x3AFA): only when DS:49FA = 1, the wall type ahead DS:6AB0 ($C04E) is read again (0x2ED72 at
+x, y, facing). DS:49FA (view mode) is 1 at start-up and is set by 0x3EFA before each vector 4: 1, then after vector 4
+2 / 3 / 4 when $49E6 = 0 in block 25 / 26 / 27; nothing else writes it.
+
+### Steps, doors and script switches (program read s11)
+
+- **Forward key** (0x16D58): $6DD5 = 0; the barrier of the party's own face (0x2EC47) is read; **only when it is
+  not 0** (passable 1, doors 2/3, or no wall) is the target checked, and a target off the grid sets $6DD5 = 1 (x/y
+  clamped, i.e. unchanged). So an **impassable face on the map edge leaves $6DD5 = 0**: the scripts' edge exits do
+  not fire, and the step is refused as any impassable step.
+- **Step** (0x17438, called between vector 0 / the $49F0 write and vector 1): only when DS:49FA = 1 and $6DC9 < 255
+  (else $6DC9 = 0, no step). Barrier 1: move (0x16E06). 2 / 3: the door menu runs **inside the step**; on success
+  the party moves through in the same step, on failure or Exit it stays. Then the area loop runs **vector 1**
+  either way. So a step into a door face runs vector 0, the door menu, and vector 1 (on the new square after an
+  opening, else on the same square). DOSBox: `door_bash` (vector 0, bash, step, vector 1, RandSeed exact) and
+  `door_pick_fail` (failed pick, then vector 1 on the same square) replay this order.
+- **Script switch** (0x3EFA), each pass: event byte re-read, $6DD5 = 0, current character saved, DS:49F9 = DS:49FA,
+  DS:49FA = 1, vector 4 (**DS:442F is not tested afterwards**), view mode, redraw, DS:442F = 0 (0x3FFA), vector 0,
+  and unless DS:442F was set again vector 1 and the saved current character restored; repeat while DS:442F is set.
+  The run loop never clears DS:442F; only 0x3FFA and the area entry 0x403E (0x4062) do.
+  - **NEWECL in a vector 4** after a switch: the newest script's vectors 0 and 1 run, not its vector 4.
+  - **NEWECL in a vector 4 on area entry / Load** (0x403E): nothing runs at once (0x40A8 runs vector 4 and goes on
+    to the command loop). DS:442F stays set, so after the next key's vector 0 (or vector 1 in search mode) 0x3EFA
+    runs the newest script's vectors 4, 0, 1.
+  - v1.3 has one such vector 4: ECL5 block 7 (Valjevo inner tower) $9A3E → $A82D, `NEWECL #0` to civilised Phlan,
+    taken only when $4AE0 = 1. $4AE0 = 1 is set at $A824 right before PROGRAM 8 (end game) after Tyranthraxus, and
+    cleared at $A8FD before that NEWECL; so it fires only for a save made in between (the end game's own flow
+    reaches $A82D from the same vector without a switch).
+
 ## Opcode table
 
 "Ops" = operands the handler loads (program); "Skip" = operands the IF-skip consumes (program); a `+n` means the
@@ -384,14 +522,14 @@ only. `[?]` = unknown or unconfirmed.
 | 07 | MUL | MULTIPLY | 3 | 3 | v1 v2 a | a = low 16 bits of v1 · v2 | P | 12 |
 | 08 | RANDOM | RANDOM | 2 | 2 | v a | a = Random(v+1) = 0..v (v = low byte; 255 gives 0..254) | P | 144 |
 | 09 | SAVE | SAVE | 2 | 2 | v a | a = v; if v has type ≥ 0x80 (0x80, 0x81), store string slot 1 at a (0xFF6) | P | 2341 |
-| 0A | LOADCHAR | LOAD CHARACTER | 1 | 1 | v | Select current character (< 128) / add monster v−128 as ally (≥ 128) | L | 36 |
+| 0A | LOADCHAR | LOAD CHARACTER | 1 | 1 | v | Current = list member (v AND 0x7F); bit 0x80 after `SAVE #0` to $6B00 and $6C00 removes it from the party; EXIT restores the selected character | P | 36 |
 | 0B | LOADMON | LOAD MONSTER | 3 | 3 | v v v | Load monster v1 (5 × 1d6 icon rolls), append max(v2, 1) copies to the combat list (cap 63), combat icon v3 ("Encounters") | P | 330 |
 | 0C | SETUPMON | SETUP MONSTER | 3 | **2** | v v v | Sprite v1, $6DC0 = v2, close-up v3; $6DC1 = min(v2, view distance) ("Encounters") | P | 187 |
 | 0D | APPROACH | APPROACH | 0 | 0 | – | If $6DC1 > 0: $6DC1 − 1 and redraw | P | 97 |
 | 0E | PICTURE | PICTURE | 1 | 1 | v | Picture v ($6DE1 = 255) or head $6DE1 + body v; 255 = back to the view | P (shape) | 137 |
 | 0F | INPUTNUM | INPUT NUMBER | 2 | 2 | v a | Read a number into a; v is ignored (input up to 6 characters, re-asked until 0..65536; low 16 bits stored) | P | 2 |
 | 10 | INPUTSTR | INPUT STRING | 2 | 2 | v a | Read text into a (SAVE-text rules); v is ignored: up to 40 characters 0x20–0x7A, upper-cased, empty input stored as one space | P | 20 |
-| 11 | PRINT | PRINT | 1 | 1 | s | Print to the text box; a number (type < 0x80) is printed as decimal digits via slot 1 (P, 0x174F) | L | 289 |
+| 11 | PRINT | PRINT | 1 | 1 | s | Print to the text box; a number (type < 0x80) is printed as decimal digits via slot 1 (P, 0x174F); layout L | L | 289 |
 | 12 | PRINTCLR | PRINTCLEAR | 1 | 1 | s | Clear the text box, print (numbers as for PRINT) | L | 1401 |
 | 13 | RETURN | RETURN | 0 | 0 | – | Pop PC; empty stack: fall through | P | 440 |
 | 14 | CMPAND | COMPARE AND | 4 | 4 | v1 v2 v3 v4 | "=" if v1 = v2 and v3 = v4, else "≠"; other flags 0 | P | 65 |
@@ -404,7 +542,7 @@ only. `[?]` = unknown or unconfirmed.
 | 1B | IFGE | IF >= | 0 | 0 | – | same, "≥" | P | 127 |
 | 1C | CLRMON | CLEARMONSTERS | 0 | 0 | – | Monster count 0, "monsters loaded" off, icon slot 8, treasure cleared; records stay listed | P | 251 |
 | 1D | PARTYSTR | PARTYSTRENGTH | 1 | 1 | a | a = party strength (formula below) | P | 18 |
-| 1E | CHKPARTY | CHECKPARTY | 6 | 6 | v v a a a a | Min/max/avg of a party stat, or "anyone has effect" | L | 4 |
+| 1E | CHKPARTY | CHECKPARTY | 6 | 6 | s v a a a a | s = 0: a4 = anyone has effect v (a1–a3 = 0); s = $6BA7 / $6C1B: min, max, average of record 0x79 / 0x11C; else nothing | P | 4 |
 | 1F | (none) | undefined | – | 2 | – | No handler; PC not advanced, the game hangs (DOSBox) | P | 0 |
 | 20 | NEWECL | NEWECL | 1 | 1 | v | Load script v, stop the current run | P | 79 |
 | 21 | LOADFILES | LOAD FILES | 3 | 3 | v v v | 3D: load GEO map v1; outdoors: BACPAC picture (see below) | P | 61 |
@@ -414,28 +552,28 @@ only. `[?]` = unknown or unconfirmed.
 | 25 | ONGOTO | ON GOTO | 2+n | **0** | v n, t×n | Jump to target v if v < n, else fall through | P | 427 |
 | 26 | ONGOSUB | ON GOSUB | 2+n | **0** | v n, t×n | Same as a call | P | 37 |
 | 27 | TREASURE | TREASURE | 8 | 8 | v×8 | Set the 7 money values; v8 < 128 item list, 128–254 that many − 128 random items, 255 none | P (partly) | 77 |
-| 28 | ROB | ROB | 3 | 3 | v v v | v1 = 0: current character, else every party member; money × Real(100 − v2) / 100.0 (Real divide START.EXE 0xC10C; applied by 0x9196 `[?]` rounding), items by v2 (0x92C3) `[?]` item rule; v3 unused | P (partly) | 14 |
+| 28 | ROB | ROB | 3 | 3 | v v v | v1 = 0: current character, else every list member; money words × (100 − v2) / 100, truncated (DOSBox); each item lost on 1d100 ≤ c, c = v2 reduced by 90/50 for heavy items (kept for later items); v3 unused | P | 14 |
 | 29 | ENCMENU | ENCOUNTER MENU | 14 | 14 | v v v a v×5 s s s v v | Start as SETUPMON, then the menu loop; result 0–3 → a ("Encounters") | P | 94 |
 | 2A | GETTABLE | GETTABLE | 3 | 3 | a v a | a2 = cell at (a1 + low byte of v) | P | 271 |
 | 2B | HMENU | HORIZONTAL MENU | 2+n | **0** | a n, s×n | Bottom-line menu, choice → a | P (shape) | 204 |
 | 2C | PARLEY | PARLAY | 6 | 6 | v×5 a | Five-item menu; low byte of the chosen value → a | P | 41 |
 | 2D | CALL | CALL | 1 | 1 | a | Run a built-in routine chosen by the raw address ($2C90, $8000, $8001, $BA03, $C018, $C01E; else nothing). $8000 = mirror duel (a copy of the current character as the enemy, the others out of the fight), $8001 = solo fight; both GAME.OVR 0x8F42, which sets DS:84D4 (so the next COMBAT fights) and $6DE6. $C01E = one square forward with edge wrap (0x8EAE; the town scripts' edge exit, not the encounter flee). Table in `combat-format.md` "CALL ids" | P | 180 |
-| 2E | DAMAGE | DAMAGE | 5 | 5 | v×5 | Attack/damage characters, optional save | L | 48 |
+| 2E | DAMAGE | DAMAGE | 5 | 5 | v×5 | Damage n d s + b to a random member, the current one or the whole party, with a saving throw (f bit 0x80) or f to-hit rolls; party wiped sets DS:49FF | P (effect hooks `[?]`) | 48 |
 | 2F | AND | AND | 3 | 3 | v v a | a = low byte of v1 AND v2; "=" when the result is 0 | P | 356 |
 | 30 | OR | OR | 3 | 3 | v v a | a = low byte of v1 OR v2; flags as AND | P | 208 |
 | 31 | SPRITEOFF | SPRITE OFF | 0 | 0 | – | If the encounter sprite is shown: redraw the view, clear the sprite/picture flags | P | 56 |
 | 32 | FINDITEM | FIND ITEM | 1 | 1 | v | "=" if a party member carries an item of type v, else "≠" | P | 7 |
-| 33 | PRINTRET | PRINT RETURN | 0 | 0 | – | New line in the text box | L | 20 |
+| 33 | PRINTRET | PRINT RETURN | 0 | 0 | – | Text cursor to column 1 of the next line | P | 20 |
 | 34 | CLOCK | ECL CLOCK | 1 | 1 | v | Advance the clock by n minutes; bug: n comes from an uninitialised operand index, 0 after GOSUB, which gives n = high byte of operand slot 64 (0 in v1.3) | P | 1 |
 | 35 | SAVETABLE | SAVE TABLE | 3 | 3 | v a v | Store v1 at (a + v2), v2 full 16 bits | P | 17 |
-| 36 | ADDNPC | ADD NPC | 2 | **1** | v v | Add monster as NPC with morale | L | 8 |
+| 36 | ADDNPC | ADD NPC | 2 | **1** | v v | Party < 8: load monster v1, append it to the party as current (portrait rolls); then current 0x84 = 0x80 OR v2/2 | P | 8 |
 | 37 | LOADPIECES | LOAD PIECES | 3 | 3 | v v v | Load wall sets for slots 1–3 (same handler as 21; see below) | P | 35 |
 | 38 | PROGRAM | PROGRAM | 1 | 1 | v | 0 training hall, 8 end game, 9 camp (then EXIT: the run ends, 0x3BBC); else nothing | P (ids) | 4 |
-| 39 | WHO | WHO | 1 | 1 | s | Prompt, player picks a character (becomes current) | L | 11 |
+| 39 | WHO | WHO | 1 | 1 | s | Prompt, player picks a character (becomes current; survives EXIT) | P | 11 |
 | 3A | DELAY | DELAY | 0 | 0 | – | Pause for game speed (DS:49E2, 0–9) × 225 ms (Crt-style Delay, START.EXE 0x7E4E/0xA69C); speed 0 = none | P | 188 |
-| 3B | SPELL | SPELL | 3 | 3 | v a a | Find a character with spell v (Lee: no-op in practice) | L | 1 |
-| 3C | PROTECT | PROTECTION | 1 | 1 | a | Copy-protection phrase check from a | L | 12 |
-| 3D | CLEARBOX | CLEAR BOX | 0 | 0 | – | Clear the text box | L | 27 |
+| 3B | SPELL | SPELL | 3 | 3 | v a a | Search the first member's spell bytes for v (skipped when the residue byte is non-zero, as in DOSBox); results written to $00xx (low address bytes only): no effect in v1.3 | P (`[?]` residue) | 1 |
+| 3C | PROTECT | PROTECTION | 1 | 1 | a | Draw the glyph line at a (bytes + 1 until 0/255), used for rune texts | P | 12 |
+| 3D | CLEARBOX | CLEAR BOX | 0 | 0 | – | Clear the picture window (1,1)–(15,15); the next PROTECT starts inside it | P | 27 |
 
 Handlers shared in the dispatcher: 04–07, 11/12, 16–1B, 21/37, 25/26, 2F/30. The dispatcher at GAME.OVR 0x3C71
 leads to every handler.
@@ -708,14 +846,22 @@ Run: `python3 -I tools/scripts/ecl.py check <gamedir>` on PoR DOS v1.3 (files as
 - PARTYSTR reads the level bytes as signed in the record; whether the routine treats −1 as −1 is not read (the VM
   reads them unsigned; party members never hold −1).
 - Which character is current right after a save is loaded (DS:5D92) `[?]`; the VM uses the first member.
-- The forward-step key sets $6DD5 only when the face ahead is not impassable (`geo-format.md`); the comparison
-  harness does not read walls.
+- The forward-step key sets $6DD5 only when the face ahead is not impassable (0x16D58, "Steps, doors and script
+  switches", `DoorMap.LeavesMap`); the comparison harness applies it from the map planes since s11. Not checked in
+  DOSBox (no capture steps into an edge wall); program read only.
+- `[?]` Valjevo hedge maze (ECL5 block 5): the reload of the current map from the edge table is read from the script
+  (`geo-format.md`), not yet seen in play (no capture walks the maze).
 - T: Which value $49E6 has at each wilderness LOADFILES 4/5/6/127/255 (scripts write it; not followed per path).
 - Meanings of DS:84D2 / DS:84D3 (set by writes of 0 to $6C00 / $6B00) and of the record bytes in the redirection
   table that `character-format.md` names differently from Lee.
 - CLOCK when the previous handler is not GOSUB: the operand index is other stack residue `[?]` (never in v1.3).
-- Still "L" (Lee only): LOADCHAR, PRINT* (the text box; the number case is P), CHKPARTY, CALL details, DAMAGE bit
-  fields, PRINTRET, ADDNPC, WHO, SPELL, PROTECT, CLEARBOX; ROB's item rule (0x92C3).
+- Settled in session 11 (program read): LOADCHAR, CHKPARTY, DAMAGE, ADDNPC, WHO, SPELL, PROTECT, PRINTRET,
+  CLEARBOX, ROB's item rule, CALL $C018, the impassable edge face ($6DD5), the step into a door face, NEWECL in a
+  vector 4 ("Party, damage and text-box opcodes", "Steps, doors and script switches"). DOSBox capture
+  `party_opcodes` (s11) checks LOADCHAR, ROB (money rounding included), SPELL, CHKPARTY and DAMAGE. Still open:
+  SPELL's residue in other contexts, WHO's Escape, DAMAGE's effect handlers (trigger classes 12 and 16), ADDNPC's
+  portrait tables (not read from START.EXE yet), PROTECT's glyph drawing (display, not captured).
+- Still "L" (Lee only): the text box layout of PRINT/PRINTCLR (the number case is P).
 - Stack residue outside COMPARE: what an undefined read returns in other handlers (e.g. block 10's `SAVE [$C059]`,
   after LOADFILES/LOADPIECES) and what an unknown operand type's value fetch returns. The VM uses
   `EclVmPolicy.UndefinedValue` and logs it; no v1.3 outcome depends on it.

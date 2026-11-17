@@ -10,7 +10,7 @@ namespace GoldBox.Client.Screens;
 /// </summary>
 public sealed class ControlsScreen(TextFont font, IScreenHost host) : IScreen
 {
-    private const int FirstRow = 4;
+    private const int FirstRow = 3;
 
     private static readonly (GameAction Action, string Label)[] Rows =
     [
@@ -19,9 +19,14 @@ public sealed class ControlsScreen(TextFont font, IScreenHost host) : IScreen
         (GameAction.TurnRight, "TURN RIGHT"),
         (GameAction.TurnAround, "TURN AROUND"),
         (GameAction.AreaMap, "AREA MAP"),
+        (GameAction.Search, "SEARCH ON/OFF"),
+        (GameAction.Look, "LOOK"),
+        (GameAction.Encamp, "ENCAMP"),
         (GameAction.Controls, "CONTROLS"),
         (GameAction.MenuUp, "MENU UP"),
         (GameAction.MenuDown, "MENU DOWN"),
+        (GameAction.MenuLeft, "MENU LEFT"),
+        (GameAction.MenuRight, "MENU RIGHT"),
         (GameAction.Confirm, "CHOOSE"),
         (GameAction.Cancel, "BACK"),
     ];
@@ -149,9 +154,9 @@ public sealed class ControlsScreen(TextFont font, IScreenHost host) : IScreen
                 InputDevice.Mouse => "CLICK TO CHOOSE  RIGHT CLICK: BACK",
                 _ => $"{PromptLabels.For(b, GameAction.Confirm, InputDevice.Keyboard)} CHOOSE  {PromptLabels.For(b, GameAction.Cancel, InputDevice.Keyboard)} BACK",
             };
-        Chrome.Text(f, font, 2, 21, Fit(help, 37), Chrome.Grey);
+        Chrome.Text(f, font, 2, 22, Fit(help, 37), Chrome.Grey);
         if (_note.Length > 0)
-            Chrome.Text(f, font, 2, 22, Fit(_note, 37), Chrome.Yellow);
+            Chrome.Text(f, font, 2, 23, Fit(_note, 37), Chrome.Yellow);
     }
 
     private static string Fit(string s, int n) => s.Length > n ? s[..n] : s;

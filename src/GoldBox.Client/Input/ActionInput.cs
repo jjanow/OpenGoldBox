@@ -17,7 +17,7 @@ public sealed class ActionInput(InputBindings bindings)
     public static readonly TimeSpan RepeatDelay = TimeSpan.FromMilliseconds(400), RepeatInterval = TimeSpan.FromMilliseconds(180);
 
     private static readonly GameAction[] Repeating =
-        [GameAction.Forward, GameAction.TurnLeft, GameAction.TurnRight, GameAction.TurnAround, GameAction.MenuUp, GameAction.MenuDown];
+        [GameAction.Forward, GameAction.TurnLeft, GameAction.TurnRight, GameAction.TurnAround, GameAction.MenuUp, GameAction.MenuDown, GameAction.MenuLeft, GameAction.MenuRight];
 
     private static readonly Buttons[] AllButtons = Enum.GetValues<Buttons>();
 

@@ -25,8 +25,8 @@ public sealed record StepAction(string? PositionFrom = null) : CaptureAction;
 /// The forward-step key before vector 0 (geo-format.md "Edges", 0x16D58): the program clears $6DD5 and sets it to 1
 /// when the step would leave the 16×16 grid. The program sets it only when the face ahead is not impassable; the
 /// harness does not read walls, so it matches the program whenever the step stays on the map (all captures so far,
-/// including the refused steps <c>oneway_blocked</c> and <c>oneway_barrier_blocked</c>). [?] An impassable face on
-/// the map edge would give 1 here and 0 in the game.
+/// including the refused steps <c>oneway_blocked</c> and <c>oneway_barrier_blocked</c>). An impassable face on the map
+/// edge would give 1 here and 0 in the game (program read s11; <c>AreaLoop.ForwardKey</c> models it); no capture has one.
 /// </summary>
 public sealed record ForwardKeyAction : CaptureAction;
 
@@ -199,6 +199,7 @@ public sealed class EclCaptureComparer(string fixturesDir, PorGameDirectory game
         var sink = new ListTraceSink();
         var vm = new EclVm(memory, encounter) { Scripts = Game, Trace = extraSink is null ? sink : new TeeSink(sink, extraSink) };
         encounter.CurrentBlock = () => vm.CurrentScript;
+        encounter.Vm = vm;
         vm.ScriptSwitchEventByte = afterInit =>
         {
             if (afterInit)
@@ -248,8 +249,10 @@ public sealed class EclCaptureComparer(string fixturesDir, PorGameDirectory game
                     }
                     case RunVectorAction rv:
                     {
+                        if (rv.Vector is 0 or 1)
+                            vm.CommandRead(); // 0x40E3 / 0x4181: DS:4436 = current before the key's vectors
                         var r = vm.RunVector(rv.Vector);
-                        if (r.Reason == EclStopReason.NewScript)
+                        if (vm.ScriptChanged) // DS:442F, set by this run or left over from a vector 4 switch
                         {
                             at.Notes.Add($"vector {rv.Vector} switched scripts; following");
                             r = vm.FollowScriptChanges();
@@ -264,10 +267,19 @@ public sealed class EclCaptureComparer(string fixturesDir, PorGameDirectory game
                         break;
                     case ForwardKeyAction:
                     {
+                        // 0x16D58: $6DD5 = 1 only for a step off the grid through a face that is not impassable.
                         var pos = memory.Position;
-                        int x = pos.X + pos.Facing switch { 2 => 1, 6 => -1, _ => 0 };
-                        int y = pos.Y + pos.Facing switch { 0 => -1, 4 => 1, _ => 0 };
-                        memory.Write(0x6DD5, (ushort)(x is < 0 or > 15 || y is < 0 or > 15 ? 1 : 0));
+                        bool leaves;
+                        if (encounter.Map is MapPlanes { Planes.Length: >= MapPlanes.Size } planes)
+                            leaves = GoldBox.Core.Doors.DoorMap.LeavesMap(planes.Planes, pos.X, pos.Y, pos.Facing);
+                        else
+                        {
+                            int x = pos.X + pos.Facing switch { 2 => 1, 6 => -1, _ => 0 };
+                            int y = pos.Y + pos.Facing switch { 0 => -1, 4 => 1, _ => 0 };
+                            leaves = x is < 0 or > 15 || y is < 0 or > 15;
+                            at.Notes.Add("forward key: no map planes, $6DD5 from the grid alone");
+                        }
+                        memory.Write(0x6DD5, (ushort)(leaves ? 1 : 0));
                         break;
                     }
                     case MoveAction mv:

@@ -31,7 +31,9 @@ python3 -I tools/scripts/dosbox_state.py diff  A.sav B.sav
   256-byte planes, the same layout as the GEO block without its 2-byte header).
 - DS variables: PC 49ED, vectors 49E3–49EB, opcode 6F7F / previous 6F7E, compare flags 6F78–6F7D, GOSUB stack
   head 6F70, stop flag 442E, script-changed 442F, DS:49F8 (loading a save), DS:49FF (party defeated), disk 5376,
-  RandSeed 4428 (dword), current ECL block 84DC, 3D-view flag 49FA, party x/y/facing/wall/event 6AAD–6AB1. Meanings:
+  RandSeed 4428 (dword), current ECL block 84DC, 3D-view flag 49FA, party x/y/facing/wall/event 6AAD–6AB1, and since
+  s11 the party list from the heap (DS:5D96, next pointer +0x104: name, HP, status, money, item count, record) and
+  DS:84CE/84D0/84D2/84D3/4430/4436/5D92. Meanings:
   `ecl-format.md`.
 - `--areas OUTDIR` writes the areas as binary files in the save-file layout plus `vars.json`.
 - `check` compares the four areas with a game save: a state taken right after loading save A matches `SAVGAMA.DAT`

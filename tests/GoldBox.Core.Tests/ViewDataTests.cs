@@ -229,6 +229,60 @@ public class PorViewRealDataTests
     }
 }
 
+/// <summary>
+/// Areas other than the Slums (s11): save A's party placed in another area with <see cref="PorSaveGame.PlaceInArea"/>
+/// (tool <c>save-area</c>), loaded from the main menu in DOSBox-X (PoR v1.3, EGA, 2026-11-17), screenshot of the view,
+/// then A (area map, or refused where $49FB ≠ 0), then one Up step. Hashes are of DOSBox-X's 88×88 view.
+/// New Phlan: the three-block wall set (127 → WALLDEF3 0), a bounded map. Valhingen Graveyard: a two-block set with
+/// the two-flag rule ($49E7/$49E8, slot 2's 22 absent), the backdrop bytes $C05F = 8 / $C059 = 11 (horizon 0 / 8,
+/// ground 8), and after the step the black sky vector 0 sets ($49FD = 8). Kobold Caves: no area map, no coordinates.
+/// </summary>
+public class OtherAreaViewTests
+{
+    public static TheoryData<int, int, int, int, int, int[], string, string, string> Cases() => new()
+    {
+        { 0, 2, 4, Facing.East, 0, [0, -1, -1], "2fefae327565357ea24b001fd61bae4b2944854e79cde72157b4b73ae6df7da2",
+            "08ebed323991e99beaaed62c038604d658e2a6349fe23fdf8ce2cfd1c27dc439", "" },
+        { 10, 0, 4, Facing.East, 1, [21, -1, 20], "c35d62eda83a0392157ff7d0036cc381422d29d29c1aaaea5cb8797e3256d2a3",
+            "9e70590534027c9e9aac251209135eceaea4cfa1e260a658d2860f5405ebfd7b", "369660dcc9f8cd2e14babfddab39770d02d32b475f3f248ca19aff240d3c3fd7" },
+        { 10, 9, 9, Facing.East, 1, [21, -1, 20], "437106d0012dbcd28ce4b7ad1887b87cb80019bc966caa72405d50ee560bcc96",
+            "71e4e65fdefd03682b719eb9789d437760fae977cd5a5942b39835a15ea13163", "5901e42a3c6beaa03194a13e56e46247aa1881f01fbeef9c5623016c54510bc7" },
+        // Area map refused here: the view stays.
+        { 13, 14, 14, Facing.North, 0, [17, 18, -1], "d66b311b833045f0c5482c563de28e07c1d6386b2087f796edbf639bebad0657",
+            "d66b311b833045f0c5482c563de28e07c1d6386b2087f796edbf639bebad0657", "bdc2333309097bf72d76f7385aa657ad66d510b835002f17656061ac15a330b0" },
+    };
+
+    private static string Hash(IndexedFrame f) => Convert.ToHexStringLower(SHA256.HashData(f.Pixels));
+
+    private sealed class NoDoors : IAreaUi
+    {
+        public GoldBox.Core.Doors.DoorAction? ChooseDoorAction(GoldBox.Core.Doors.DoorBarrier b, IReadOnlyList<GoldBox.Core.Doors.DoorAction> c) => null;
+        public void Bump() { }
+        public void Message(AreaMessage m) { }
+        public bool Camp() => false;
+    }
+
+    [PorTheory]
+    [MemberData(nameof(Cases))]
+    public void View_matches_dosbox(int script, int x, int y, int facing, int flag0, int[] walls, string view, string map, string step)
+    {
+        var dir = PorData.Open();
+        var savePath = dir.Find("SAVGAMA.DAT")!;
+        var save = PorSaveGame.PlaceInArea(File.ReadAllBytes(savePath), dir, script, x, y, facing, flag0, walls);
+        var art = PorViewArt.Load(dir);
+        var area = PorArea.FromSave(dir, art, save, Path.GetDirectoryName(savePath)!);
+        Assert.Equal(view, Hash(area.RenderView(art, false)));
+        Assert.Equal(map, Hash(area.RenderView(art, area.AreaMapAllowed)));
+        if (step.Length == 0)
+            return;
+        var player = new PorPlayer(new GoldBox.Core.Ecl.ScriptedEclHost { StopWhenInputMissing = true },
+            new GoldBox.Core.Game.ScriptedEncounterUi { StopWhenInputMissing = true }, new GoldBox.Core.Game.RecordingCombatRunner(), new NoDoors());
+        var game = PorGame.FromSave(dir, PorViewArt.Load(dir), save, Path.GetDirectoryName(savePath)!, player, 0);
+        game.Loop.Execute(AreaCommand.Forward);
+        Assert.Equal(step, Hash(game.RenderView(false)));
+    }
+}
+
 /// <summary>Entering every area script with a fresh VM (the Client's --area start), on the player's files.</summary>
 public class PorAreaEntryTests
 {

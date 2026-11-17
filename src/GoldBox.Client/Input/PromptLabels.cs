@@ -58,7 +58,10 @@ public static class PromptLabels
         GameAction.Controls => "CLICK CONTROLS",
         GameAction.Confirm => "CLICK",
         GameAction.Cancel => "RIGHT CLICK",
-        GameAction.MenuUp or GameAction.MenuDown => "POINT",
+        GameAction.MenuUp or GameAction.MenuDown or GameAction.MenuLeft or GameAction.MenuRight => "POINT",
+        GameAction.Search => "CLICK SEARCH",
+        GameAction.Look => "CLICK LOOK",
+        GameAction.Encamp => "CLICK ENCAMP",
         _ => "",
     };
 

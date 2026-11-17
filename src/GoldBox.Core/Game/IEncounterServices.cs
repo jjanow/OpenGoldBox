@@ -12,6 +12,16 @@ public interface IEncounterData
     MonsterData? Monster(int disk, int id);
     /// <summary><c>ITEM&lt;disk&gt;.DAX</c> block <paramref name="id"/> as 63-byte item records, or null when absent (the program quits to DOS).</summary>
     IReadOnlyList<byte[]>? ItemList(int disk, int id);
+    /// <summary>
+    /// The random item array of the player's program from DS:0970 (at least <see cref="TreasureMaker.TableWords"/>
+    /// words; docs/re/item-format.md), or null when not available.
+    /// </summary>
+    IReadOnlyList<ushort>? RandomItemTable => null;
+    /// <summary>
+    /// A byte of the NPC portrait tables in START.EXE's data segment (DS:08C7 heads, DS:08D7/08E1/08EB/08F5 bodies;
+    /// ADDNPC, GAME.OVR 0x1F248), or null when not available.
+    /// </summary>
+    byte? NpcPortraitByte(int dsOffset) => null;
 }
 
 /// <summary>
@@ -56,23 +66,19 @@ public interface ICombatRunner
     /// </summary>
     void Fight(EncounterState state);
     /// <summary>
-    /// The loot part of the after-combat step (0x6AD6–0x6AE7): [?] the NPCs' treasure share (0x6866, not read), the
-    /// summary screen (0x5E94) and the loot menu (0x644B), where the player takes money and items from
+    /// The loot part of the after-combat step (0x6AD6–0x6AE7), after the host has taken the NPCs' treasure share
+    /// (0x6866, <see cref="EncounterHost.NpcsTakingShare"/>): the summary screen (0x5E94) and the loot menu (0x644B),
+    /// where the player takes money and items from
     /// <see cref="EncounterState.Money"/> / <see cref="EncounterState.TreasureItems"/>. Not run when the party was
     /// destroyed outside a duel.
     /// </summary>
     void Loot(EncounterState state, AfterCombatOutcome outcome);
     /// <summary>The "party destroyed" screen (0x6B37–0x6BAA).</summary>
     void PartyDestroyed(EncounterState state);
-    /// <summary>Shop ($6E6C was 1; the host has cleared it) (0x7212).</summary>
+    /// <summary>Shop ($6E6C was 1; the host has cleared it) (0x7212). Rules: <see cref="ShopRules"/>, <see cref="Money"/>.</summary>
     void Shop(EncounterState state);
-    /// <summary>Temple ($6DE2 was 1; the host has cleared it) (0x5280).</summary>
+    /// <summary>Temple ($6DE2 was 1; the host has cleared it) (0x5280). Rules: <see cref="TempleRules"/>.</summary>
     void Temple(EncounterState state);
-    /// <summary>
-    /// [?] One random treasure item of <paramref name="type"/> (item maker GAME.OVR 0x25C99, not read; it may draw
-    /// random numbers).
-    /// </summary>
-    byte[] MakeRandomItem(byte type);
 }
 
 /// <summary>
@@ -124,11 +130,4 @@ public sealed class RecordingCombatRunner : ICombatRunner
     public void PartyDestroyed(EncounterState state) => Calls.Add("PartyDestroyed");
     public void Shop(EncounterState state) => Calls.Add("Shop");
     public void Temple(EncounterState state) => Calls.Add("Temple");
-    public byte[] MakeRandomItem(byte type)
-    {
-        Calls.Add($"MakeRandomItem {type}");
-        var r = new byte[EclCharacter.ItemRecordSize];
-        r[0x2E] = type; // [?] where the maker stores the type; FINDITEM reads byte 0x2E
-        return r;
-    }
 }

@@ -37,6 +37,9 @@ public sealed class AreaMap
     /// <summary>The live planes (the door code edits plane 3; <see cref="DoorMap"/> works on this span).</summary>
     public Span<byte> Planes => _planes;
 
+    /// <summary>The same live planes as an array (shared with the encounter host's <c>MapPlanes</c>, never copied).</summary>
+    public byte[] PlanesArray => _planes;
+
     public static bool InMap(int x, int y) => x is >= 0 and < Size && y is >= 0 and < Size;
 
     /// <summary>

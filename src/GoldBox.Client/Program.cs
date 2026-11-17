@@ -1,4 +1,5 @@
 using GoldBox.Client;
+using GoldBox.Client.Play;
 using GoldBox.Client.Screens;
 using GoldBox.Data.Por;
 
@@ -15,16 +16,20 @@ catch (Exception e) when (e is ArgumentException or FormatException)
 }
 
 var settings = ClientSettings.Load();
-if (options.GameDirectory is not null)
+if (options.GameDirectory is not null || options.Stretch43 is not null)
 {
-    settings.GameDirectory = Path.GetFullPath(options.GameDirectory);
+    if (options.GameDirectory is not null)
+        settings.GameDirectory = Path.GetFullPath(options.GameDirectory);
+    settings.Stretch43 = options.Stretch43 ?? settings.Stretch43;
     settings.Save();
 }
 var gameDir = settings.GameDirectory ?? Environment.GetEnvironmentVariable("GOLDBOX_POR_DIR");
 
 // Load the player's files before the window opens; any problem is shown in the window title and on stderr.
-PorArea? area = null;
-PorViewArt? art = null;
+// The game logic runs on its own thread (ScriptRunner); the area entry (vector 4) already runs through it.
+var runner = new ScriptRunner();
+PorGame? game = null;
+ClientPlayer? player = null;
 string? problem = null;
 if (string.IsNullOrWhiteSpace(gameDir) || !Directory.Exists(gameDir))
     problem = "Pool of Radiance folder not set: start with --game DIR";
@@ -33,20 +38,35 @@ else
     try
     {
         var dir = new PorGameDirectory(gameDir);
-        art = PorViewArt.Load(dir);
-        if (options.Area is { } script && options.At is var (x, y, f))
-            area = PorArea.Enter(dir, art, script, x, y, f);
-        else
+        var art = PorViewArt.Load(dir);
+        player = new ClientPlayer(runner, () => game!.Memory);
+        var who = new PorPlayer(player, player, player, player);
+        // The game seeds its generator from the DOS clock at start-up.
+        uint seed = (uint)Environment.TickCount64;
+        string? savePath = null;
+        if (options.Area is null)
         {
             var name = ClientOptions.SaveFileName(options.Save ?? "A");
-            var path = dir.Find(name) ?? (File.Exists(name) ? name : null)
+            savePath = dir.Find(name) ?? (File.Exists(name) ? name : null)
                 ?? throw new FileNotFoundException($"save {name} not found in {gameDir}");
-            area = PorArea.FromSave(dir, art, path);
         }
-        Console.Error.WriteLine($"area: script {area.Script} map {area.Map.Id} at {area.Party}; entry {area.EntryRun.Reason}");
+        // The entry runs on the logic thread, so its menus or text (if any) wait for the window.
+        runner.Start(() =>
+        {
+            game = options.Area is { } script && options.At is var (x, y, f)
+                ? PorGame.Enter(dir, art, script, x, y, f, who, seed)
+                : PorGame.FromSave(dir, art, savePath!, who, seed);
+        });
+        if (runner.Fault is { } fault)
+            throw fault;
+        if (game is null && runner.Pending is null)
+            throw new InvalidOperationException("the area entry did not finish");
+        if (game is not null)
+            Console.Error.WriteLine($"area: script {game.Vm.CurrentScript} map {game.Loop.Map?.Id} at {game.Memory.Position.X},{game.Memory.Position.Y}; entry {game.EntryRun.Reason}");
     }
     catch (Exception e) when (e is IOException or FormatException or ArgumentException or InvalidOperationException
-                                   or UnauthorizedAccessException or GoldBox.Data.Dax.DaxFormatException)
+                                   or UnauthorizedAccessException or GoldBox.Data.Dax.DaxFormatException
+                                   or GoldBox.Core.Ecl.EclVmFault)
     {
         problem = "could not load the game files: " + e.Message;
     }
@@ -54,11 +74,13 @@ else
 if (problem is not null)
     Console.Error.WriteLine(problem);
 
-using var game = new GoldBoxGame(
-    host => area is not null && art is not null ? new ExploreScreen(area, art, host) : null,
+using var window = new GoldBoxGame(
+    host => game is not null && player is not null ? new ExploreScreen(game, player, runner, host, options.Area is null ? ClientOptions.SaveFileName(options.Save ?? "A") is var n && n.StartsWith("SAVGAM", StringComparison.Ordinal) ? n[6] : 'A' : 'A') : null,
     ClientSettings.LoadBindings(), options.Scale)
 {
     Problem = problem,
+    Stretch43 = settings.Stretch43,
 };
-game.Run();
+window.Run();
+runner.Dispose();
 return problem is null ? 0 : 1;

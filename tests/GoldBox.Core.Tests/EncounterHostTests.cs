@@ -42,7 +42,7 @@ public class EncounterHostTests
         public EclVm Vm { get; }
         public TestMap Map { get; } = new();
 
-        public Rig(EclAsm asm, bool outdoors = false, int partyMovement = 9)
+        public Rig(EclAsm asm, bool outdoors = false, int partyMovement = 9, ICombatRunner? combat = null)
         {
             Memory = new EclMemory();
             var party = new EclParty();
@@ -55,8 +55,9 @@ public class EncounterHostTests
             }
             party.CurrentIndex = 0;
             Memory.Party = party;
-            Host = new EncounterHost(Memory, Inner, Ui, Combat, new FakeData()) { Map = Map, CurrentBlock = () => 20 };
+            Host = new EncounterHost(Memory, Inner, Ui, combat ?? Combat, new FakeData()) { Map = Map, CurrentBlock = () => 20 };
             Vm = new EclVm(Memory, Host);
+            Host.Vm = Vm;
             Vm.LoadScriptBlock(asm.Build(), 1, 1); // script init sets $49E6 = 1 (3D view)
             if (outdoors)
                 Memory.Write(EncounterHost.OutdoorsFlag, 0);
@@ -334,6 +335,52 @@ public class EncounterHostTests
         Assert.Equal(2, rig[0x6E3E]);
     }
 
+    /// <summary>A fight that leaves every party member dead.</summary>
+    private sealed class PartyDiesRunner : ICombatRunner
+    {
+        public void Fight(EncounterState state)
+        {
+            foreach (var c in state.Monsters)
+                c[CombatRules.InPlay] = 1;
+        }
+        public void Loot(EncounterState state, AfterCombatOutcome outcome) => throw new InvalidOperationException("no loot after a defeat");
+        public void PartyDestroyed(EncounterState state) { }
+        public void Shop(EncounterState state) { }
+        public void Temple(EncounterState state) { }
+        public byte[] MakeRandomItem(byte type) => new byte[EclCharacter.ItemRecordSize];
+    }
+
+    [Fact]
+    public void A_destroyed_party_stops_the_run_after_COMBAT()
+    {
+        var rig = new Rig(new EclAsm()
+            .Op(EclOpcodes.LoadMon, Imm8(1), Imm8(1), Imm8(1))
+            .Op(EclOpcodes.Combat)
+            .Op(EclOpcodes.Save, Imm8(9), Mem(0x4A00)) // not reached: DS:49FF stops the run loop
+            .Op(EclOpcodes.Exit), combat: new PartyDiesRunner());
+        foreach (var c in rig.Memory.Party!.Members.ToList())
+            c[CombatRules.Status] = (byte)CreatureStatus.Dead;
+        var r = rig.Run();
+        Assert.Equal(EclStopReason.ExternalStop, r.Reason);
+        Assert.True(rig.Vm.ExternalStop);
+        Assert.Equal(0, rig[0x4A00]);
+        Assert.Equal(AfterCombat.ResultDestroyed, rig[AfterCombat.CombatResult]);
+    }
+
+    [Fact]
+    public void A_won_fight_clears_the_defeated_flag()
+    {
+        var rig = new Rig(new EclAsm()
+            .Op(EclOpcodes.LoadMon, Imm8(1), Imm8(1), Imm8(1))
+            .Op(EclOpcodes.Combat)
+            .Op(EclOpcodes.Save, Imm8(9), Mem(0x4A00))
+            .Op(EclOpcodes.Exit));
+        var r = rig.Run();
+        Assert.Equal(EclStopReason.Exit, r.Reason);
+        Assert.False(rig.Vm.ExternalStop);
+        Assert.Equal(9, rig[0x4A00]);
+    }
+
     [Fact]
     public void Combat_outdoors_leaves_distance_2()
     {
@@ -363,12 +410,20 @@ public class EncounterHostTests
         var rig = new Rig(new EclAsm()
             .Op(EclOpcodes.Treasure, Imm8(0), Imm8(0), Imm8(0), Imm8(0), Imm8(0), Imm8(0), Imm8(0), Imm8(130))
             .Op(EclOpcodes.Exit));
-        // item 1: 1d100 = 70 (61..85 → type 61); item 2: 1d100 = 10, then 1d100 = 45 (→ 59)
-        foreach (var v in new ushort[] { 69, 9, 44 })
+        // item 1: 1d100 = 70 (61..85 → type 61), then the scroll: 1d3 = 1 spell, 1d3 = level 1, 1d13 = 5 (→ spell 13);
+        // item 2: 1d100 = 10, then 1d100 = 45 (→ 59), then the plus 1d20 = 15 (→ +2)
+        foreach (var v in new ushort[] { 69, 0, 0, 4, 9, 44, 14 })
             rig.Inner.RandomValues.Enqueue(v);
         rig.Run();
-        Assert.Equal(["MakeRandomItem 61", "MakeRandomItem 59"], rig.Combat.Calls);
-        Assert.Equal(2, rig.Host.State.TreasureItems.Count);
+        Assert.Empty(rig.Inner.RandomValues);
+        var items = rig.Host.State.TreasureItems; // head first: the last item made
+        Assert.Equal(2, items.Count);
+        Assert.Equal(59, items[0][0x2E]);
+        Assert.Equal(2, items[0][0x32]);
+        Assert.Equal(5000, items[0][0x3A] | items[0][0x3B] << 8);
+        Assert.Equal(61, items[1][0x2E]);
+        Assert.Equal(13, items[1][0x3C]);
+        Assert.Equal(300, items[1][0x3A] | items[1][0x3B] << 8);
     }
 
     [Fact]

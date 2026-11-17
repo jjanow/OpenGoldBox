@@ -46,9 +46,9 @@ public class EclVmHostTests
         Assert.Equal(
         [
             "LoadCharacter 1", "LoadMonster 2 3 4", "SetupMonster 5 1 6", "Approach", "Picture 7", "Print A",
-            "PrintClear B", "ClearMonsters", "Random 6", "Random 6", "Combat", "Treasure 1 2 3 4 5 6 7 8", "Rob 1 50 10",
+            "PrintClear B", "ClearMonsters", "Random 6", "Random 6", "Combat", "Treasure 1 2 3 4 5 6 7 8", "Rob 1 50 50",
             "Call 8000", "Damage 1 2 6 0 0", "SpriteOff", "PrintReturn", "Clock 0", "AddNpc 3 80", "LoadMap 18",
-            "LoadWallSet 1 1", "LoadWallSet 2 3", "LoadWallSet 3 5", "Who WHO", "Delay", "Spell 3", "Protect 9700",
+            "LoadWallSet 1 1", "LoadWallSet 2 3", "LoadWallSet 3 5", "PickCharacter WHO", "Delay", "Spell 3", "DrawGlyphs 9700 ",
             "ClearBox", "Program 9",
         ], rig.Host.Calls);
         // Host calls are in the trace too.

@@ -215,9 +215,15 @@ public sealed class AfterCombat
             }
         }
         total += CombatRules.PoolExperience(_state.Money);
-        // [?] The loop stops at the item DS:5D9A points to (set during the fight); no fight is modelled, so all items count.
+        // The walk stops at the item DS:5D9A points to: the last thrown weapon the fight dropped into the list
+        // (GAME.OVR 0x14279), nil at the fight start (0xE476). Items from there on (it and every item after it, such as
+        // the TREASURE items placed before the fight) give no experience.
         foreach (var item in _state.TreasureItems)
+        {
+            if (ReferenceEquals(item, _state.LastThrownItem))
+                break;
             total += CombatRules.ItemExperience(item);
+        }
         int divisor = (ushort)(_memory.Read(PartySize) - notInPlay);
         if (divisor == 0)
         {

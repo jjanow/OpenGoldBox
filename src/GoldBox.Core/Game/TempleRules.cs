@@ -1,0 +1,183 @@
+using GoldBox.Core.Ecl;
+
+namespace GoldBox.Core.Game;
+
+/// <summary>
+/// The temple's heal list (GAME.OVR 0x4F4E, entries 0x47C0–0x4E9F; docs/re/shop-format.md "Temple"). Every entry
+/// works on the current character. The flow per entry: if the condition is absent the program says so and asks
+/// "cast cure anyway" (0x458A); on yes (or when the condition holds) it asks to pay (0x4636, <see cref="Money.Pay"/>
+/// with the 16-bit character total); after a payment the effect runs (and the "is cured" text shows even when the
+/// effect then does nothing).
+/// </summary>
+public static class TempleRules
+{
+    public enum Cure { Blindness = 0, Disease = 1, CureLight = 2, CureSerious = 3, CureCritical = 4, Poison = 5,
+        RaiseDead = 6, RemoveCurse = 7, StoneToFlesh = 8 }
+
+    /// <summary>Prices in gold (immediates in each entry routine).</summary>
+    public static ushort Price(Cure cure) => cure switch
+    {
+        Cure.Blindness or Cure.Disease or Cure.Poison => 1000,
+        Cure.CureLight => 100,
+        Cure.CureSerious => 350,
+        Cure.CureCritical => 600,
+        Cure.RaiseDead => 5500,
+        Cure.RemoveCurse => 3500,
+        Cure.StoneToFlesh => 2000,
+        _ => throw new ArgumentOutOfRangeException(nameof(cure)),
+    };
+
+    /// <summary>Effect ids entry 1 tests and removes (DS:0114, six bytes; 0x4864).</summary>
+    public static readonly byte[] DiseaseEffects = [31, 34, 43, 44, 50, 57];
+    /// <summary>Effect ids entry 5 removes (0x4CC8); its test is effect 55 alone.</summary>
+    public static readonly byte[] PoisonEffects = [55, 22, 15];
+
+    private const int Status = 0x10C, InPlay = 0x10D, Hp = 0x11B, MaxHp = 0x32, Con = 0x14, RolledHp = 0xB1,
+        Levels = 0x96, FighterLevel = 0x98;
+
+    /// <summary>
+    /// Whether the entry's condition holds (else the program asks "cure anyway"). Cures 2–4 have none (always
+    /// true). Remove curse: an item with <c>cursed</c> (0x36) ≠ 0, or effect 36.
+    /// </summary>
+    public static bool Applies(Cure cure, EclCharacter c) => cure switch
+    {
+        Cure.Blindness => c.HasEffect(33),
+        Cure.Disease => DiseaseEffects.Any(c.HasEffect),
+        Cure.Poison => c.HasEffect(55),
+        Cure.RaiseDead => c[Status] is 6 or 1,
+        Cure.RemoveCurse => c.Items.Any(i => i[0x36] != 0) || c.HasEffect(36),
+        Cure.StoneToFlesh => c[Status] == 7,
+        _ => true,
+    };
+
+    /// <summary>
+    /// The effect after payment. <paramref name="random"/> answers Random(n) (used only by cures 2–4: 1d8, 2d8 + 1,
+    /// 3d8 + 3). Effect removal goes
+    /// through the program's remove routine 0x2AF10 (with DS:681F = 1 for entries 1, 5, 6 [?] what that flag
+    /// changes); here the matching effect records are dropped.
+    /// </summary>
+    public static void Apply(Cure cure, EclCharacter c, Func<int, int> random)
+    {
+        switch (cure)
+        {
+            case Cure.Blindness:
+                RemoveEffects(c, 33);
+                break;
+            case Cure.Disease:
+                RemoveEffects(c, DiseaseEffects);
+                break;
+            case Cure.CureLight or Cure.CureSerious or Cure.CureCritical:
+            {
+                int n = cure - Cure.CureLight + 1;
+                int sum = 0;
+                for (int k = 0; k < n; k++)
+                    sum += random(8) + 1;
+                int bonus = n switch { 2 => 1, 3 => 3, _ => 0 };
+                Heal(c, (byte)(sum + bonus));
+                break;
+            }
+            case Cure.Poison:
+                RemoveEffects(c, PoisonEffects);
+                break;
+            case Cure.RaiseDead:
+                if (Applies(cure, c))
+                    RaiseDead(c);
+                break;
+            case Cure.RemoveCurse:
+                RemoveCurse(c);
+                break;
+            case Cure.StoneToFlesh:
+                if (c[Status] == 7)
+                {
+                    c[Status] = 0;
+                    c[InPlay] = 1;
+                    c[Hp] = 1;
+                }
+                break;
+        }
+    }
+
+    /// <summary>
+    /// The heal routine with its last argument 0 (0x2C647), as the temple calls it: only for status 0, 1, 4 or 5;
+    /// effect 50 blocks it; HP += amount (byte), capped at max HP. A creature out of play with status 5 (dying)
+    /// becomes 4; a status-4 creature then gets effect handler 0x4E (outside combat) [?] not modelled. Returns
+    /// whether it healed.
+    /// </summary>
+    public static bool Heal(EclCharacter c, byte amount)
+    {
+        if (c[Status] is not (0 or 1 or 4 or 5))
+            return false;
+        if (c.HasEffect(50))
+            return false;
+        c[Hp] = unchecked((byte)(c[Hp] + amount));
+        if (c[Hp] > c[MaxHp])
+            c[Hp] = c[MaxHp];
+        if (c[InPlay] == 0 && c[Status] == 5)
+            c[Status] = 4;
+        return true;
+    }
+
+    /// <summary>
+    /// Raise dead (0x4B22–0x4C9D), read literally: remove effects 32 and 55; HP 1, status 0, in play 1; Con − 1 if
+    /// above 0; d = max HP − rolled HP (0xB1) when above, else 0. With the new Con ≥ 14: s = Σ over the 8 level bytes
+    /// (0x96 + k) that are &gt; 0 of: fighter (k = 2) level × (Con − 14); others 2 × level when Con &gt; 15, else
+    /// level (byte sum); d = d div s when s &gt; 0; then max HP −= d unless Con ≥ 17 and the fighter level ≤ 0.
+    /// No dice. [?] The intent (removing one level's worth of Constitution hit points?) is not settled.
+    /// </summary>
+    public static void RaiseDead(EclCharacter c)
+    {
+        RemoveEffects(c, 32, 55);
+        c[Hp] = 1;
+        c[Status] = 0;
+        c[InPlay] = 1;
+        if (c[Con] > 0)
+            c[Con]--;
+        byte d = c[MaxHp] > c[RolledHp] ? (byte)(c[MaxHp] - c[RolledHp]) : (byte)0;
+        if (c[Con] < 14)
+            return;
+        byte s = 0;
+        for (int k = 0; k < 8; k++)
+        {
+            sbyte lv = (sbyte)c[Levels + k];
+            if (lv <= 0)
+                continue;
+            if (k == 2)
+                s = unchecked((byte)(s + lv * (c[Con] - 14)));
+            else if (c[Con] > 15)
+                s = unchecked((byte)(s + 2 * lv));
+            else
+                s = unchecked((byte)(s + lv));
+        }
+        if (s > 0)
+            d = (byte)(d / s);
+        if (c[Con] >= 17 && (sbyte)c[FighterLevel] <= 0)
+            return;
+        c[MaxHp] = unchecked((byte)(c[MaxHp] - d));
+    }
+
+    /// <summary>
+    /// The remove-curse routine (0x29558) on the character: with effect 36 only that effect is removed; else the
+    /// first item with <c>cursed</c> ≠ 0 gets <c>cursed</c> := 0 (later cursed items stay cursed).
+    /// </summary>
+    public static void RemoveCurse(EclCharacter c)
+    {
+        if (c.HasEffect(36))
+        {
+            RemoveEffects(c, 36);
+            return;
+        }
+        var item = c.Items.FirstOrDefault(i => i[0x36] != 0);
+        if (item is not null)
+            item[0x36] = 0;
+    }
+
+    private static void RemoveEffects(EclCharacter c, params byte[] ids)
+    {
+        foreach (var id in ids)
+        {
+            int i = c.Effects.FindIndex(e => e.Length > 0 && e[0] == id); // 0x2AF10 removes the first match
+            if (i >= 0)
+                c.Effects.RemoveAt(i);
+        }
+    }
+}

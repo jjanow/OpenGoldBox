@@ -8,8 +8,10 @@ session 10 (2026-11-17); addresses are GAME.OVR file offsets unless marked START
 Status marks as elsewhere: **P** read in the program, **D** checked against DOSBox-X, `[?]` not settled. Prior art
 (talonius' source, Lee's FAQ) was used only to find routines; every rule below is from the disassembly.
 
-Code: `src/GoldBox.Core/Game/` — `CombatRules` (pure rules), `AfterCombat` (0x6AA5), `EncounterHost` (COMBAT, fight
-start bookkeeping, CALL ids). The fight's actions, the loot menus, shops and temples are behind `ICombatRunner`.
+Code: `src/GoldBox.Core/Game/` — `CombatRules` (pure rules), `FightRules` (start of round, attacks, damage, NPC
+share), `FightState` (combat records and the fight's DS cells), `Fight` (headless round loop), `AfterCombat` (0x6AA5),
+`EncounterHost` (COMBAT, fight start bookkeeping, CALL ids). The menu, the AI, the arena, the loot menus, shops and
+temples are behind `IFightController`, `IFightGeometry` and `ICombatRunner`.
 
 ## Data the combat code uses
 
@@ -36,14 +38,15 @@ start bookkeeping, CALL ids). The fight's actions, the loot menus, shops and tem
    list**: the monsters are removed by the after-combat step.
 
 **Fight start** (0xE402), the parts that later rules read: VM $6E33 = 0; VM $6DC6 (morale threshold) limited to
-100; DS:5D9A (an item pointer the experience routine stops at) = nil; then 0xD8B2 for every creature in list order:
+100; DS:5D9A (the last thrown weapon dropped into the treasure, below; the experience routine stops at it) = nil
+(0xE476); then 0xD8B2 for every creature in list order:
 stat recalculation (START 0x1758; this is where combat monsters get their movement recalculated, see
 `character-format.md` "Movement recalculation"), a zeroed combat record, +0x13 = 1 when the 1-based list position is
 > $6E3E, facing from the party's facing (+4 mod 8 for hostiles), and a creature that is not hostile, has +0x13 = 1
 and morale (0x84 AND 0x7F) 0 or > 102 gets 0x84 = $6DC6 + 0x80. Placement, the arena and the turn-start effects
 are not read `[?]`.
 
-**Next creature** (0x9938, P): walks the whole list and rolls **1d100 for every creature on every pick** (dice
+**Next creature** (0x9938, P, D below): walks the whole list and rolls **1d100 for every creature on every pick** (dice
 0x2BCCD). With `best` = 0 and `bestRoll` = 0 at the start: if the creature's initiative > best, bestRoll = its roll;
 then if initiative ≥ best and roll ≥ bestRoll, it becomes the pick (best = initiative, bestRoll = roll). A full tie
 goes to the later creature. No pick when best stays 0. So the number of random draws per round depends on the list
@@ -52,9 +55,133 @@ length and the number of turns; a fight replay must follow this order.
 **A creature's turn** (0x99FD, P structure): combat record +0x0F, +0x12, +0x07 = 0; effects with trigger 7
 (0x2B1E4); if initiative > 0: initiative 20 becomes 19, the creature becomes current (DS:5D92), stats are
 recalculated, effects with trigger 15; then if initiative is still > 0 the AI (0xABCF) acts when 0x10F ≠ 0, else the
-player's menu (0x9B21). The actions, the AI, attacks and spells are not read `[?]`.
+player's menu (0x9B21). The stat recalculation (START 0x1758) is not modelled: the derived bytes (0x110–0x11C) are
+taken as they stand `[?]`.
 
-**End of round** (0xA087, P): one minute passes (clock routine 0x241A1, unit 1); DS:6DE3 + 1; 0x15074 `[?]`; for every
+**Program units of the fight** (overlay stubs, `ecl-format.md` "Program references"): stub 0x35 (0x9807–0xAA86)
+the loop, menu and end of round; stub 0x38 (0xABC0–0xC4E7) the AI; stub 0x68 (0x127FB–0x1646D) round start, moves,
+attacks, spells' targets; stub 0xB0 (0x2AEEA–0x2C821) effects, attack and saving rolls, dice; START 0x1713–0x3B40
+helpers (helpless, damage, equipment).
+
+### Start of round (0x127FB) — P, D
+
+For every creature in list order, before the first pick (the loop then sets VM $6DCB = 0):
+
+1. Combat record: +0 (spell being cast) = 0, +1 (cast allowed) = 1, +2 (item use allowed) = 1, +8 (attacked this
+   round) = 0, +4 (attack phase) = 2.
+2. Attacks left in phase 1 (0x1351E, below) into record 0x113.
+3. Phase 2: DS:681A = 0xA2, DS:681D = 0, effects with trigger 0x12, then 0x114 = whole attacks (0x1364D) of DS:681A.
+4. +5 (sweep budget) = record 0x6B.
+5. In play (0x10D ≠ 0): initiative +3 = 1d6 + Dex adjustment (START 0x1D08 on 0x13: 0–2 → −4, 3–5 → Dex − 6,
+   16–18 → Dex − 15, 19–20 → 3, 21–23 → 4, 24–25 → 5, else 0), stored as a byte and compared signed: below 1 → 1;
+   then − 6 when the low byte of ((hostile, sign-extended) + 1) AND VM $6DCB is not 0 ($6DCB = surprise: bit 0 the
+   party, bit 1 the monsters); then below 0 or above 20 → 0. Out of play: 0.
+6. Movement (0x1291E) into +6: 0x11C, plus VM $6E72 (low byte of the sum) on the party side (hostile 0); outside
+   1–96 it becomes 1; DS:681A = 2 × that, DS:681D = 1, effects with trigger 0x12, DS:681D = 0; the result is DS:681A.
+
+**Draws:** exactly one (the 1d6) per creature in play, in list order; nothing else in the round start draws (the
+effect handlers excepted `[?]`). With the picks (0x9938) that gives the RNG contract of a round's start.
+
+**DOSBox** (s11, `fight_rounds/`, a random goblin encounter in the Slums from save A: 6 party + 6 goblin guards,
+the party surprised them, $6DCB = 2): states at the first player menu of rounds 0–4. Stepping the captured RandSeed
+back by 12 (1d100 picks) + 12 (1d6) draws and replaying 0x127FB and 0x9938 forward reproduces, in all five rounds,
+every creature's initiative (60 values; the surprised goblins' round-0 rolls of 1–4 give 0), movement +6, phase-2
+attacks 0x114, the creature whose menu showed and the RandSeed (`FightRoundCaptureTests`). In round 0 the second
+and third menus (two and three picks with no draws in between: the turns were ended with Done, Quit) also follow
+the pick rule, including a tie of two initiatives 8 settled by the 1d100. **D** for the round start and the pick.
+
+**Whole attacks** (0x1364D): (rate + 1 when the round counter DS:6DE3 is odd, byte add) shr 1.
+
+**Attacks left** (0x1351E): `previous` = 0x113; 0x113 = 0xA1 (the base rate, in halves); with a ranged weapon
+(START 0x39A3: weapon slot set and its base range, byte 12, > 1) that has ammunition (START 0x3A2B, below) the rate is
+the weapon's rate of fire (base byte 5, at least 2), else 0x113; DS:681D = 0, trigger 0x12; attacks = whole attacks
+of DS:681A; ranged with ammunition: at most max(1, ammunition count 0x39). 0x113 = attacks when +8 = 0, or attacks <
+`previous`, or (attacks < 2 × `previous` and not ranged); otherwise 0x113 keeps the base rate written at the start.
+
+**Equipment** (START 0x1758–0x18D7): the 13 pointers at 0xCC are cleared and rebuilt from the readied items (0x34 ≠
+0) in list order: base slot 0–8 → that slot (a later item wins); 9 → ring 1 if empty, else ring 2 if empty; and,
+whatever the slot, type 0x49 → arrows (slot 11) and type 0x1C → bolts (slot 12). **Ammunition** (START 0x3A2B): with
+weapon flags (base byte 14) bit 4 (thrown) the weapon; then if bit 3: bit 0 → the arrows slot, bit 7 → the bolts slot
+(each replacing the previous pick, nil included); found when an item was picked or the flags are exactly 0x0A.
+Throwable (START 0x39E6): ranged and flags AND 0x14 = 0x14.
+
+### Attacks (0x1407F, 0x13C01) — P
+
+**Melee attack** (far calls to MakeAttack, stub 0x68 entry 12, at 0xA5DB in the menu unit and 0xBA62 in the AI;
+near calls inside unit 0x68, e.g. the guards 0x12E22, not listed): the defender notes the attack (0x13FF1: +0x0F + 1; angle = (direction
+from the defender to the attacker − facing +9, + 8) mod 8, folded to 8 − angle when > 4; +0x12 = (+0x12 + angle) mod
+8), then MakeAttack (0x1407F): a defender with +0x0F < 3, not attacked from behind, turns to face the attacker; the
+attacker faces the defender (0x31232 `[?]`) and +0x0A = the defender; if 0x113 or 0x114 > 0 the attacker becomes
+current and the attack routine runs; then the thrown-weapon rule; stats recalculated; actions done → START 0x31D7
+(initiative, +0, +7, +6 = 0).
+
+**Attack routine** (0x13C01): DS:6823/6824 (hits per phase), DS:6E2D/6E2E (attacks per phase), DS:6818 (damage) = 0;
+attacker +8 = 1.
+- Helpless defender (START 0x1713: carries effect 0x33, 0x34, 0x35 or 0x1F, list DS:286C; which spells `[?]`): the
+  phase (+4) steps down while 0x112 + phase is 0 (no lower bound `[?]`), one attack counted, the defender takes
+  HP + 5 (with the slay-helpless message), invisibility goes, 0x113 = 0x114 = 0, actions done. **No draw.**
+- Else: with a weapon and a defender whose size byte 0x6C is above 0x80 or has (0x6C AND 7) > 1, the phase-1 damage
+  becomes the weapon's large dice: 0x115 = base byte 2, 0x117 = byte 3, 0x119 = 0x119 − byte 11 + byte 4 (signed).
+  (So a size byte of exactly 0x80 is not large: `character-format.md` says "bit 7".) The defender's stats are
+  recalculated and its trigger-0x0B effects run. Defense byte: backstab → rear AC 0x112 − 2; else AC 0x111, or the
+  rear AC 0x112 when attacked from the rear (argument, or +0x0F > 1 and the attacker in the defender's facing direction and
+  +0x12 > 4). Then the range penalty.
+- Phases from +4 down to 1; in each, while 0x112 + phase > 0 and the defender is not down: 0x112 + phase − 1,
+  +4 = phase, attacks + 1, **attack roll**; a hit when it hits, or (after a miss) the defender is helpless. A hit
+  counts, rolls damage, applies it, and runs trigger phase + 1 on the attacker while the defender is in play; a
+  defender out of play ends the loop. Phase 2 (0x114, the secondary attacks) therefore comes before phase 1.
+- No hit at all: the miss message. Done when 0x113 = 0x114 = 0; +5 = 0; done → 0x31D7.
+- **Draw order per attack:** 1d20, then (on a hit) the damage dice.
+
+**Attack roll** (0x2BBA1): invisibility (effect 0x19, first instance) removed (0x2BEBC); 1d20 into DS:6822 (signed);
+≤ 1 misses; 20 becomes 100; trigger 0x0A on the attacker and 0x10 on the defender; hit when roll ≥ 0 and roll +
+THAC0 byte 0x110 + m ≥ defense byte, as 16-bit signed sums, where m = low byte of VM $6E71 (party side) or $6E70
+(hostile side), signed. In the 60 − x encoding of both bytes this is exactly "1d20 ≥ THAC0 − AC − m", with 1 always
+a miss and 20 always a hit unless the defense is above 100 + 0x110 + m. The roll without an attacker (0x2BB39; callers
+not read `[?]`): roll + given value **>** the defender's 0x111 (strictly).
+
+**Damage** (0x1298C, phase p): dice count 0x114 + p (DS:681C) of sides 0x116 + p (0x2BD18), plus the signed bonus
+0x118 + p, **as a byte**: the program's "below 0 → 0" test is an unsigned compare and never fires, so 1d2 − 2
+rolling 1 deals 255. Backstab: × ((thief level 0x9C, sign-extended) shr 2 + 2), low byte. DS:6819 = 0, triggers 4
+(attacker) and 5 (defender).
+
+**Backstab** (0x14D6F): thief level 0x9C > 0 (signed), off hand empty or type 0x32, weapon slot empty or type 7, 8,
+0x23, 0x24 or 0x25, the defender attacked more than once this turn (+0x0F > 1) and the attacker in the defender's
+facing direction (0x14E38 = +9).
+
+**Range penalty** (0x14319): d = distance (START 0x30FB); band = (weapon range − 1) div 3 with a ranged weapon, else
+d; if d − band > 0: d −= band, defense + 2; if again d − band > 0: defense + 3. So melee adds nothing; a ranged weapon
+of range ≤ 3 adds both at any distance > 0. `[?]` A ranged weapon with range 0 would be a divide overflow; none.
+
+**What a hit does** (0x12AF4, the non-message part; START 0x2DC8): over = damage − HP when damage > HP, else remain =
+HP − damage. Over > 9, or remain 0 on an animated (1) creature → dead (6); else over > 0 → dying (5) and, in combat
+(DS:49F3 = 5), combat record +0x0E = over; else remain 0 → unconscious (4). A status not okay/animated (set at START
+0x2208: {0, 1}): in play 0, HP 0, in combat the team count of its side − 1 and initiative 0; else HP = remain. Then
+any damage > 0: the defender's +1 (cast allowed) = 0 and a spell it was casting is lost (+0 = 0; START 0x202B
+`[?]`). A defender out of play loses the first instance of each effect in DS:0C14 (7, 11, 30, 31, 32, 51, 52, 53, 54,
+58, 59, 95, 98, 137, 74, 75; 0x2BEF4, their removal handlers run `[?]`), runs trigger 0x0D, and if still out of play
+leaves the map (0x3154B).
+
+**Thrown weapons and DS:5D9A** (0x141DF–0x14280): after an attack made with an ammunition item, its count 0x39 (when
+> 0) drops by DS:6E2D (phase-1 attacks made, byte). At 0 the item leaves the attacker (START 0x20A9); when the attacker
+has a throwable weapon and the item's byte 0x3E ≠ 0x89, first a 63-byte copy with readied = 0 becomes the head of
+the treasure list DS:6810 and **DS:5D9A = that copy** (0x14279). The two writers of DS:5D9A in GAME.OVR are this one
+and the fight start (0xE476, nil); none in START.EXE. Effect: the after-combat plus experience stops at the last
+dropped weapon, so it, earlier dropped weapons and the TREASURE items placed before the fight give no plus
+experience; the monsters' items (added at the head after the fight) still do.
+
+**Enemy hit points** (0x15074, end of round): over hostile creatures (0x10E = 1), cur = Σ HP of those in play, max =
+Σ 0x32 of all; when max > 0, DS:6E2F = low byte of ((20 × cur, 16 bits) div max) × 5. Read by the AI `[?]`.
+
+**Menu** (0x9B21, P structure): a spell begun earlier (+0 > 0) is cast now (0x27C38) and the actions end; else a
+loop over the menu (0x9E6D): M move (0xA1E6), V view (0x21AED, then 0x1351E), A aim (0x15D53), U use (0x21F32,
+then 0x1351E), C cast (0x14C0F), T turn undead (0x13965, then 0x31D7), Q quick (0xAA32, then the AI 0xABCF), D done
+(0xA64C), Alt-M quick magic, space (party back to manual), Alt-Q (all to quick, initiative 20), Alt-X (0x1638E).
+**AI** (0xABCF, P structure): four dice calls at 0xAC26–0xAC5E, turn undead (0xAFA4), spells (0x27C38, 0xADC3), item
+use (0xB105), move/attack (0xBF8A, 0xB6FC, target 0x15FDF), morale (0xBB0F, 0xBB81). Neither is read further `[?]`.
+
+**End of round** (0xA087, P): one minute passes (clock routine 0x241A1, unit 1); DS:6DE3 + 1; 0x15074 (enemy hit
+points, below); for every
 creature effects with trigger 0x13 (0x2B1E4) and 0x2B9D1 `[?]`; a creature with status 5 (dying) adds 1 to combat
 record +0x0E and becomes dead (6) when that exceeds 9; a message when a party member is dying (0xA806); team counts
 again; the fight is done when either count is 0. When the party side is left and the enemy side is empty and DS:49F4
@@ -70,7 +197,7 @@ Called after every fight and alone when COMBAT has no monsters, shop or temple.
 1. VM $6DC7 (combat result) = 0, DS:443A = 0, DS:49F3 = 6.
 2. **Results** (0x5A47), below.
 3. **Removal** (0x672A), below.
-4. If DS:49FF = 0 (party not destroyed) or DS:84D4 (duel): NPC treasure share (0x6866 `[?]` not read), summary screen
+4. If DS:49FF = 0 (party not destroyed) or DS:84D4 (duel): NPC treasure share (0x6866, below), summary screen
    (0x5E94, shows the share DS:84D6), loot menu (0x644B), then the treasure item list DS:6810 is freed.
    Else: $6DC7 = 0x80 and the "party destroyed" screen.
 5. DS:4A00 = 1; VM $6E70, $6E71, $6E72, $6DE3 and $6DE6 = 0.
@@ -95,7 +222,8 @@ either extreme of the 1d10 item rolls: `CombatRulesTests.After_combat_on_the_slu
 read this session: the creature loop also sets DS:443A; items are copied with equipped (0x34) = 0 and each copy
 becomes the new head of the treasure list; an item is taken if its value (word 0x3A) is above 0, else, while fewer
 than 8 were taken, on 1d10 ≤ 3 (the roll is made only then); with VM $6DE3 = 1 no item is taken. The item loop for
-the plus bonus stops at the item DS:5D9A points to (nil at the fight start; set during the fight `[?]`). The divisor
+the plus bonus stops at the item DS:5D9A points to (nil at the fight start; the last thrown weapon a fight dropped,
+see "Thrown weapons"). The divisor
 is ($6E3E − DS:84D5) as an unsigned word; 0 would halt in the long division `[?]`. Mirror duel (DS:84D4 and $6DE6 ≠
 0): the current character's 0x73 (signed) × 100, 16-bit product sign-extended.
 
@@ -127,7 +255,17 @@ cleared by the previous removal step, so the +0x13 tests read byte 0000:0013 (th
 (machine-dependent; when it is not 1 every member counts as party). The share then comes from the treasure pool
 alone (TREASURE money), which is how a script gives experience for treasure. The code takes "not 1".
 
-## Shop (0x7212) — P, structure only
+**NPC treasure share** (0x6866), P: runs after the removal, so over the party. NPCs (0x84 > 0x7F) with status
+okay add (0x85 AND 7) to the NPC shares and to the total; every other creature adds 1 to the total (byte counters).
+With NPC shares > 0, each of the seven pool dwords (DS:67F4) that is above 0 (signed) loses cut × NPC shares, where
+cut = **low byte** of (pool div total) (signed long division, START 0xB9F6) and the product is 16 bits, sign-extended.
+So a pile whose per-share cut is ≥ 256 loses only the low byte of it per share. When any coin was taken a window lists
+each okay NPC with 0x85 ≠ 0 as taking its share, and waits for a key.
+
+**Loot menu** (0x644B), P structure: View (0x21AED), Take (0x62B6), Pool (0x25191), Share (0x252C3), D (0x27C38),
+Exit, G / O previous / next character (0x23819); the item list comes from 0x25C07.
+
+## Shop (0x7212) — P
 
 DS:49F3 = 1, the 28 bytes of the money pool DS:67F4 are zeroed, DS:6DC0 (a byte, not the VM cell) = 0, and every item
 of the treasure list DS:6810 is named (START 0xFE2): **the shop's stock is the treasure list**, filled by TREASURE
@@ -136,32 +274,14 @@ before COMBAT. Menu loop (0x2CC8C): Buy, View, Take, Pool, Share, Appraise, Exit
 (0x25974), P pool (0x25191), S share (0x252C3), A appraise (0x2663B), E exit (with money left in the pool a yes/no
 question first; leaving keeps it), G / O previous / next character (0x23819).
 
-Buy (0x7035): the price is the item's value word 0x3A. If the current character's money (0x238F8 `[?]` how coins
-convert) covers it, the item is copied to the character (0x6F0D) and the money reduced (0x24DB9); else if the pool
-total (0x24D31) covers it the pool pays (0x24E0E); else a "not enough" message. Appraise, sell rules and the coin
-conversion are not read `[?]`.
+Buy, sell, identify, take, pool, share, appraise and the coin rules: `shop-format.md` (s11).
 
-## Temple (0x5280) — P, structure only
+## Temple (0x5280) — P
 
 Same frame as the shop (DS:49F3 = 1, pool zeroed, DS:6DC0 = 0). Menu: Heal, View, Take, Pool, Share, Appraise, Exit
 (or Heal, View, Pool, Appraise, Exit with an empty pool). H opens the heal list (0x4F4E, 10 entries):
 
-| Entry | Routine | Price (gold) | Effect |
-|---|---|---|---|
-| 0 | 0x47C0 | 1000 | cure blindness `[?]` effect ids |
-| 1 | 0x4864 | 1000 | cure disease `[?]` effect ids |
-| 2 | 0x4978(1) | 100 | heal 1d8 (0x2C647) |
-| 3 | 0x4978(2) | 350 | heal 2d8 + 1 (low byte) |
-| 4 | 0x4978(3) | 600 | heal 3d8 + 3 (low byte) |
-| 5 | 0x4CC8 | 1000 | `[?]` (neutralize poison per prior art) |
-| 6 | 0x4A87 | 5500 | raise dead `[?]` details |
-| 7 | 0x4DB1 | 3500 | `[?]` (remove curse per prior art) |
-| 8 | 0x4E9F | 2000 | `[?]` (stone to flesh per prior art) |
-| 9 | – | – | leave the list |
-
-Dice are the dice routine 0x2BCCD (`ecl-format.md` "RANDOM"). Payment (0x4636): after a yes, the current
-character's money pays if it covers the price (0x238F8 / 0x24DB9), else the pool (0x24D31 / 0x24E0E, only the low
-word of the remaining pool is passed `[?]`), else a message and the answer becomes no; the effect runs only on yes.
+The entries, their conditions, prices, payment and the heal and raise-dead rules: `shop-format.md` "Temple" (s11).
 
 ## CALL ids (handler 0x3A15) — P
 
@@ -187,9 +307,9 @@ CALL $2C90 and the search vector. The `encmenu_flee` capture is replayed with no
 
 ## Open `[?]`
 
-- Start of round (0x127FB), the actions (0x9B21 menu, 0xABCF AI), placement, attacks, spells, effects (0x2B1E4
-  triggers), 0x15074 and 0x2B9D1 in the end of round.
-- NPC treasure share (0x6866), summary (0x5E94) and loot menu (0x644B) beyond their order.
-- What sets DS:5D9A during a fight; byte 0000:0013 in the no-fight case.
-- Shop/temple: the coin conversion (0x238F8, 0x24DB9, 0x24D31, 0x24E0E), appraise, take/pool/share, and the
-  effects of temple entries 0, 1 and 5–8.
+- The menu (0x9B21) and AI (0xABCF) beyond their structure; placement and the arena (fight start 0xE402); moving,
+  fleeing, attacks of opportunity and guards (0x12E22, 0x12F0D, 0x130AD, 0x13465); sweep attacks (0x1367D); turn
+  undead; spells (0x14C0F, 0x27C38); direction and distance (0x14E38, START 0x30FB); the effect handlers (0x2B1E4
+  triggers; terrain 0x2B9D1); the stat recalculation's effect on THAC0/AC during a fight.
+- Summary screen (0x5E94); the loot menu beyond its structure (take/pool/share: `shop-format.md`); byte 0000:0013 in the no-fight case.
+- Shop/temple: see `shop-format.md` "Open".

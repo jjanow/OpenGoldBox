@@ -47,6 +47,19 @@ public static class DoorMap
         return (DoorBarrier)((planes[BarrierPlane + y * Size + x] >> Shift(facing)) & 3);
     }
 
+    /// <summary>
+    /// The forward key's edge test (GAME.OVR 0x16D58), the value it leaves in VM $6DD5: 1 when the party's own face is
+    /// not impassable (passable, a door, or no wall) and the step would leave the 16×16 grid; else 0. An impassable
+    /// face on the map edge therefore leaves $6DD5 = 0 (docs/re/ecl-format.md "Steps, doors and script switches").
+    /// </summary>
+    public static bool LeavesMap(ReadOnlySpan<byte> planes, int x, int y, int facing)
+    {
+        if (FaceBarrier(planes, x, y, facing) == DoorBarrier.Impassable)
+            return false;
+        int nx = x + DeltaX(facing), ny = y + DeltaY(facing);
+        return nx is < 0 or >= Size || ny is < 0 or >= Size;
+    }
+
     /// <summary>Forward step test (0x17469): the step is taken directly only when the own face reads passable.</summary>
     public static bool CanStep(ReadOnlySpan<byte> planes, int x, int y, int facing) =>
         FaceBarrier(planes, x, y, facing) == DoorBarrier.Passable;

@@ -118,4 +118,45 @@ public sealed class PorSaveGame
                 bad++;
         return bad;
     }
+
+    /// <summary>
+    /// A copy of a save with the party put in another area, for side-by-side checks in DOSBox-X (tool
+    /// <c>save-area</c>): the script area holds ECL block <paramref name="script"/> from its disk, $49C5 = the script,
+    /// the disk byte and the cell $6E12 (the program's load takes the disk from there), the position, and the
+    /// script's flags $4A00–$4A1F (kept on a load) zero except $4A00 = <paramref name="flag0"/>. The load re-reads the
+    /// wall sets named at $4AFA–$4AFC before vector 4 and stops ("Unable to load wallset") when the area's disk has no
+    /// such block, so <paramref name="walls"/> gives the area's own ids (-1 = none; slots 1, 2, 3).
+    /// </summary>
+    public static byte[] PlaceInArea(byte[] save, PorGameDirectory dir, int script, int x, int y, int facing, int flag0 = 0,
+        int[]? walls = null)
+    {
+        var s = (byte[])save.Clone();
+        int disk = dir.DiskOf(script) ?? throw new ArgumentException($"no ECL block {script}");
+        var block = dir.LoadBlock(disk, script)!;
+        s[OffDisk] = (byte)disk;
+        var area = s.AsSpan(OffScript, EclLayout.AreaSize);
+        area.Clear();
+        block.AsSpan(EclLayout.Prefix).CopyTo(area);
+        void Word(int off, int v)
+        {
+            s[off] = (byte)v;
+            s[off + 1] = (byte)(v >> 8);
+        }
+        void Cell(int addr, int v) => Word(Off4900 + 2 * (addr - 0x4900), v);
+        Cell(0x49C5, script);
+        Word(Off6B00 + 2 * (0x6E12 - 0x6B00), disk);
+        for (int c = 0x4A00; c <= 0x4A1F; c++)
+            Cell(c, 0);
+        Cell(0x4A00, flag0);
+        if (walls is not null)
+            for (int k = 0; k < 3; k++)
+            {
+                Cell(0x4AFA + k, k < walls.Length ? walls[k] & 0xFFFF : 0xFFFF);
+                Cell(0x4AFD + k, k + 1);
+            }
+        s[OffPosition] = (byte)x;
+        s[OffPosition + 1] = (byte)y;
+        s[OffPosition + 2] = (byte)facing;
+        return s;
+    }
 }

@@ -22,7 +22,6 @@ public class LoadmonCaptureTests
         public void PartyDestroyed(EncounterState state) { }
         public void Shop(EncounterState state) { }
         public void Temple(EncounterState state) { }
-        public byte[] MakeRandomItem(byte type) => new byte[EclCharacter.ItemRecordSize];
     }
 
     private sealed class SeedUi(TurboPascalRandom rng, Queue<ushort> choices) : IEncounterUi
