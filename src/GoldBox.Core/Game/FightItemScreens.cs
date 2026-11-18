@@ -147,6 +147,9 @@ public sealed class FightItemScreens(IItemScreenChooser chooser, Action<EclChara
         bool done = false;
         while (!done)
         {
+            // The page (0x21084) recalculates the creature (0x21642 → START 0x1758) each time it is drawn: on entry
+            // and after every choice that redraws it ([?] the keys at CS:0A93 that skip the redraw are not read).
+            fight.RecalculateStats(c);
             var entries = ViewEntries(c, InFight);
             var pick = Chooser.ChooseView(c, entries);
             if (!entries.Contains(pick) || pick == ViewEntry.Exit)

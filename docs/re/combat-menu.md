@@ -162,7 +162,10 @@ Arguments: creature, range (0xFF = from the weapon), attack mode (1 from the men
   (`IFightMenuChooser.ChooseManual`, `ManualView`, `ManualInput`; needs the `CombatMap`).
 - **D**: `m09`/`m10` (aim starts on the creature itself at range 0, Next goes to a goblin at range 1 with Target
   offered, Target makes the melee attack); `fight_ranged` (darts, range 6 − 1 = 5: a goblin at range 3 is offered;
-  three darts thrown, count 11 → 8).
+  three darts thrown, count 11 → 8). Manual (s18, `fight_manual_use`): the arrow keys move the cursor; it starts on
+  the aimer ("Range = 0", no Target); a bare square shows the range and no Target in square mode 0; an ally and an
+  enemy in reach get Target; Target makes the same melee attack or dart throw as the candidate list, and the play
+  matches to the next menu (`FightManualUseCaptureTests`).
 
 **Target check** (0x13880, attacker, defender): no defender → no; the attacker itself → yes; else DS:681E = 0,
 effects with trigger 1 on the defender; if still 0, the attacker's +0x0A is set to the defender for effects with
@@ -310,6 +313,10 @@ allowed), Drop, Halve, Join; only Use can end the turn.
   0x102 − amount (0x24CA9); in a shop or with DS:49F3 = 6 the pool (DS:67F4 + 4·kind) gains them, in a fight they
   are lost.
 
+**D** (s18, `fight_manual_use` p01 → p03): Phineas uses a readied wand (power 88 = spell 65) from the menu: U, U, the
+item's aim (the menu's candidate list), Target: 2d4 + 2 damage, one charge off, his +0x0A on the target, and the
+play matches to the next menu (`FightManualUseCaptureTests`).
+
 **Checked under emulation** (`tools/scripts/por_ai_oracle.py`, `AiCastProgramTests`): Halve and Join on 160
 generated item lists match the program item for item; the item use 0x22AC4 on 120 cases (`combat-ai.md`).
 
@@ -332,9 +339,14 @@ and Speed menus, an AI attack at game speed 9). Code: `src/GoldBox.Client/Screen
   row 1 (party cyan, hostile yellow), hit points row 3, AC row 5, the readied weapon's name row 7 (none for a creature
   with no weapon); attack messages from row 10. Row 23: Aim's range line; row 24: the menu, or Move's prompt in
   green. A screen square (c, r) shows arena cell (view x + c, view y + r): no skew in the drawing.
-- **Palette**: EGA colours 0 and 8 are swapped for the whole screen (ground, panel and menu background dark grey,
-  the art's colour 8 black). Every DUNGCOM tile of a start screen matched pixel for pixel only with the swap
-  (25 367 against 11 158 matching pixels over the 49 squares). The palette write is not located `[?]`.
+- **Palette** (located s18): EGA colours 0 and 8 are swapped for the whole screen (ground, panel and menu background
+  dark grey, the art's colour 8 black; every DUNGCOM tile matched only with the swap). GAME.OVR 0x3081D writes EGA
+  palette register 0 = colour 8 and register 8 = colour 0 (START 0x464:0x2A0D, INT 10h), only in EGA mode (DS:4A1E =
+  1); 0x3083F writes them back. The combat screen's setup (START 0x3729, before its frame) sets the swap; the fight's
+  end (0x986B) restores it. View (0x21AED) restores it on entry (0x21AFB) and sets it again on exit (0x21D4A), both
+  only when DS:49F3 = 5 (a fight): so View and the Items opened from it are black, Items opened by the menu's Use stay
+  grey. The icon editor uses the same pair (0x1D1D9 / 0x1D8A7). The Client swaps the frame's indices 0 and 8
+  (`CombatScreen.SwapGrey`; DOS art only, Amiga indices ≥ 16 untouched).
 - **Ground**: the terrain table's tile byte (DS:2744 + 4t + 3) indexes DUNGCOM block 1 (25 tiles of 24 × 24) in a
   3D area; tile 22 is all colour 0. WILDCOM outdoors and the RANDCOM tiles for the rare terrains are not checked `[?]`.
 - **Icons**: player characters (record 0x84 < 0x80) get the party icon, other creatures the CPIC block = their icon slot's picture (LoadCombatIcon; a joined NPC not checked `[?]`), attack pose + 128 (seen in the AI
@@ -350,8 +362,14 @@ and Speed menus, an AI attack at game speed 9). Code: `src/GoldBox.Client/Screen
   the first entry); the highlighted entry all white, the others with a white hotkey. Aim adds the range line on row 23;
   Manual shows its own prompt (GAME.OVR 0x155E2) with Target (when the square's creature can be taken), Center, Exit,
   and the panel shows the creature under the cursor (blank on an empty square). The speed menu's prompt is
-  0xA8D6 + the speed + ") : ". The highlighted entry when a menu opens `[?]`: the first combat menu after loading
-  a save highlighted View (index 1, as the area menu's Cast before it), later ones Move (s15).
+  0xA8D6 + the speed + ") : ". The highlighted entry when a menu opens (read s18): the menu routine
+  keeps one cell for every menu it draws, DS:6B2B (1-based): a menu opens on that entry, or on its first when the cell
+  is past its last entry (0x2CCDE); a hotkey moves the cell to its entry (0x2CF48), ',' / '.' move it, Escape leaves
+  it. **D** (s18, save K loaded as B from "A B J"): the area line on Cast, Darkstar's first menu on View, its View menu
+  on Spells; Exit (4th) → the main menu's Done (7th) → the Done menu (Delay Quit Speed Exit) on Delay; Quit (2nd) →
+  Thrender's menu on View, his View menu (Items Drop Exit) on Drop. The item list routine 0x2D669 (Items screen) is not
+  this cell (first entry each time). Client: `MenuHighlight` (shared by the area line and the combat screen, seeded
+  with the loaded slot's place among the saves present).
 - **Attack messages** (strings 0x12A2D–0x12AEA): attacker name, the attacks word, defender name, then on a hit the
   damage on two lines (the hitting word + the number; the points word + the damage word) or the misses word; a creature
   that drops: a blank line, its name in light red, the down word (0x12AB3). A skull on red (COMSPR 11) covers the hit
@@ -363,7 +381,13 @@ and Speed menus, an AI attack at game speed 9). Code: `src/GoldBox.Client/Screen
 - **Messages** (read s15): START 0x1693 clears row 24, writes the text at column 0 in green, pauses, clears row 24
   again (the item screens' refusals). START 0x16EC writes a creature and a text into the panel from a given row
   (cols 23–38). The cast message (0x27D48, only when 0x27C38's third argument ≠ 0 and DS:6DBF = 0, i.e. not from an
-  item or scroll) comes **before** the target pick: caster, 0x27C16, spell name (0x2A332). The AI's 0x27C38(spell, 1, 1)
+  item or scroll) comes **before** the target pick: 0x2A332 (read s18) in a fight (DS:49F3 = 5) writes the caster and
+  the casts-a-spell words (0x2A31D) into the panel through START 0x16EC from row 10, clears row 23 and writes "Spell:"
+  (0x2A32B) with the spell's name (DS:28E9 + 41·spell) there in green, with no pause of its own; outside a fight the
+  caster on row 19, the 0x27C16 word after it, the name on row 20, then the pause. **D** (s18): the AI's Hold Person
+  and Magic Missile; the row-23 line stays while the results are shown (target name, the held / damage words; spell
+  damage is worded "takes n points of damage from magic", then "goes down, and is dying" as one wrapped text, with
+  the name in light red: a different routine from the attack message's, not read `[?]`). The AI's 0x27C38(spell, 1, 1)
   shows it. The Client announces the player's cast-now spells from the spell list (before the aim) and everything
   else through `FightSpells.Announce` (a begun player spell after its aim `[?]`). Item use (0x22B58, DS:6DBF = 1, not
   scrolls): START 0x16EC with 0x22AB1 from row 10, "Item:" (0x22ABE) on row 23 col 0 green and the item name at col 5,
@@ -372,6 +396,12 @@ and Speed menus, an AI attack at game speed 9). Code: `src/GoldBox.Client/Screen
   view inside the arena),
   the spell list 0x239D6 (the Client: a full-screen list; spell names from START.EXE's string array of the widest
   entries, taken to start at spell 1), the Guard message, monster icon recolouring (orc icons matched unchanged).
+  Seen in DOSBox-X (s18, all-Quick run of save K's fight) and not yet in the Client: during an AI creature's move the
+  panel shows that creature (name, hit points, AC, weapon) and row 24 the move prompt with its moves left; a cast shows
+  the caster and a "casts a spell" line in the panel and the spell's name after "Spell:" on row 23, then each target's
+  result line (held, damage "from magic"); a helpless defender gets the "slays helpless … with one cruel blow" words;
+  a rear attack adds "(from behind)"; a party member dropping to dying gets "goes down, and is dying" with its name in
+  light red; the end-of-round dying notice on row 24.
 - **Manual in the Client**: Aim's Manual answers `AimKey.Manual` and each cursor pass is Core's (`ChooseManual`):
   arrows / pad move it one square, Return / T Target (ending Manual even where it is not offered), E / Escape Exit,
   C / shoulders re-centre; the panel shows `ManualView.Creature`, row 23 the range to the square in attack mode when the line got
@@ -379,6 +409,12 @@ and Speed menus, an AI attack at game speed 9). Code: `src/GoldBox.Client/Screen
   walks the cursor there one pass per square (our mapping; the target check runs on each square crossed, as with the
   keys); a click on the cursor's square takes it when offered.
 
+- **s18 checks** (screenshots in the session scratch folder): the View page equal pixel for pixel (rows 1–22) on
+  all six members of save K; the menus' first highlight follows DS:6B2B; the attack and "goes down" lines of an
+  all-Quick run read as DOSBox-X's. Still different: the cursor box is drawn under an AI caster while it casts
+  (DOSBox-X), the Client draws none on AI turns; during an AI's move DOSBox-X shows the moving creature in the panel
+  and its move prompt on row 24 `[?]` (not read); the view scrolling (the Client keeps the creature in the inner
+  3 × 3; DOSBox-X left Darkstar at view column 4 and Thrender at 3 without scrolling, the Client put Thrender at 4).
 - **Parity check** (s15): save K's fight start (Rhiannon's first menu) in the Client and in DOSBox-X: the map window
   and the status panel equal pixel for pixel; differences only in the braided frame (stand-in) and the menu's starting
   highlight (above).
@@ -395,19 +431,34 @@ DOSBox-X, save K (Darkstar, Thrender), `Play/CombatItemScreens.cs` (`CombatChoos
   View it is black. The keypad's Home / End move the list (the arrow keys do not).
 - **Drop**: a warning naming the item (it will be lost for good) in yellow on row 21 (0x22401, window rows 21–22), every row green,
   then a drop question with Yes / No and No highlighted. Must be readied etc.: the message routine 0x1693 (row 24).
-- **View** (0x21AED, page 0x21084): black, braid rows 0 and 23, name row 1 cyan; rows 3–5 gender, race, "Age", the
-  alignment, the class; rows 7–12 the abilities (col 1) with the money by kind from col ~12 (Platinum, Silver right-
-  aligned); row 15 Level and Exp (col 17); rows 17–18 AC / HP, THAC0 / Damage, Encumbrance / Movement in three
-  columns; row 20 Weapon; row 22 Status; row 24 "VIEW:" and the entries. The Client draws its own sheet `[?]`.
+- **View page** (0x21084, read s18; **D** pixel for pixel on all six members of save K, rows 1–22): braid rows 0 and
+  23; row 1 the name (START 0x1816: in play 0 light red, hostile yellow, else cyan; an NPC (0x84 > 0x7F) gets the NPC
+  tag in green at column name length + 3); row 3 gender (DS:0FEC + 7·0x9E), race (DS:0F03 + 10·0x2E) and the age word
+  with word 0x30, white, each one column after the last; row 4 alignment (DS:0F53 + 17·0xA0), row 5 class (DS:0D38 +
+  27·0x2F), white; rows 7–12 the ability labels and values (0x2193B: green, value at column 5, 6 below 10; strength 18
+  with 0x16 > 0 adds "(nn)" at column 7, two digits, 100 as "00"); money (0x21547, of the current creature DS:5D92):
+  kinds 6 down to 0 with a non-zero word 0x88 + 2k from row 7, the name (DS:0FFA + 11·k) right-aligned to end at
+  column 19 and the amount at column 21, green; row 15 the level label, the class levels above 0 joined by "/" at
+  column 7, the experience label with the dword 0xAC at column 17, white. Then 0x21642 recalculates the creature
+  (START 0x1758: every draw of the page) and writes rows 17–18: AC label (1,17), |0x111 − 60| at column 4 with "-"
+  first when 0x111 > 60 (START 0x8EF); HP label (1,18), 0x11B at column 4, yellow below 0x32 else green (START
+  0x973); THAC0 label (9,17), 60 − 0x110 at column 15; damage label (8,18), 0x115 "d" 0x117 and the signed 0x119 as
+  "+n"/"-n" at column 15; encumbrance label (22,17), word 0x102 at column 34; movement label (25,18), 0x11C doubled
+  with effect 0x2A, halved with effect 0x27, at column 34; labels white, values green. Row 20: a readied weapon
+  (pointer 0xCC) → the weapon label (1,20) and its name (START 0x442) at column 8; row 21: body armour (0xD4) → the
+  armour label at **column 2** and its name at column 8; row 22: status label (1,22) and the status name (DS:1047 +
+  13·0x10C) at column 8, green. All numbers are unsigned. The View loop (0x21AED) redraws the page after each choice
+  unless the key is in the set at CS:0A93 `[?]`. Client: `Play/CombatSheet.cs`; Core recalculates in
+  `FightItemScreens.View` before each menu.
 - **Drop money** (0x234E1): a coin-type prompt (colour 13) then Exit; the sheet's money lines are the list (picked
-  one white); then an amount question naming the coin, in green on row 24 and the typed number.
+  one white; the Client lists them in the sheet's order, kinds 6 down to 0); then an amount question naming the coin, in green on row 24 and the typed number.
 
 ## Open `[?]`
 
 - Trade (0x2276E, 0x23190), Sell (0x22D28) and Id (0x22F8C) on the item screens (not shown in a fight); the money
   input 0x24F1D in detail; the area search's order (0x3045B) and the path distance; the step
   routines (0x130AD, 0x12F0D) and flee (0x13465) in detail (combat-map work).
-- Manual: the view scrolling 0x310D0 and the cursor drawing 0x30A0F (display only); no DOSBox capture of Manual yet.
+- Manual: the view scrolling 0x310D0 and the cursor drawing 0x30A0F (display only).
 - The abort question's wording and what it shows (0x27EF2); the 1–7 mode's repeat message (0x14B7F).
 - Sweep with a defender missing from the adjacent-enemy list.
 - Turn undead against real undead (no capture yet).

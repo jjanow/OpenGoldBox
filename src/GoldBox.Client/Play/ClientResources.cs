@@ -26,6 +26,18 @@ public sealed class ClientResources
     public Func<int, string?> SpellName { get; init; } = _ => null;
     public Func<int, string?> LevelName { get; init; } = _ => null;
 
+    /// <summary>
+    /// The character page's name tables (View 0x21084, read s18): gender DS:0FEC + 7·k (record 0x9E), race DS:0F03 +
+    /// 10·k (0x2E), alignment DS:0F53 + 17·k (0xA0), class DS:0D38 + 27·k (0x2F), status DS:1047 + 13·k (0x10C) and the
+    /// money lines' coin names DS:0FFA + 11·k (0x21547). Null where not read (another version: our words).
+    /// </summary>
+    public Func<int, string?> Gender { get; init; } = _ => null;
+    public Func<int, string?> Race { get; init; } = _ => null;
+    public Func<int, string?> Alignment { get; init; } = _ => null;
+    public Func<int, string?> ClassName { get; init; } = _ => null;
+    public Func<int, string?> StatusName { get; init; } = _ => null;
+    public Func<int, string?> SheetCoin { get; init; } = _ => null;
+
     /// <summary>The spell table (Core's reader), or null without the program.</summary>
     public SpellTable? Spells { get; init; }
 
@@ -37,7 +49,8 @@ public sealed class ClientResources
     /// string there is the one the camp routine passes, so another version falls back to our words).
     /// </summary>
     private const int CampMenuDs = 0x508, MagicMenuDs = 0x531, AlterMenuDs = 0x55A, OrderMenuDs = 0x584,
-        SpellNamesDs = 0x2912, LevelNamesDs = 0xA79;
+        SpellNamesDs = 0x2912, LevelNamesDs = 0xA79,
+        GenderDs = 0xFEC, RaceDs = 0xF03, AlignmentDs = 0xF53, ClassDs = 0xD38, StatusDs = 0x1047, SheetCoinDs = 0xFFA;
 
     /// <summary>Reads everything from the player's folder or a module (missing pieces stay at their fallbacks).</summary>
     public static ClientResources Load(IPorContent dir)
@@ -47,6 +60,9 @@ public sealed class ClientResources
         string? camp = program?.CampMenu();
         bool v13 = camp is not null && program!.PascalString(CampMenuDs, 40) == camp;
         string? Ds(int off) => v13 ? program!.PascalString(off, 40) : null;
+        // The page indexes these with the record byte unchecked (any byte reads whatever lies there, as the program does).
+        Func<int, string?> Table(int b, int stride) =>
+            k => v13 && k is >= 0 and <= 255 ? program!.PascalString(b + stride * k, stride - 1) : null;
         return new ClientResources
         {
             Texts = new GameText(program),
@@ -59,6 +75,12 @@ public sealed class ClientResources
             OrderMenus = v13 && Ds(OrderMenuDs) is { } o1 && Ds(OrderMenuDs + 41) is { } o2 ? [o1, o2] : null,
             SpellName = id => id is >= 1 and <= 56 ? Ds(SpellNamesDs + 41 * (id - 1)) : null,
             LevelName = l => l is >= 1 and <= 9 ? Ds(LevelNamesDs + 41 * l) : null,
+            Gender = Table(GenderDs, 7),
+            Race = Table(RaceDs, 10),
+            Alignment = Table(AlignmentDs, 17),
+            ClassName = Table(ClassDs, 27),
+            StatusName = Table(StatusDs, 13),
+            SheetCoin = Table(SheetCoinDs, 11),
             Spells = program?.Spells(),
             ItemSlot = items is null ? _ => -1 : it => items[it[0x2E], BaseItemTable.Slot],
             PagePrompt = program?.PagePrompt,

@@ -205,3 +205,10 @@ not checked by us. Later.
     LOADFILES of the map (entering the area) re-locks them too (program read; `geo-format.md`).
 
 Run: `python3 -I tools/scripts/gbchar.py check <gamedir>` repeats checks 1-3 and 5.
+
+## Engine save
+
+The engine keeps saves in its own JSON form (docs/module-format.md §15, `PorEngineSave`). It mirrors this layout
+without loss: the four VM areas, the position, the disk / location type / interface state / party size bytes, the 328
+name-slot bytes raw (leftover memory included), and each member's `.SAV` record with its `.ITM` / `.SPC` records
+(absent file = null). Both shipped sets (A, J) convert and write back all 36 files byte for byte.

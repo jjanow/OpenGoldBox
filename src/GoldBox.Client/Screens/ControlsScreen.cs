@@ -1,14 +1,16 @@
 using GoldBox.Client.Input;
+using GoldBox.Client.Play;
 using GoldBox.Core.Explore;
 
 namespace GoldBox.Client.Screens;
 
 /// <summary>
 /// Shows every action with its key and pad button and lets the player rebind them: choose a row, then press the new
-/// key or pad button (a click or Escape/Start leaves it as it was). Also: reset to defaults, back, quit. Fully usable
-/// with keyboard, mouse or pad alone.
+/// key or pad button (a click or Escape/Start leaves it as it was). Also: the art setting (ART: ORIGINAL DOS / BEST /
+/// AMIGA, when the screen is given a <see cref="ClientArt"/>; Confirm or a click steps to the next, left/right step both
+/// ways), reset to defaults, back, quit. Fully usable with keyboard, mouse or pad alone.
 /// </summary>
-public sealed class ControlsScreen(TextFont font, IScreenHost host) : IScreen
+public sealed class ControlsScreen(TextFont font, IScreenHost host, ClientArt? art = null) : IScreen
 {
     private const int FirstRow = 3;
 
@@ -37,7 +39,13 @@ public sealed class ControlsScreen(TextFont font, IScreenHost host) : IScreen
         (GameAction.StepDownRight, "FIGHT: DOWN-RIGHT"),
     ];
 
-    private static readonly string[] Extra = ["RESET TO DEFAULTS", "BACK TO THE GAME", "QUIT"];
+    /// <summary>The rows under the actions: the art setting (when the screen has one), reset, back, quit.</summary>
+    private string[] Extra => art is null
+        ? ["RESET TO DEFAULTS", "BACK TO THE GAME", "QUIT"]
+        : ["ART: " + ClientArt.Label(art.Choice), "RESET TO DEFAULTS", "BACK TO THE GAME", "QUIT"];
+
+    /// <summary>Index in <see cref="Extra"/> of RESET TO DEFAULTS (the art row comes first when shown).</summary>
+    private int FirstFixedExtra => art is null ? 0 : 1;
 
     private int _selected;
     private bool _waiting;
@@ -46,10 +54,12 @@ public sealed class ControlsScreen(TextFont font, IScreenHost host) : IScreen
     private int Count => Rows.Length + Extra.Length;
 
     /// <summary>
-    /// The actions scroll in rows 3–17 (keyboard and pad move the window with the selection; the mouse clicks the
-    /// MORE line on row 18 to page). The extras stay on rows 19–21, so every device always reaches them.
+    /// The actions scroll in rows 3–17 (3–16 with the art row; keyboard and pad move the window with the selection; the
+    /// mouse clicks the MORE line below them to page). The extras stay on rows 19–21 (18–21), so every device reaches them.
     /// </summary>
-    private const int VisibleRows = 15, MoreRow = FirstRow + VisibleRows, ExtraRow = MoreRow + 1;
+    private int VisibleRows => art is null ? 15 : 14;
+    private int MoreRow => FirstRow + VisibleRows;
+    private int ExtraRow => MoreRow + 1;
 
     private int _top;
 
@@ -144,6 +154,13 @@ public sealed class ControlsScreen(TextFont font, IScreenHost host) : IScreen
             host.Pop();
             return;
         }
+        bool onArt = art is not null && _selected == Rows.Length;
+        if (onArt && (input.Pressed(GameAction.MenuLeft) || input.Pressed(GameAction.MenuRight)))
+        {
+            // Left / right (keys, d-pad, stick) step through the settings too.
+            SetArt(input.Pressed(GameAction.MenuLeft) ? ClientArt.Previous(art!.Choice) : ClientArt.Next(art!.Choice));
+            return;
+        }
         if (!input.Pressed(GameAction.Confirm))
             return;
         if (_selected < Rows.Length)
@@ -152,7 +169,12 @@ public sealed class ControlsScreen(TextFont font, IScreenHost host) : IScreen
             _note = "";
             return;
         }
-        switch (_selected - Rows.Length)
+        if (onArt)
+        {
+            SetArt(ClientArt.Next(art!.Choice));
+            return;
+        }
+        switch (_selected - Rows.Length - FirstFixedExtra)
         {
             case 0:
                 input.Bindings = InputBindings.Defaults();
@@ -166,6 +188,12 @@ public sealed class ControlsScreen(TextFont font, IScreenHost host) : IScreen
                 host.Quit();
                 break;
         }
+    }
+
+    private void SetArt(Data.Por.PorArtChoice choice)
+    {
+        art!.Set(choice);
+        _note = $"ART: {ClientArt.Label(choice)}.";
     }
 
     public void Draw(IndexedFrame f, ActionInput input)

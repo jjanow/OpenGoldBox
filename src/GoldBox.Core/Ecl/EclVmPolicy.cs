@@ -47,9 +47,10 @@ public sealed class EclVmPolicy
     public int MaxMemoryTextLength { get; set; } = 255;
 
     /// <summary>
-    /// [?] SPELL (GAME.OVR 0x3949) tests its "found" byte [bp−8] before ever setting it: stack residue. Non-zero
-    /// (default, as DOSBox showed after a SAVE: results 1 and 0, capture <c>party_opcodes</c>) skips the search; 0 runs
-    /// it over the first party member. The results go to $00xx addresses either way, so no v1.3 outcome depends on it.
+    /// SPELL (GAME.OVR 0x3949) tests its "found" byte [bp−8] before ever setting it: stack residue. Non-zero (default,
+    /// as DOSBox showed after a SAVE, capture <c>party_opcodes</c>, and 0xCA in ECL3 block 14's knock-door code, s18
+    /// probe) skips the search; 0 runs it over the first party member. The results go to $00xx addresses either way,
+    /// so no v1.3 outcome depends on it (docs/re/ecl-format.md "SPELL").
     /// </summary>
     public byte SpellFoundResidue { get; set; } = 1;
 }

@@ -11,6 +11,32 @@ public sealed class ClientSettings
 {
     public string? GameDirectory { get; set; }
 
+    /// <summary>
+    /// The unpacked Amiga Pool of Radiance disks (optional; <c>--amiga DIR</c>, remembered): their art is imported with
+    /// the game folder as the module's Amiga overlay (docs/module-format.md §10).
+    /// </summary>
+    public string? AmigaDirectory { get; set; }
+
+    /// <summary>
+    /// The art setting (PLAN §4.3), key <c>"Art"</c>: <c>"dos"</c> (Original DOS), <c>"best"</c> (default: the module's
+    /// per-category mix, PoR: Amiga with DOS filling the gaps) or <c>"amiga"</c>. Changed with <c>--art</c> or the
+    /// controls screen's ART row; an unknown word reads as Best.
+    /// </summary>
+    public string Art { get; set; } = "best";
+
+    /// <summary>The art setting as a choice (Best for an unknown word).</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public Data.Por.PorArtChoice ArtChoice
+    {
+        get => Play.ClientArt.Parse(Art) ?? Data.Por.PorArtChoice.Best;
+        set => Art = value switch
+        {
+            Data.Por.PorArtChoice.Dos => "dos",
+            Data.Por.PorArtChoice.Amiga => "amiga",
+            _ => "best",
+        };
+    }
+
     /// <summary>QoL, off = original: show the 320×200 screen stretched to 4:3 (pixels 1.2 times taller, as on a CRT).</summary>
     public bool Stretch43 { get; set; }
 
@@ -28,8 +54,9 @@ public sealed class ClientSettings
 
     /// <summary>
     /// Where the camp's Save writes and <c>--save X</c> looks first: <c>$XDG_DATA_HOME/goldbox/por-saves/</c> (default
-    /// <c>~/.local/share/goldbox/por-saves/</c>). The files are the original's (<c>SAVGAMx.DAT</c>, <c>CHRDATxn.*</c>),
-    /// so they can be copied into the DOS game's folder; the game folder itself is never written.
+    /// <c>~/.local/share/goldbox/por-saves/</c>). The camp writes engine saves (<c>a.json</c> … <c>j.json</c>,
+    /// docs/module-format.md §15); <c>goldbox-import save-export</c> turns one into the original files for the DOS game.
+    /// Original <c>SAVGAMx.DAT</c> files there (from earlier Clients) still load. The game folder is never written.
     /// </summary>
     public static string SavesFolder
     {
@@ -68,7 +95,7 @@ public sealed class ClientSettings
         try
         {
             if (File.Exists(SettingsPath))
-                return JsonSerializer.Deserialize<ClientSettings>(File.ReadAllText(SettingsPath)) ?? new ClientSettings();
+                return FromJson(File.ReadAllText(SettingsPath));
         }
         catch (Exception e) when (e is IOException or JsonException or UnauthorizedAccessException)
         {
@@ -77,7 +104,14 @@ public sealed class ClientSettings
         return new ClientSettings();
     }
 
-    public void Save() => Write(SettingsPath, JsonSerializer.Serialize(this, new JsonSerializerOptions { WriteIndented = true }));
+    public void Save() => Write(SettingsPath, ToJson());
+
+    /// <summary>The settings file's text (indented JSON).</summary>
+    public string ToJson() => JsonSerializer.Serialize(this, new JsonSerializerOptions { WriteIndented = true });
+
+    /// <summary>Settings from the file's text (keys missing in an older file keep their defaults).</summary>
+    public static ClientSettings FromJson(string json) =>
+        JsonSerializer.Deserialize<ClientSettings>(json) ?? new ClientSettings();
 
     public static InputBindings LoadBindings()
     {

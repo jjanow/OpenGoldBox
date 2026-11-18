@@ -13,8 +13,8 @@ namespace GoldBox.Client.Screens;
 /// pixels at (8, 8), the braid frame around it with a divider at column 22, the status panel in columns 23–38 (name
 /// row 1, hit points row 3, AC row 5, weapon row 7, messages from row 10), a status line on row 23 and the menu line on
 /// row 24. The program swaps EGA colours 0 and 8 for this screen (the ground and the background show dark grey, the
-/// art's colour 8 black: the DUNGCOM tiles match the screen pixel for pixel only that way); the palette write itself is
-/// not located [?]. It answers the requests of the fight (<see cref="CombatChooser"/>) with keyboard, mouse or pad.
+/// art's colour 8 black: the DUNGCOM tiles match the screen pixel for pixel only that way): the screen's setup
+/// (START 0x3729) writes EGA palette registers 0 and 8 through GAME.OVR 0x3081D (EGA mode only). It answers the requests of the fight (<see cref="CombatChooser"/>) with keyboard, mouse or pad.
 /// </summary>
 public sealed class CombatScreen
 {
@@ -50,6 +50,9 @@ public sealed class CombatScreen
     }
 
     public bool Active => _view.Active;
+
+    /// <summary>The program's shared menu highlight (DS:6B2B), the same cell the area and camp menus use.</summary>
+    public MenuHighlight Highlight { get; init; } = new();
 
     /// <summary>A fault of the logic, for the caller's report.</summary>
     public Action<Exception>? Report { get; init; }
@@ -199,7 +202,14 @@ public sealed class CombatScreen
         if (ReferenceEquals(request, _shown))
             return;
         _shown = request;
-        _selected = request is ChoiceRequest c ? c.Selected : 0;
+        // The menu routine 0x2CC8C opens on the shared highlight (MenuHighlight); a request may name its own start.
+        _selected = request switch
+        {
+            ChoiceRequest { Vertical: false } c => c.Selected != 0 ? c.Selected : Highlight.Start(c.Items.Count),
+            ChoiceRequest c => c.Selected,
+            PageRequest { SharedHighlight: true } pr => Highlight.Start(pr.Entries.Count),
+            _ => 0,
+        };
         _typed = "";
         _hasClickAnswer = false;
         if (request is ListRequest l)
@@ -311,6 +321,7 @@ public sealed class CombatScreen
         if (input.Pressed(GameAction.Confirm))
         {
             answer = _selected;
+            Chose(c, _selected);
             return true;
         }
         if (input.Pressed(GameAction.Cancel) && c.CancelIndex is { } ci)
@@ -324,11 +335,13 @@ public sealed class CombatScreen
             if (input.Pressed(GameAction.NextMember))
             {
                 answer = 0;
+                Chose(c, 0);
                 return true;
             }
             if (input.Pressed(GameAction.PreviousMember))
             {
                 answer = 1;
+                Chose(c, 1);
                 return true;
             }
         }
@@ -338,10 +351,19 @@ public sealed class CombatScreen
                 if (c.Items[i].Length > 0 && c.Items[i][0] == key[0])
                 {
                     answer = i;
+                    Chose(c, i);
                     return true;
                 }
         return false;
     }
+
+    /// <summary>A menu entry was taken: the shared highlight follows it (0x2CF48; Escape leaves it).</summary>
+    private void Chose(ChoiceRequest c, int entry)
+    {
+        if (!c.Vertical)
+            Highlight.Chosen(entry);
+    }
+
 
     // ---- Manual cursor (0x155F5) -------------------------------------------------------------------------------------
 
@@ -444,6 +466,8 @@ public sealed class CombatScreen
         if (row == MenuRow && WordAt(pr.Entries, col - (pr.Prompt?.Length ?? 0)) is { } e)
         {
             Answer(new ListAnswer(e, page.Selected));
+            if (pr.SharedHighlight)
+                Highlight.Chosen(e);
             return null;
         }
         if (PageRowAt(page, row) is { } i)
@@ -479,6 +503,8 @@ public sealed class CombatScreen
         if (input.Pressed(GameAction.Confirm))
         {
             answer = new ListAnswer(pr.PickRows && n > 0 ? PageRequest.RowPicked : _selected, page.Selected);
+            if (pr.SharedHighlight)
+                Highlight.Chosen(_selected);
             return true;
         }
         if (input.Pressed(GameAction.Cancel))
@@ -491,6 +517,8 @@ public sealed class CombatScreen
                 if (pr.Entries[i].Length > 0 && pr.Entries[i][0] == key[0])
                 {
                     answer = new ListAnswer(i, page.Selected);
+                    if (pr.SharedHighlight)
+                        Highlight.Chosen(i);
                     return true;
                 }
         return false;
@@ -499,6 +527,9 @@ public sealed class CombatScreen
     /// <summary>The number buttons for pad and mouse (row 22): steps, then OK.</summary>
     private static readonly string[] NumberButtons = ["-10", "-1", "+1", "+10", "OK"];
     private const int NumberButtonRow = 22;
+
+    /// <summary>The row of the pad / mouse hint and the number buttons: the page's free row (the View sheet uses 22).</summary>
+    private int HintRow => _view.Page?.HintRow ?? NumberButtonRow;
 
     private static char? Digit(string name) => name switch
     {
@@ -558,7 +589,7 @@ public sealed class CombatScreen
     {
         if (click.Right)
             return GameAction.Cancel;
-        if (_runner.Pending is not TextRequest t || click.Y / 8 != NumberButtonRow)
+        if (_runner.Pending is not TextRequest t || click.Y / 8 != HintRow)
             return null;
         switch (WordAt(NumberButtons, click.X / 8 - 1))
         {
@@ -603,7 +634,7 @@ public sealed class CombatScreen
                     Text(f, 0, MenuRow, prompt, PromptColour);
                 DrawEntries(f, pr.Entries, pr.Prompt?.Length ?? 0, _selected);
                 if (input.LastDevice != InputDevice.Keyboard)
-                    Text(f, 1, NumberButtonRow, Fit(PageHint(input, p.Rows.Count > 0), 38), Chrome.Grey);
+                    Text(f, 1, HintRow, Fit(PageHint(input, p.Rows.Count > 0), 38), Chrome.Grey);
                 break;
             case ChoiceRequest { Vertical: false } c:
                 if (c.MenuPrompt is { Length: > 0 } mp)
@@ -620,7 +651,7 @@ public sealed class CombatScreen
                     int col = 1;
                     foreach (var b in NumberButtons)
                     {
-                        Text(f, col, NumberButtonRow, b, Chrome.White);
+                        Text(f, col, HintRow, b, Chrome.White);
                         col += b.Length + 1;
                     }
                 }
@@ -797,7 +828,8 @@ public sealed class CombatScreen
 
     private void DrawLines(IndexedFrame f, ActionInput input)
     {
-        if (_view.StatusLine is { } s && _view.Mode is CombatMode.Aim or CombatMode.Manual)
+        // Row 23: Aim's range line, and while watching the cast's "Spell:" line or an item use's "Item:" line.
+        if (_view.StatusLine is { } s && _view.Mode is CombatMode.Aim or CombatMode.Manual or CombatMode.Watch)
             Text(f, 0, StatusRow, Fit(s, 40), Chrome.Green);
         switch (_runner.Pending)
         {

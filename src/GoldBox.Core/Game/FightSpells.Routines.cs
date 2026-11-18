@@ -514,9 +514,18 @@ public sealed partial class FightSpells
     /// 0xB1 + g, 0x75 − g, 0x74 − 1. Over classes 0..7: a level above 0 and not above the best so far (from 13) whose
     /// next level's experience (DS:409B, level + 1) is above 0 and below the lowest so far (from 10,000,000), and that the
     /// race allows (START 0x3AF7), is chosen; it gains a level and experience 0xAC rises to that threshold when below.
-    /// Level stats (0x2AA87) and a message. [?] With no class chosen the routine adds 1 at an uninitialised index (and
-    /// experience below 10,000,000 still rises to it); here nothing is raised.
+    /// Level stats (0x2AA87) and a message. With no class chosen (a monster: all levels 0, drain bytes 255) the routine
+    /// adds 1 at its uninitialised index [bp−0xC] (and experience below 10,000,000 still rises to it). DOSBox-X showed
+    /// that index as 8 in all three samples (a scroll used in a fight on a party member and on a goblin guard, and
+    /// outside a fight), so record 0x9E (gender) + 1: <see cref="RestorationResidueIndex"/>.
     /// </summary>
+    /// <summary>
+    /// The class index Restoration raises when no class qualifies: residue in the program ([bp−0xC] of 0x29C5B), 8 in
+    /// every DOSBox-X sample (fixture <c>fight_restoration</c>), which lands on record 0x96 + 8 = 0x9E (gender).
+    /// Signed in the program (cwde), so any value would address 0x16..0x115.
+    /// </summary>
+    public const int RestorationResidueIndex = 8;
+
     private void Restoration(int spell)
     {
         if (First is not { } t || t[0x74] == 0)
@@ -542,10 +551,9 @@ public sealed partial class FightSpells
             cls = k;
             min = thr;
         }
-        if (cls < 0)
-            Diag("[?] Restoration with no class to raise adds 1 at an uninitialised index; skipped");
-        else
-            t[EffectHandlers.ClassLevels + cls]++;
+        // No class: the program's index is stack residue; DOSBox gave 8 on every sampled path (sampled, not proven
+        // for every path; spells-effects.md "Restoration").
+        t[EffectHandlers.ClassLevels + (cls < 0 ? RestorationResidueIndex : cls)]++;
         int xp = t[0xAC] | (t[0xAD] << 8) | (t[0xAE] << 16) | (t[0xAF] << 24);
         if (xp < min)
         {

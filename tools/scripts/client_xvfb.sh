@@ -11,7 +11,7 @@
 #                                             then press keys)
 #   client_xvfb.sh stop   :N                  stop the Client, metacity and Xvfb on :N (only that display)
 #
-# Settings and saves go to a throwaway XDG home (CLIENT_HOME, default /tmp/goldbox-client-N) so the real ones stay
+# Settings, saves and the module cache go to a throwaway XDG home (CLIENT_HOME, default /tmp/goldbox-client-N) so the real ones stay
 # untouched. Log: $CLIENT_HOME/client.log. CLIENT_PROGRAM runs another program instead of play.sh (e.g. a packaged
 # build; until the Client and play.sh exist, any SDL/X11 program). WINDOW_NAME (default "Gold Box") is the window
 # title to find. Sound goes to a PulseAudio null sink of its own (goldbox_xvfb_N), never the user's speakers; `audio`
@@ -96,7 +96,7 @@ case $cmd in
       pactl load-module module-null-sink sink_name="$sink" > "$home/sink.module"
     fi
     # OpenAL Soft would pick PipeWire directly and ignore PULSE_SINK: force its pulse backend.
-    env -u WAYLAND_DISPLAY SDL_VIDEODRIVER=x11 ALSOFT_DRIVERS=pulse PULSE_SINK=$sink XDG_DATA_HOME=$home XDG_CONFIG_HOME=$home setsid "${CLIENT_PROGRAM:-$repo/play.sh}" "$@" > "$home/client.log" 2>&1 &
+    env -u WAYLAND_DISPLAY SDL_VIDEODRIVER=x11 ALSOFT_DRIVERS=pulse PULSE_SINK=$sink XDG_DATA_HOME=$home XDG_CONFIG_HOME=$home XDG_CACHE_HOME=$home setsid "${CLIENT_PROGRAM:-$repo/play.sh}" "$@" > "$home/client.log" 2>&1 &
     echo $! > "$home/client.pid"
     w=$(WAIT_TICKS=900 window) # up to 3 minutes: play.sh may build first
     sleep 1

@@ -117,7 +117,7 @@ public sealed class EclPartyRules(EclMemory memory, Func<int, int> random)
 
     /// <summary>
     /// SPELL (0x3949): (slot index, member count). The member loop runs only while the uninitialised "found" byte is 0
-    /// (<paramref name="foundResidue"/>, stack residue [?]); it then scans the first member's record bytes 0x18.. for
+    /// (<paramref name="foundResidue"/>, stack residue: non-zero in both DOSBox samples); it then scans the first member's record bytes 0x18.. for
     /// the spell: index i of the match (record 0x17 + i), or 255 after i = 0x52, and the count is 1. When the loop does
     /// not run: (1, 0).
     /// </summary>

@@ -72,7 +72,10 @@ public static class EclProfiles
         [Por13.Name] = Por13,
     };
 
-    /// <summary>The profile used when none is named (the engine runs PoR v1.3 only so far).</summary>
+    /// <summary>
+    /// The profile of code that names none (a DOS game folder, <c>new EclMemory()</c>): the engine runs PoR v1.3 only so
+    /// far. A module without <c>vm</c> does not get it (<see cref="ForVm"/>).
+    /// </summary>
     public static EclProfile Default => Por13;
 
     public static IEnumerable<string> Names => All.Keys;
@@ -84,8 +87,8 @@ public static class EclProfiles
         All.TryGetValue(name, out var p) ? p : throw new UnknownEclProfileException(name);
 
     /// <summary>
-    /// The profile for a manifest's <c>vm</c>: <see cref="Default"/> when it is absent `[?]` (module-format.md §18),
-    /// else <see cref="Get"/>.
+    /// The profile for a manifest's <c>vm</c>: null when it is absent (no ECL VM: an event-only module,
+    /// docs/module-format.md §4), else <see cref="Get"/>.
     /// </summary>
-    public static EclProfile ForVm(string? vm) => vm is null ? Default : Get(vm);
+    public static EclProfile? ForVm(string? vm) => vm is null ? null : Get(vm);
 }

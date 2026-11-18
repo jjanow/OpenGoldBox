@@ -217,6 +217,34 @@ public class EclPartyOpcodeTests
         Assert.Equal(0, rig2.Memory.SpecialWriteValues[0x00B9]);
     }
 
+    /// <summary>
+    /// v1.3's one SPELL (ECL3 block 14 $9ECA, "cast knock") writes to $007D / $007E, which no VM area holds, so the
+    /// residue byte decides nothing: with the search run (0) or skipped (non-zero, 0xCA in DOSBox there) every VM
+    /// cell, the party and the script's next test come out the same.
+    /// </summary>
+    [Fact]
+    public void Spell_in_the_knock_door_script_does_not_depend_on_the_residue()
+    {
+        (ushort[], ushort[], ushort[], int) Run(byte residue)
+        {
+            var party = Party("A", "B");
+            party.Members[0][0x17 + 3] = 31; // the first member has Knock memorised: the search finds it
+            var rig = Rig(new EclAsm()
+                .Op(EclOpcodes.Save, Imm8(7), Mem(0x6E7D))
+                .Op(EclOpcodes.Spell, Imm8(31), Mem(0x6E7D), Mem(0x6E7E))
+                .Op(EclOpcodes.Exit), party, new EclVmPolicy { SpellFoundResidue = residue });
+            rig.Run();
+            return (rig.Memory.Cells4900.ToArray(), rig.Memory.Cells6B00.ToArray(), rig.Memory.Cells9700.ToArray(),
+                party.CurrentIndex);
+        }
+        var searched = Run(0);
+        var skipped = Run(0xCA);
+        Assert.Equal(searched.Item1, skipped.Item1);
+        Assert.Equal(searched.Item2, skipped.Item2);
+        Assert.Equal(searched.Item3, skipped.Item3);
+        Assert.Equal(searched.Item4, skipped.Item4);
+    }
+
     // ---- ROB -------------------------------------------------------------------------------------------------------
 
     [Fact]

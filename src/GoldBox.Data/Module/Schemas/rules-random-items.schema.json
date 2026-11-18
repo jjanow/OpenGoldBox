@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "RandomItemsDocument",
+  "type": "object",
+  "properties": {
+    "profile": {
+      "type": "string"
+    },
+    "dsOffset": {
+      "type": "integer"
+    },
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "magic": {
+            "type": "integer"
+          },
+          "word3": {
+            "type": "integer"
+          },
+          "word2": {
+            "type": "integer"
+          },
+          "word1": {
+            "type": "integer"
+          },
+          "weight": {
+            "type": "integer"
+          },
+          "value": {
+            "type": "integer"
+          },
+          "props": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            }
+          }
+        },
+        "required": [
+          "magic",
+          "props"
+        ]
+      }
+    },
+    "source": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "container": {
+          "type": "string"
+        },
+        "block": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "container"
+      ]
+    }
+  },
+  "required": [
+    "profile",
+    "dsOffset",
+    "items"
+  ]
+}

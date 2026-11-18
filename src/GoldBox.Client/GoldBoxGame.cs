@@ -29,6 +29,9 @@ public sealed class GoldBoxGame : Game, IScreenHost
     /// <summary>Shown in the window title when there is nothing to play (no game folder): the reason.</summary>
     public string? Problem { get; init; }
 
+    /// <summary>The colours of the frame's indices (EGA 0–15 plus the art's own palettes); null = EGA only.</summary>
+    public ScreenPalette? Palette { get; init; }
+
     /// <summary>QoL option: show the frame at 4:3 (each pixel 1.2 times taller), off = square pixels.</summary>
     public bool Stretch43 { get; init; }
 
@@ -133,7 +136,7 @@ public sealed class GoldBoxGame : Game, IScreenHost
             _screens.Peek().Draw(_frame, Input);
         else
             _frame.Clear(0);
-        _texture!.Upload(_frame);
+        _texture!.Upload(_frame, Palette);
 
         var vp = GraphicsDevice.Viewport;
         int w, h;

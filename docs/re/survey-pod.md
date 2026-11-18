@@ -162,10 +162,11 @@ Region classifier OVR 0x6B9E, reader OVR 0x6F14, writer OVR 0x6D51:
   one has a handler, including 0x1F. Opcodes ≥ 0x42 fall out of the chain without moving the PC. The behaviour is
   presumably PoR's hang `[?]`.
 - **IF-skip** (OVR 0x7A4F) keeps its own operand-count table, as in PoR. In PoD it **mis-sizes** 0x15, 0x25, 0x26,
-  0x27, 0x2B and 0x31 (opcode byte only), and 0x34 and 0x36 (1 operand of 2). PoR's 0x0C mis-skip is fixed. No IF in
+  0x27, 0x2B and 0x31 (opcode byte only), and 0x34 and 0x36 (1 operand of 2). PoR's 0x0C mis-skip is fixed (since
+  Curse; `survey-sotsb.md` §3.4: 0x27 and 0x31 are PoD's new mis-skips, 0x34 dates from Curse, the rest from PoR). No IF in
   the scripts is followed by one of these (decoder check), but a VM must still reproduce them.
 - **RETURN with an empty GOSUB stack now ends the run** (the handler, OVR 0xCE8, calls the EXIT handler). PoR falls
-  through.
+  through; Curse and SotSB already exit (`survey-sotsb.md` §3.4).
 - Variadic opcodes: VMENU (0x15, count = operand 3), ON GOTO/GOSUB (0x25/0x26, count = operand 2), HMENU (0x2B and
   0x31, count = operand 2) and **TREASURE (0x27, count = operand 4, new)**. In each the count is read through the
   value fetch, the PC is stepped back one byte, and the loader is called again (PoR's scheme).
@@ -241,14 +242,15 @@ meaning from PoR. A matching count alone does not prove the same meaning; those 
 | 3E | — | 0 (DUMP) | 0 | 0 | 0x222C | Remove the current character (Curse DUMP) | same as Curse | 22 |
 | 3F | — | 1 (FIND SPECIAL) | 1 | 1 | 0x225B | "=" if the current character has effect v, else "≠" | checked | 4 |
 | 40 | — | 1 (DESTROY ITEMS) | 1 | 1 | 0x22AC | Remove items of type v from the party (bit 0x80 variant `[?]`) | checked | 5 |
-| 41 | — | — | **2** | 2 | 0x2405 | **Add experience**: 16-bit amount, shared out among enabled members by class count; sets "can train" (record 0x1EC). Operand 2 = whole party or current `[?]` | checked, new | 111 |
+| 41 | — | — | **2** | 2 | 0x2405 | **Add experience**: 16-bit amount, shared out among enabled members by class count; sets "can train" (record 0x1EC). Operand 2 = whole party or current `[?]` | checked, new in SotSB (ADD EP) | 111 |
 
 Summary: PoR has 61 opcodes (0x00–0x3D without 0x1F). **49 keep PoR's operand count and job.** The VM core (control
 flow, arithmetic, compare, tables, text) is all among them, though the memory model under it changed, and RETURN,
 CALL ids and the LOADMON cap differ in detail. **11 change** count or meaning: 0C, 1D, 21, 22, 23, 27, 29, 2C, 31 and
 37, plus CLOCK 34 (changed already in Curse). 0x3C is unknown. **5 are added**: 1F (journal, now handled), 3E/3F/40
-from Curse, and 41, new in PoD or in a game between Curse and PoD `[?]`. Silver Blades was not surveyed, so whether
-each change is Silver Blades' or PoD's own is `[?]`. The encounter menu (29), parley (2C) and surprise (22/23) left the
+from Curse, and 41, new in Silver Blades. The Silver Blades survey (`survey-sotsb.md` §8) dates the rest: SotSB still
+has PoR's count and job for 0C, 1D, 21, 22, 23, 27, 29, 2C, 31 and 37, so those changes are PoD's own; 0x3C is already
+a stub in SotSB, and CLOCK's second operand is Curse's. The encounter menu (29), parley (2C) and surprise (22/23) left the
 VM in favour of UI opcodes (wait-for-key, yes/no, journal, menu-in-window). Where the encounter logic lives now is
 `[?]`; presumably it is composed from HMENU + COMPARE in the scripts.
 
@@ -285,7 +287,7 @@ here:
 - **Character transfer.** `STARTUP.EXE` asks for a *Silver Blades* save path (stored in `POOL4.CFG`). The character
   loader (OVR ≈0x11A40) reads a **439-byte** (0x1B7, Silver Blades size) record into a buffer and builds a 510-byte one
   from it. The save loader has a second branch that opens a `.dat` save and seeks to offset 5,140 (0x1414) for the
-  party name list (OVR 0x12C6A): the Silver Blades `SAVGAMx.DAT` `[?]`. So the chain is PoR → Curse → SSB → PoD, and PoD
+  party name list (OVR 0x12C6A): the Silver Blades `SAVGAMx.DAT` (confirmed: its party count sits at 5,140, `survey-sotsb.md` §6). So the chain is PoR → Curse → SSB → PoD, and PoD
   converts only the immediately previous game's record. The field mapping was not read `[?]`. Roster files use a
   `.PC` extension plus `.THG`/`.EFX` (strings at OVR 0x1122E) `[?]`.
 
@@ -383,4 +385,4 @@ range 0x00–0x41, and all 56 v1.00 scripts decode cleanly with the same tables.
 - Global-area meanings (only the special cells above are known). The character write whitelist in full.
 - `8X8D1`'s 28 extra bytes, the `8X8D0` font block, `.BMA`/`.ACF`/`.SMS` formats, the EGA remap table.
 - SSB → PoD field mapping, roster file format, vault file layout, the `ITEMS` table layout vs PoR.
-- Whether each opcode change dates from Silver Blades or PoD (survey Silver Blades next to settle it).
+- Settled (`survey-sotsb.md` §8): which opcode changes date from Curse, Silver Blades or PoD.

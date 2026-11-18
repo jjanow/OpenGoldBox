@@ -1,4 +1,5 @@
 using GoldBox.Core.Ecl;
+using GoldBox.Core.Ecl.Profiles;
 using GoldBox.Core.Explore;
 using GoldBox.Core.Game;
 using GoldBox.Core.Tests.Support;
@@ -37,7 +38,56 @@ public class PorModuleTests(ITestOutputHelper output)
         Assert.Equal(822, r.Checked["ART"]);
         Assert.Equal(783, r.Checked["ART (engine)"]);
         Assert.Equal(1, r.Checked["PROGRAM"]);
+        Assert.Equal(PorRulesTables.Files.Count, r.Checked["RULES"]);
         Assert.Equal(36, r.Checked["SAVE"]);
+        Assert.Equal(36, r.Checked["ENGINE SAVE"]);  // every original save file written back from the engine saves
+        // The overland: tiles and special locations as bytes, as the engine reads them (and the combat terrain), and
+        // every area's column.
+        Assert.Equal(2, r.Checked["OVERLAND"]);
+        Assert.Equal(3, r.Checked["OVERLAND (engine)"]);
+        Assert.Equal(29, r.Checked["OVERLAND (areas)"]);
+    }
+
+    [PorFact]
+    public void The_overland_is_imported_into_rules_and_placed_by_the_wilderness_areas()
+    {
+        var dir = PorData.Open();
+        var m = PorModuleData.Open();
+        Assert.True(PorModuleData.Report.Overland);
+        // Located through GAME.OVR's code at the v1.3 offsets (docs/re/geo-format.md "Wilderness (overland)").
+        Assert.Equal(new PorOverlandOffsets(0x3648, 0x0C36, 0x3C76), dir.Program()!.OverlandOffsets);
+        var a = ((IPorContent)dir).Overland()!;
+        var b = ((IPorContent)m).Overland()!;
+        Assert.Equal((44, 36, 9), (b.Width, b.Height, b.Sites.Count));
+        Assert.Equal(a.Tiles, b.Tiles);
+        Assert.Equal(a.Sites, b.Sites);
+        // Areas 25-27 sit at the columns the program's view modes 2-4 use; no other area has an overland.
+        AreaDocument Area(int id) => ModuleJson.Read<AreaDocument>(m.Modules.Main.Find(ResourceKey.Area(id), ".json")!);
+        Assert.Equal([0, 13, 26], new[] { 25, 26, 27 }.Select(id => Area(id).Overland!.Column));
+        Assert.All(Enumerable.Range(0, 33), id => Assert.Equal(((IPorContent)dir).OverlandColumn(id), m.OverlandColumn(id)));
+        Assert.Null(m.OverlandColumn(24));
+        // The engine draws and fights on the same squares from either source.
+        var cells = new Dictionary<ushort, ushort> { [OverlandMap.Cell4AB3] = 0xFE };
+        ushort Cell(ushort c) => cells.GetValueOrDefault(c);
+        var ta = dir.Program()!.CombatTables();
+        var tb = m.Program()!.CombatTables();
+        for (int y = 0; y < 36; y++)
+            for (int x = 0; x < 44; x++)
+            {
+                Assert.Equal(a.DrawnTile(x, y, Cell), b.DrawnTile(x, y, Cell));
+                Assert.Equal(ta.WildTerrain(x, y), tb.WildTerrain(x, y));
+            }
+    }
+
+    [PorFact]
+    public void The_combat_wilderness_terrain_comes_from_the_overland_not_the_data_segment()
+    {
+        var p = PorModuleData.Open().Program()!;
+        var tiles = (byte[])p.Overland!.Tiles.Clone();
+        tiles[5 * 44 + 7] ^= 0xFF;
+        var edited = new PorProgramData { Ds = p.Ds, Offsets = p.Offsets, Overland = new OverlandMap(44, 36, tiles, p.Overland.Sites) };
+        Assert.Equal(tiles[5 * 44 + 7], edited.CombatTables().WildTerrain(7, 5));
+        Assert.NotEqual(p.CombatTables().WildTerrain(7, 5), edited.CombatTables().WildTerrain(7, 5));
     }
 
     [PorFact]
@@ -106,7 +156,6 @@ public class PorModuleTests(ITestOutputHelper output)
     {
         var m = PorModuleData.Open();
         AreaDocument Area(int id) => ModuleJson.Read<AreaDocument>(m.Modules.Main.Find(ResourceKey.Area(id), ".json")!);
-        Assert.Equal([24, 31], Area(24).Maps);
         Assert.Equal([16, 30], Area(16).Maps);
         Assert.Equal([0], Area(8).Maps);                          // council: map 0, no map of its own
         Assert.Empty(Area(19).Views);                             // silver dragon lair: no LOADFILES
@@ -114,7 +163,13 @@ public class PorModuleTests(ITestOutputHelper output)
         Assert.True(Area(0).NoWrapOffMap);
         Assert.True(Area(10).NoWrapOffMap);
         Assert.False(Area(24).NoWrapOffMap);
-        Assert.Contains("[?]", Area(5).Notes);                    // the hedge maze loads computed maps only
+        Assert.Contains("[?]", Area(5).Notes);                    // the hedge maze: $9AD8 reads a cell set only behind IFs
+        // Computed operands the code before them fixes: a facing table (3), 3 + Random(4) (5), a facing table that
+        // also leaves for areas 14 and 26 after switching the disk (24).
+        Assert.Equal([3, 5], Area(3).Maps);
+        Assert.Equal([3, 4, 5, 6], Area(5).Maps);
+        Assert.Equal([14, 24, 26, 31], Area(24).Maps);
+        Assert.DoesNotContain("[?]", Area(24).Notes);
         // The engine reads the flag from the area: the same squares wrap as under the program's rule.
         var dir = PorData.Open();
         Assert.All(Enumerable.Range(0, 30), id => Assert.Equal(dir.NoWrapOffMap(id), m.NoWrapOffMap(id)));
@@ -248,6 +303,90 @@ public class PorModuleTests(ITestOutputHelper output)
         Assert.Equal(fromDax.Count, fromModule.Count);
         for (int i = 0; i < fromDax.Count; i++)
             Assert.Equal(fromDax[i], fromModule[i]);
+    }
+
+    /// <summary>
+    /// docs/module-format.md §15: a game loaded from the module's engine save (<c>saves/a.json</c>) is the game loaded
+    /// from the original files in the game folder: the same VM state, party records, program variables and entry run,
+    /// and the same states over a walk.
+    /// </summary>
+    [PorTheory]
+    [InlineData('A')]
+    [InlineData('J')]
+    public void A_game_from_the_engine_save_is_the_game_from_the_original_files(char slot)
+    {
+        var dir = PorData.Open();
+        var module = PorModuleData.Open();
+        var json = Path.Combine(module.SaveFolder!, PorEngineSave.FileName(slot));
+        var doc = PorEngineSave.Read(json);
+        Assert.Equal(PorEngineSave.Identity(module.Modules), doc.Module);
+        Assert.Equal(EclProfiles.Por13Name, doc.Vm);
+        Assert.Equal(slot.ToString(), doc.Por!.Slot);
+        Assert.True(doc.Script.MatchesModule);
+        Assert.Equal(6, doc.Party!.Count);
+        // The save file and the party the original files give (the reader before engine saves existed).
+        var originalPath = dir.Find(PorSaveGame.FileName(slot))!;
+        Assert.Equal(File.ReadAllBytes(originalPath), PorEngineSave.ToSavgam(doc));
+        string Records(EclParty p) => string.Join("/", p.Members.Select(c => Convert.ToHexString(c.Record) + "|" +
+            string.Join(",", c.Items.Select(Convert.ToHexString)) + "|" + string.Join(",", c.Effects.Select(Convert.ToHexString))));
+        Assert.Equal(Records(PorParty.Load(PorSaveGame.Open(originalPath), dir.Root)), Records(PorEngineSave.Party(doc)!));
+        AreaCommand[] commands =
+        [
+            AreaCommand.Forward, AreaCommand.TurnLeft, AreaCommand.Forward, AreaCommand.Forward, AreaCommand.TurnRight,
+            AreaCommand.Forward, AreaCommand.Search, AreaCommand.Forward, AreaCommand.TurnAround, AreaCommand.Forward,
+        ];
+        (List<string> States, string Program, List<string> Party) Run(bool engine)
+        {
+            var (g, host, ui) = NewGame(p => engine
+                ? PorGame.FromSave(module, PorViewArt.Load(module), json, p, 99)
+                : PorGame.FromSave(dir, PorViewArt.Load(dir), dir.Find(PorSaveGame.FileName(slot))!, p, 99));
+            var m = g.Memory;
+            var program = $"view {m.ViewMode} speed {m.GameSpeed} disk {m.Disk} current {m.Party!.CurrentIndex}";
+            var party = m.Party.Members.Select(c => Convert.ToHexString(c.Record) + "|" +
+                string.Join(",", c.Items.Select(Convert.ToHexString)) + "|" + string.Join(",", c.Effects.Select(Convert.ToHexString))).ToList();
+            var states = new List<string> { Snapshot(g.Vm, g.Loop.Map, host.Calls.Concat(ui.Calls), g.EntryRun) };
+            foreach (var c in commands)
+            {
+                try
+                {
+                    g.Loop.Execute(c);
+                }
+                catch (Exception e) when (e is InvalidOperationException or EclVmFault)
+                {
+                    states.Add("stopped: " + e.GetType().Name);
+                    break;
+                }
+                states.Add($"{c}: " + Snapshot(g.Vm, g.Loop.Map, host.Calls.Concat(ui.Calls), g.EntryRun));
+            }
+            return (states, program, party);
+        }
+        var original = Run(engine: false);
+        var engine = Run(engine: true);
+        Assert.Equal(original.Program, engine.Program);
+        Assert.Equal(original.Party, engine.Party);
+        Assert.Equal(original.States.Count, engine.States.Count);
+        for (int i = 0; i < original.States.Count; i++)
+            Assert.Equal(original.States[i], engine.States[i]);
+    }
+
+    /// <summary>The importer's engine saves name the module's content hash, and re-importing gives the same hash.</summary>
+    [PorFact]
+    public void The_engine_saves_name_the_module()
+    {
+        var module = PorModuleData.Open();
+        Assert.Equal(2, PorModuleData.Report.EngineSaves);
+        var hash = ModuleContentHash.Of(module.Modules);
+        Assert.Matches("^[0-9a-f]{64}$", hash);
+        foreach (var slot in "AJ")
+            Assert.Equal(hash, PorEngineSave.Read(Path.Combine(module.SaveFolder!, PorEngineSave.FileName(slot))).Module.ContentHash);
+        // A second import of the same folder (as the Client's cache does after an importer change) gives the same hash
+        // and the same engine saves. The folder is left for the temp folder's own cleanup, as PorModuleData's.
+        var again = Path.Combine(Path.GetTempPath(), "goldbox-tests", $"por-module-{Guid.NewGuid():N}");
+        PorImporter.Import(PorData.Dir!, again);
+        Assert.Equal(hash, ModuleContentHash.Of(again));
+        foreach (var slot in "AJ")
+            Assert.Equal(File.ReadAllText(Path.Combine(module.SaveFolder!, PorEngineSave.FileName(slot))),
+                File.ReadAllText(Path.Combine(again, "saves", PorEngineSave.FileName(slot))));
     }
 
     public static TheoryData<string> CaptureNames()

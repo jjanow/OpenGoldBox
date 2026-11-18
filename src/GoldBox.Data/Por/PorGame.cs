@@ -68,6 +68,8 @@ public sealed class PorGame
         // The VM is built on a forwarding host first: the chain needs the loop, the loop needs the VM.
         var front = new ForwardingHost();
         Vm = new EclVm(memory, front) { Scripts = content };
+        // ADDNPC runs the level stats 0x2AA87 on the joined record (and DAMAGE's handlers see the race limit).
+        FightKit.WireLevels(Vm.Effects, kit?.LevelTables);
         Loop = new AreaLoop(Vm, Rng, player.Area) { MapSource = content.LoadMap, NoWrapOffMap = content.NoWrapOffMap };
         // 0x241A1 → 0x23DCC outside camp (DS:49F3 = 3 or 4): every flag set, the whole list aged.
         Loop.EffectTimeout = (count, unit) => CampTime.TimeOutEffects(memory, Camp.EffectFlags, false, count, unit,
@@ -90,24 +92,57 @@ public sealed class PorGame
         front.Target = Encounter;
     }
 
-    /// <summary>Main menu → Load: the save's memory and script, map $49C5 read again, then vector 4 (and any script switch).</summary>
+    /// <summary>
+    /// Main menu → Load from a save file: an engine save (<c>.json</c>, docs/module-format.md §15), or an original
+    /// <c>SAVGAMx.DAT</c>, converted first (<see cref="Module.Por.PorEngineSave"/>; its party files are looked up next
+    /// to it, then in the content's save folder).
+    /// </summary>
     public static PorGame FromSave(IPorContent content, PorViewArt art, string savePath, PorPlayer player, uint seed) =>
-        FromSave(content, art, File.ReadAllBytes(savePath), Path.GetDirectoryName(Path.GetFullPath(savePath))!, player, seed);
+        Module.Por.PorEngineSave.IsEngineSave(savePath)
+            ? FromSave(content, art, Module.Por.PorEngineSave.Read(savePath), player, seed)
+            : FromSave(content, art, File.ReadAllBytes(savePath), Path.GetDirectoryName(Path.GetFullPath(savePath))!, player, seed,
+                Path.GetFileName(savePath));
 
-    /// <summary>As above from the save's bytes; the party files are looked up in <paramref name="saveDir"/>, then in the
-    /// content's save folder.</summary>
-    public static PorGame FromSave(IPorContent content, PorViewArt art, byte[] save, string saveDir, PorPlayer player, uint seed)
+    /// <summary>
+    /// An original save's bytes, converted to an engine save first; the party files are looked up in
+    /// <paramref name="saveDir"/>, then in the content's save folder (a party that cannot be read is left out, with a
+    /// diagnostic, as before).
+    /// </summary>
+    public static PorGame FromSave(IPorContent content, PorViewArt art, byte[] save, string saveDir, PorPlayer player, uint seed,
+        string? fileName = null)
     {
-        var sg = new PorSaveGame(save);
-        var g = new PorGame(content, art, player, seed);
+        var module = Module.Por.PorEngineSave.Identity(content);
+        Module.EngineSaveDocument doc;
+        string? problem = null;
         try
         {
-            g.Memory.Party = PorParty.Load(sg, [saveDir, .. content.SaveFolder is { } f ? new[] { f } : []]);
+            doc = Module.Por.PorEngineSave.FromFolders(save, fileName, module, content.LoadBlock,
+                [saveDir, .. content.SaveFolder is { } f ? new[] { f } : []]);
         }
         catch (Exception e) when (e is IOException or FormatException)
         {
-            g.Vm.Diagnostics.Add("party files not loaded: " + e.Message);
+            problem = "party files not loaded: " + e.Message;
+            doc = Module.Por.PorEngineSave.FromOriginal(save, readFile: null, module);
         }
+        var g = FromSave(content, art, doc, player, seed);
+        if (problem is not null)
+            g.Vm.Diagnostics.Insert(0, problem);
+        return g;
+    }
+
+    /// <summary>
+    /// Main menu → Load from an engine save: the save's memory and script, map $49C5 read again, then vector 4 (and any
+    /// script switch). The save must be for the content's VM profile and module id
+    /// (<see cref="Module.Por.PorEngineSave.Check"/>); a different module version or content is noted in the diagnostics.
+    /// </summary>
+    public static PorGame FromSave(IPorContent content, PorViewArt art, Module.EngineSaveDocument save, PorPlayer player, uint seed)
+    {
+        var notes = Module.Por.PorEngineSave.Check(save, content.VmProfile, Module.Por.PorEngineSave.Identity(content));
+        var sg = Module.Por.PorEngineSave.ToSaveGame(save);
+        var g = new PorGame(content, art, player, seed);
+        g.Vm.Diagnostics.AddRange(notes);
+        if (Module.Por.PorEngineSave.Party(save) is { } party)
+            g.Memory.Party = party;
         sg.ApplyTo(g.Memory);
         g.Vm.SetCurrentScript(sg.ScriptId, sg.Disk);
         // Load game (0x1FBB3–0x1FBC4) re-reads map $49C5 before vector 4 when DS:49FA (the save's location type) < 2.

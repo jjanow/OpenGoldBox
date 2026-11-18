@@ -47,6 +47,17 @@
     "noWrapOffMap": {
       "type": "boolean"
     },
+    "overland": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "column": {
+          "type": "integer"
+        }
+      }
+    },
     "notes": {
       "type": [
         "string",

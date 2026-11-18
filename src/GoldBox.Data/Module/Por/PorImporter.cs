@@ -21,7 +21,13 @@ public sealed class PorImportReport
     public int Pictures { get; set; }
     public int ArtData { get; set; }
     public int Texts { get; set; }
+    /// <summary>Decoded rules files written (rules/spells.json …, §12).</summary>
+    public int RulesTables { get; set; }
     public int Saves { get; set; }
+    /// <summary>Engine saves written (<c>saves/&lt;slot&gt;.json</c>, one per <c>SAVGAMx.DAT</c>).</summary>
+    public int EngineSaves { get; set; }
+    /// <summary><c>rules/overland.json</c> was written.</summary>
+    public bool Overland { get; set; }
     /// <summary>Per disk: ids that are both a <c>MON&lt;d&gt;ITM</c> block and an <c>ITEM&lt;d&gt;</c> block (§16).</summary>
     public SortedDictionary<int, List<int>> ItemIdCollisions { get; } = [];
     /// <summary>Colliding ids whose two blocks hold different bytes.</summary>
@@ -39,7 +45,10 @@ public sealed class PorImportReport
 /// </summary>
 public static class PorImporter
 {
-    public const string ImporterName = "GoldBox.Importer 0.3";
+    public const string ImporterName = "GoldBox.Importer 0.6";
+
+    /// <summary>VM $6E12 (DS:5376): the disk LOADFILES reads GEO&lt;d&gt; from.</summary>
+    private const ushort DiskCell = 0x6E12;
 
     /// <summary>Program rule (GAME.OVR 0x2EC5D): while script 0 or 10 runs, off-map squares read 0 instead of wrapping.</summary>
     private static readonly int[] NoWrapScripts = [0, 10];
@@ -51,8 +60,6 @@ public static class PorImporter
     /// <summary>True for a DAX name (no extension) imported as scripts, maps or records rather than art.</summary>
     public static bool IsNotArt(string name) => NotArt.IsMatch(name);
 
-    /// <summary>Program rule (GAME.OVR 0x3F28–0x3F99): blocks 25–27 switch to the wilderness view when $49E6 = 0.</summary>
-    private const int FirstWildernessScript = 25, LastWildernessScript = 27;
 
     /// <summary>
     /// Imports <paramref name="gameDir"/> into <paramref name="outDir"/>, which must not exist or be empty (nothing is
@@ -118,9 +125,10 @@ public static class PorImporter
             }
         }
 
+        var programData = PorProgramData.Open(game);
         foreach (var (id, block) in scriptBlocks.OrderBy(kv => kv.Key))
         {
-            ModuleJson.Write(Out(ResourceKey.Area(id).RelativePath(".json")), Area(id, block, scriptDisk[id], mapDisk));
+            ModuleJson.Write(Out(ResourceKey.Area(id).RelativePath(".json")), Area(id, block, scriptDisk[id], mapDisk, programData));
             report.Areas++;
         }
 
@@ -197,7 +205,7 @@ public static class PorImporter
             report.Notes.Add("no ITEMS file: records/itemTypes.json not written");
 
         // ---- program tables and texts ----
-        if (PorProgramData.Open(game) is { } program)
+        if (programData is { } program)
         {
             read.Add("START.EXE");
             if (game.Find("GAME.OVR") is not null)
@@ -215,12 +223,23 @@ public static class PorImporter
                 } : null,
                 Source = new SourceRef { Container = "START.EXE" },
             });
+            if (PorRulesTables.Write(outDir, program))
+                report.RulesTables = PorRulesTables.Files.Count;
+            else
+                report.Notes.Add("a rules table was not found: no decoded rules/*.json (the engine reads rules/program.json)");
             ModuleJson.Write(Out(TextDocument.RelativePath), new TextDocument
             {
                 Strings = new Dictionary<string, string>(program.Texts.OrderBy(kv => kv.Key, StringComparer.Ordinal)),
                 SpellNames = program.SpellNames?.ToList(),
                 PagePrompt = program.PagePrompt,
             });
+            if (program.Overland is { } overland)
+            {
+                ModuleJson.Write(Out(OverlandDocument.RelativePath), PorModuleCodec.Overland(overland, program.OverlandOffsets));
+                report.Overland = true;
+            }
+            else
+                report.Notes.Add("the overland tables were not found in GAME.OVR's code: rules/overland.json not written");
             report.Texts = program.Texts.Count;
             if (program.Texts.Count == 0)
                 report.Notes.Add("GAME.OVR is not the v1.3 overlay: no program texts (the Client uses its own wording)");
@@ -250,7 +269,8 @@ public static class PorImporter
         if (amigaDir is not null)
             report.Amiga = PorAmigaArt.Import(amigaDir, outDir);
 
-        // ---- shipped saves (copied as they are [?]: conversion to an engine save is section 15's open point) ----
+        // ---- shipped saves: the original files as they are (tools and DOSBox checks read them); the engine saves are
+        // written after the manifest, since they name the module's content hash ----
         foreach (var path in Directory.EnumerateFiles(gameDir).Order(StringComparer.Ordinal))
         {
             var file = Path.GetFileName(path).ToUpperInvariant();
@@ -289,6 +309,22 @@ public static class PorImporter
             },
         };
         manifest.Save(outDir);
+
+        // ---- engine saves (§15): one per shipped SAVGAMx.DAT, converted with its party files ----
+        var identity = PorEngineSave.Identity(ModuleResolver.Open(outDir));
+        foreach (var path in Directory.EnumerateFiles(gameDir).Order(StringComparer.Ordinal))
+        {
+            var file = Path.GetFileName(path).ToUpperInvariant();
+            if (!(file.StartsWith("SAVGAM", StringComparison.Ordinal) && file.EndsWith(".DAT", StringComparison.Ordinal)
+                  && file.Length == "SAVGAMA.DAT".Length && file[6] is >= 'A' and <= 'J'))
+                continue;
+            var save = PorEngineSave.FromFolders(File.ReadAllBytes(path), file, identity,
+                (disk, id) => scriptDisk.GetValueOrDefault(id) == disk ? scriptBlocks.GetValueOrDefault(id) : null, gameDir);
+            PorEngineSave.Write(Out("saves/" + PorEngineSave.FileName(file[6])), save);
+            report.EngineSaves++;
+            if (save.Script.MatchesModule == false)
+                report.Notes.Add($"{file}: its script {save.Script.Key.Id} differs from scripts/0/{save.Script.Key.Id}.ecl (the saved copy wins on load)");
+        }
         report.Notes.Add(report.Amiga is null
             ? "no Amiga folder given: DOS art only; manifest start [?]"
             : "manifest start [?]");
@@ -306,7 +342,7 @@ public static class PorImporter
     /// code reachable from the vectors (<see cref="EclAnalysis"/>) that name a GEO block on the script's own disk
     /// (LOADFILES reads GEO&lt;disk&gt;; computed operands are not followed, so an area may load more [?]).
     /// </summary>
-    private static AreaDocument Area(int id, byte[] block, int disk, Dictionary<int, int> mapDisk)
+    private static AreaDocument Area(int id, byte[] block, int disk, Dictionary<int, int> mapDisk, PorProgramData? program)
     {
         var an = new EclAnalysis(block);
         var maps = an.Instructions.Values
@@ -314,15 +350,42 @@ public static class PorImporter
             .Select(i => (int)(i.Operands[0].Word ?? i.Operands[0].Lo))
             .Where(m => m is not (255 or 127) && mapDisk.TryGetValue(m, out var d) && d == disk)
             .Distinct().Order().ToList();
-        bool computed = an.Instructions.Values.Any(i => i.Op == EclOpcodes.LoadFiles && i.Operands.Count > 0 && i.Operands[0].IsMemory);
+        // Computed map operands: the values the cell can hold there, when the code before the LOADFILES fixes them
+        // (EclValueSets); the disk may be switched on the way ($6E12, e.g. block 24 before leaving for 14 or 26).
+        var computedAt = an.Instructions.Values
+            .Where(i => i.Op == EclOpcodes.LoadFiles && i.Operands.Count > 0 && i.Operands[0].IsMemory && i.Operands[0].Word is not null)
+            .OrderBy(i => i.Offset).ToList();
+        bool computed = computedAt.Count > 0;
+        var unresolved = new List<EclInstruction>();
+        foreach (var i in computedAt)
+        {
+            if (EclValueSets.Before(an, i.Offset, i.Operands[0].Word!.Value) is not { } values)
+            {
+                unresolved.Add(i);
+                continue;
+            }
+            var disks = new HashSet<int>(EclValueSets.ImmediateWritesBefore(an, i.Offset, DiskCell)) { disk };
+            maps.AddRange(values.Where(m => m is not (255 or 127) && mapDisk.TryGetValue(m, out var d) && disks.Contains(d)));
+        }
+        maps = [.. maps.Distinct().Order()];
         var views = new List<string>();
         if (maps.Count > 0 || computed)
             views.Add("3d");
-        if (id is >= FirstWildernessScript and <= LastWildernessScript)
+        // Program rule (GAME.OVR 0x3F28–0x3F99): blocks 25–27 switch to the wilderness view (modes 2–4) when $49E6 = 0.
+        AreaOverland? overland = null;
+        if (PorOverland.ViewMode(id) is not null)
+        {
             views.Add("overland-tiles");
+            if (program is { OverlandOffsets: { } at } && PorOverland.Column(program.Ds, at, id) is { } column)
+                overland = new AreaOverland { Column = column };
+        }
         var notes = new List<string>();
-        if (computed)
-            notes.Add("LOADFILES with a computed map operand: maps lists only the immediate ones [?]");
+        if (unresolved.Count > 0)
+            notes.Add("LOADFILES with a computed map operand not fixed by the code before it (" +
+                      string.Join(", ", unresolved.Select(i => $"${i.Address:X4} [${i.Operands[0].Word:X4}]")) +
+                      "): maps may miss what it loads [?]");
+        else if (computed)
+            notes.Add("maps includes the values of computed LOADFILES operands, found from the code before them");
         return new AreaDocument
         {
             Id = id,
@@ -330,6 +393,7 @@ public static class PorImporter
             Script = KeyRef.Of(ResourceKey.Script(id)),
             Maps = maps,
             NoWrapOffMap = NoWrapScripts.Contains(id),
+            Overland = overland,
             Notes = notes.Count > 0 ? string.Join("; ", notes) : null,
         };
     }

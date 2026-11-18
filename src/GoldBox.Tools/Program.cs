@@ -94,6 +94,7 @@ public static class Program
         int disk = dir.DiskOf(script) ?? throw new ArgumentException($"no ECL block {script} in {dir.Root}");
         var memory = new EclMemory();
         var vm = new EclVm(memory, host) { Scripts = dir };
+        GoldBox.Core.Game.FightKit.WireLevels(vm.Effects, dir.Program()?.LevelTables());  // ADDNPC's level stats, as in PorGame
         using var writer = outPath is null ? Console.Out : new StreamWriter(outPath);
         vm.Trace = new JsonlTraceWriter(writer);
 

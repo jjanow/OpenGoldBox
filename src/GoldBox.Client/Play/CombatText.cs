@@ -20,8 +20,8 @@ public enum CombatMsg
     GotAway, EscapeBlocked, Sweeps, TurnsUndead, IsTurned, IsDestroyed, NothingHappens, CampOnlySpell, BeginsCasting,
     // Attack-ally check (0x15193), aim (0x1529B, 0x155F5).
     AttackAlly, Range, Target, AimNextPrevManual, AimCenterExit, AimPrompt, UseCursorKeys,
-    // Spell cast message (0x27C38), the yes/no menu (0x2D979).
-    Casts, YesNo,
+    // Spell cast message (0x27C38; the fight's cast message 0x2A332), the yes/no menu (0x2D979).
+    Casts, CastsASpell, SpellLabel, YesNo,
     // Spell aim: a creature already picked (0x14B79), the abort question (0x27EF2).
     AlreadyTargeted, AbortSpell, SpellAborted,
     // The status panel (START 0x1583; its strings are in START.EXE, offsets in the unpacked image).
@@ -100,6 +100,8 @@ public sealed class CombatText
         [CombatMsg.AimPrompt] = "AIMING:",
         [CombatMsg.UseCursorKeys] = "(MOVE THE CURSOR) ",
         [CombatMsg.Casts] = "CASTS",
+        [CombatMsg.CastsASpell] = "CASTS A SPELL",
+        [CombatMsg.SpellLabel] = "SPELL:",
         [CombatMsg.YesNo] = "YES NO",
         [CombatMsg.AlreadyTargeted] = "PICKED ALREADY",
         [CombatMsg.AbortSpell] = "GIVE UP THE SPELL? ",

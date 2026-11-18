@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "TurnUndeadDocument",
+  "type": "object",
+  "properties": {
+    "profile": {
+      "type": "string"
+    },
+    "dsOffset": {
+      "type": "integer"
+    },
+    "rows": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "row": {
+            "type": "integer"
+          },
+          "columns": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            }
+          }
+        },
+        "required": [
+          "row",
+          "columns"
+        ]
+      }
+    },
+    "source": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "container": {
+          "type": "string"
+        },
+        "block": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "container"
+      ]
+    }
+  },
+  "required": [
+    "profile",
+    "dsOffset",
+    "rows"
+  ]
+}

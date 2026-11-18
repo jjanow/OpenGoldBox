@@ -16,8 +16,9 @@ public sealed class CombatPage
     /// <summary>The braid's horizontal lines (rows); columns 0 and 39 always. DOSBox-X: Items 0, 2, 23; View 0, 23.</summary>
     public IReadOnlyList<int> FrameRows { get; init; } = [0, 23];
     /// <summary>
-    /// The combat palette (EGA 0 and 8 swapped) stays on: DOSBox-X shows the Items screen opened by the menu's Use on
-    /// dark grey, the View screen (and its Items) on black. Where the program resets the palette is not read [?].
+    /// The combat palette (EGA 0 and 8 swapped) stays on: the Items screen opened by the menu's Use is dark grey; View
+    /// restores the normal palette on entry (0x21AFB → 0x3083F) and swaps again on exit (0x21D4A → 0x3081D), so View
+    /// and its Items are black.
     /// </summary>
     public bool Grey { get; init; }
     /// <summary>The rows to pick from (none on the View page).</summary>
@@ -28,6 +29,8 @@ public sealed class CombatPage
     public int Selected { get; set; }
     /// <summary>The selected row is drawn white; false while a question is up (DOSBox-X: every row green then).</summary>
     public bool ShowSelection { get; set; } = true;
+    /// <summary>The row for the Client's pad / mouse hint and number buttons (not the program's): a row the page leaves empty.</summary>
+    public int HintRow { get; init; } = 22;
     /// <summary>Lines drawn in yellow from row 21 (the drop warning, 0x22401).</summary>
     public List<string> Warning { get; } = [];
 }
@@ -44,6 +47,10 @@ public sealed record PageRequest(IReadOnlyList<string> Entries, string? Prompt, 
 
     /// <summary>Return / A / a click on the selected row picks the row (the coin list), not the highlighted entry.</summary>
     public bool PickRows { get; init; }
+
+    /// <summary>The menu is the program's menu routine 0x2CC8C (View's): its highlight is the shared cell
+    /// (<see cref="MenuHighlight"/>); otherwise the item list routine's (first entry each time).</summary>
+    public bool SharedHighlight { get; init; }
 }
 
 public sealed partial class CombatChooser
@@ -70,14 +77,18 @@ public sealed partial class CombatChooser
 
     // ---- Messages of the fight (display hooks) ----------------------------------------------------------------------
 
-    /// <summary>The cast message (0x27D48 → 0x2A332): caster, the casts word, the spell, in the panel.</summary>
+    /// <summary>
+    /// The cast message (0x27D48 → 0x2A332, read s18): in a fight, START 0x16EC writes the caster and the "casts a
+    /// spell" words into the panel from row 10, row 23 is cleared and "Spell:" with the spell's name is written there
+    /// in green (it stays while the spell's results are shown; DOSBox-X s18: the AI's Hold Person and Magic Missile).
+    /// </summary>
     private void SayCast(EclCharacter caster, int spell)
     {
         View.Page = null;
         View.Mode = CombatMode.Watch;
         View.Shown = caster;
-        Say(new PanelLine(Name(caster), NameColour(caster)), new PanelLine(Text[CombatMsg.Casts].Trim(), 10),
-            new PanelLine(SpellLabel(spell), 10));
+        View.StatusLine = Text[CombatMsg.SpellLabel].Trim() + SpellLabel(spell);
+        Say(new PanelLine(Name(caster), NameColour(caster)), new PanelLine(Text[CombatMsg.CastsASpell].Trim(), 10));
     }
 
     /// <summary><see cref="FightSpells.Announce"/>: every cast not from an item (the AI's included).</summary>
@@ -136,16 +147,21 @@ public sealed partial class CombatChooser
     // ---- IItemScreenChooser: View (0x21AED) -------------------------------------------------------------------------
 
     /// <summary>
-    /// The View page: the character sheet and the menu "View:" with the program's entries. DOSBox-X (s15): braid on
-    /// rows 0 and 23, columns 0 and 39, black, name on row 1 in cyan, the menu on row 24. [?] The sheet's layout is
-    /// ours (CharacterView.Sheet: same data); the program's (0x21084) is noted in combat-menu.md.
+    /// The View page (0x21084, <see cref="CombatSheet"/>): braid on rows 0 and 23, black, the program's layout, and the
+    /// menu "View:" with the program's entries on row 24.
     /// </summary>
     private CombatPage ViewPage(EclCharacter c)
     {
-        var page = new CombatPage { FrameRows = [0, 23] };
-        var lines = CharacterView.Sheet(Resources().Texts, c);
-        for (int i = 0; i < lines.Count && i + 1 <= 22; i++)
-            page.Texts.Add((lines[i].Column, i + 1, lines[i].Text, i == 0 ? NameColour(c) : lines[i].Colour));
+        // The sheet leaves rows 13–14, 16 and 19 empty: the Client's hint goes on 19.
+        var page = new CombatPage { FrameRows = [0, 23], HintRow = 19 };
+        byte[]? weapon = null, armour = null;
+        if (View.Fight is { } fight)
+        {
+            var eq = FightRules.Equipment(c, fight.Items);
+            weapon = eq[FightRules.SlotWeapon];
+            armour = eq[FightRules.SlotBodyArmour];
+        }
+        page.Texts.AddRange(CombatSheet.Build(Resources(), c, weapon, armour, ItemName));
         return page;
     }
 
@@ -167,7 +183,7 @@ public sealed partial class CombatChooser
             View.Page = ViewPage(c);
             View.Mode = CombatMode.Page;
             int exit = entries.Count - 1;
-            var a = Ask(new PageRequest([.. entries.Select(ViewWord)], Text[CombatMsg.ViewPrompt].Trim(), exit)) as ListAnswer;
+            var a = Ask(new PageRequest([.. entries.Select(ViewWord)], Text[CombatMsg.ViewPrompt].Trim(), exit) { SharedHighlight = true }) as ListAnswer;
             var pick = a is { Action: >= 0 } && a.Action < entries.Count ? entries[a.Action] : ViewEntry.Exit;
             if (pick != ViewEntry.Spells)
                 return pick;
@@ -363,32 +379,40 @@ public sealed partial class CombatChooser
 
     /// <summary>
     /// The coin pick (a coin-type prompt in colour 13, then Exit; DOSBox-X: the sheet's money lines are the list, the
-    /// picked one white) and the amount (an amount question naming the coin, in green on row 24, digits typed
-    /// after it). [?] Our sheet has no money column: the coins are listed under it. [?] The input routine 0x24F1D is
-    /// not read: an empty or unreadable answer drops nothing and the coin list comes back.
+    /// picked one white, the others green) and the amount (an amount question naming the coin, in green on row 24,
+    /// digits typed after it). The list rows are the page's money lines (<see cref="CombatSheet.MoneyLine"/>: kinds 6
+    /// down to 0; names DS:0FFA + 11·kind). [?] The input routine 0x24F1D is not read: an empty or unreadable answer
+    /// drops nothing and the coin list comes back.
     /// </summary>
     public (int Kind, ushort Amount)? ChooseCoins(EclCharacter c, IReadOnlyList<int> kinds)
     {
-        var text = Resources().Texts;
+        var r = Resources();
         var page = ViewPage(c);
-        int first = page.Texts.Count == 0 ? 2 : page.Texts.Max(t => t.Row) + 2;
+        var order = CombatSheet.MoneyKinds(c).Where(kinds.Contains).ToList();
+        int width = order.Count == 0 ? 0 : order.Max(k => CombatSheet.CoinName(r, k).Length);
+        var moneyRows = CombatSheet.MoneyKinds(c).Count;
         var coinPage = new CombatPage
         {
             FrameRows = [0, 23],
-            Rows = [.. kinds.Select(k => text.Coin(k) + " " + FightItemScreens.Coins(c, k).ToString(CultureInfo.InvariantCulture))],
-            RowCol = 1,
-            FirstRow = first,
-            LastRow = 22,
+            HintRow = 19,
+            // Each row: the name right-aligned to end at column 19, a space, the amount from column 21.
+            Rows = [.. order.Select(k => CombatSheet.CoinName(r, k).PadLeft(width) + " " +
+                                         FightItemScreens.Coins(c, k).ToString(CultureInfo.InvariantCulture))],
+            RowCol = CombatSheet.MoneyNameEnd + 1 - width,
+            FirstRow = CombatSheet.MoneyFirstRow,
+            LastRow = Math.Max(CombatSheet.MoneyFirstRow, CombatSheet.MoneyFirstRow + order.Count - 1),
         };
-        coinPage.Texts.AddRange(page.Texts);
+        // The sheet without its money lines (the list draws them).
+        coinPage.Texts.AddRange(page.Texts.Where(t => !(t.Row >= CombatSheet.MoneyFirstRow &&
+                                                        t.Row < CombatSheet.MoneyFirstRow + moneyRows && t.Col >= 12)));
         View.Page = coinPage;
         View.Mode = CombatMode.Page;
         var a = Ask(new PageRequest([Text[CombatMsg.ViewExit].Trim()], Text[CombatMsg.SelectCoin].Trim() + " ", 0) { PickRows = true }) as ListAnswer;
-        if (a is null || a.Action != PageRequest.RowPicked || a.Row < 0 || a.Row >= kinds.Count)
+        if (a is null || a.Action != PageRequest.RowPicked || a.Row < 0 || a.Row >= order.Count)
             return null;
-        int kind = kinds[a.Row];
+        int kind = order[a.Row];
         coinPage.Selected = a.Row;
-        string prompt = GameText.Cat(GameText.Cat(Text[CombatMsg.HowMuch], text.Coin(kind)), Text[CombatMsg.WillYouDrop]).TrimEnd();
+        string prompt = GameText.Cat(GameText.Cat(Text[CombatMsg.HowMuch], CombatSheet.CoinName(r, kind)), Text[CombatMsg.WillYouDrop]).TrimEnd();
         var typed = Ask(new TextRequest(prompt, true, 5)) as string;
         ushort amount = ushort.TryParse(typed, NumberStyles.None, CultureInfo.InvariantCulture, out var n) ? n : (ushort)0;
         return (kind, amount);

@@ -327,7 +327,7 @@ Draw order per target: save 1d20, attack 1d20, duration dice; and inside: handle
 | 48 Haste, 55 Slow | 0x298AA / 0x29C21 → 0x2977C | side = caster's (Haste) / other (Slow); DS:6820 = 1, budget = level; a target of the side while budget lasts uses one and leaves when it loses the opposite effect (Slow 0x2A / Haste 0x27, message); others leave; resolution; class 0x12 on each left |
 | 51 Lightning Bolt | 0x29BCF | damage (level)d6 (0x2BCCD, 681C untouched); 0x298D4 on the aimed square; the bolt 0x29973 (8, damage, 4, rebound bonus) |
 | 60 | 0x29F65 | 0x298D4 with 1d6 + 20 on the aimed square; then 0x29973 (3, 20, 4, no bonus) |
-| 56 Restoration | 0x29C5B | first target with 0x74 > 0: g = 0x75 ÷ 0x74; 0x32, HP, 0xB1 + g, 0x75 − g, 0x74 − 1; class (0..7) with 0 < level ≤ best (13), 0 < XP[level + 1] < lowest (10,000,000), not stopped by START 0x3AF7 → + 1 level; XP 0xAC raised to that threshold when below (also with no class found: the routine then adds 1 at an uninitialised index `[?]`); 0x2AA87; message |
+| 56 Restoration | 0x29C5B | first target with 0x74 > 0: g = 0x75 ÷ 0x74; 0x32, HP, 0xB1 + g, 0x75 − g, 0x74 − 1; class (0..7) with 0 < level ≤ best (13), 0 < XP[level + 1] < lowest (10,000,000), not stopped by START 0x3AF7 → + 1 level; XP 0xAC raised to that threshold when below (also with no class found: the routine then adds 1 at its uninitialised index [bp−0xC], **8** in DOSBox-X, i.e. record 0x9E gender + 1; see below); 0x2AA87; message |
 | 57 | 0x29E1A | first target losing Slow 0x2A (message) → done; else plain |
 | 58 | 0x29E65 | first target losing poison 0x37 → under the lock its 0x16 goes; else 0x292A2; nothing cured → heal 1d4 + 8 (no bypass), message |
 | 59 | 0x29EFD | raise to Str 21 / 0 (message); effect 0x26, duration 1d4 × 10 + 40, removal on |
@@ -365,7 +365,26 @@ byte is not 0. `[?]` The menu's own list (0x239D6) is not read.
   the map code through `IFightTargetList` / `IFightAuraRange`; without it auras in a fight are not found and area
   spells fall back to the map distance with a diagnostic).
 - Handler 84's sight range; handler 88's missing entry.
-- Everything else here is **P**; the Sleep cast below is **D**; the routines under "Checked under emulation" are **E**.
+- Everything else here is **P**; the Sleep cast and Restoration's no-class index below are **D**; the routines under "Checked under emulation" are **E**.
+
+## Restoration with no class to raise — D (s18)
+
+The class index of 0x29C5B ([bp−0xC], signed) is written only when a class qualifies. A target with drained levels
+(0x74 > 0) and no qualifying class takes the residue. That is the case for every monster: no class levels and drain
+bytes 255/255 (so g = 1, 0x74 and 0x75 become 254). In v1.3 the spell comes only from the clerical scrolls in
+`ITEM2`–`ITEM4` (no monster memorises it; random scrolls never hold spell 56). A drained party member normally
+has a class to raise; one who has since reached the race limit again, or is above level 13, has none and would take
+the residue too (not sampled).
+
+DOSBox-X, residue probe (`dosbox-trace-method.md`), fixture `fight_restoration`: a scroll used by a level-1 cleric
+in a fight on a drained party member (a class was found), then on a goblin guard, and outside a fight on another
+member: the index read **8** all three times (routine BP 3CEE in the fight, 3BD0 outside). On the goblin the record
+changed exactly as the routine reads with index 8: 0x74/0x75 255 → 254, max HP 0x32, HP and rolled HP 0xB1 + 1,
+**gender 0x9E 0 → 1**, experience 0xAC → 10,000,000, then the level stats (base THAC0 0x2D 41 → 40, saves 0x6D–0x71
+→ 20). Core uses index 8 (`FightSpells.RestorationResidueIndex`; `RestorationCaptureTests` replays the goblin record
+byte for byte after a stat recalculation: THAC0 0x110 had been recomputed by the time of `after`, consistent with
+the turn-start recalculation 0x9A8A, but its trigger was not pinned; the routine itself does not recalculate). What writes the 8 was not traced; a cast from a memorised Restoration (impossible in v1.3) might
+see another value.
 
 ## Level stats (0x2AA87) and the race level limit (START 0x3AF7) — P, E (s15)
 
@@ -380,7 +399,15 @@ over the classes with L > 0. With a thief level 0x9C > 0 (signed), the thief ski
 base b = DS:3CF3[level × 8 + i], race adjustment r = DS:3D3B[race × 8 + i] (signed); r < 0 and |r| > b → 0; else b + r,
 and for i < 6 + DS:3D4E[Dexterity × 5 + i] (signed), all byte sums. The tables are read where the program reads them
 (Pascal arrays with bases, so rows overlap). Core: `LevelStats.Apply` (tables `PorSpellData.LevelTables`), wired by
-`FightKit.WireLevels` into the fight's and `PorGame`'s effect engines.
+`FightKit.WireLevels` into the fight's and `PorGame`'s effect engines and the VM's (`EclVm.Effects`, for ADDNPC).
+
+**Layout in v1.3's data segment** (s18, read from the bytes; decoded in a module's `rules/levelStats.json` and
+`rules/experience.json`, module-format.md §12): the experience table DS:409B is 0x38 bytes per class, of which levels
+2..9 hold experience (−1 past the class's top level in PoR); the cleric slot rows (levels 2..6) are class 0's cells for
+levels 10..13 and the magic-user's (levels 2..6) class 5's. THAC0 rows hold levels 0..10, saves rows levels 1..9 (a
+class's level 9 + 1 is the next class's level 0). The thief level rows run 1..9; race 0's adjustment row is thief level
+9's cells, races 1..7 follow, then Dexterity 9..18. The row ranges are inferred from where the next table starts
+`[?]`; reads outside them get the neighbouring bytes, as in the program.
 
 **START 0x3AF7** (00BA:2F57; creature, class) → stopped: level L ≤ 0 → no. Dwarf (race 1), fighter: L = 8 with
 Strength (0x10) 17, or L = 7 with Strength below 17. Elf (2), fighter: L = 7; 6 with 17; 5 below 17. Gnome (3),
@@ -388,7 +415,9 @@ fighter: L = 6; 5 below 18. Half-elf (4): cleric L = 5; fighter L = 8; 7 with 17
 L = 6; 5 with 17; 4 below 17. Anything else: no. Core: `LevelStats.RaceLimitStops`.
 
 **E**: `tools/scripts/por_level_oracle.py` runs both routines on 400 made-up creatures (fixture
-`program-v1.3/level_stats.json`); `LevelStatsProgramTests` matches every byte and every answer.
+`program-v1.3/level_stats.json`); `LevelStatsProgramTests` matches every byte and every answer. Since s18 the fixture
+also holds the 17 monster records v1.3's ADDNPC can load (ids 24, 25, 27, 36, 88, 103, 104, 107–112, 122 in every set
+that has them) after 0x2AA87; the VM's ADDNPC gives the same bytes.
 
 **0x317E1 in 0x2C753 and Animate Dead** (s15): (creature, its square 0x31321 / 0x31349, 1): outside a fight (DS:49F3
 ≠ 5) yes; in a fight the creature is put on its square (`CombatMap.TryPlace`, moving) and the answer is whether the

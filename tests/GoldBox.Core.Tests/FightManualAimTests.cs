@@ -7,8 +7,9 @@ namespace GoldBox.Core.Tests;
 
 /// <summary>
 /// Manual aim (0x155F5, docs/re/combat-menu.md "Aim"): the cursor on squares, on a real combat map (the DOSBox state
-/// <c>fight_casts/b02_darkstar_menu</c>: Darkstar on 29,12, a 5th-level magic-user on 27,13). Program read; no DOSBox
-/// capture of Manual yet. Also the item use through the menu's aim and the revival square test (0x317E1) on the same state.
+/// <c>fight_casts/b02_darkstar_menu</c>: Darkstar on 29,12, a 5th-level magic-user on 27,13). Program read; the DOSBox
+/// captures of Manual and of an item use are in <see cref="FightManualUseCaptureTests"/>. Also the item use through
+/// the menu's aim and the revival square test (0x317E1) on the same state.
 /// </summary>
 public class FightManualAimTests(ITestOutputHelper output)
 {

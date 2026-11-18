@@ -5,7 +5,7 @@ using Microsoft.Xna.Framework.Graphics;
 namespace GoldBox.Client;
 
 /// <summary>
-/// Shows a 320×200 <see cref="IndexedFrame"/> of EGA indices: maps them through the palette into a texture that the
+/// Shows a 320×200 <see cref="IndexedFrame"/> of palette indices (EGA, or a <see cref="ScreenPalette"/>): maps them through the palette into a texture that the
 /// game draws scaled with point sampling (sharp pixels, the original look).
 /// </summary>
 public sealed class FrameTexture : IDisposable
@@ -33,11 +33,22 @@ public sealed class FrameTexture : IDisposable
 
     public Texture2D Texture => _texture;
 
-    public void Upload(IndexedFrame frame)
+    /// <summary>
+    /// Copies the frame into the texture: with no <paramref name="palette"/> the indices are EGA colours (low 4 bits);
+    /// with one, each byte indexes its 256 colours (<see cref="ScreenPalette"/>: EGA in 0–15, the art's own palettes above).
+    /// </summary>
+    public void Upload(IndexedFrame frame, ScreenPalette? palette = null)
     {
         var px = frame.Pixels;
-        for (int i = 0; i < px.Length; i++)
-            _rgba[i] = Ega[px[i] & 15];
+        if (palette is null)
+            for (int i = 0; i < px.Length; i++)
+                _rgba[i] = Ega[px[i] & 15];
+        else
+        {
+            var c = palette.Colours;
+            for (int i = 0; i < px.Length; i++)
+                _rgba[i] = c[px[i]];
+        }
         _texture.SetData(_rgba);
     }
 

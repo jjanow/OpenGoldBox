@@ -149,4 +149,25 @@ public static class PorModuleCodec
     /// <summary>The original <c>ITEMS</c> file bytes.</summary>
     public static byte[] ItemsFile(ItemTypesDocument d) =>
         [.. d.Header ?? [], .. d.Types.OrderBy(t => t.Type).SelectMany(t => t.Raw), .. d.Trailing ?? []];
+
+    // ---- overland (§6, §12) ------------------------------------------------------------------------------------------
+
+    /// <summary>The overland → <c>rules/overland.json</c> (values as stored).</summary>
+    public static OverlandDocument Overland(OverlandMap map, PorOverlandOffsets? at) => new()
+    {
+        Width = map.Width,
+        Height = map.Height,
+        Tiles = [.. map.Tiles.Select(b => (int)b)],
+        SpecialLocations = [.. map.Sites.Select(s => new OverlandSiteDocument { X = s.X, Y = s.Y, Tile = s.Tile })],
+        Source = new OverlandSource { Container = "START.EXE", Tiles = at?.Tiles, SpecialLocations = at?.Sites },
+    };
+
+    /// <summary><c>rules/overland.json</c> → the overland; a value that does not fit the stored width fails.</summary>
+    public static OverlandMap Overland(OverlandDocument d)
+    {
+        byte Byte(int v) => v is >= 0 and <= 255 ? (byte)v : throw new FormatException($"overland tile {v} is not a byte");
+        ushort Word(int v) => v is >= 0 and <= 0xFFFF ? (ushort)v : throw new FormatException($"overland value {v} is not a word");
+        return new OverlandMap(d.Width, d.Height, [.. d.Tiles.Select(Byte)],
+            [.. d.SpecialLocations.Select(s => new OverlandSite(Word(s.X), Word(s.Y), Word(s.Tile)))]);
+    }
 }

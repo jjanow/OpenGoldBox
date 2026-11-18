@@ -7,14 +7,27 @@ using GoldBox.Data.Por;
 namespace GoldBox.Data.Module.Por;
 
 /// <summary>
+/// A module opened as Pool of Radiance content names no VM profile (<c>vm</c>), itself or through a dependency. A
+/// module without <c>vm</c> runs no ECL (docs/module-format.md §4: event-only modules); PoR's areas are ECL scripts.
+/// </summary>
+public sealed class ModuleHasNoVmException(string moduleId)
+    : Exception($"module \"{moduleId}\" names no VM profile (\"vm\" in module.json, or in a module it depends on): " +
+                $"Pool of Radiance content runs ECL scripts and needs one (this engine has: {string.Join(", ", EclProfiles.Names)})")
+{
+    public string ModuleId { get; } = moduleId;
+}
+
+/// <summary>
 /// Pool of Radiance content read from an imported module (plus its dependencies, <see cref="ModuleResolver"/>).
-/// Scripts and maps are bank 0 (ids unique over the disks); monsters, their item and effect lists and placed
-/// treasure are banked by disk (docs/module-format.md §2, §16).
+/// Lookups bank by disk the kinds the VM profile names (<see cref="EclProfile.BankedKinds"/>; <c>ecl-por-1.3</c>:
+/// monsters and placed treasure; a monster's item and effect lists are reached through its document's keys, which
+/// carry their bank), and bank 0 the rest (docs/module-format.md §2, §16).
 /// <para>
-/// The <c>ecl-por-1.3</c> profile checks the disk a script or map was imported from (<c>meta.disk</c>) against the
-/// disk the program would read, and answers null on a mismatch: the program opens <c>ECL&lt;disk&gt;</c> /
-/// <c>GEO&lt;disk&gt;</c> of the current disk and fails when the block is not there, and the module must fail the same
-/// way. A resource without <c>meta.disk</c> (a hand-made module) is found on any disk.
+/// For the kinds in the profile's <see cref="EclProfile.DiskCheckedKinds"/> (<c>ecl-por-1.3</c>: scripts and maps), the
+/// disk a resource was imported from (<c>meta.disk</c>) is checked against the disk the program would read, and a
+/// mismatch answers null: the program opens <c>ECL&lt;disk&gt;</c> / <c>GEO&lt;disk&gt;</c> of the current disk and fails
+/// when the block is not there, and the module must fail the same way. A resource without <c>meta.disk</c> (a
+/// hand-made module) is found on any disk.
 /// </para>
 /// </summary>
 public sealed class PorModule : IPorContent
@@ -30,20 +43,33 @@ public sealed class PorModule : IPorContent
     private byte[]? _itemsFile;
     private bool _itemTypesRead;
 
-    /// <summary>The profile the main module's <c>vm</c> names (default when absent `[?]`, docs/module-format.md §18).</summary>
+    /// <summary>The profile the module's <c>vm</c> names (<see cref="ModuleResolver.Vm"/>: its own, else a dependency's).</summary>
     public EclProfile VmProfile { get; }
 
     /// <exception cref="UnknownEclProfileException">The manifest names a VM profile the engine does not have.</exception>
+    /// <exception cref="ModuleHasNoVmException">No module in the chain names a <c>vm</c>: PoR content is ECL scripts.</exception>
     public PorModule(ModuleResolver modules)
     {
         Modules = modules;
-        VmProfile = EclProfiles.ForVm(modules.Main.Manifest.Vm);
+        VmProfile = EclProfiles.ForVm(modules.Vm) ?? throw new ModuleHasNoVmException(modules.Main.Manifest.Id);
     }
 
     public static PorModule Open(string moduleRoot, IEnumerable<string>? searchFolders = null) =>
         new(ModuleResolver.Open(moduleRoot, searchFolders));
 
-    private static bool DiskMatches(ResourceMeta? meta, int disk) => meta?.Disk is not { } d || d == disk;
+    /// <summary>
+    /// The bank a lookup of <paramref name="kind"/> uses on disk <paramref name="disk"/>: the disk when the VM profile
+    /// banks the kind (<see cref="EclProfile.BankedKinds"/>), else 0 (docs/module-format.md §2, §5.1).
+    /// </summary>
+    private int Bank(ResourceKind kind, int disk) => VmProfile.BankedKinds.Contains(ResourceKey.KindName(kind)) ? disk : 0;
+
+    /// <summary>
+    /// True when a resource of <paramref name="kind"/> imported from disk <c>meta.disk</c> may be read on
+    /// <paramref name="disk"/>: always, unless the profile checks the kind's disk (<see cref="EclProfile.DiskCheckedKinds"/>);
+    /// then a resource without <c>meta.disk</c> (a hand-made module) is found on any disk.
+    /// </summary>
+    private bool DiskMatches(ResourceKind kind, ResourceMeta? meta, int disk) =>
+        !VmProfile.DiskCheckedKinds.Contains(ResourceKey.KindName(kind)) || meta?.Disk is not { } d || d == disk;
 
     // ---- scripts ---------------------------------------------------------------------------------------------------
 
@@ -65,7 +91,7 @@ public sealed class PorModule : IPorContent
 
     /// <summary>The script as the DAX block the VM loads (prefix + bytecode), or null (none, or not on this disk).</summary>
     public byte[]? LoadBlock(int disk, int script) =>
-        Script(script) is { } s && DiskMatches(s.Sidecar.Meta, disk) ? PorModuleCodec.ScriptBlock(s.Ecl, s.Sidecar) : null;
+        Script(script) is { } s && DiskMatches(ResourceKind.Script, s.Sidecar.Meta, disk) ? PorModuleCodec.ScriptBlock(s.Ecl, s.Sidecar) : null;
 
     public int? ScriptDisk(int script) => Script(script) is { } s ? s.Sidecar.Meta?.Disk ?? 0 : null;
 
@@ -82,7 +108,7 @@ public sealed class PorModule : IPorContent
     }
 
     public AreaMap? LoadMap(int disk, int id) =>
-        MapDocument(id) is { } m && DiskMatches(m.Meta, disk) ? new AreaMap(PorModuleCodec.MapPlanes(m), id) : null;
+        MapDocument(id) is { } m && DiskMatches(ResourceKind.Map, m.Meta, disk) ? new AreaMap(PorModuleCodec.MapPlanes(m), id) : null;
 
     public int? MapDisk(int id) => MapDocument(id) is { } m ? m.Meta?.Disk ?? 0 : null;
 
@@ -100,7 +126,7 @@ public sealed class PorModule : IPorContent
 
     public MonsterDocument? MonsterDocument(int disk, int id)
     {
-        var key = ResourceKey.Monster(disk, id);
+        var key = ResourceKey.Monster(Bank(ResourceKind.Monster, disk), id);
         if (!_monsters.TryGetValue(key, out var d))
         {
             d = Modules.Find(key, ".json") is { } f ? ModuleJson.Read<MonsterDocument>(f.Path) : null;
@@ -118,7 +144,7 @@ public sealed class PorModule : IPorContent
     }
 
     public IReadOnlyList<byte[]>? TreasureList(int disk, int id) =>
-        RecordList(ResourceKey.TreasureList(disk, id)) is { } l ? PorModuleCodec.Records(l) : null;
+        RecordList(ResourceKey.TreasureList(Bank(ResourceKind.TreasureList, disk), id)) is { } l ? PorModuleCodec.Records(l) : null;
 
     public ItemTypesDocument? ItemTypesDocument() =>
         Modules.File(Module.ItemTypesDocument.RelativePath) is { } p ? ModuleJson.Read<ItemTypesDocument>(p) : null;
@@ -150,10 +176,12 @@ public sealed class PorModule : IPorContent
             {
                 var r = ModuleJson.Read<ProgramRulesDocument>(rp);
                 var t = Modules.File(TextDocument.RelativePath) is { } tp ? ModuleJson.Read<TextDocument>(tp) : new TextDocument();
+                // The decoded rules files (rules/spells.json …), when present, are laid over the raw data segment.
+                var (ds, offsets) = PorRulesTables.Load(Modules, r.DataSegment, r.Offsets);
                 _program = new PorProgramData
                 {
-                    Ds = r.DataSegment,
-                    Offsets = r.Offsets,
+                    Ds = ds,
+                    Offsets = offsets,
                     GnomeDefenseNames = r.GnomeDefenseNames,
                     View = r.View is { } v
                         ? new PorViewTables(new ViewLayout(v.Start, v.Width, v.Height, v.Column, v.Row), v.SkyColours, v.ExploreCommands)
@@ -161,6 +189,8 @@ public sealed class PorModule : IPorContent
                     Texts = t.Strings,
                     SpellNames = t.SpellNames,
                     PagePrompt = t.PagePrompt,
+                    Overland = Modules.File(OverlandDocument.RelativePath) is { } op
+                        ? PorModuleCodec.Overland(ModuleJson.Read<OverlandDocument>(op)) : null,
                 };
             }
         }
@@ -245,6 +275,9 @@ public sealed class PorModule : IPorContent
         }
         return a;
     }
+
+    /// <summary>The area's <c>overland.column</c> (null for a script with no area document or no overland).</summary>
+    public int? OverlandColumn(int script) => AreaDocument(script)?.Overland?.Column;
 
     /// <summary>The area's <c>noWrapOffMap</c> (false for a script with no area document).</summary>
     public bool NoWrapOffMap(int script) => AreaDocument(script)?.NoWrapOffMap ?? false;

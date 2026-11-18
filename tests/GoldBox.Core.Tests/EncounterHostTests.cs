@@ -438,6 +438,29 @@ public class EncounterHostTests
         Assert.Equal(300, items[1][0x3A] | items[1][0x3B] << 8);
     }
 
+    /// <summary>
+    /// A second roll of 48/49 leaves the type byte as it was: for the first item that is the residue DOSBox-X read
+    /// at the v1.3 sites (0: a blank type-0 item, no generator draw), later the previous item's type (s18 probe).
+    /// </summary>
+    [Fact]
+    public void Treasure_second_roll_48_keeps_the_residue_then_the_previous_type()
+    {
+        var rig = new Rig(new EclAsm()
+            .Op(EclOpcodes.Treasure, Imm8(0), Imm8(0), Imm8(0), Imm8(0), Imm8(0), Imm8(0), Imm8(0), Imm8(131))
+            .Op(EclOpcodes.Exit));
+        // item 1: 1d100 = 10, 1d100 = 48 → the residue (0): no further draw; item 2: 1d100 = 10, 1d100 = 20 (type 20),
+        // plus 1d20 = 1; item 3: 1d100 = 10, 1d100 = 49 → type 20 again, plus 1d20 = 20 (+3)
+        foreach (var v in new ushort[] { 9, 47, 9, 19, 0, 9, 48, 19 })
+            rig.Inner.RandomValues.Enqueue(v);
+        rig.Run();
+        Assert.Empty(rig.Inner.RandomValues);
+        Assert.Equal(0, rig.Host.FirstItemTypeResidue);
+        var items = rig.Host.State.TreasureItems; // head first
+        Assert.Equal([20, 20, 0], items.Select(i => (int)i[0x2E]));
+        Assert.Equal(6, items[2][0x35]);              // blank: only `hidden` 6
+        Assert.Equal([3, 1], items.Take(2).Select(i => (int)i[0x32]));
+    }
+
     [Fact]
     public void Random_item_type_table()
     {

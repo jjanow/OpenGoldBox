@@ -156,6 +156,58 @@ public static class PorRoundTrip
                 r.Mismatches.Add("program: rules/program.json missing");
             else if (Describe(gp) != Describe(mp))
                 r.Mismatches.Add("program: the module's tables or texts differ from the program's");
+
+            // The decoded rules files (§12): all of them when the program's tables decode, else none; each file's
+            // fields give the program's bytes back, cell for cell.
+            bool decodes = PorRulesTables.Decode(gp.Ds, gp.Offsets) is not null;
+            foreach (var (path, type) in PorRulesTables.Files)
+            {
+                if (m.File(path) is not { } file)
+                {
+                    if (decodes)
+                        r.Mismatches.Add($"{path}: missing");
+                    continue;
+                }
+                if (!decodes)
+                {
+                    r.Mismatches.Add($"{path}: written although the program's tables do not decode");
+                    continue;
+                }
+                r.Count("RULES");
+                var doc = (IRulesDocument)(System.Text.Json.JsonSerializer.Deserialize(File.ReadAllText(file), type, ModuleSchemas.Strict)
+                    ?? throw new FormatException($"{file}: empty JSON"));
+                foreach (var (off, b) in PorRulesTables.Encode(doc))
+                    if (off >= gp.Ds.Length || gp.Ds[off] != b)
+                    {
+                        r.Mismatches.Add($"{path}: DS:{off:X4} differs from the program's byte");
+                        break;
+                    }
+            }
+        }
+
+        // ---- the overland: the document rebuilds the program's bytes, and the engine reads the same map ----
+        if (game.Program() is { Overland: { } go, OverlandOffsets: { } at } gp2)
+        {
+            var doc = m.File(OverlandDocument.RelativePath) is { } op ? ModuleJson.Read<OverlandDocument>(op) : null;
+            var fromDoc = doc is null ? null : PorModuleCodec.Overland(doc);
+            var ds = gp2.Ds;
+            Compare("overland tiles", fromDoc?.Tiles, ds[at.Tiles..(at.Tiles + PorOverland.Width * PorOverland.Height)], "OVERLAND");
+            Compare("overland special locations", fromDoc is null ? null : PorOverland.SiteBytes(fromDoc.Sites),
+                ds[at.Sites..(at.Sites + PorOverland.SiteCount * PorOverland.SiteSize)], "OVERLAND");
+            var mo = ((IPorContent)module).Overland();
+            Compare("overland tiles via PorModule", mo?.Tiles, go.Tiles, "OVERLAND (engine)");
+            Compare("overland special locations via PorModule", mo is null ? null : PorOverland.SiteBytes(mo.Sites),
+                PorOverland.SiteBytes(go.Sites), "OVERLAND (engine)");
+            if (mo is not null && (mo.Width != go.Width || mo.Height != go.Height))
+                r.Mismatches.Add($"overland: {mo.Width} × {mo.Height} in the module, {go.Width} × {go.Height} in the program");
+            Compare("combat wilderness terrain via PorModule", module.Program()?.CombatTables().WildMap, gp2.CombatTables().WildMap!,
+                "OVERLAND (engine)");
+            foreach (var id in game.EclFiles().SelectMany(f => f.File.Entries.Select(e => (int)e.Id)).Distinct())
+            {
+                r.Count("OVERLAND (areas)");
+                if (module.OverlandColumn(id) != ((IPorContent)game).OverlandColumn(id))
+                    r.Mismatches.Add($"area {id}: overland column {module.OverlandColumn(id)} in the module, {((IPorContent)game).OverlandColumn(id)} in the program");
+            }
         }
 
         // ---- shipped saves ----
@@ -167,6 +219,35 @@ public static class PorRoundTrip
                 continue;
             var copy = module.SaveFolder is { } sf ? Path.Combine(sf, file) : null;
             Compare($"save {file}", copy is not null && File.Exists(copy) ? File.ReadAllBytes(copy) : null, File.ReadAllBytes(path), "SAVE");
+        }
+
+        // ---- engine saves (§15): each saves/<slot>.json writes the original SAVGAM and party files back byte for byte,
+        // and exactly the files the game folder has for that save ----
+        var gameFiles = Directory.EnumerateFiles(game.Root)
+            .ToDictionary(f => Path.GetFileName(f).ToUpperInvariant(), f => f, StringComparer.Ordinal);
+        foreach (var (file, path) in gameFiles.OrderBy(kv => kv.Key, StringComparer.Ordinal))
+        {
+            if (!(file.StartsWith("SAVGAM", StringComparison.Ordinal) && file.EndsWith(".DAT", StringComparison.Ordinal)
+                  && file.Length == "SAVGAMA.DAT".Length && file[6] is >= 'A' and <= 'J'))
+                continue;
+            var json = module.SaveFolder is { } sf ? Path.Combine(sf, PorEngineSave.FileName(file[6])) : null;
+            if (json is null || !File.Exists(json))
+            {
+                r.Count("ENGINE SAVE");
+                r.Mismatches.Add($"engine save of {file}: missing in the module");
+                continue;
+            }
+            var save = PorEngineSave.Read(json);
+            var rebuilt = PorEngineSave.ToOriginalFiles(save);
+            foreach (var (name, bytes) in rebuilt)
+                Compare($"engine save {Path.GetFileName(json)} → {name}", bytes,
+                    gameFiles.TryGetValue(name, out var orig) ? File.ReadAllBytes(orig) : [], "ENGINE SAVE");
+            // The party files the original names (stems of its name slots) that the engine save did not write back.
+            var stems = new PorSaveGame(File.ReadAllBytes(path)).PartyFileStems;
+            foreach (var stem in stems)
+                foreach (var ext in new[] { ".SAV", ".ITM", ".SPC" })
+                    if (gameFiles.ContainsKey(stem + ext) && !rebuilt.Any(f => f.Name == stem + ext))
+                        r.Mismatches.Add($"engine save {Path.GetFileName(json)}: {stem + ext} not written back");
         }
         return r;
     }
@@ -194,6 +275,8 @@ public static class PorRoundTrip
             sb.Append(k).Append('=').AppendLine(t);
         sb.AppendLine(string.Join("|", p.SpellNames ?? []));
         sb.AppendLine(p.PagePrompt);
+        if (p.Overland is { } o)
+            sb.AppendLine($"{o.Width}x{o.Height}|{Bytes(o.Tiles)}|{Bytes(PorOverland.SiteBytes(o.Sites))}");
         return sb.ToString();
     }
 

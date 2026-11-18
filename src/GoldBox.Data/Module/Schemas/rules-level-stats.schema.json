@@ -1,0 +1,330 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "LevelStatsDocument",
+  "type": "object",
+  "properties": {
+    "profile": {
+      "type": "string"
+    },
+    "thac0": {
+      "type": "object",
+      "properties": {
+        "dsOffset": {
+          "type": "integer"
+        },
+        "classes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "class": {
+                "type": "integer"
+              },
+              "levels": {
+                "type": "array",
+                "items": {
+                  "type": "integer"
+                }
+              }
+            },
+            "required": [
+              "class",
+              "levels"
+            ]
+          }
+        }
+      },
+      "required": [
+        "dsOffset",
+        "classes"
+      ]
+    },
+    "clericSlots": {
+      "type": "object",
+      "properties": {
+        "dsOffset": {
+          "type": "integer"
+        },
+        "levels": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "level": {
+                "type": "integer"
+              },
+              "slots": {
+                "type": "array",
+                "items": {
+                  "type": "integer"
+                }
+              }
+            },
+            "required": [
+              "level",
+              "slots"
+            ]
+          }
+        }
+      },
+      "required": [
+        "dsOffset",
+        "levels"
+      ]
+    },
+    "mageSlots": {
+      "type": "object",
+      "properties": {
+        "dsOffset": {
+          "type": "integer"
+        },
+        "levels": {
+          "$ref": "#/properties/clericSlots/properties/levels"
+        }
+      },
+      "required": [
+        "dsOffset",
+        "levels"
+      ]
+    },
+    "saves": {
+      "type": "object",
+      "properties": {
+        "dsOffset": {
+          "type": "integer"
+        },
+        "classes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "class": {
+                "type": "integer"
+              },
+              "levels": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "type": "integer"
+                    },
+                    "paralyzation": {
+                      "type": "integer"
+                    },
+                    "petrification": {
+                      "type": "integer"
+                    },
+                    "rodStaffWand": {
+                      "type": "integer"
+                    },
+                    "breath": {
+                      "type": "integer"
+                    },
+                    "spell": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "level"
+                  ]
+                }
+              }
+            },
+            "required": [
+              "class",
+              "levels"
+            ]
+          }
+        }
+      },
+      "required": [
+        "dsOffset",
+        "classes"
+      ]
+    },
+    "thiefBase": {
+      "type": "object",
+      "properties": {
+        "dsOffset": {
+          "type": "integer"
+        },
+        "levels": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "level": {
+                "type": "integer"
+              },
+              "skills": {
+                "type": "object",
+                "properties": {
+                  "pickPockets": {
+                    "type": "integer"
+                  },
+                  "openLocks": {
+                    "type": "integer"
+                  },
+                  "findTraps": {
+                    "type": "integer"
+                  },
+                  "moveSilently": {
+                    "type": "integer"
+                  },
+                  "hideInShadows": {
+                    "type": "integer"
+                  },
+                  "hearNoise": {
+                    "type": "integer"
+                  },
+                  "climbWalls": {
+                    "type": "integer"
+                  },
+                  "readLanguages": {
+                    "type": "integer"
+                  }
+                }
+              }
+            },
+            "required": [
+              "level",
+              "skills"
+            ]
+          }
+        }
+      },
+      "required": [
+        "dsOffset",
+        "levels"
+      ]
+    },
+    "thiefRace": {
+      "type": "object",
+      "properties": {
+        "dsOffset": {
+          "type": "integer"
+        },
+        "races": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "race": {
+                "type": "integer"
+              },
+              "skills": {
+                "type": "object",
+                "properties": {
+                  "pickPockets": {
+                    "type": "integer"
+                  },
+                  "openLocks": {
+                    "type": "integer"
+                  },
+                  "findTraps": {
+                    "type": "integer"
+                  },
+                  "moveSilently": {
+                    "type": "integer"
+                  },
+                  "hideInShadows": {
+                    "type": "integer"
+                  },
+                  "hearNoise": {
+                    "type": "integer"
+                  },
+                  "climbWalls": {
+                    "type": "integer"
+                  },
+                  "readLanguages": {
+                    "type": "integer"
+                  }
+                }
+              }
+            },
+            "required": [
+              "race",
+              "skills"
+            ]
+          }
+        }
+      },
+      "required": [
+        "dsOffset",
+        "races"
+      ]
+    },
+    "thiefDex": {
+      "type": "object",
+      "properties": {
+        "dsOffset": {
+          "type": "integer"
+        },
+        "dexterity": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "dexterity": {
+                "type": "integer"
+              },
+              "pickPockets": {
+                "type": "integer"
+              },
+              "openLocks": {
+                "type": "integer"
+              },
+              "findTraps": {
+                "type": "integer"
+              },
+              "moveSilently": {
+                "type": "integer"
+              },
+              "hideInShadows": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "dexterity"
+            ]
+          }
+        }
+      },
+      "required": [
+        "dsOffset",
+        "dexterity"
+      ]
+    },
+    "source": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "container": {
+          "type": "string"
+        },
+        "block": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "container"
+      ]
+    }
+  },
+  "required": [
+    "profile",
+    "thac0",
+    "clericSlots",
+    "mageSlots",
+    "saves",
+    "thiefBase",
+    "thiefRace",
+    "thiefDex"
+  ]
+}

@@ -97,8 +97,8 @@ public static class FightRules
 
     // ---- Equipment (START 0x1758) --------------------------------------------------------------------------------
 
-    /// <summary>Equipment slots (creature +0xCC, 13 far pointers): 0 weapon, 1 off hand, …, 9/10 rings, 11 arrows, 12 bolts.</summary>
-    public const int SlotWeapon = 0, SlotOffHand = 1, SlotArrows = 11, SlotBolts = 12;
+    /// <summary>Equipment slots (creature +0xCC, 13 far pointers): 0 weapon, 1 off hand, 2 body armour, …, 9/10 rings, 11 arrows, 12 bolts.</summary>
+    public const int SlotWeapon = 0, SlotOffHand = 1, SlotBodyArmour = 2, SlotArrows = 11, SlotBolts = 12;
 
     /// <summary>
     /// The 13 equipment pointers the stat recalculation rebuilds (START 0x1758–0x18D7): for each readied item (0x34 ≠ 0)

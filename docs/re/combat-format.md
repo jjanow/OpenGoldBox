@@ -202,8 +202,18 @@ Called after every fight and alone when COMBAT has no monsters, shop or temple.
 3. **Removal** (0x672A), below.
 4. If DS:49FF = 0 (party not destroyed) or DS:84D4 (duel): NPC treasure share (0x6866, below), summary screen
    (0x5E94, shows the share DS:84D6), loot menu (0x644B), then the treasure item list DS:6810 is freed.
-   Else: $6DC7 = 0x80 and the "party destroyed" screen.
+   Else: $6DC7 = 0x80 and the "party destroyed" screen; the treasure list DS:6810 is **not** freed.
 5. DS:4A00 = 1; VM $6E70, $6E71, $6E72, $6DE3 and $6DE6 = 0.
+
+**D** (s18, `fight_casts` q33 → q34_the_end): "won" and "destroyed" are separate tests and can both hold. The won
+test (status 0 or 1) does not look at the hostile byte or 0x84, the destroyed test does: a charmed party member (on
+the enemy side) and still okay when the rest of the party fell, sets DS:84DA = 1 while DS:49FF stays 1 (at q33 both
+Brother Sean and Darkstar are charmed, okay and hostile = 1). So the share and the award run: the pool gets every
+hostile creature's coins, the two charmed members' included (q34: copper 40, silver 126 = 2 × 36 + 3 × 18,
+electrum 4); items of value above 0 are always taken and count toward the 8, the rest are rolled 1d10 while fewer
+than 8 were taken: three rolls, the 3 draws between the fight's end and the end screen; share 225 with DS:84D5 = 4. Then
+every party member leaves and the "party destroyed" screen comes, DS:6810 still set. The replay runs `AfterCombat`
+after the fight and matches RandSeed, DS:49FF, 443A, 443B, 84DA, 84D6 and the pool (`FightMonsterCastReplayTests`).
 
 **Results** (0x5A47). "Party" = the list from its head up to the first creature with combat record +0x13 = 1.
 - DS:84D5 (members out of play) = 0, DS:49FF (party destroyed) = 1, DS:443B (fled) = 1 if a party member has

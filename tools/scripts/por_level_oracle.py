@@ -7,7 +7,9 @@ Usage: python3 -I por_level_oracle.py GAMEDIR OUT.json        (GAMEDIR: the PoR 
 
 Each case is a creature record of made-up bytes (levels, race, Strength, Wisdom, Dexterity, slots and the bytes the
 routine writes filled at random) with the record after 0x2AA87, and the answer of START 0x3AF7 for each class. Neither
-routine calls anything outside. The output holds no game data but is kept with the private fixtures.
+routine calls anything outside. ``npcs`` (s18) holds the monster records ADDNPC loads in v1.3 (ids below, every
+MONnCHA.DAX set that has them) before and after 0x2AA87, which ADDNPC runs on the joined record (0x1F55A). That
+part holds game data: the output is kept with the private fixtures.
 """
 import json
 import os
@@ -16,10 +18,14 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from por_emu import Emu  # noqa: E402
+import dax  # noqa: E402
 
 REC = 0x11D
 LEVEL_STATS = 0x2AA87
 RACE_LIMIT = (0x00BA, 0x2F57)
+# ADDNPC's monster ids in v1.3: ECL3 block 0 (#107), ECL3 block 11's table at $A170, and the other scripts' uses
+# (docs/re/character-format.md, "Movement recalculation" cross-check).
+NPC_IDS = (24, 25, 27, 36, 88, 103, 104, 107, 108, 109, 110, 111, 112, 122)
 
 
 def find(dirpath, name):
@@ -61,9 +67,24 @@ def main():
         e.wb(lin, rec)
         e.call(LEVEL_STATS, (seg, off))
         cases.append({'before': rec.hex(), 'after': e.rb(lin, REC).hex(), 'limits': limits})
+    npcs = []
+    for setno in range(1, 10):
+        try:
+            path = find(gamedir, 'MON%dCHA.DAX' % setno)
+        except FileNotFoundError:
+            continue
+        for mid, rec in dax.DaxFile(path).blocks():
+            if mid not in NPC_IDS or len(rec) != REC:
+                continue
+            e.reset_heap()
+            seg, off = e.alloc(REC)
+            lin = seg * 16 + off
+            e.wb(lin, rec)
+            e.call(LEVEL_STATS, (seg, off))
+            npcs.append({'set': setno, 'id': mid, 'before': rec.hex(), 'after': e.rb(lin, REC).hex()})
     with open(out, 'w') as f:
-        json.dump({'cases': cases}, f, indent=0)
-    print('%d cases' % len(cases))
+        json.dump({'cases': cases, 'npcs': npcs}, f, indent=0)
+    print('%d cases, %d npc records' % (len(cases), len(npcs)))
 
 
 if __name__ == '__main__':

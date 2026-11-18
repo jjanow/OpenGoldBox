@@ -39,6 +39,13 @@ public sealed class ModuleResolver
 
     public ModuleDirectory Main => Chain[0];
 
+    /// <summary>
+    /// The VM profile name the module runs under (docs/module-format.md §4): the first <c>vm</c> in lookup order (the
+    /// module's own, else its dependencies', so an add-on runs under the game it extends), or null when no module in
+    /// the chain names one (no ECL VM: an event-only module).
+    /// </summary>
+    public string? Vm => Chain.Select(m => m.Manifest.Vm).FirstOrDefault(v => v is not null);
+
     private ModuleResolver(IReadOnlyList<ModuleDirectory> chain) => Chain = chain;
 
     public static ModuleResolver Open(string moduleRoot, IEnumerable<string>? searchFolders = null)

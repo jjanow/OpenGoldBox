@@ -352,7 +352,7 @@ advance, parley), three texts (distance 0, 1, 2), move1, move2.
 values (Lee: added). v8 (low byte) < 128: the records of `ITEM<d>.DAX` block v8 are put in front of the treasure
 list one by one (so they end up in reverse order; a missing file quits to DOS). 128–254: v8 − 128 random items; each
 type is rolled with 1d100 (≤ 60: a second 1d100 gives the type directly for 1–47 and 50–59, 45 becomes 59, 60–90
-a 1d10 picks 34–38, 91–94 → 73, 95–97 → 93, 98–100 → 77; 48 and 49 leave the variable unset `[?]`; 61–85 → 61;
+a 1d10 picks 34–38, 91–94 → 73, 95–97 → 93, 98–100 → 77; 48 and 49 leave the variable unset (stack residue: 0 on the sampled v1.3 paths, `item-format.md`); 61–85 → 61;
 86–92 → 62; 93–98 a 1d16 picks 67/70/71/78/79/84/92; 99–100 → 69), the item itself is made by 0x25C99 (not read,
 `[?]` its draws), and afterwards START 00BA:0442 runs on every treasure item: that is the item naming routine
 (`item-format.md`, image 0x0FE2), which writes the cached name. 255: no items.
@@ -417,7 +417,7 @@ does (0x1EEAA: `MON<d>CHA/ITM/SPC` block m, icon size, **five 1d6** icon colours
 0x8E1 otherwise) [5·g + **1d5**] (portrait body), g = record 0x9E (gender, signed); record 0xBB (portrait head) = DS:0x8C7 [8·g + **1d8**] (DS tables in START.EXE's data segment, indexed 1-based: heads DS:08C8–08D7, bodies base + 1 … base + 10; read
 from the player's program by `PorProgram.NpcPortraitBases` through the code that indexes them, s15). The record is
 appended at the end of the party list and **becomes current** (0x1F42C: icon slot 0xBF = lowest of 0..7 not used by
-a list member, $6E3E + 1, then the level stats 0x2AA87, spells-effects.md "Level stats"; `[?]` not called by Core's ADDNPC yet), then 0x1E468 (`[?]` the
+a list member, $6E3E + 1, then the level stats 0x2AA87, spells-effects.md "Level stats", called at 0x1F55A; Core: `EclVm` through `Effects.LevelStats`, checked on every v1.3 ADDNPC record against the routine under emulation, `LevelStatsProgramTests`), then 0x1E468 (`[?]` the
 combat icon load, by its calls; no random draws in it). Then, whether or not a record was added: current record 0x84
 (morale) = (low byte of v2 / 2) OR 0x80, record 0x10E (hostile) = 1 if m = 24 else 0, and START.EXE 0x1758 and 0x1307
 (`[?]` not read; 0x1307 is called after most changes to a character, presumably a display refresh). With a full party the morale lands on whoever is current.
@@ -436,10 +436,13 @@ door) writes to $007D / $007E, so $6E7D keeps its value (0 from the script init 
 - DOSBox (`party_opcodes`, s11): `SPELL #40, [$6EB8], [$6EB9]` after a SAVE wrote 1 to $00B8 and 0 to $00B9 (DS:84CE /
   84D0) and left $6EB8/$6EB9 alone: the residue was non-zero there and the search did not run. The VM's policy
   default follows that (`EclVmPolicy.SpellFoundResidue`).
-- Still open (s15): the byte is the absolute stack cell handler-bp − 8, shared by every opcode handler's frame (the
-  dispatcher calls them all at one depth) and their callees, so it holds whatever the previous instructions left;
-  in ECL3 block 14 the SPELL follows HMENU and ONGOTO. Either way the writes land on $007D / $007E, which the VM
-  ignores, so no v1.3 outcome depends on it.
+- Settled (s18): the byte is the absolute stack cell SS:3EDA (handler BP 3EE2 − 8, the same for every handler),
+  which the previous instructions' handlers, their callees and any interrupt taken at the run loop's depth may
+  write. The residue probe (`dosbox-trace-method.md`) read it in ECL3 block 14's own code ($9E6E–$9ED2: SAVE,
+  PRINTCLR, the four-choice lock HMENU, ONGOTO, SPELL, copied into a Slums test save) as **0xCA** on two boots,
+  so the search did not run there either. Both outcomes write only $007D / $007E, which the VM ignores, so the door
+  script behaves the same with any residue (`EclPartyOpcodeTests`). No v1.3 outcome depends on it; the policy
+  default (non-zero) matches both DOSBox samples.
 
 **DAMAGE f, n, s, b, t** (0x34BB). Values as low bytes. Damage d = n d s + b (dice 0x2BCCD), **rolled first**.
 - f AND 0x40: whole party; else a target index r = 1d($6E3E) is rolled next (also in the attack form).
@@ -590,7 +593,7 @@ only. `[?]` = unknown or unconfirmed.
 | 38 | PROGRAM | PROGRAM | 1 | 1 | v | 0 training hall, 8 end game, 9 camp (then EXIT: the run ends, 0x3BBC); else nothing | P (ids) | 4 |
 | 39 | WHO | WHO | 1 | 1 | s | Prompt, player picks a character (becomes current; survives EXIT) | P | 11 |
 | 3A | DELAY | DELAY | 0 | 0 | – | Pause for game speed (DS:49E2, 0–9) × 225 ms (Crt-style Delay, START.EXE 0x7E4E/0xA69C); speed 0 = none | P | 188 |
-| 3B | SPELL | SPELL | 3 | 3 | v a a | Search the first member's spell bytes for v (skipped when the residue byte is non-zero, as in DOSBox); results written to $00xx (low address bytes only): no effect in v1.3 | P (`[?]` residue) | 1 |
+| 3B | SPELL | SPELL | 3 | 3 | v a a | Search the first member's spell bytes for v (skipped when the residue byte is non-zero, as in DOSBox: 0xCA at the v1.3 site); results written to $00xx (low address bytes only): no effect in v1.3 | P, D | 1 |
 | 3C | PROTECT | PROTECTION | 1 | 1 | a | Draw the glyph line at a (bytes + 1 until 0/255), used for rune texts | P | 12 |
 | 3D | CLEARBOX | CLEAR BOX | 0 | 0 | – | Clear the picture window (1,1)–(15,15); the next PROTECT starts inside it | P | 27 |
 
@@ -688,7 +691,7 @@ Area names as in `geo-format.md` (Lee's chapter 6).
 | File | Block | Area | LOADFILES (map) | NEWECL to | LOADPIECES |
 |---|---|---|---|---|---|
 | ECL1 | 18 | Podal Plaza | 18 | 2, 9, 26, 29 | 1/3/5 |
-| ECL1 | 24 | Temple of Bane (map 24) + Wealthy Area (map 31); see note | 24, 31, [$6E79] | [$6E7D] | 1/3/5 |
+| ECL1 | 24 | Temple of Bane (map 24) + Wealthy Area (map 31); see note | 24, 31, [$6E79] = 14, 24, 26 or 31 by facing (table at $99A8; 14 and 26 after switching the disk) | [$6E7D] | 1/3/5 |
 | ECL2 | 9 | Stojanow Gate | 9 | 6, [$6E79] | 1/9/23 |
 | ECL2 | 15 | Mendor's Library | 15 | [$6E7F] | 1/19/23 |
 | ECL2 | 20 | Slums | 20 | 0, 29 | 2/4/1 |
@@ -701,7 +704,7 @@ Area names as in `geo-format.md` (Lee's chapter 6).
 | ECL4 | 21 | Sokal Keep | 21, 255 | 0 | 1/5/9 |
 | ECL5 | 3 | Valjevo Castle (NW + SE) | 255, [$6E82] = map 3 or 5 by facing (table at $9C24) | 5, [$6E79] | 24/25/1 |
 | ECL5 | 4 | Valjevo Castle (NE) | 4, 255 | 3 | 24/25/1 |
-| ECL5 | 5 | Valjevo Castle hedge maze | [$6E79], [$6E82] | 3, 7 | – |
+| ECL5 | 5 | Valjevo Castle hedge maze | [$6E79] = 3 + Random(4) ($9CD4), [$6E82] = by facing from a table per map 3–6 ($9AD8; unset on another map) | 3, 7 | – |
 | ECL5 | 6 | Valjevo Castle (SW) | 6 | [$6E79] | 24/25/1 |
 | ECL5 | 7 | Valjevo Castle inner tower | 3, 7 | 0, 5 | – |
 | ECL6 | 1 | Buccaneer Base | 1 | 25 | 2/6/6 |
@@ -856,7 +859,8 @@ Run: `python3 -I tools/scripts/ecl.py check <gamedir>` on PoR DOS v1.3 (files as
   `combat_win` save), the structure of the shop (0x7212) and temple (0x5280); CALL $C01E (0x8EAE, step forward; the
   encounter flee in ECL2 block 20 is script code, and `encmenu_flee` now replays); TREASURE's per-item call 00BA:0442
   is the naming routine. Still open: the fight's actions and the loot/shop/temple details (`combat-format.md` "Open");
-  TREASURE's item maker 0x25C99; the item type for a second roll of 48/49; the icon slot DS:6F83 before the first
+  TREASURE's item maker 0x25C99; the item type for a second roll of 48/49 (sampled s18: 0 at the Slums sites; the
+  wilderness sites unsampled, `item-format.md`); the icon slot DS:6F83 before the first
   CLRMON; COMBAT's $6DC1 limit is not discriminated by a capture (the distance was already within the view).
 - Program-side random draws: the rest loop and the door menu follow their read rules (door model
   `GoldBox.Core.Doors`, `geo-format.md`); the comparison harness still searches the door draw counts.
@@ -868,9 +872,9 @@ Run: `python3 -I tools/scripts/ecl.py check <gamedir>` on PoR DOS v1.3 (files as
 - The forward-step key sets $6DD5 only when the face ahead is not impassable (0x16D58, "Steps, doors and script
   switches", `DoorMap.LeavesMap`); the comparison harness applies it from the map planes since s11. Not checked in
   DOSBox (no capture steps into an edge wall); program read only.
-- `[?]` Valjevo hedge maze (ECL5 block 5): the reload of the current map from the edge table is read from the script
-  (`geo-format.md`), not yet seen in play (no capture walks the maze). s15 traced which squares take it (only map 6's
-  two south gates for the edge table, and the event-7 disorientation squares); a DOSBox check needs a late-game save.
+- Valjevo hedge maze (ECL5 block 5): the edge table's in-place reload (map 6's south gate) and the event-7
+  disorientation were run in DOSBox-X from patched saves (s18, `hedge_gate`, `hedge_disorient`) and replay in the
+  VM (`geo-format.md` "Mid-visit reloads"). Settled.
 - T: Which value $49E6 has at each wilderness LOADFILES 4/5/6/127/255 (scripts write it; not followed per path).
 - Meanings of DS:84D2 / DS:84D3 (set by writes of 0 to $6C00 / $6B00) and of the record bytes in the redirection
   table that `character-format.md` names differently from Lee.
@@ -879,7 +883,7 @@ Run: `python3 -I tools/scripts/ecl.py check <gamedir>` on PoR DOS v1.3 (files as
   CLEARBOX, ROB's item rule, CALL $C018, the impassable edge face ($6DD5), the step into a door face, NEWECL in a
   vector 4 ("Party, damage and text-box opcodes", "Steps, doors and script switches"). DOSBox capture
   `party_opcodes` (s11) checks LOADCHAR, ROB (money rounding included), SPELL, CHKPARTY and DAMAGE. Still open:
-  SPELL's residue in other contexts, DAMAGE's effect handlers (trigger classes 12 and 16), PROTECT's glyph drawing (display, not captured).
+  DAMAGE's effect handlers (trigger classes 12 and 16), PROTECT's glyph drawing (display, not captured).
 - The text box layout of PRINT/PRINTCLR: program read in s12 (`view3d.md` "Text window").
 - Stack residue outside COMPARE: what an undefined read returns in other handlers (e.g. block 10's `SAVE [$C059]`,
   after LOADFILES/LOADPIECES) and what an unknown operand type's value fetch returns. The VM uses

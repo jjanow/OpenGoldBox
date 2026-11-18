@@ -17,9 +17,10 @@ public sealed record RunVectorAction(int Vector) : CaptureAction;
 /// <summary>
 /// The area loop's step between vectors 0 and 1: $49F0/$49F1 = x, y, then the program moves the party (0x17438). The
 /// new position is taken from the "after" capture of <see cref="PositionFrom"/> (null = this capture): the step
-/// itself is program code outside the VM.
+/// itself is program code outside the VM. <see cref="To"/> (x, y, facing, wall ahead, event byte) gives the square
+/// instead, for a capture whose vector 1 moves the party again (no state exists between the step and vector 1).
 /// </summary>
-public sealed record StepAction(string? PositionFrom = null) : CaptureAction;
+public sealed record StepAction(string? PositionFrom = null, byte[]? To = null) : CaptureAction;
 
 /// <summary>
 /// The forward-step key before vector 0 (geo-format.md "Edges", 0x16D58): the program clears $6DD5 and sets it to 1
@@ -201,7 +202,12 @@ public sealed class EclCaptureComparer(string fixturesDir, IPorContent game)
             new PorEncounterData(Content));
         var sink = new ListTraceSink();
         var vm = new EclVm(memory, encounter) { Scripts = Content, Trace = extraSink is null ? sink : new TeeSink(sink, extraSink) };
+        // ADDNPC runs the level stats 0x2AA87 on the joined record, as in PorGame.
+        FightKit.WireLevels(vm.Effects, Content.Program()?.LevelTables());
         encounter.CurrentBlock = () => vm.CurrentScript;
+        // LOADFILES re-reads GEO<disk> block $49C5 (0x2F9BE), as AreaLoop.LoadMap does: the walls and event bytes of
+        // the new map (the hedge maze loads maps from vectors 0 and 1).
+        host.MapLoaded = _ => encounter.Map = GeoMap(memory) ?? encounter.Map;
         encounter.Vm = vm;
         vm.ScriptSwitchEventByte = afterInit =>
         {
@@ -266,7 +272,18 @@ public sealed class EclCaptureComparer(string fixturesDir, IPorContent game)
                     case StepAction st:
                         memory.Write(0x49F0, memory.Position.X);
                         memory.Write(0x49F1, memory.Position.Y);
-                        SetPosition(memory, st.PositionFrom ?? s.Name);
+                        if (memory.Read(0x6DC9) >= 255)
+                            memory.Write(0x6DC9, 0); // 0x17438: the script cancelled the step (AreaLoop does the same)
+                        else if (st.To is { Length: 5 } to)
+                        {
+                            memory.Position.X = to[0];
+                            memory.Position.Y = to[1];
+                            memory.Position.Facing = to[2];
+                            memory.Position.WallAhead = to[3];
+                            memory.Position.EventByte = to[4];
+                        }
+                        else
+                            SetPosition(memory, st.PositionFrom ?? s.Name);
                         break;
                     case ForwardKeyAction:
                     {

@@ -30,10 +30,12 @@ public sealed class ExploreScreen : IScreen
     private readonly string[] _commands;
 
     /// <summary>
-    /// The command line's highlighted item: the one whose hotkey is the last letter key the program read (DOSBox-X:
-    /// after loading slot C, CAST; after S, SEARCH; arrows leave it), starting with the save slot's letter.
+    /// The program's shared menu highlight (DS:6B2B, <see cref="MenuHighlight"/>): the command line's highlighted item
+    /// and the combat screen's menus. A command taken by its hotkey moves it there (DOSBox-X: after S, SEARCH; arrows
+    /// leave it); it starts where the load menu left it, the loaded slot's place among the saves present (DOSBox-X:
+    /// saves A, B, J, Load B → CAST, then the first combat menu on View).
     /// </summary>
-    private char _lastLetter;
+    private readonly MenuHighlight _highlight = new();
 
     // State of the request on screen.
     private PlayerRequest? _shown;
@@ -47,20 +49,26 @@ public sealed class ExploreScreen : IScreen
     /// <summary>The combat screen: it takes over drawing and input while a fight runs (<see cref="CombatView.Active"/>).</summary>
     private readonly CombatScreen _combat;
 
+    /// <summary>The art setting and the art drawn through it (combat pictures, encounter pictures).</summary>
+    private readonly ClientArt _art;
+
     /// <summary>The combat screen this screen hands over to during a fight.</summary>
     public CombatScreen Combat => _combat;
 
-    public ExploreScreen(PorGame game, ClientPlayer player, ScriptRunner runner, IScreenHost host, char lastLetter = 'A')
+    public ExploreScreen(PorGame game, ClientPlayer player, ScriptRunner runner, IScreenHost host, char lastLetter = 'A',
+        ClientArt? art = null)
     {
-        _lastLetter = char.ToUpperInvariant(lastLetter);
+        _highlight.Index = LoadMenuIndex(game.Content.SaveFolder, char.ToUpperInvariant(lastLetter));
         _game = game;
         _player = player;
         _runner = runner;
         _host = host;
-        _combat = new CombatScreen(player.FightView, new CombatArt(game.Content), game.Art.Font, runner, player.Chooser.Text,
+        _art = art ?? new ClientArt(game.Content, null, new ScreenPalette(), Data.Por.PorArtChoice.Dos);
+        _combat = new CombatScreen(player.FightView, _art.Combat, game.Art.Font, runner, player.Chooser.Text,
             player.Resources.ItemWord)
         {
             Report = Report,
+            Highlight = _highlight,
         };
         _commands = game.Art.Program.ExploreCommands is { Count: > 0 } c
             ? [.. c.Select(w => w.ToUpperInvariant())]
@@ -80,14 +88,16 @@ public sealed class ExploreScreen : IScreen
             return;
         _player.Notice = null;
         _player.ViewBlanked = false; // [?] CLEARBOX's blank picture window lasts until the next command's redraw
-        _lastLetter = command switch
+        char? letter = command switch
         {
             AreaCommand.AreaMap => 'A',
             AreaCommand.Encamp => 'E',
             AreaCommand.Search => 'S',
             AreaCommand.Look => 'L',
-            _ => _lastLetter,
+            _ => null,
         };
+        if (letter is { } l)
+            Took(l);
         if (command == AreaCommand.Forward)
             _player.Text.Clear(); // [?] when the original clears the text window is not read; we clear on a step
         _runner.Start(() => _game.Loop.Execute(command));
@@ -129,9 +139,38 @@ public sealed class ExploreScreen : IScreen
         _ => NotYet(word),
     };
 
+    /// <summary>A command taken by its hotkey: the shared highlight moves to it.</summary>
+    private void Took(char letter)
+    {
+        int at = Array.FindIndex(_commands, w => w[0] == letter);
+        if (at >= 0)
+            _highlight.Chosen(at);
+    }
+
+    /// <summary>
+    /// The load menu's highlight after picking <paramref name="slot"/>: its place among the saves present (the menu
+    /// lists the letters of the SAVGAM?.DAT files found, A to J). 0 when unknown.
+    /// </summary>
+    public static int LoadMenuIndex(string? saveFolder, char slot)
+    {
+        if (saveFolder is null || !Directory.Exists(saveFolder))
+            return 0;
+        var letters = Directory.EnumerateFiles(saveFolder)
+            .Select(Path.GetFileName)
+            .Where(n => n is { Length: 11 } && n.StartsWith("SAVGAM", StringComparison.OrdinalIgnoreCase) &&
+                        n.EndsWith(".DAT", StringComparison.OrdinalIgnoreCase))
+            .Select(n => char.ToUpperInvariant(n![6]))
+            .Where(ch => ch is >= 'A' and <= 'J')
+            .Distinct()
+            .Order()
+            .ToList();
+        int i = letters.IndexOf(slot);
+        return i < 0 ? 0 : i;
+    }
+
     private GameAction? NotYet(string command)
     {
-        _lastLetter = command[0];
+        Took(command[0]);
         _player.Notice = command + ": NOT IN THIS BUILD YET.";
         return null;
     }
@@ -320,7 +359,7 @@ public sealed class ExploreScreen : IScreen
     {
         if (input.Pressed(GameAction.Controls))
         {
-            _host.Push(new ControlsScreen(_game.Art.Font, _host));
+            _host.Push(new ControlsScreen(_game.Art.Font, _host, _art));
             return;
         }
         if (_combat.Active)
@@ -549,7 +588,9 @@ public sealed class ExploreScreen : IScreen
             DrawLine(f, font, h.Items, _selected, start, h.HotkeyOf);
         }
         else if (pending is null)
-            DrawLine(f, font, _commands, Array.FindIndex(_commands, w => w[0] == _lastLetter), 0);
+        {
+            DrawLine(f, font, _commands, _highlight.Start(_commands.Length), 0);
+        }
         else if (pending is TextRequest tr)
             Chrome.Text(f, font, 0, MenuRow, Fit(tr.Prompt + (tr.Prompt.Length > 0 ? " " : "") + _typed + "_", 40), Chrome.White);
         else if (pending is KeyRequest k)
@@ -632,6 +673,10 @@ public sealed class ExploreScreen : IScreen
             for (int y = 0; y < 88; y++)
                 for (int x = 0; x < 88; x++)
                     f[ViewX + x, ViewY + y] = 0;
+        }
+        else if (_player.ViewPicture is { } picture && _art.Pictures.Draw(f, ViewX, ViewY, picture))
+        {
+            // the encounter picture, portrait or sprite in the chosen art (ViewPictures)
         }
         else if (_player.ViewOverlay is { } lines)
         {

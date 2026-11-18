@@ -72,6 +72,16 @@ public static class PorGoldenCaptures
         new("trace_ecl_open_items", "boot, Load D, Enter at the HMENU, Up (0x1F hang; E9 trace)", false,
             [new AnswersAction(0), new LoadSaveAction("SAVGAMD.DAT"), new ForwardKeyAction(), new RunVectorAction(0)],
             CaptureParty.SaveA, ["trace_ecl_open_items/trace.txt"], []),
+        // Patched saves (s18): save A's party on disk 5, Valjevo Castle map 6, with ECL5 block 5 (the hedge maze) as
+        // the script (wall sets 1/1/1: the castle's own fail to load from a save). The gate: vector 0 sees $6DD5 = 1,
+        // takes map 6 from its facing table (the same map), LOADFILES #6 reloads it in place, CALL $C01E steps through
+        // with wrap to 4,0, and $6DC9 = 255 cancels the program's step. Disorientation: the step onto 9,5 (event 7)
+        // runs vector 1, which rolls RANDOM 3 and loads map 3 + r at the table square (r = 2: map 5 at 3,4).
+        new("hedge_gate", "patched save (map 6 at 4,15 S): Up through the south gate", true,
+            [new ForwardKeyAction(), new RunVectorAction(0), new StepAction(), new RunVectorAction(1)], CaptureParty.SaveA, [], [Clock, WallSlot]),
+        new("hedge_disorient", "patched save (map 6 at 9,6 N): Up onto 9,5 (event 7)", true,
+            [new ForwardKeyAction(), new RunVectorAction(0), new StepAction(To: [9, 5, 0, 7, 0x47]), new RunVectorAction(1)],
+            CaptureParty.SaveA, [], [Clock, WallSlot]),
     ];
 
     public static CaptureScenario? Find(string name) => All.FirstOrDefault(s => s.Name == name);

@@ -15,7 +15,7 @@ public class EclProfileTests
         Assert.Same(EclProfiles.Por13, EclProfiles.Get("ecl-por-1.3"));
         Assert.Same(EclProfiles.Por13, EclProfiles.Default);
         Assert.Same(EclProfiles.Por13, EclProfiles.ForVm("ecl-por-1.3"));
-        Assert.Same(EclProfiles.Default, EclProfiles.ForVm(null));
+        Assert.Null(EclProfiles.ForVm(null)); // no vm = no ECL VM (module-format.md §4)
         Assert.True(EclProfiles.TryGet("ecl-por-1.3", out var p));
         Assert.Same(EclProfiles.Por13, p);
         Assert.Equal(["ecl-por-1.3"], EclProfiles.Names);
@@ -135,8 +135,37 @@ public class EclProfileTests
         }
 
         Assert.Same(EclProfiles.Por13, PorModule.Open(Module("named", "ecl-por-1.3")).VmProfile);
-        Assert.Same(EclProfiles.Default, ((IPorContent)PorModule.Open(Module("none", null))).VmProfile);
+        var none = Assert.Throws<ModuleHasNoVmException>(() => PorModule.Open(Module("none", null)));
+        Assert.Equal("none", none.ModuleId);
+        Assert.Contains("ecl-por-1.3", none.Message);
         var e = Assert.Throws<UnknownEclProfileException>(() => PorModule.Open(Module("other", "ecl-dqk")));
         Assert.Equal("ecl-dqk", e.Name);
+    }
+
+    [Fact]
+    public void A_module_without_vm_takes_the_first_vm_of_its_dependencies()
+    {
+        var tmp = new TempFolder();
+        string Module(string folder, string? vm, params string[] deps)
+        {
+            var root = Path.Combine(tmp.Path, folder);
+            Directory.CreateDirectory(root);
+            new ModuleManifest
+            {
+                FormatVersion = "0.1", Id = folder, Vm = vm,
+                DependsOn = [.. deps.Select(d => new ModuleDependency { Id = d })],
+            }.Save(root);
+            return root;
+        }
+
+        Module("game", "ecl-por-1.3");
+        Module("events", null);
+        // An add-on on a game runs under the game's VM; its own vm wins over a dependency's.
+        Assert.Equal("ecl-por-1.3", ModuleResolver.Open(Module("addon", null, "events", "game")).Vm);
+        Assert.Same(EclProfiles.Por13, PorModule.Open(Path.Combine(tmp.Path, "addon")).VmProfile);
+        Assert.Equal("ecl-dqk", ModuleResolver.Open(Module("own", "ecl-dqk", "game")).Vm);
+        // No module in the chain names one: no VM, and PoR content refuses it.
+        Assert.Null(ModuleResolver.Open(Module("design", null, "events")).Vm);
+        Assert.Throws<ModuleHasNoVmException>(() => PorModule.Open(Path.Combine(tmp.Path, "design")));
     }
 }

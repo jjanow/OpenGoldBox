@@ -5,7 +5,10 @@ using GoldBox.Data.Por;
 
 namespace GoldBox.Client.Play;
 
-/// <summary>A 24-pixel-wide picture of EGA indices, row-major (a ground tile, an icon, a combat sprite).</summary>
+/// <summary>
+/// A 24-pixel-wide picture of frame indices, row-major (a ground tile, an icon, a combat sprite): EGA 0–15 for DOS art,
+/// a <see cref="ScreenPalette"/> run for art with its own palette (0 stays 0 = see-through on icons).
+/// </summary>
 public sealed record CombatPicture(int Width, int Height, byte[] Pixels);
 
 /// <summary>
@@ -13,6 +16,14 @@ public sealed record CombatPicture(int Width, int Height, byte[] Pixels);
 /// WILDCOM.DAX outdoors, RANDCOM.DAX for the rare features), the monster icons (CPIC&lt;disk&gt;.DAX: block id = the
 /// picture, id + 128 = its attack pose), the party icons composed from CHEAD.DAX and CBODY.DAX, and COMSPR.DAX (block
 /// 25: the hit marker). Missing files leave the parts empty and the screen draws without them.
+/// <para>
+/// Art setting (<see cref="UseArt"/>): the ground tiles, monster icons and COMSPR come from the chosen variant (the Amiga
+/// overlay, each with its palette), DOS where it has none. The Amiga DUNGCOM holds DOS's 25 tiles in the same order
+/// plus one (only DOS's count is used, so the rare-feature numbering after it stays DOS's); WILDCOM matches tile for
+/// tile. [?] RANDCOM stays DOS: the Amiga set has 8 tiles with two of DOS's 6 in swapped places, and which tile byte
+/// the Amiga program gives each rare terrain is not read. [?] Party icons stay DOS: the Amiga CHEAD/CBODY use other
+/// indices for the recoloured pairs (CBODY: DOS 8 → 4, 12 → 7) and the Amiga recolouring routine is not read.
+/// </para>
 /// </summary>
 public sealed class CombatArt
 {
@@ -23,37 +34,90 @@ public sealed class CombatArt
     private readonly IPorContent? _dir;
     private readonly Dictionary<int, CombatPicture?> _cpic = [];
     private readonly Dictionary<int, CombatPicture?> _head = [], _body = [], _sprites = [];
+    private PorArtChoice _choice = PorArtChoice.Dos;
+    private Func<byte[], int>? _paletteBase;
 
-    public IReadOnlyList<CombatPicture> Dungeon { get; } = [];
-    public IReadOnlyList<CombatPicture> Wilderness { get; } = [];
-    public IReadOnlyList<CombatPicture> Rare { get; } = [];
+    public IReadOnlyList<CombatPicture> Dungeon { get; private set; } = [];
+    public IReadOnlyList<CombatPicture> Wilderness { get; private set; } = [];
+    public IReadOnlyList<CombatPicture> Rare { get; private set; } = [];
 
     /// <summary>No art (tests, a folder without the files).</summary>
     public CombatArt()
     {
     }
 
-    public CombatArt(IPorContent dir)
+    /// <param name="dir">The content.</param>
+    /// <param name="choice">The art setting (DOS by default).</param>
+    /// <param name="paletteBase">Where a 16-colour palette starts in the screen palette (<see cref="ScreenPalette.Base"/>); without it every picture is DOS.</param>
+    public CombatArt(IPorContent dir, PorArtChoice choice = PorArtChoice.Dos, Func<byte[], int>? paletteBase = null)
     {
         _dir = dir;
-        Dungeon = Items(dir, "DUNGCOM", 1);
-        Wilderness = Items(dir, "WILDCOM", 1);
-        Rare = Items(dir, "RANDCOM", 1);
+        UseArt(choice, paletteBase);
     }
 
-    /// <summary>A one-picture block (not an animation), or null.</summary>
-    private static DaxPicture? Single(IPorContent? dir, string file, int id) => dir?.Picture(file, id) is [var p] && p.Delay is null ? p : null;
+    /// <summary>The art the pictures come from (see the class summary).</summary>
+    public PorArtChoice Choice => _choice;
 
-    private static List<CombatPicture> Items(IPorContent dir, string file, int id) =>
-        Single(dir, file, id) is { } p ? [.. p.Items.Select(px => new CombatPicture(p.Width, p.Height, px))] : [];
+    /// <summary>Takes the pictures from <paramref name="choice"/>'s art from now on (the caches are emptied).</summary>
+    public void UseArt(PorArtChoice choice, Func<byte[], int>? paletteBase)
+    {
+        _choice = choice;
+        _paletteBase = paletteBase;
+        _cpic.Clear();
+        _sprites.Clear();
+        if (_dir is null)
+            return;
+        var dosDungeon = Items(Single(_dir, "DUNGCOM", 1, PorArtChoice.Dos, null), opaque: true);
+        var dosWild = Items(Single(_dir, "WILDCOM", 1, PorArtChoice.Dos, null), opaque: true);
+        Dungeon = SameOrDos(Items(Single(_dir, "DUNGCOM", 1, choice, paletteBase), opaque: true), dosDungeon);
+        Wilderness = SameOrDos(Items(Single(_dir, "WILDCOM", 1, choice, paletteBase), opaque: true), dosWild);
+        Rare = Items(Single(_dir, "RANDCOM", 1, PorArtChoice.Dos, null), opaque: true);
+    }
 
-    private static CombatPicture? One(IPorContent? dir, string file, int id) =>
-        Single(dir, file, id) is { Items.Count: > 0 } p ? new CombatPicture(p.Width, p.Height, p.Items[0]) : null;
+    /// <summary>The variant's ground set cut to DOS's tile count (the tile bytes number DOS's set), or DOS's when it has fewer.</summary>
+    public static List<CombatPicture> SameOrDos(List<CombatPicture> chosen, List<CombatPicture> dos) =>
+        chosen.Count >= dos.Count ? chosen.GetRange(0, dos.Count) : dos;
 
+    /// <summary>
+    /// A one-picture block (not an animation) in <paramref name="choice"/>'s art, with the screen-palette index its
+    /// colour 0 lands on (0 for DOS art), or null.
+    /// </summary>
+    private static (DaxPicture P, int Base)? Single(IPorContent? dir, string file, int id, PorArtChoice choice,
+        Func<byte[], int>? paletteBase)
+    {
+        if (dir is null)
+            return null;
+        if (choice != PorArtChoice.Dos && paletteBase is not null
+            && dir.Art(file, id, choice) is { Variant: not "dos", Frames: [{ Delay: null } v] } img)
+            return (v, paletteBase(img.PaletteRgb));
+        return dir.Picture(file, id) is [var p] && p.Delay is null ? (p, 0) : null;
+    }
+
+    /// <summary>
+    /// Indices moved into the palette run starting at <paramref name="b"/>: every pixel of an opaque ground tile; on an
+    /// icon 0 stays 0 (see-through on both platforms: the Amiga icons keep the DOS icons' background index 0).
+    /// </summary>
+    public static byte[] Rebase(byte[] px, int b, bool opaque)
+    {
+        if (b == 0)
+            return px;
+        var o = new byte[px.Length];
+        for (int i = 0; i < px.Length; i++)
+            o[i] = px[i] == 0 && !opaque ? (byte)0 : (byte)(b + px[i]);
+        return o;
+    }
+
+    private static List<CombatPicture> Items((DaxPicture P, int Base)? s, bool opaque) =>
+        s is var (p, b) ? [.. p.Items.Select(px => new CombatPicture(p.Width, p.Height, Rebase(px, b, opaque)))] : [];
+
+    private static CombatPicture? One((DaxPicture P, int Base)? s) =>
+        s is ({ Items.Count: > 0 } p, var b) ? new CombatPicture(p.Width, p.Height, Rebase(p.Items[0], b, opaque: false)) : null;
+
+    /// <summary>A DOS picture (the party icons, see the class summary).</summary>
     private CombatPicture? Cached(Dictionary<int, CombatPicture?> cache, string file, int id)
     {
         if (!cache.TryGetValue(id, out var p))
-            cache[id] = p = One(_dir, file, id);
+            cache[id] = p = One(Single(_dir, file, id, PorArtChoice.Dos, null));
         return p;
     }
 
@@ -81,14 +145,19 @@ public sealed class CombatArt
         {
             p = null;
             for (int d = 1; d <= 8 && p is null; d++)
-                p = One(_dir, $"CPIC{d}", id);
+                p = One(Single(_dir, $"CPIC{d}", id, _choice, _paletteBase));
             _cpic[id] = p;
         }
         return p;
     }
 
     /// <summary>A COMSPR picture (missiles, the hit marker).</summary>
-    public CombatPicture? Sprite(int id) => Cached(_sprites, "COMSPR", id);
+    public CombatPicture? Sprite(int id)
+    {
+        if (!_sprites.TryGetValue(id, out var p))
+            _sprites[id] = p = One(Single(_dir, "COMSPR", id, _choice, _paletteBase));
+        return p;
+    }
 
     /// <summary>Record bytes of the party icon (character-format.md): head 0xBD, body 0xBE, size 0xC0, colours 0xC1–0xC6.</summary>
     public const int IconHead = 0xBD, IconBody = 0xBE, IconSize = 0xC0, IconColours = 0xC1;

@@ -55,4 +55,6 @@ public sealed class CountingContent(IPorContent inner) : IPorContent
     public string? SaveFolder => Count(nameof(SaveFolder), inner.SaveFolder);
     public GoldBox.Core.Ecl.Profiles.EclProfile VmProfile => inner.VmProfile;
     public bool NoWrapOffMap(int script) => Count(nameof(NoWrapOffMap), inner.NoWrapOffMap(script));
+    public int? OverlandColumn(int script) => Count(nameof(OverlandColumn), inner.OverlandColumn(script));
+    public OverlandMap? Overland() => Count(nameof(Overland), inner.Overland());
 }

@@ -1,0 +1,242 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "CombatMapDocument",
+  "type": "object",
+  "properties": {
+    "profile": {
+      "type": "string"
+    },
+    "terrain": {
+      "type": "object",
+      "properties": {
+        "dsOffset": {
+          "type": "integer"
+        },
+        "entries": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "terrain": {
+                "type": "integer"
+              },
+              "moveCost": {
+                "type": "integer"
+              },
+              "sightHeight": {
+                "type": "integer"
+              },
+              "blockingHeight": {
+                "type": "integer"
+              },
+              "tile": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "terrain"
+            ]
+          }
+        }
+      },
+      "required": [
+        "dsOffset",
+        "entries"
+      ]
+    },
+    "iconCells": {
+      "type": "object",
+      "properties": {
+        "dsOffset": {
+          "type": "integer"
+        },
+        "sizes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "size": {
+                "type": "integer"
+              },
+              "cells": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "dx": {
+                      "type": "integer"
+                    },
+                    "dy": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            },
+            "required": [
+              "size",
+              "cells"
+            ]
+          }
+        }
+      },
+      "required": [
+        "dsOffset",
+        "sizes"
+      ]
+    },
+    "placement": {
+      "type": "object",
+      "properties": {
+        "ringDirection": {
+          "type": "object",
+          "properties": {
+            "dsOffset": {
+              "type": "integer"
+            },
+            "signed": {
+              "type": "boolean"
+            },
+            "rows": {
+              "type": "array",
+              "items": {
+                "type": "array",
+                "items": {
+                  "type": "integer"
+                }
+              }
+            }
+          },
+          "required": [
+            "dsOffset",
+            "rows"
+          ]
+        },
+        "ringStart": {
+          "type": "object",
+          "properties": {
+            "dsOffset": {
+              "type": "integer"
+            },
+            "signed": {
+              "type": "boolean"
+            },
+            "rows": {
+              "$ref": "#/properties/placement/properties/ringDirection/properties/rows"
+            }
+          },
+          "required": [
+            "dsOffset",
+            "rows"
+          ]
+        },
+        "quadDirection": {
+          "type": "object",
+          "properties": {
+            "dsOffset": {
+              "type": "integer"
+            },
+            "signed": {
+              "type": "boolean"
+            },
+            "rows": {
+              "$ref": "#/properties/placement/properties/ringDirection/properties/rows"
+            }
+          },
+          "required": [
+            "dsOffset",
+            "rows"
+          ]
+        },
+        "startQuadX": {
+          "type": "object",
+          "properties": {
+            "dsOffset": {
+              "type": "integer"
+            },
+            "signed": {
+              "type": "boolean"
+            },
+            "rows": {
+              "$ref": "#/properties/placement/properties/ringDirection/properties/rows"
+            }
+          },
+          "required": [
+            "dsOffset",
+            "rows"
+          ]
+        },
+        "startQuadY": {
+          "type": "object",
+          "properties": {
+            "dsOffset": {
+              "type": "integer"
+            },
+            "signed": {
+              "type": "boolean"
+            },
+            "rows": {
+              "$ref": "#/properties/placement/properties/ringDirection/properties/rows"
+            }
+          },
+          "required": [
+            "dsOffset",
+            "rows"
+          ]
+        },
+        "rowBand": {
+          "type": "object",
+          "properties": {
+            "dsOffset": {
+              "type": "integer"
+            },
+            "signed": {
+              "type": "boolean"
+            },
+            "rows": {
+              "$ref": "#/properties/placement/properties/ringDirection/properties/rows"
+            }
+          },
+          "required": [
+            "dsOffset",
+            "rows"
+          ]
+        }
+      },
+      "required": [
+        "ringDirection",
+        "ringStart",
+        "quadDirection",
+        "startQuadX",
+        "startQuadY",
+        "rowBand"
+      ]
+    },
+    "source": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "container": {
+          "type": "string"
+        },
+        "block": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "container"
+      ]
+    }
+  },
+  "required": [
+    "profile",
+    "terrain",
+    "iconCells",
+    "placement"
+  ]
+}

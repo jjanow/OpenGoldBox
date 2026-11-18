@@ -420,9 +420,9 @@ public sealed class EncounterHost : IEclHost
         }
         else if (id < 255)
         {
-            // [?] The type variable ([bp-0x65] of the handler, GAME.OVR 0x26F7) is written only by the type roll, so
-            // a second roll of 48/49 keeps the previous item's type; for the first item of a TREASURE it holds
-            // whatever an earlier routine left in that stack slot. FirstItemTypeResidue stands in for it.
+            // The type variable ([bp-0x65] of the handler, GAME.OVR 0x26F7) is written only by the type roll, so a
+            // second roll of 48/49 keeps the previous item's type; for the first item of a TREASURE it holds whatever
+            // an earlier routine left in that stack cell (path-dependent). FirstItemTypeResidue stands in for it.
             byte type = FirstItemTypeResidue;
             ItemMaker ??= new TreasureMaker(Data?.RandomItemTable);
             for (int k = 1; k <= id - 128; k++)
@@ -442,8 +442,9 @@ public sealed class EncounterHost : IEclHost
     public TreasureMaker? ItemMaker { get; set; }
 
     /// <summary>
-    /// [?] The type a random TREASURE's first item gets when its second roll is 48 or 49: stack residue in the
-    /// program (docs/re/item-format.md "Random treasure"). 0 here, which makes a blank item of type 0.
+    /// The type a random TREASURE's first item gets when its second roll is 48 or 49: stack residue in the program,
+    /// left by whatever ran before (docs/re/item-format.md "Random treasure"). DOSBox-X read 0 at both Slums sites
+    /// on every sample (s18); 0 makes a blank item of type 0. [?] The wilderness sites were not sampled.
     /// </summary>
     public byte FirstItemTypeResidue { get; set; }
 

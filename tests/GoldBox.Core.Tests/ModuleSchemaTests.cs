@@ -35,13 +35,17 @@ public class ModuleSchemaTests
         ModuleManifest.FileName => typeof(ModuleManifest),
         ProgramRulesDocument.RelativePath => typeof(ProgramRulesDocument),
         TextDocument.RelativePath => typeof(TextDocument),
+        OverlandDocument.RelativePath => typeof(OverlandDocument),
         ItemTypesDocument.RelativePath => typeof(ItemTypesDocument),
+        _ when GoldBox.Data.Module.Por.PorRulesTables.Files.Any(f => f.Path == rel) =>
+            GoldBox.Data.Module.Por.PorRulesTables.Files.First(f => f.Path == rel).Type,
         _ when rel.StartsWith("areas/", StringComparison.Ordinal) => typeof(AreaDocument),
         _ when rel.StartsWith("maps/", StringComparison.Ordinal) => typeof(MapDocument),
         _ when rel.StartsWith("scripts/", StringComparison.Ordinal) => typeof(ScriptSidecar),
         _ when rel.StartsWith("records/monsters/", StringComparison.Ordinal) => typeof(MonsterDocument),
         _ when rel.StartsWith("records/", StringComparison.Ordinal) => typeof(RecordListDocument),
         _ when rel.StartsWith("art/", StringComparison.Ordinal) => typeof(ArtDocument),
+        _ when rel.StartsWith("saves/", StringComparison.Ordinal) => typeof(EngineSaveDocument),
         _ => null,
     };
 

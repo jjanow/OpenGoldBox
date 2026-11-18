@@ -85,11 +85,56 @@ public class PorAmigaArtTests(ITestOutputHelper output)
         Assert.Equal(8, h[2].Size);
     }
 
+    /// <summary>Packs PowerPacker bits (in the order the decruncher reads them) into a stream: longs from the end, LSB first.</summary>
+    private static byte[] PowerPackerStream(IReadOnlyList<int> bits, int length)
+    {
+        var longs = new List<uint>();
+        for (int i = 0; i < bits.Count; i += 32)
+        {
+            uint v = 0;
+            for (int k = 0; k < 32 && i + k < bits.Count; k++)
+                v |= (uint)bits[i + k] << k;
+            longs.Add(v);
+        }
+        longs.Add(0); // the decruncher loads the next long as soon as one is used up
+        longs.Reverse();
+        longs.Add((uint)length << 8); // skip 0
+        return [.. longs.SelectMany(l => new[] { (byte)(l >> 24), (byte)(l >> 16), (byte)(l >> 8), (byte)l })];
+    }
+
+    private static IEnumerable<int> Msb(int value, int n) => Enumerable.Range(0, n).Select(i => value >> (n - 1 - i) & 1);
+
+    [Fact]
+    public void PowerPacker_decrunches_literals_and_matches_from_the_end()
+    {
+        // A literal run of 2 bytes ('B' then 'A', written from the end), then a match: index 0 (length 2), offset 1.
+        var bits = new List<int> { 0 };
+        bits.AddRange(Msb(1, 2));            // count 1 → 2 literals
+        bits.AddRange(Msb('B', 8));
+        bits.AddRange(Msb('A', 8));
+        bits.AddRange(Msb(0, 2));            // match index 0
+        bits.AddRange(Msb(1, 9));            // offset 1 (9 bits for index 0)
+        var o = AmigaIntro.PowerPacker(PowerPackerStream(bits, 4), [9, 9, 9, 9]);
+        Assert.Equal("ABAB"u8.ToArray(), o);
+        Assert.Throws<DaxFormatException>(() => AmigaIntro.PowerPacker(new byte[4], [9, 9, 9, 9]));
+    }
+
+    [Fact]
+    public void Planar_pictures_take_plane_k_as_bit_k_left_pixel_first()
+    {
+        // 16×1, 4 planes of 2 bytes: pixel x has plane bits from x.
+        byte[] planes = [0b1010_1010, 0x00, 0b1100_1100, 0x00, 0b1111_0000, 0x00, 0x00, 0xFF];
+        var px = AmigaIntro.Planar(planes, 16, 1);
+        Assert.Equal(new byte[] { 7, 6, 5, 4, 3, 2, 1, 0, 8, 8, 8, 8, 8, 8, 8, 8 }, px);
+        Assert.Throws<DaxFormatException>(() => AmigaIntro.Planar(planes, 16, 2));
+        Assert.Throws<DaxFormatException>(() => AmigaIntro.Title(new byte[16]));
+    }
+
     [Fact]
     public void Best_uses_amiga_for_every_category_as_decided()
     {
         var d = PorAmigaArt.BestDefaults();
-        Assert.Equal(["combatGround", "icon", "picture", "portrait", "sprite", "wall"], d.Keys);
+        Assert.Equal(["combatGround", "icon", "picture", "portrait", "sprite", "title", "wall"], d.Keys);
         Assert.All(d.Values, v => Assert.Equal("amiga", v));
         Assert.Equal(4, PorAmigaArt.TableFor("final", 2));
         Assert.Equal(3, PorAmigaArt.TableFor("final", 7));
@@ -126,11 +171,14 @@ public class PorAmigaArtTests(ITestOutputHelper output)
     {
         var root = Path.Combine(Imported.Value.Dir, "art", "amiga");
         var files = Directory.EnumerateFiles(root, "*.json", SearchOption.AllDirectories).ToList();
-        Assert.Equal(508, files.Count);
+        bool title = Imported.Value.Report.Amiga!.Title;
+        Assert.Equal(PorAmigaArt.LocateIntro(PorAmigaData.Dir!) is not null, title);
+        Assert.Equal(508 + (title ? 1 : 0), files.Count);
         foreach (var path in files)
         {
             var doc = (ArtDocument)System.Text.Json.JsonSerializer.Deserialize(File.ReadAllText(path), typeof(ArtDocument), ModuleSchemas.Strict)!;
-            Assert.NotNull(doc.PaletteTable);
+            // The title painting carries the intro's own palette, not one of the program's tables.
+            Assert.Equal(doc.Source!.Container != PorAmigaArt.IntroContainer, doc.PaletteTable is not null);
             Assert.NotNull(doc.Frames);
         }
     }

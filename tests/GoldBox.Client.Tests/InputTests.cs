@@ -135,6 +135,38 @@ public class ClientOptionsTests
     {
         Assert.Equal("SAVGAMB.DAT", ClientOptions.SaveFileName("b"));
         Assert.Equal("/x/MY.DAT", ClientOptions.SaveFileName("/x/MY.DAT"));
+        Assert.Equal('B', ClientOptions.SlotOf("b"));
+        Assert.Equal('C', ClientOptions.SlotOf("/x/SAVGAMC.DAT"));
+        Assert.Equal('D', ClientOptions.SlotOf("/x/d.json"));
+        Assert.Equal('A', ClientOptions.SlotOf("/x/MY.DAT"));
+    }
+
+    [Fact]
+    public void A_save_letter_finds_engine_saves_before_original_files_and_own_saves_first()
+    {
+        var tmp = Directory.CreateTempSubdirectory("goldbox-saves-");
+        try
+        {
+            var own = Directory.CreateDirectory(Path.Combine(tmp.FullName, "own")).FullName;
+            var module = Directory.CreateDirectory(Path.Combine(tmp.FullName, "module")).FullName;
+            File.WriteAllText(Path.Combine(module, "SAVGAMA.DAT"), "");
+            File.WriteAllText(Path.Combine(module, "a.json"), "");
+            File.WriteAllText(Path.Combine(module, "SAVGAMJ.DAT"), "");
+            File.WriteAllText(Path.Combine(own, "SAVGAMB.DAT"), "");
+            File.WriteAllText(Path.Combine(own, "SAVGAMA.DAT"), "");
+            Assert.Equal(Path.Combine(own, "SAVGAMA.DAT"), ClientOptions.ResolveSave("a", own, module));
+            File.WriteAllText(Path.Combine(own, "a.json"), "");
+            Assert.Equal(Path.Combine(own, "a.json"), ClientOptions.ResolveSave("A", own, module));
+            Assert.Equal(Path.Combine(own, "SAVGAMB.DAT"), ClientOptions.ResolveSave("B", own, module));
+            Assert.Equal(Path.Combine(module, "SAVGAMJ.DAT"), ClientOptions.ResolveSave("J", own, module));
+            Assert.Null(ClientOptions.ResolveSave("C", own, module));
+            Assert.Equal(Path.Combine(module, "a.json"), ClientOptions.ResolveSave("A", Path.Combine(tmp.FullName, "none"), module));
+            Assert.Equal(Path.Combine(module, "SAVGAMJ.DAT"), ClientOptions.ResolveSave("savgamj.dat", own, module));
+        }
+        finally
+        {
+            tmp.Delete(recursive: true);
+        }
     }
 }
 

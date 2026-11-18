@@ -457,7 +457,8 @@ public class CombatScreenGameTests
         // Drop money (0x234E1) from View: the coin list (Return picks the row), the amount typed, one coin less.
         if (FightItemScreens.ViewEntries(me, FightItemScreens.InFight).Contains(ViewEntry.Drop))
         {
-            int kind = Enumerable.Range(0, FightItemScreens.CoinKinds).First(k => FightItemScreens.Coins(me, k) > 0);
+            // The coin list is the sheet's money lines: the highest coin kind held first (0x21547).
+            int kind = CombatSheet.MoneyKinds(me)[0];
             ushort before = FightItemScreens.Coins(me, kind);
             Key(r, Keys.V);
             Key(r, Keys.D);

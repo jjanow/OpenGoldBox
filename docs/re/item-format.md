@@ -214,12 +214,29 @@ branches of this roll (0x28EF–0x2A0F; checked by listing every access in 0x26F
 or 49 gives **the previous item's type again** (and its generator rolls again: a new plus, new scroll spells …). For
 the **first** item of a TREASURE the byte is never initialised: it holds whatever an earlier routine left in that
 stack slot (the handler's 0x174-byte frame is not cleared; the dispatcher calls every opcode handler at the same
-depth, so it is residue of earlier instructions' calls) `[?]`. Still open after s15: the slot is the absolute stack cell
-handler-bp − 0x65, which every earlier opcode handler and its callees may have written (and, between handlers, any
-interrupt that runs on the game's stack), so its value depends on the script path that led to the TREASURE; no
-single value can be read from the program. The installed DOSBox-X has no debugger to sample it. The engine takes it as a setting
-(`EncounterHost.FirstItemTypeResidue`, default 0); type 0 makes no rolls and gives a blank item (type 0, `hidden` 6).
-Chance per item: 0.6 × 0.02 = 1.2 %.
+depth). Chance per item: 0.6 × 0.02 = 1.2 %.
+
+**Sampled in DOSBox-X (s18, residue probe, `dosbox-trace-method.md` "Stack residue probe")**: the handler's BP is
+always SS:3EE2, so the type byte is the absolute cell SS:3E7D. The probe logged it at the handler's entry and, with
+the run-loop watch, every change of it between instructions:
+- **Writers seen**: LOADPIECES (leaves 1), LOADMON (0), SETUPMON (0x68), COMBAT with its loot screen (0x0F), leaving
+  the loot screen (0), CALL $2C90 (0), a step's program code (0 or 0x0C in two steps that also differed in what ran
+  before them; consistent with a value that depends on the square), and TREASURE itself (its last item's type: two
+  random TREASUREs in a row gave 19 = the Lucern hammer the first one made, and 34 = a bastard sword across a long
+  PRINTCLR; the values seen across CLRMON and PICTURE, 0x3D / 0x49, are consistent with this but were not checked
+  against the loot list). **Not writers**: CLRMON, PRINTCLR (empty or long text), PRINT, PICTURE, HMENU, ONGOTO,
+  SAVE, COMPARE, GOSUB/RETURN.
+- **The v1.3 sites** (the seven literal random TREASUREs: ECL2 block 20 $A390 and $B0FB, ECL6 block 25 $AAA4, ECL7
+  block 23 $A3CF, ECL8 block 13 $AD3A, ECL8 block 27 $A39E and $A5EC) all run CLRMON (+ LOADMON) right before
+  TREASURE, after the event's text. Both Slums sites, run from their real script code, read **0** every time: $A390's
+  path from the load and after earlier loot screens (5 samples, 2 boots), $B0FB's path (SETUPMON, PRINTCLR, the
+  "press Return" HMENU, CLRMON, LOADMON × 2) once; there the LOADMON writes 0, and ECL6 block 25 has a LOADMON in the
+  same place. The wilderness sites (ECL6–8) were not run; with no LOADMON before them their value is whatever the
+  step into the square left.
+- So there is no single value: it is a path-dependent residue, 0 on every v1.3 path sampled. The engine keeps it as
+  a setting (`EncounterHost.FirstItemTypeResidue`, default **0**, as sampled); type 0 makes no rolls and gives a blank
+  item (type 0, `hidden` 6). A non-zero residue t gives a type-t item made by the generator (12 → a plussed weapon).
+  `[?]` only for the unsampled wilderness sites and for modules.
 
 **Per-type generator** (OVR 0x25C99, arguments: base type, item pointer). Order of work and of the dice:
 
@@ -382,7 +399,8 @@ All found by code patterns, not fixed addresses (works on v1.1, v1.2 and v1.3):
 - Holy water: trigger-class lists not read; final damage of 1d1−1 against ordinary targets.
 - `byte29`; `weapon_kind` oddities.
 - Effect id 0 record in `MON4SPC.DAX` block 105.
-- The type of a random TREASURE's first item when its second roll is 48/49 (stack residue; see "Random treasure").
+- The type of a random TREASURE's first item when its second roll is 48/49 at the unsampled wilderness sites (stack
+  residue, path-dependent; 0 at both Slums sites in DOSBox-X, s18; see "Random treasure").
 
 Settled 2026-11-17 by code read: base `byte8` is never read; consumable vs worn (`3E`) and the handler codes; `save_bonus`; scroll
 self-identification (+96h = cleric level); holy water 1d6 + 1 against effect-117 creatures; the random item maker 0x25C99 in full (weights, value

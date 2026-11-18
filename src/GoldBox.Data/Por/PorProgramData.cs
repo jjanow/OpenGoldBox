@@ -47,6 +47,13 @@ public sealed class PorProgramData
     public IReadOnlyList<string>? SpellNames { get; init; }
     /// <summary>The text window's page prompt (<see cref="PorProgram.PagePrompt"/>), or null.</summary>
     public string? PagePrompt { get; init; }
+    /// <summary>
+    /// The overland tile map and special locations (<see cref="PorOverland"/>; a module's <c>rules/overland.json</c>), or
+    /// null. The combat arena's wilderness terrain reads it (<see cref="CombatTables"/>).
+    /// </summary>
+    public OverlandMap? Overland { get; init; }
+    /// <summary>Where the overland's tables were found in the program (a folder only; a module has none), or null.</summary>
+    public PorOverlandOffsets? OverlandOffsets { get; init; }
 
     /// <summary>The program in <paramref name="dir"/>, or null without START.EXE.</summary>
     public static PorProgramData? Open(PorGameDirectory dir)
@@ -80,9 +87,12 @@ public sealed class PorProgramData
                 if (PorTextCatalog.ImageString(p.Image, off) is { } s)
                     texts[key] = s;
         }
+        var overland = PorOverland.Locate(p.Overlay);
         return new PorProgramData
         {
             Ds = p.Ds.ToArray(),
+            OverlandOffsets = overland,
+            Overland = overland is null ? null : PorOverland.Read(p.Ds, overland),
             Offsets = new PorProgramOffsets
             {
                 Spells = PorSpellData.SpellTableBase(p),
@@ -137,8 +147,11 @@ public sealed class PorProgramData
 
     public string? CampMenu() => Offsets.CampMenu is { } ds ? PascalString(ds) : null;
 
-    /// <summary>The combat map's tables (fixed v1.3 DS offsets, checked; <see cref="PorCombatTables"/>).</summary>
-    public CombatTables CombatTables() => PorCombatTables.Load(Ds);
+    /// <summary>
+    /// The combat map's tables (fixed v1.3 DS offsets, checked; <see cref="PorCombatTables"/>). The wilderness terrain is
+    /// <see cref="Overland"/>'s tiles when there is one (a module: its <c>rules/overland.json</c>), else DS:3648.
+    /// </summary>
+    public CombatTables CombatTables() => PorCombatTables.Load(Ds, Overland?.Tiles);
 
     /// <summary>A code-segment string by <see cref="PorTextCatalog"/> key, or null.</summary>
     public string? Text(string key) => Texts.TryGetValue(key, out var s) ? s : null;

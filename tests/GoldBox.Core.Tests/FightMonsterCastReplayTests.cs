@@ -1,3 +1,4 @@
+using GoldBox.Core.Ecl;
 using GoldBox.Core.Game;
 using GoldBox.Core.Tests.Support;
 using Xunit.Abstractions;
@@ -10,7 +11,8 @@ namespace GoldBox.Core.Tests;
 /// ran to its end (the party destroyed in round 7). In it the 5th-level magic-user (list 6) casts Charm Person on
 /// Brother Sean (q12 → q13: effect 0x0B), Magic Missile on Phineas (q24 → q25: 6 HP → dying) and Charm Person on
 /// Darkstar (q27 → q28). The replay runs the wired fight from q01 with Quick at every menu; every captured state is
-/// compared when the replay has made as many draws as the capture (RandSeed), right before the next draw.
+/// compared when the replay has made as many draws as the capture (RandSeed), right before the next draw. When the
+/// fight is over the replay runs the after-combat step (<see cref="FightCapture.AfterFight"/>) and compares q34.
 /// </summary>
 public class FightMonsterCastReplayTests(ITestOutputHelper output)
 {
@@ -29,7 +31,8 @@ public class FightMonsterCastReplayTests(ITestOutputHelper output)
 
     private sealed class TooLong : Exception;
 
-    public sealed record Result(List<(string State, long Draws, List<string> Diffs)> States, long DrawsAtEnd, List<string> Trace);
+    public sealed record Result(List<(string State, long Draws, List<string> Diffs)> States, long DrawsAtFightEnd, long DrawsAtEnd,
+        List<string> Trace);
 
     /// <summary>The q states after q01, with their draw counts from q01.</summary>
     public static List<(string Name, long Draws)> Checkpoints()
@@ -62,14 +65,23 @@ public class FightMonsterCastReplayTests(ITestOutputHelper output)
                 throw new TooLong();
         };
         var notes = new List<string>();
+        long fightOver = -1;
         try
         {
             s.RunMenu();
-            for (int menus = 0; menus < 40 && s.ContinueToNextMenu() is { } c; menus++)
+            int menus = 0;
+            EclCharacter? next;
+            while ((next = s.ContinueToNextMenu()) is { } c && ++menus < 40)
             {
                 notes.Add($"menu of #{s.List.IndexOf(c)} at draw {s.Rng.Draws}");
                 Check(s.Rng.Draws);
                 s.RunMenu(c);
+            }
+            if (next is null)
+            {
+                notes.Add($"fight over at draw {s.Rng.Draws}");
+                fightOver = s.Rng.Draws;
+                s.AfterFight();
             }
         }
         catch (TooLong)
@@ -77,7 +89,7 @@ public class FightMonsterCastReplayTests(ITestOutputHelper output)
             notes.Add($"stopped: still fighting {limit} draws after q01");
         }
         Check(s.Rng.Draws);
-        return new Result(results, s.Rng.Draws, [.. notes, .. s.Trace]);
+        return new Result(results, fightOver, s.Rng.Draws, [.. notes, .. s.Trace]);
     }
 
     /// <summary>
@@ -124,8 +136,8 @@ public class FightMonsterCastReplayTests(ITestOutputHelper output)
     /// down and the party falls in round 7. Every state taken between turns matches field for field, and the fight ends
     /// after 1060 draws. The states taken in the middle of a turn (q19, q20, q22–q27, q29, q31, q32) differ only in that
     /// window (the acting creature's turn bytes, or a dropped creature's square and effects before the drop removes
-    /// them): the replay compares right before the next draw. [?] q34 (the end screen, list freed) comes 3 draws later
-    /// (1063): those draws after the fight are not identified and the replay does not run the after-combat step.
+    /// them): the replay compares right before the next draw. The 3 draws to q34 (the end screen) are the after-combat
+    /// step's: <see cref="The_after_combat_step_matches_the_end_screen"/>.
     /// </summary>
     [CastsFact]
     public void The_fight_runs_to_the_party_fall()
@@ -137,8 +149,26 @@ public class FightMonsterCastReplayTests(ITestOutputHelper output)
             Assert.True(diffs.Count == 0, $"{name}: {string.Join("; ", diffs)}");
         }
         Assert.DoesNotContain(r.Trace, t => t.StartsWith("stopped", StringComparison.Ordinal));
-        Assert.Equal(1060, r.DrawsAtEnd);
-        Assert.Equal(1063, Checkpoints().Single(x => x.Name == "q34_the_end").Draws);
+        Assert.Equal(1060, r.DrawsAtFightEnd);
+    }
+
+    /// <summary>
+    /// After the fight (q33 → q34_the_end, 1060 → 1063 draws): the after-combat step (0x6AA5). Brother Sean and
+    /// Darkstar, charmed (okay, hostile = 1), make the results routine 0x5A47 count the fight as won (DS:84DA = 1: its
+    /// test of status 0 / 1 does not look at the hostile byte or 0x84) while the party is destroyed (DS:49FF = 1: no
+    /// okay member that is friendly). So the share 0x557E runs: every hostile creature's coins (theirs included) go to
+    /// the pool and its items to the treasure list, an item of value 0 on 1d10 ≤ 3 while fewer than 8 were taken;
+    /// those are the three draws. The share is 225 (divisor
+    /// $6E3E − 4 out of play), awarded, then every party member leaves and the "party destroyed" screen comes.
+    /// </summary>
+    [CastsFact]
+    public void The_after_combat_step_matches_the_end_screen()
+    {
+        var r = Replay();
+        var (_, draws, diffs) = r.States.Single(x => x.State == "q34_the_end");
+        Assert.Equal(1063, draws);
+        Assert.True(diffs.Count == 0, string.Join("; ", diffs));
+        Assert.Equal(1063, r.DrawsAtEnd);
     }
 
     /// <summary>Set GOLDBOX_FIGHT_TRACE to print every draw, the menus reached and each captured state's differences.</summary>
@@ -152,6 +182,6 @@ public class FightMonsterCastReplayTests(ITestOutputHelper output)
             output.WriteLine(t);
         foreach (var (state, draws, diffs) in r.States)
             output.WriteLine($"{state} ({draws}): {(diffs.Count == 0 ? "ok" : string.Join("; ", diffs))}");
-        output.WriteLine($"draws at end {r.DrawsAtEnd}");
+        output.WriteLine($"draws at the fight's end {r.DrawsAtFightEnd}, at the end {r.DrawsAtEnd}");
     }
 }

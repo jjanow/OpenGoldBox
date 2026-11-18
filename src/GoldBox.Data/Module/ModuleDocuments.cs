@@ -119,8 +119,20 @@ public sealed record AreaDocument
     /// <summary>Maps the script is known to load (for tools and checks; the script decides at run time).</summary>
     public List<int> Maps { get; init; } = [];
     public bool NoWrapOffMap { get; init; }
+    /// <summary>The overland this area shows in its <c>overland-tiles</c> view, or null.</summary>
+    public AreaOverland? Overland { get; init; }
     /// <summary>Notes on how the fields were derived, with [?] where they are guesses.</summary>
     public string? Notes { get; init; }
+}
+
+/// <summary>
+/// An area's place on the module's overland (§6; the table is <see cref="OverlandDocument.RelativePath"/>): the column
+/// where the area's x = 0 sits.
+/// </summary>
+public sealed record AreaOverland
+{
+    /// <summary>The table column of the area's x = 0 (PoR: DS:3C76[view mode], 0 / 13 / 26 for scripts 25 / 26 / 27).</summary>
+    public int Column { get; init; }
 }
 
 /// <summary>One frame of a picture (§10): the PNG holds its items stacked top to bottom.</summary>
@@ -197,4 +209,34 @@ public sealed record TextDocument
     public Dictionary<string, string> Strings { get; init; } = [];
     public List<string>? SpellNames { get; init; }
     public string? PagePrompt { get; init; }
+}
+
+/// <summary>
+/// <c>rules/overland.json</c> (§6, §12): an overland tile map, row-major, values as stored (PoR: 1-based tile numbers,
+/// the program draws value − 1), and its special locations in stored order (the rules key them by 1-based index).
+/// </summary>
+public sealed record OverlandDocument
+{
+    public const string RelativePath = "rules/overland.json";
+    public int Width { get; init; }
+    public int Height { get; init; }
+    public required int[] Tiles { get; init; }
+    public List<OverlandSiteDocument> SpecialLocations { get; init; } = [];
+    public OverlandSource? Source { get; init; }
+}
+
+public sealed record OverlandSiteDocument
+{
+    public int X { get; init; }
+    public int Y { get; init; }
+    /// <summary>The tile drawn while the location's rule holds (1-based, as the table's).</summary>
+    public int Tile { get; init; }
+}
+
+/// <summary>Where the importer read the overland: the container and the tables' data-segment offsets.</summary>
+public sealed record OverlandSource
+{
+    public required string Container { get; init; }
+    public int? Tiles { get; init; }
+    public int? SpecialLocations { get; init; }
 }

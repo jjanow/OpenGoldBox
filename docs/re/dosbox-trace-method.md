@@ -74,6 +74,30 @@ the current opcode into the previous-opcode cell. The trace hook replaces those 
 - The flags printed are the state *before* the instruction. To also see operand values, take save states around
   the instruction of interest, or extend the handler (e.g. dump DS:7086/7046 operand bytes after the loader).
 
+## Stack residue probe (s18)
+
+Three routines read a local byte before writing it: TREASURE's item type ([bp−0x65], a second roll of 48/49),
+SPELL's "found" byte ([bp−8]) and Restoration's class index ([bp−0xC]). With no debugger, a second resident hook
+reads them:
+
+- `python3 -I tools/scripts/por_dosbox_game.py IMAGE OUTDIR --residue [--residue-watch]` replaces, in each routine,
+  a 4-byte `mov byte [bp−k], imm` that runs after the frame is set up and before the read (GAME.OVR 0x2705, 0x3982,
+  0x29CC6) by `INT 66h`, a site id and a NOP. `--residue-watch` also hooks the ECL run loop (0x3ED3, as `--trace`).
+  Not together with `--trace` (both use INT 66h).
+- `tools/dosbox/residue.s` (RESIDUE.COM, built like ECLTRACE.COM, started before START) redoes the store and writes
+  `T pppp bbbb rr` / `S …` / `R …` lines to port E9: ECL PC, BP, residue byte. With the watch it also writes
+  `W pppp oo vv` whenever the TREASURE cell SS:3E7D changed since the last instruction (PC and opcode about to run,
+  new value), which names the instruction that wrote it. The hooks inside the routines run below the probed cell;
+  the watch's frame sits at the run loop's depth and covers the SPELL cell SS:3EDA, so S lines are void with it.
+- Measured: every opcode handler runs with BP = SS:3EE2 (so the cells are fixed); Restoration's BP was 3CEE in a fight
+  (scroll used from the Items screen) and 3BD0 outside.
+- Test saves for the paths: patch a copy of save A's script area (vector 0 pointed at real event code of ECL2
+  block 20, or code copied from another block to the same addresses). A save names its members' files by the stems
+  stored in it (`CHRDATA1` …), so a save with its own member files needs those stems changed too.
+- Results: `item-format.md` "Random treasure", `ecl-format.md` "SPELL", `spells-effects.md` "Restoration with no
+  class to raise". Note: in this DOSBox-X build, loading a state (F12+L) after the probe was loaded crashed the
+  emulator twice (malloc error); the runs were redone from the boot instead.
+
 ## Comparing a headless VM against a capture
 
 `goldbox-tools ecl-compare GAMEDIR [FIXTURES] [--capture NAME] [--trace-out DIR]` (code:
@@ -89,6 +113,9 @@ as skip-if-absent tests (`tests/GoldBox.Core.Tests/EclCaptureCompareTests.cs`).
    - a forward step sets $6DD5, runs vector 0, writes $49F0/$49F1, moves the party and runs vector 1. The new
      position comes from the `after` capture, because the step itself is program code;
    - camp runs vector 2; an interrupted rest runs vector 3.
+   - the step is cancelled when the script left $6DC9 ≥ 255 ($6DC9 back to 0, position kept); a LOADFILES of a map
+     re-reads GEO<disk> block $49C5 into the walls and event bytes the encounter host uses (s18, for the hedge-maze
+     captures; `StepAction.To` gives the stepped-on square when vector 1 moves the party again).
    - Menus with no recorded answer end the run where the game waits (`AwaitingInput`). PC is then after the menu's
      operands, as in the game.
 3. **Program draws.** Random draws made by program code the VM does not model (door pick and bash, the rest loop)
@@ -163,4 +190,6 @@ The s13 captures (fixtures README: `fight_casts`, `fight_mirror`, `fight_undead`
 | Effect minutes | b08 → q01 | the image's minutes 2 → 1 at the end of round 0 (0xA087 → 0x241A1 → 0x23DCC); gone at the end of round 2 | matches (`FightKit.WireClock`, s15) |
 | Melee hit on a Mirror Image caster | `fight_mirror` c03 → c04, c02 → c05 | 1d20, damage, then the image handler's 1d(param + 1); never absorbed by a weapon hit | matches, including the whole c02 → c05 stretch with both Charm Person casts (`FightMirrorImageCaptureTests`) |
 | Turn undead | `fight_undead` d04 → d06 | 1d12 = 11, 1d20 = 15: 4 skeletons and 3 zombies turned | matches (`TurnUndeadCaptureTests`) |
-| Monsters casting | `fight_casts` q01 → q34 | Charm Person on Sean, Magic Missile (level 5) on Phineas, Charm Person on Darkstar | the whole fight replays to the party's fall (1060 draws; every state taken between turns matches, mid-turn states differ only in that window, s15); it needed the effect clock and an AI cast with a casting time picked again in the round (the charmed Sean's Bless, q29 → q30). `[?]` 3 draws after the fight before the end screen q34 (`FightMonsterCastReplayTests`) |
+| Monsters casting | `fight_casts` q01 → q34 | Charm Person on Sean, Magic Missile (level 5) on Phineas, Charm Person on Darkstar | the whole fight replays to the party's fall (1060 draws; every state taken between turns matches, mid-turn states differ only in that window, s15); it needed the effect clock and an AI cast with a casting time picked again in the round (the charmed Sean's Bless, q29 → q30). The 3 draws after the fight to the end screen q34 are the after-combat step's: the charmed Sean and Darkstar, okay, make the fight count as won while the party is destroyed, so the share runs and rolls 1d10 for three items of value 0 (s18; `combat-format.md` "After combat"); the replay runs that step and q34 matches (`FightMonsterCastReplayTests`) |
+| Item use from the menu | `fight_manual_use` p01 → p03 (s18; save K with a readied wand given to Phineas, `saves/CHRDATN6.*`) | U, U, Next × 5, Target: 2d4 + 2 = 7 on a magic-user, one charge off | matches to the next menu (`FightManualUseCaptureTests`) |
+| Manual aim | `fight_manual_use` p03 → p04 (flail), p05 → p06 (darts) | cursor from the aimer (range 0) over a bare square (no Target), an ally and an enemy (Target); the melee hit and the three darts | same squares, ranges and Target offers; matches to the next menu (`FightManualUseCaptureTests`) |

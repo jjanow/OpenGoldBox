@@ -6,6 +6,8 @@ namespace GoldBox.Data.Module.Por;
 public sealed class PorAmigaReport
 {
     public int Pictures { get; set; }
+    /// <summary>The title painting was imported (disk A's <c>intro</c> was found; it is optional).</summary>
+    public bool Title { get; set; }
     /// <summary>Blocks left out on purpose (placeholders, incomplete sprites), as "file id".</summary>
     public List<string> Skipped { get; } = [];
     /// <summary>Blocks that are not pictures in a picture file, as "file id" (kept out of the overlay).</summary>
@@ -69,13 +71,23 @@ public static class PorAmigaArt
     /// </summary>
     private static readonly HashSet<(string, int)> LeftOut = [("sprit", 1), ("sprit", 9), ("sprit", 120)];
 
+    /// <summary>
+    /// The title painting from disk A's <c>intro</c> (docs/re/por-art-formats.md §5) is written as
+    /// <c>art/amiga/intro/0/1</c>, category <c>title</c>. DOS has no such asset (its TITLE.DAX screens are other pictures).
+    /// </summary>
+    public const string IntroContainer = "intro";
+    public const int TitleId = 1;
+    public const string TitleCategory = "title";
+
     /// <summary>The art category of a container (DAX name without disk digit, any case), or null when it has none.</summary>
     public static string? Category(string container) =>
-        Files.TryGetValue(container.ToLowerInvariant(), out var f) ? f.Category : null;
+        container.Equals(IntroContainer, StringComparison.OrdinalIgnoreCase) ? TitleCategory
+        : Files.TryGetValue(container.ToLowerInvariant(), out var f) ? f.Category : null;
 
     /// <summary>The categories and the variant the "Best" mix uses for each (PLAN §4.3: Amiga, decided s5; DOS fills the gaps).</summary>
     public static Dictionary<string, string> BestDefaults() =>
-        Files.Values.Select(f => f.Category).Distinct().Order(StringComparer.Ordinal).ToDictionary(c => c, _ => Variant);
+        Files.Values.Select(f => f.Category).Append(TitleCategory).Distinct().Order(StringComparer.Ordinal)
+            .ToDictionary(c => c, _ => Variant);
 
     /// <summary>The palette table the program sets for block <paramref name="id"/> of <paramref name="container"/>.</summary>
     public static int TableFor(string container, int id) =>
@@ -98,6 +110,31 @@ public static class PorAmigaArt
             .Order(StringComparer.Ordinal).FirstOrDefault()
             ?? throw new FileNotFoundException($"{amigaDir}: no Amiga 'pic.dax' (disk B of Pool of Radiance)");
         return (program, Path.GetDirectoryName(pic)!);
+    }
+
+    /// <summary>
+    /// Disk A's <c>intro</c> under <paramref name="amigaDir"/> (any case, up to three folders deep), or null: it is
+    /// optional (without it the overlay has no title painting).
+    /// </summary>
+    public static string? LocateIntro(string amigaDir) =>
+        Directory.EnumerateFiles(amigaDir, "*", new EnumerationOptions
+        {
+            RecurseSubdirectories = true, MaxRecursionDepth = 3, MatchCasing = MatchCasing.CaseInsensitive,
+        }).Where(p => Path.GetFileName(p).Equals("intro", StringComparison.OrdinalIgnoreCase))
+            .Order(StringComparer.Ordinal).FirstOrDefault();
+
+    /// <summary>
+    /// The files the overlay import reads (<c>program</c>, the overlay's <c>.dax</c> files, <c>intro</c> when present),
+    /// sorted: what a cache of an imported module must be keyed on.
+    /// </summary>
+    public static IReadOnlyList<string> InputFiles(string amigaDir)
+    {
+        var (program, dataDir) = Locate(amigaDir);
+        var files = new List<string> { program };
+        files.AddRange(DataFiles(dataDir).Values);
+        if (LocateIntro(amigaDir) is { } intro)
+            files.Add(intro);
+        return [.. files.Distinct().Order(StringComparer.Ordinal)];
     }
 
     /// <summary>The program's five palette tables, each 16 colours as RGB triplets.</summary>
@@ -154,6 +191,15 @@ public static class PorAmigaArt
                 report.Pictures++;
             }
         }
+        if (LocateIntro(amigaDir) is { } introPath)
+        {
+            var intro = File.ReadAllBytes(introPath);
+            report.Inputs.Add(new ModuleInput { File = "amiga/" + IntroContainer, Sha256 = Sha256(intro) });
+            var (pixels, palette) = AmigaIntro.Title(intro);
+            Write(moduleRoot, IntroContainer, TitleId,
+                [DaxPicture.Create(AmigaIntro.Width, AmigaIntro.Height, 0, 0, [pixels])], false, palette, null, 0);
+            report.Title = true;
+        }
         return report;
     }
 
@@ -181,7 +227,7 @@ public static class PorAmigaArt
     }
 
     private static void Write(string moduleRoot, string container, int id, IReadOnlyList<DaxPicture> frames, bool animation,
-        byte[] palette, int table, int tileWidth)
+        byte[] palette, int? table, int tileWidth)
     {
         var rel = ArtDocument.PathOf(Variant, container, 0, id);
         string Out(string r) => Path.Combine(moduleRoot, r.Replace('/', Path.DirectorySeparatorChar));
@@ -204,7 +250,7 @@ public static class PorAmigaArt
             })],
             PackedTiles = tileWidth > 0 ? PackedPerItem : null,
             PaletteTable = table,
-            Source = new SourceRef { Container = container + ".dax", Block = id },
+            Source = new SourceRef { Container = container == IntroContainer ? container : container + ".dax", Block = id },
         });
     }
 
@@ -247,6 +293,15 @@ public static class PorAmigaArt
                 if (!rebuilt.AsSpan().SequenceEqual(block))
                     r.Mismatches.Add($"amiga {container} block {e.Id}: {rebuilt.Length} bytes rebuilt, {block.Length} original");
             }
+        }
+        if (LocateIntro(amigaDir) is { } introPath)
+        {
+            r.Count("AMIGA TITLE");
+            var (pixels, palette) = AmigaIntro.Title(File.ReadAllBytes(introPath));
+            if (module.Art(IntroContainer, TitleId, GoldBox.Data.Por.PorArtChoice.Amiga) is not { Variant: Variant, Frames: [{ Items: [var px] }] } img)
+                r.Mismatches.Add("amiga intro title: missing in the module");
+            else if (!px.AsSpan().SequenceEqual(pixels) || !img.PaletteRgb.AsSpan().SequenceEqual(palette))
+                r.Mismatches.Add("amiga intro title: pixels or palette differ from the intro file");
         }
         return r;
     }

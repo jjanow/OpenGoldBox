@@ -26,6 +26,16 @@ public static class ModuleSchemas
         ("art.schema.json", typeof(ArtDocument)),
         ("program-rules.schema.json", typeof(ProgramRulesDocument)),
         ("text.schema.json", typeof(TextDocument)),
+        ("save.schema.json", typeof(EngineSaveDocument)),
+        ("rules-spells.schema.json", typeof(SpellsDocument)),
+        ("rules-experience.schema.json", typeof(ExperienceDocument)),
+        ("rules-level-stats.schema.json", typeof(LevelStatsDocument)),
+        ("rules-turn-undead.schema.json", typeof(TurnUndeadDocument)),
+        ("rules-ai-steps.schema.json", typeof(AiStepsDocument)),
+        ("rules-random-items.schema.json", typeof(RandomItemsDocument)),
+        ("rules-temple.schema.json", typeof(TempleDocument)),
+        ("rules-combat-map.schema.json", typeof(CombatMapDocument)),
+        ("overland.schema.json", typeof(OverlandDocument)),
     ];
 
     /// <summary>The options of <see cref="ModuleJson"/> that reject members the types do not have.</summary>

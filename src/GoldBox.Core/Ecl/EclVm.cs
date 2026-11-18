@@ -929,7 +929,7 @@ public sealed class EclVm
             case EclOpcodes.Spell:
             {
                 // P (0x3949): both destinations keep only the low byte of their raw field ($00xx: outside every VM
-                // area), so v1.3's use writes nothing; the search covers the first member only ([?] residue byte).
+                // area), so v1.3's use writes nothing; the search covers the first member only (residue byte, policy).
                 int spell = Value(1) & 0xFF;
                 ushort d1 = (ushort)(RawWord(2) & 0xFF), d2 = (ushort)(RawWord(3) & 0xFF);
                 (ushort, ushort)? r = null;
@@ -1012,8 +1012,10 @@ public sealed class EclVm
     /// <summary>
     /// ADDNPC (P, 0x38C4): with $6E3E ≤ 7 the host builds the record (0x1F248: monster loader, Random(256), portrait
     /// rolls), which is appended to the party list and becomes current: icon slot 0xBF = lowest of 0..7 unused,
-    /// $6E3E + 1. Then, added or not, the current record gets 0x84 = (low byte of v2 / 2) OR 0x80 and 0x10E = 1 when
-    /// the monster is 24, else 0.
+    /// $6E3E + 1, then the level stats 0x2AA87 on it (0x1F55A; <see cref="Game.EffectHandlers.LevelStats"/> of
+    /// <see cref="Effects"/>, wired by <see cref="Game.FightKit.WireLevels"/>; unwired: skipped with a diagnostic). Then,
+    /// added or not, the current record gets 0x84 = (low byte of v2 / 2) OR 0x80 and 0x10E = 1 when the monster is 24,
+    /// else 0.
     /// </summary>
     private void DoAddNpc()
     {
@@ -1046,6 +1048,10 @@ public sealed class EclVm
                 party.Members.Add(npc);
                 party.CurrentIndex = party.Members.Count - 1;
                 Memory.Write(EclPartyRules.PartySizeCell, (ushort)(ReadMem(EclPartyRules.PartySizeCell) + 1));
+                if (Effects.LevelStats is { } levelStats)
+                    levelStats(npc);
+                else
+                    Diag("ADDNPC: level stats 0x2AA87 not wired (no tables); the record keeps its loaded bytes");
             }
         }
         int morale = Value(2) & 0xFF;

@@ -150,8 +150,8 @@ public class FightSpellsProgramTests
                 var want = Load(a);
                 for (int b = 0; b < EclCharacter.RecordSize; b++)
                     if (!PointerByte(b) && want[b] != c[b] &&
-                        !(kind == "spell" && id == 56 && b == 0x96 - 0x12)) // the uninitialised class index is
-                                                                                      // the emulator's stack filler 0xEE
+                        !(kind == "spell" && id == 56 && b is 0x96 - 0x12 or 0x96 + FightSpells.RestorationResidueIndex))
+                        // the uninitialised class index: the emulator's stack filler 0xEE there, DOSBox's 8 here
                         fails.Add($"{what} creature {ci} +{b:X2}: {c[b]} vs {want[b]}");
                 string Effects(EclCharacter x) => string.Join(" ", x.Effects.Select(e => Convert.ToHexString(e, 0, 5)));
                 if (Effects(want) != Effects(c))

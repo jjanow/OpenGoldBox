@@ -60,11 +60,25 @@ public interface IPorContent : IEclScriptSource, IAreaMapSource
     /// </summary>
     bool NoWrapOffMap(int script);
 
+    /// <summary>
+    /// The overland tile map and special locations (docs/module-format.md §6): the program's DS:3648 / DS:0C36 for the
+    /// folder, <c>rules/overland.json</c> in a module; null when absent.
+    /// </summary>
+    OverlandMap? Overland() => Program()?.Overland;
+
+    /// <summary>
+    /// The overland column where wilderness script <paramref name="script"/>'s x = 0 sits: the program's DS:3C76 by the
+    /// script's view mode for the folder, the area's <c>overland.column</c> in a module; null for other scripts.
+    /// </summary>
+    int? OverlandColumn(int script) =>
+        Program() is { OverlandOffsets: { } at } p ? PorOverland.Column(p.Ds, at, script) : null;
+
     /// <summary>The folder holding the shipped saves (<c>SAVGAM?.DAT</c>, <c>CHRDAT*</c>), or null.</summary>
     string? SaveFolder { get; }
 
     /// <summary>
-    /// The VM profile the scripts run under (docs/module-format.md §5.1): the module's <c>vm</c>; a DOS folder is
+    /// The VM profile the scripts run under (docs/module-format.md §5.1): the module's <c>vm</c> (its own or a
+    /// dependency's, §4); a DOS folder is
     /// v1.3 (<see cref="EclProfiles.Default"/>).
     /// </summary>
     EclProfile VmProfile => EclProfiles.Default;

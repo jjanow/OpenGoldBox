@@ -169,7 +169,13 @@ Two bits per face, read only when that face's wall type is non-zero:
       (0–1, 6–8) and (12,11), map 4 (14–15, 5–7) and (6,10), map 5 (3,4) and (15,9), map 6 (9,5) and (1,13); it puts
       the party on map 3 + r at (12,11), (6,10), (3,4) or (9,5) for r = Random(4), so with chance 1/4 the current map
       is re-read and map 3's barred (3,7) E / (3,8) E, map 4's (13,2) E or map 5's (12,7) W / (12,8) W close again.
-      None of this was tried in DOSBox-X: all need late-game positions.
+    - **DOSBox-X (s18, captures `hedge_gate`, `hedge_disorient`)**: patched saves put save A's party on disk 5, map 6,
+      with ECL5 block 5 as the script. Through the south gate at (4,15) S: $6DD5 = 1, vector 0 took map 6 from its
+      table, LOADFILES #6 re-read the map in place (planes equal GEO5 block 6), CALL $C01E wrapped the party to (4,0)
+      S and $6DC9 = 255 cancelled the program's step; vector 1 then ran on (4,0). Onto (9,5) from (9,6) N: vector 1
+      took event 7, RANDOM 3 gave 2, map 5 was loaded and the party set at (3,4) (planes equal GEO5 block 5). Both
+      replay in the VM (`ecl-compare`, `EclCaptureCompareTests`) cell for cell with RandSeed. Not tried: an in-place
+      reload undoing an opened barred door (map 6 has none; the disorientation would have to roll the current map).
   - The restored state is the barrier stored in the GEO block. DOSBox-X: the Slums door at (10,2) N was bashed
     open (plane 3 byte 0x16 → 0x15). It stayed 0x15 through the fight that followed, the camp and the save to
     slot B. After loading slot B it was 0x16 again (locked).
@@ -316,21 +322,52 @@ unused. In the table:
 
 ## Wilderness (overland)
 
-The overland map is **not** a GEO block and not in any DAX file. talonius and DrEvil place a 44 × 36 table of 1-based
-tile numbers in START.EXE's data segment, drawn with the BACPAC/SQRPACI tiles. Its format belongs to the overland spec
-`[?]`.
+The overland map is **not** a GEO block and not in any DAX file. It is a table in START.EXE's data segment, read by
+GAME.OVR (traced s18; v1.3 offsets):
 
-**Special locations** (Lee 12.2.5.2): sites whose tile changes with plot state. The record is 6 bytes:
+- **Tiles: DS:3648, 44 columns × 36 rows**, one byte per square, row-major (index y × 44 + x). Every reader multiplies y
+  by 0x2C (`mov dx,2Ch / mul dx / … mov al,[di+3648h]` at 0xD7D9, 0x16F79, 0x2DE78). 36 rows: the overland move
+  clamps y to 0–35 (0x16F4D), and the 5 × 5 view clamps its top row to 0–31 (0x2DE06) and its left column to 0–39.
+  The values are **1-based tile numbers**: the view draws value − 1 (0x2DE87). talonius and DrEvil place the same
+  44 × 36 table; which tile file the view draws them from is not traced here `[?]`.
+- **Three windows.** The wilderness scripts 25 / 26 / 27 switch to view modes 2 / 3 / 4 outdoors (DS:49FA, 0x3F4C),
+  and the overland x of the party is VM $49C3 plus **DS:3C76[mode]** = 0 / 13 / 26 (0x16F5E square ahead, 0x2DB94
+  marker, 0x2DDC6 view). The square-ahead routine (0x16EE3: $49C3 + DS:2736[facing], $49C4 + DS:273F[facing]) clamps
+  x to 0–15 before adding the column and y to 0–35, then classes the tile code there; so each script's x runs 0–15.
+- **The view** (0x2DDB7, then 0x2DE39): a 5 × 5 window whose top-left is (column + $49C3 − 2, $49C4 − 2), clamped as
+  above; each square is drawn by 0x31B5D with its tile index.
+- **The combat arena** of a wilderness fight reads the same table for the square under the party (0xD785,
+  `combat-map.md`).
+
+**Special locations** (Lee 12.2.5.2): squares whose tile changes with plot state. **9 records of 6 bytes at DS:0C36**:
 
 ```
-+0  u16  x   overland column
++0  u16  x   overland column (0–43, the whole table's, not a window's)
 +2  u16  y   overland row
-+4  u16  tile number (1-based) to draw while the site is shown
++4  u16  tile number (1-based) to draw while the location is shown
 ```
 
-- PoR has **9** records. Which plot flag shows each record is coded in the engine per record index (talonius
-  `BuildWildernessMap`), not in the table. A reimplementation needs those conditions from the engine spec.
-- The table sits verbatim in the START.EXE file. v1.3's START.EXE is EXEPACKed, but this table survives the packing
+- The view reads them with a 1-based index (`[di+0C30h]`, `[di+0C32h]`, `[di+0C34h]` with di = 6 × index, 0x2DE94–
+  0x2DFF8). For every square of the window it tries indices 1–9 in order; a record on that square whose rule holds
+  replaces the tile (its tile − 1), and a later index wins. The rules are code, per index; they read VM cells (zone 0
+  + 2 × (cell − $4900), as `[DS:49D2]+0x1CC` is $49E6). What the cells mean is `[?]`:
+
+  | Index | Shown when |
+  |---|---|
+  | 1, 2 | never (no arm in 0x2DE39) `[?]` used elsewhere: no other reader of DS:0C30–0C3B was found |
+  | 3 | $4A8C ≠ 0xFF |
+  | 4 | $4AD2 ≠ 0, or $4A7C bit 3 set, or $4A9F = 0 |
+  | 5 | $4AA0 bit 1 clear |
+  | 6 | always |
+  | 7 | $4AA0 bit 0 clear |
+  | 8, 9 | $4AB3 > 0xFD (word, unsigned) |
+
+  talonius `BuildWildernessMap` also keys the records by index (its conditions were not compared).
+  `OverlandMap.DrawnTile` (Core) implements the table above.
+- The tile word − 1 is pushed as a byte, so a stored word above 255 draws its low byte − 1 (one v1.3 record does).
+- The module holds both tables in `rules/overland.json` (module-format.md §6); the round trip rebuilds the 1,584 and 54
+  bytes.
+- The special-location table (DS:0C36 in v1.3) sits verbatim in the START.EXE file. v1.3's START.EXE is EXEPACKed, but this table survives the packing
   unchanged. File offsets: v1.1 (47,936 bytes) **33786**, v1.2 (75,536 bytes) **61380**, v1.3 (65,231 bytes) **52740**.
   The 54 bytes are identical in all three. `geo.py special START.EXE --offset N` decodes them. The table contents are not
   copied here.
@@ -419,6 +456,7 @@ the numbers below test the shipped code.
 
 **Not checked yet:**
 
-- Whether ECL 3 and 5 load GEO 3 and 5 through computed operands.
+- Settled (s18, static): ECL5 block 3 loads GEO 3 or 5 by facing (table at $9C24); block 5 loads 3 + Random(4) =
+  3–6 at $9CD4, and at $9AD8 a facing table per current map 3–6 (module-format.md §6).
 - The WALLDEF piece layout.
-- The overland tile table.
+- What the overland tiles look like (the tile file the view draws from) and what the special-location VM cells mean.

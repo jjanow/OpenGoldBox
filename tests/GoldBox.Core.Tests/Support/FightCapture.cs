@@ -153,6 +153,27 @@ public sealed class FightCapture
     /// <summary>The menu of the current creature (the capture waits at it).</summary>
     public void RunMenu(EclCharacter? c = null) => Menu.Act(Fight, c ?? Current!, false);
 
+    /// <summary>What <see cref="AfterFight"/> found, or null before it ran.</summary>
+    public AfterCombatOutcome? After { get; private set; }
+
+    /// <summary>
+    /// The after-combat step (GAME.OVR 0x6AA5) once the fight is over, as <see cref="EncounterHost"/> runs it: results,
+    /// share and award (0x5A47), removal (0x672A), then <see cref="AfterCombat.Finish"/>. The loot / defeat screens and
+    /// the NPC treasure share (0x6866) are left out (no draws). The captures' vm.json does not hold $6E3E, so the party
+    /// size is taken as the number of creatures whose combat record +0x13 is not 1 (the fight start set +0x13 from
+    /// $6E3E); for the same reason $6DC7 and $6DC8 are not compared. The current creature becomes the list's head.
+    /// </summary>
+    public AfterCombatOutcome AfterFight()
+    {
+        var memory = Fight.Memory;
+        memory.Write(AfterCombat.PartySize, (ushort)List.Count(c => Fight.Record(c)[CombatRecord.NotParty] != 1));
+        var step = new AfterCombat(memory, Fight.Encounter, Fight.Random, Fight.Diagnostics);
+        var outcome = step.Run();
+        step.Finish(outcome);
+        Fight.State.Current = memory.Party?.Current;
+        return (After = outcome);
+    }
+
     /// <summary>
     /// The fight goes on as <see cref="Fight.Round"/> does (picks, turns, end of round, next round's start) until a
     /// party member not on Quick reaches its menu (returned; its turn-start bookkeeping done, as in a capture taken at
@@ -200,6 +221,9 @@ public sealed class FightCapture
             ["round"] = Fight.State.RoundCounter.ToString(),
             ["current"] = (Fight.State.Current is { } oc ? List.IndexOf(oc) : -1).ToString(),
         };
+        if (After is { } a)
+            AfterFields(f, a.PartyDefeated, a.PartyFled, a.Won, a.HostileFound, a.ExperienceShare, Fight.Encounter.Money,
+                List.Count);
         for (int i = 0; i < List.Count; i++)
         {
             var c = List[i];
@@ -221,7 +245,14 @@ public sealed class FightCapture
         };
         var cc = cap.GetProperty("creatures").EnumerateArray().ToList();
         if (cc.Count == 0)
-            return f; // after the fight (the list is freed): RandSeed only
+        {
+            // After the fight: the after-combat step's DS cells (0x5A47) and the pool; the list is empty.
+            var ds = File.ReadAllBytes(Path.Combine(dir, "ds.bin"));
+            var pool = cap.GetProperty("pool_67f4").EnumerateArray().Select(e => e.GetUInt32()).ToArray();
+            AfterFields(f, ds[0x49FF] != 0, ds[0x443B] != 0, ds[0x84DA] != 0, ds[0x443A] != 0,
+                BitConverter.ToInt32(ds, 0x84D6), pool, 0);
+            return f;
+        }
         f["round"] = cap.GetProperty("ds_bytes").GetProperty("6DE3").GetByte().ToString();
         long cur = cap.GetProperty("pointers").GetProperty("current_5d92").GetProperty("linear").GetInt64();
         f["current"] = cc.FindIndex(c => c.GetProperty("linear").GetInt64() == cur).ToString();
@@ -245,6 +276,19 @@ public sealed class FightCapture
             f[$"#{i} other"] = (p == 0 ? -1 : linear.IndexOf(p)).ToString();
         }
         return f;
+    }
+
+    /// <summary>The after-combat cells: DS:49FF, DS:443B, DS:84DA, DS:443A, the share DS:84D6, the pool DS:67F4, the list's length.</summary>
+    private static void AfterFields(Dictionary<string, string> f, bool defeated, bool fled, bool won, bool hostile, int share,
+        IReadOnlyList<uint> pool, int listCount)
+    {
+        f["after defeated"] = defeated.ToString();
+        f["after fled"] = fled.ToString();
+        f["after won"] = won.ToString();
+        f["after hostile found"] = hostile.ToString();
+        f["after share"] = share.ToString();
+        f["after pool"] = string.Join(" ", pool);
+        f["after list"] = listCount.ToString();
     }
 
     private static void Creature(Dictionary<string, string> f, int i, byte[] rec, IEnumerable<byte[]> effects, byte[] comb)
@@ -317,9 +361,20 @@ public sealed class ScriptedChooser(params FightCommand[] commands) : IFightMenu
     public DoneCommand ChooseDone(FightMenu menu, IReadOnlyList<DoneCommand> entries) => DoneCommand.Quit;
     public MoveInput ChooseMove(FightMenu menu, int movementLeft) => MoveInput.Escape;
 
-    /// <summary>Cursor keys for Manual; when set, the first aim menu answers Manual (0x155F5) and the cursor follows
-    /// these keys (Exit when they run out).</summary>
-    public Queue<ManualInput>? Manual { get; init; }
+    /// <summary>Cursor keys for Manual; when set, the next aim menu answers Manual (0x155F5) and the cursor follows
+    /// these keys (Exit when they run out). Setting it again arms Manual for a later aim.</summary>
+    public Queue<ManualInput>? Manual
+    {
+        get => _manual;
+        set
+        {
+            _manual = value;
+            _manualArmed = value is not null;
+        }
+    }
+
+    private Queue<ManualInput>? _manual;
+    private bool _manualArmed;
     public List<ManualView> ManualSeen { get; } = [];
 
     public ManualInput ChooseManual(FightMenu menu, ManualView view)
@@ -330,8 +385,11 @@ public sealed class ScriptedChooser(params FightCommand[] commands) : IFightMenu
 
     public AimKey ChooseAim(FightMenu menu, AimView view)
     {
-        if (Manual is not null && ManualSeen.Count == 0)
+        if (_manualArmed)
+        {
+            _manualArmed = false;
             return AimKey.Manual;
+        }
         AimSeen.Add(view.Candidate);
         if (ReferenceEquals(view.Candidate, AimAt))
             return AimKey.Target;

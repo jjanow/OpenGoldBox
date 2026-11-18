@@ -34,6 +34,7 @@ public enum Msg
     ScribeAction, CastOnWhom, CombatOnly, LoseIt, Casts,
     // Character view (0x2103A–0x21AC7)
     Age, Str, Int, Wis, Dex, Con, Cha, Level, Exp, Status, Encumbrance, Movement, ViewPrompt,
+    NpcTag, WeaponLabel, ArmorLabel, AcLabel, HpLabel, Thac0Label, DamageLabel,
     // Items (0x21D5A–0x22F70)
     MustBeUnreadied, ScribeWarning, OkayToLose, IllGiveYou, GoldPiecesForYour, IsItADeal, Sold, SoldOverloaded,
     IdentifyOffer, IdentifyDeal, IdentifyNoMoney, NothingNew,
@@ -171,6 +172,13 @@ public sealed class GameText
         [Msg.Encumbrance] = "LOAD",
         [Msg.Movement] = "MOVE",
         [Msg.ViewPrompt] = "VIEW:",
+        [Msg.NpcTag] = "(NPC)",
+        [Msg.WeaponLabel] = "WEAPON",
+        [Msg.ArmorLabel] = "ARMOUR",
+        [Msg.AcLabel] = "AC    ",
+        [Msg.HpLabel] = "HP    ",
+        [Msg.Thac0Label] = "THAC0   ",
+        [Msg.DamageLabel] = "DMG           ",
         [Msg.MustBeUnreadied] = "UNREADY IT FIRST.",
         [Msg.ScribeWarning] = " MEANT TO SCRIBE FROM IT.",
         [Msg.OkayToLose] = "LOSE IT?",

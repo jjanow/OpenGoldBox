@@ -55,4 +55,46 @@ public class LevelStatsProgramTests
         Assert.Equal(400, n);
         Assert.True(fails.Count == 0, string.Join("; ", fails.Take(30)));
     }
+
+    /// <summary>
+    /// ADDNPC runs 0x2AA87 on the joined record (0x1F42C → 0x1F55A, after the icon slot and $6E3E + 1): every monster
+    /// record v1.3's scripts add with ADDNPC (fixture <c>npcs</c>: 17 records of 14 ids over the sets), joined through
+    /// the VM with the level seams wired as <c>PorGame</c> wires them, comes out as the program's routine leaves it,
+    /// apart from what ADDNPC itself writes around it (icon slot 0xBF, morale 0x84, hostile 0x10E).
+    /// </summary>
+    [OracleFact]
+    public void AddNpc_runs_the_level_stats_on_the_joined_record()
+    {
+        var tables = PorSpellData.LevelTables(PorProgram.Open(PorData.Open())!)!;
+        using var doc = JsonDocument.Parse(File.ReadAllText(File_!));
+        var fails = new List<string>();
+        int n = 0, changed = 0;
+        foreach (var k in doc.RootElement.GetProperty("npcs").EnumerateArray())
+        {
+            var before = Convert.FromHexString(k.GetProperty("before").GetString()!);
+            var want = Convert.FromHexString(k.GetProperty("after").GetString()!);
+            var party = new EclParty();
+            party.Members.Add(new EclCharacter { Name = "A" });
+            party.CurrentIndex = 0;
+            var rig = VmRig.Of(new EclAsm().Op(EclOpcodes.AddNpc, Opnd.Imm8(k.GetProperty("id").GetInt32()), Opnd.Imm8(100))
+                .Op(EclOpcodes.Exit), null, m => m.Party = party);
+            rig.Memory.Write(EclPartyRules.PartySizeCell, 1);
+            FightKit.WireLevels(rig.Vm.Effects, tables);
+            rig.Host.NpcFactory = _ => new EclCharacter((byte[])before.Clone());
+            rig.Run();
+            Assert.Equal(2, party.Members.Count);
+            var got = party.Members[1].Record;
+            string id = $"set {k.GetProperty("set").GetInt32()} id {k.GetProperty("id").GetInt32()}";
+            for (int i = 0; i < want.Length; i++)
+                if (i is not (0xBF or EclPartyRules.Morale or EclPartyRules.Hostile) && got[i] != want[i])
+                    fails.Add($"{id} +{i:X2}: {got[i]:X2} vs {want[i]:X2}");
+            if (!before.AsSpan().SequenceEqual(want))
+                changed++;
+            Assert.DoesNotContain(rig.AllDiagnostics, d => d.Contains("0x2AA87"));
+            n++;
+        }
+        Assert.Equal(17, n);
+        Assert.True(changed > 0);
+        Assert.True(fails.Count == 0, string.Join("; ", fails.Take(30)));
+    }
 }

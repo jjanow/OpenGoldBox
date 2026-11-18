@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "OverlandDocument",
+  "type": "object",
+  "properties": {
+    "width": {
+      "type": "integer"
+    },
+    "height": {
+      "type": "integer"
+    },
+    "tiles": {
+      "type": "array",
+      "items": {
+        "type": "integer"
+      }
+    },
+    "specialLocations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "x": {
+            "type": "integer"
+          },
+          "y": {
+            "type": "integer"
+          },
+          "tile": {
+            "type": "integer"
+          }
+        }
+      }
+    },
+    "source": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "container": {
+          "type": "string"
+        },
+        "tiles": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "specialLocations": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "container"
+      ]
+    }
+  },
+  "required": [
+    "tiles"
+  ]
+}

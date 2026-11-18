@@ -20,9 +20,14 @@ public static class PorCombatTables
 
     public static CombatTables Load(PorProgram program) => Load(program.Ds);
 
-    /// <summary>The tables from the data segment (DS:0000 onwards).</summary>
-    public static CombatTables Load(ReadOnlySpan<byte> data)
+    /// <summary>
+    /// The tables from the data segment (DS:0000 onwards). <paramref name="wildMap"/>, when given, is the wilderness
+    /// terrain (the overland's tiles, 44 × 36) in place of DS:3648.
+    /// </summary>
+    public static CombatTables Load(ReadOnlySpan<byte> data, byte[]? wildMap = null)
     {
+        if (wildMap is not null && wildMap.Length != WildRows * CombatTables.WildMapStride)
+            throw new ArgumentException($"wilderness map: {wildMap.Length} bytes, expected {WildRows * CombatTables.WildMapStride}", nameof(wildMap));
         var img = data.ToArray();
         byte[] Bytes(int off, int n)
         {
@@ -43,7 +48,7 @@ public static class PorCombatTables
             Bytes(StartQuadX, 8),
             Bytes(StartQuadY, 8),
             Bytes(RowBand, 60),
-            Bytes(WildMap, WildRows * CombatTables.WildMapStride));
+            wildMap ?? Bytes(WildMap, WildRows * CombatTables.WildMapStride));
     }
 
     public static CombatTables? Open(IPorContent game) => game.Program()?.CombatTables();

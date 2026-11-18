@@ -61,6 +61,8 @@ public class EclCaptureCompareTests
     [InlineData("oneway_blocked", CaptureOutcome.Match, null)]  // refused step: vectors 0 and 1 still run
     [InlineData("oneway_barrier_through", CaptureOutcome.Match, null)]
     [InlineData("oneway_barrier_blocked", CaptureOutcome.Match, null)]
+    [InlineData("hedge_gate", CaptureOutcome.Match, null)]      // edge table: map 6 re-read in place, $6DC9 cancels the step
+    [InlineData("hedge_disorient", CaptureOutcome.Match, null)] // event 7: RANDOM 3 = 2 → map 5 at 3,4
     public void State_capture(string name, CaptureOutcome expected, int? hostDraws)
     {
         var r = Captures.Compare(PorGoldenCaptures.Find(name)!);

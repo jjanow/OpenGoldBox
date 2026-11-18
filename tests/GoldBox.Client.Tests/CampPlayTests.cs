@@ -91,7 +91,7 @@ public class CampPlayTests
             Key(r, Keys.N);                                        // Quit to DOS? No
             Press(r, GameAction.Cancel);                           // leave the camp
             Assert.Null(r.Runner.Pending);
-            var file = Path.Combine(tmp.FullName, "SAVGAMC.DAT");
+            var file = Path.Combine(tmp.FullName, "c.json");          // an engine save (docs/module-format.md §15)
             Assert.True(File.Exists(file));
             var names = r.Game.Memory.Party!.Members.Select(m => m.Name).ToList();
             r.Runner.Dispose();
@@ -99,7 +99,11 @@ public class CampPlayTests
             var back = Start(file, tmp.FullName);
             Assert.Equal(names, back.Game.Memory.Party!.Members.Select(m => m.Name));
             Assert.Equal(t0 + 10, GameClock.TotalMinutes(back.Game.Memory));
-            var written = new PorSaveGame(File.ReadAllBytes(file));
+            var doc = System.Text.Json.JsonSerializer.Deserialize<GoldBox.Data.Module.EngineSaveDocument>(File.ReadAllText(file), GoldBox.Data.Module.ModuleSchemas.Strict)!;
+            Assert.Equal(["c.json"], Directory.EnumerateFiles(tmp.FullName).Select(Path.GetFileName));
+            Assert.Equal(names.Count, doc.Party!.Count);
+            var written = GoldBox.Data.Module.Por.PorEngineSave.ToSaveGame(doc);
+            Assert.Equal("C", doc.Por!.Slot);
             Assert.Equal(2, written.InterfaceState);
             Assert.Equal(r.Game.Memory.ViewMode, written.LocationType);   // DS:49FA
             Assert.Equal(5, back.Game.Memory.GameSpeed);

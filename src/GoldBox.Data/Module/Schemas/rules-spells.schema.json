@@ -1,0 +1,100 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "SpellsDocument",
+  "type": "object",
+  "properties": {
+    "profile": {
+      "type": "string"
+    },
+    "dsOffset": {
+      "type": "integer"
+    },
+    "spells": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "castClass": {
+            "type": "integer"
+          },
+          "level": {
+            "type": "integer"
+          },
+          "rangeFixed": {
+            "type": "integer"
+          },
+          "rangePerLevel": {
+            "type": "integer"
+          },
+          "durationFixed": {
+            "type": "integer"
+          },
+          "durationPerLevel": {
+            "type": "integer"
+          },
+          "area": {
+            "type": "integer"
+          },
+          "target": {
+            "type": "integer"
+          },
+          "save": {
+            "type": "integer"
+          },
+          "saveType": {
+            "type": "integer"
+          },
+          "effect": {
+            "type": "integer"
+          },
+          "whenCast": {
+            "type": "integer"
+          },
+          "castTime": {
+            "type": "integer"
+          },
+          "aiPriority": {
+            "type": "integer"
+          },
+          "offensive": {
+            "type": "integer"
+          },
+          "aiRadius": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      }
+    },
+    "source": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "container": {
+          "type": "string"
+        },
+        "block": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "container"
+      ]
+    }
+  },
+  "required": [
+    "profile",
+    "dsOffset",
+    "spells"
+  ]
+}

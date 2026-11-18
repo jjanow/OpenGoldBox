@@ -132,6 +132,8 @@ public sealed class PorArea
         var host = new ScriptedEclHost { StopWhenInputMissing = true };
         var mem = new EclMemory(profile: dir.VmProfile);
         var vm = new EclVm(mem, host) { Scripts = dir };
+        // ADDNPC runs the level stats 0x2AA87 on the joined record, as in PorGame.
+        GoldBox.Core.Game.FightKit.WireLevels(vm.Effects, dir.Program()?.LevelTables());
         host.MapLoaded = m => rec.Map = m;
         host.WallSetLoaded = (slot, set) => art.LoadWallSet(mem.Disk == 0 ? disk : mem.Disk, slot, set);
         return (vm, host, rec);

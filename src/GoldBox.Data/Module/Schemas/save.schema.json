@@ -1,0 +1,270 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "EngineSaveDocument",
+  "type": "object",
+  "properties": {
+    "formatVersion": {
+      "type": "string"
+    },
+    "module": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "version": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "contentHash": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id"
+      ]
+    },
+    "vm": {
+      "type": "string"
+    },
+    "memory": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "start": {
+            "type": "integer"
+          },
+          "cellBits": {
+            "type": "integer"
+          },
+          "cells": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "cells"
+        ]
+      }
+    },
+    "position": {
+      "type": "object",
+      "properties": {
+        "x": {
+          "type": "integer"
+        },
+        "y": {
+          "type": "integer"
+        },
+        "facing": {
+          "type": "integer"
+        },
+        "wallAhead": {
+          "type": "integer"
+        },
+        "eventByte": {
+          "type": "integer"
+        }
+      }
+    },
+    "script": {
+      "type": "object",
+      "properties": {
+        "key": {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string"
+            },
+            "bank": {
+              "type": "integer"
+            },
+            "id": {
+              "type": "integer"
+            }
+          },
+          "required": [
+            "kind"
+          ]
+        },
+        "disk": {
+          "type": "integer"
+        },
+        "matchesModule": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "key"
+      ]
+    },
+    "party": {
+      "type": [
+        "array",
+        "null"
+      ],
+      "items": {
+        "type": "object",
+        "properties": {
+          "stem": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "fields": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "raw": {
+            "type": "string"
+          },
+          "items": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "object",
+              "properties": {
+                "fields": {
+                  "type": [
+                    "object",
+                    "null"
+                  ]
+                },
+                "raw": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "raw"
+              ]
+            }
+          },
+          "effects": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/properties/party/items/properties/items/items"
+            }
+          },
+          "itemsTrailing": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "effectsTrailing": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "raw"
+        ]
+      }
+    },
+    "clock": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "year": {
+          "type": "integer"
+        },
+        "month": {
+          "type": "integer"
+        },
+        "day": {
+          "type": "integer"
+        },
+        "hour": {
+          "type": "integer"
+        },
+        "minute": {
+          "type": "integer"
+        }
+      }
+    },
+    "por": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "slot": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "disk": {
+          "type": "integer"
+        },
+        "locationType": {
+          "type": "integer"
+        },
+        "interfaceState": {
+          "type": "integer"
+        },
+        "partySize": {
+          "type": "integer"
+        },
+        "nameSlots": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "source": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "container": {
+          "type": "string"
+        },
+        "block": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "container"
+      ]
+    }
+  },
+  "required": [
+    "formatVersion",
+    "module",
+    "vm",
+    "memory",
+    "position",
+    "script"
+  ]
+}

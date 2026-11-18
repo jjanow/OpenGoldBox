@@ -31,7 +31,21 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
     private Dialog Dialog => _dialog ??= new Dialog(runner.Ask, Text);
 
     /// <summary>What the 3D view shows instead of the walls while an encounter or picture is up (null = the view).</summary>
-    public string[]? ViewOverlay { get; private set; }
+    public string[]? ViewOverlay
+    {
+        get => _viewOverlay;
+        private set
+        {
+            _viewOverlay = value;
+            if (value is null)
+                ViewPicture = null;
+        }
+    }
+
+    private string[]? _viewOverlay;
+
+    /// <summary>The encounter picture, sprite or portrait the view shows (drawn by <see cref="ViewPictures"/>; null = none).</summary>
+    public ViewPicture? ViewPicture { get; private set; }
 
     /// <summary>A one-line message (the area loop's own, or a stand-in notice) shown on the first text row.</summary>
     public string? Notice { get; set; }
@@ -163,13 +177,24 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
     }
 
     // ---- IEncounterUi ---------------------------------------------------------------------------------------------
-    public void ShowEncounter(byte sprite, byte picture, int distance) =>
+    public void ShowEncounter(byte sprite, byte picture, int distance)
+    {
+        // The text stays the stand-in where the art is missing (ExploreScreen draws ViewPicture when it can).
         ViewOverlay = distance == 0
-            ? ["CLOSE-UP", $"PIC {picture}", "", "(ART NOT", "IN YET)"]
-            : ["MONSTER", $"SPRITE {sprite}", $"DISTANCE {distance}", "", "(ART NOT", "IN YET)"];
+            ? ["CLOSE-UP", $"PIC {picture}", "", "(ART NOT", "FOUND)"]
+            : ["MONSTER", $"SPRITE {sprite}", $"DISTANCE {distance}", "", "(ART NOT", "FOUND)"];
+        ViewPicture = distance == 0
+            ? new ViewPicture(ViewPictureKind.Picture, picture, null, 0, memory().Disk)
+            : new ViewPicture(ViewPictureKind.Sprite, sprite, null, distance, memory().Disk);
+    }
 
-    public void ShowPicture(byte picture, byte? head) =>
+    public void ShowPicture(byte picture, byte? head)
+    {
         ViewOverlay = head is { } h ? ["PICTURE", $"HEAD {h}", $"BODY {picture}"] : ["PICTURE", $"{picture}"];
+        ViewPicture = head is { } hd
+            ? new ViewPicture(ViewPictureKind.Portrait, picture, hd, 0, memory().Disk)
+            : new ViewPicture(ViewPictureKind.Picture, picture, null, 0, memory().Disk);
+    }
 
     public void RestoreView() => ViewOverlay = null;
 
@@ -433,9 +458,11 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
 
     /// <summary>
     /// The camp's Save (0x1FD3E): the wall sets into $4AFA–$4AFF (the picture flags $49FF are already the cell here),
-    /// then <c>SAVGAMx.DAT</c> (interface state 2, camp) and the member files into <see cref="SaveFolder"/>. The save
-    /// takes the location type from DS:49FA (<see cref="EclMemory.ViewMode"/>) and writes the game speed DS:49E2
-    /// (<see cref="EclMemory.GameSpeed"/>) into $49FC, as the program does.
+    /// then the save as the program builds <c>SAVGAMx.DAT</c> (interface state 2, camp) with the party, written as an
+    /// engine save <c>x.json</c> into <see cref="SaveFolder"/> (docs/module-format.md §15; <c>goldbox-import
+    /// save-export</c> writes the original files from it). The save takes the location type from DS:49FA
+    /// (<see cref="EclMemory.ViewMode"/>) and writes the game speed DS:49E2 (<see cref="EclMemory.GameSpeed"/>) into
+    /// $49FC, as the program does.
     /// </summary>
     public string? SaveGame(char letter)
     {
@@ -451,10 +478,13 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
         try
         {
             var bytes = GoldBox.Data.Por.PorSaveGame.Build(mem, party.Members.Count, letter, 2);
+            var content = Game()!.Content;
+            var save = GoldBox.Data.Module.Por.PorEngineSave.FromOriginal(bytes, party,
+                GoldBox.Data.Module.Por.PorEngineSave.Identity(content), content.LoadBlock, content.VmProfile);
             Directory.CreateDirectory(SaveFolder);
-            File.WriteAllBytes(Path.Combine(SaveFolder, GoldBox.Data.Por.PorSaveGame.FileName(letter)), bytes);
-            GoldBox.Data.Por.PorParty.Save(party, SaveFolder, letter);
-            Log.Add($"saved slot {letter} to {SaveFolder}");
+            var path = Path.Combine(SaveFolder, GoldBox.Data.Module.Por.PorEngineSave.FileName(letter));
+            GoldBox.Data.Module.Por.PorEngineSave.Write(path, save);
+            Log.Add($"saved slot {letter} to {path}");
             return null;
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)

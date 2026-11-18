@@ -28,7 +28,7 @@ distance, end actions).
 | 02F2 | 4 | 3D facing ÷ 2 → arena direction (the arena is drawn skewed: N → 7, E → 2, S → 3, W → 6) |
 | 02F6 / 02FE | 2 × 4 | start square x / y of each corner, [ring 0 / later rings] |
 | 0306 | 5 × 6 × (lo, hi) | the open columns of each row of a placement grid, per team direction 0–3; grid 4 is used for ring 1 |
-| 3648 | 36 rows × 44 | the wilderness terrain codes (three 13-column maps side by side) |
+| 3648 | 36 rows × 44 | the wilderness terrain codes: the overland tile map (1-based tile numbers; scripts 25–27 see 16 columns from 0 / 13 / 26, `geo-format.md` "Wilderness (overland)"). The engine reads it from the overland (`rules/overland.json` in a module) |
 
 ## The arena (DS:6716) — P, E, D
 
