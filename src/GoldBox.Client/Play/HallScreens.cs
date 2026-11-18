@@ -128,7 +128,18 @@ public static class HallScreens
                     break;
                 default:
                     if (h.Hooks.For(entry) is { } run)
+                    {
+                        // The roster entries move the party size $6E3E with the list (the join 0x1F42C adds one,
+                        // 0x1CC10 takes one off).
+                        int before = party.Members.Count;
                         run();
+                        int delta = camp.Party.Members.Count - before;
+                        if (delta != 0)
+                            h.Memory.Write(EclPartyRules.PartySizeCell,
+                                (ushort)(h.Memory.Read(EclPartyRules.PartySizeCell) + delta));
+                        if (h.Hooks.Notice?.Invoke() is { } note)
+                            Message(h, note, 14);
+                    }
                     else
                         Message(h, $"{h.Text.Entry(entry).ToUpperInvariant()}: NOT IN THIS BUILD YET.", 14);
                     break;
@@ -359,7 +370,9 @@ public sealed class HallContext
 
 /// <summary>
 /// The entries this screen does not run itself, by the program's routine: Create 0x19EEB, Drop 0x1B8B6, Modify
-/// 0x1BA1E, Add 0x1C9EC, Remove 0x1E684 + 0x1CC10, Load 0x1F5E8. Null = a notice.
+/// 0x1BA1E, Add 0x1C9EC, Remove 0x1E684 + 0x1CC10, Load 0x1F5E8. Null = a notice. A successful Load ends the hall and
+/// the game with <see cref="HallLoadException"/>: the program leaves the menu (0x19D91) and runs the game loop on the
+/// loaded state.
 /// </summary>
 public sealed class HallHooks
 {
@@ -369,6 +382,8 @@ public sealed class HallHooks
     public Action? Add { get; set; }
     public Action? Remove { get; set; }
     public Action? Load { get; set; }
+    /// <summary>A message an entry left for the bottom line (Drop's farewell; [?] its colour), taken after each entry.</summary>
+    public Func<string?>? Notice { get; set; }
 
     public Action? For(TrainingHall.Entry e) => e switch
     {
@@ -380,4 +395,13 @@ public sealed class HallHooks
         TrainingHall.Entry.Load => Load,
         _ => null,
     };
+}
+
+/// <summary>
+/// Load in the training hall picked a save: the running game ends here (the program leaves the menu after a successful
+/// load, 0x19D91, and its game loop 0x403E starts on the loaded state); the screen loads <see cref="Slot"/>.
+/// </summary>
+public sealed class HallLoadException(char slot) : Exception($"load save {slot}")
+{
+    public char Slot { get; } = slot;
 }

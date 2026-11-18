@@ -205,6 +205,9 @@ Called after every fight and alone when COMBAT has no monsters, shop or temple.
    Else: $6DC7 = 0x80 and the "party destroyed" screen; the treasure list DS:6810 is **not** freed.
 5. DS:4A00 = 1; VM $6E70, $6E71, $6E72, $6DE3 and $6DE6 = 0.
 
+With DS:49FF set the ECL run and the game loop 0x403E end and the program quits to DOS (start-menu.md §8: no return
+to the party menu in v1.3).
+
 **D** (s18, `fight_casts` q33 → q34_the_end): "won" and "destroyed" are separate tests and can both hold. The won
 test (status 0 or 1) does not look at the hostile byte or 0x84, the destroyed test does: a charmed party member (on
 the enemy side) and still okay when the rest of the party fell, sets DS:84DA = 1 while DS:49FF stays 1 (at q33 both

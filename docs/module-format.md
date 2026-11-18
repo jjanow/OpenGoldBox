@@ -626,7 +626,7 @@ With `--amiga` (Amiga v1.0, s17): 508 Amiga pictures over 16 files (every pictur
    take only an `IPorContent`.
 2. `GoldBox.Importer` (CLI `goldbox-import por GAMEDIR OUTDIR [--amiga AMIGADIR]`): scripts, maps, records, item
    types first. Then art (DOS, then Amiga), rules tables, text, saves. **Done (s16; the Amiga overlay s17; the
-   overland `rules/overland.json` s18, importer 0.6 after the s18 merges; `audio/dos/pcsound.json` and new `PartyMsg`, `CombatMsg`, `Hall`, `End`, river texts s19, importer 0.7).** The importer and the round
+   overland `rules/overland.json` s18, importer 0.6 after the s18 merges; `audio/dos/pcsound.json` and new `PartyMsg`, `CombatMsg`, `Hall`, `End`, river texts s19, importer 0.7; the icon editor's size and hair / face words `PartyMsg.Icon*` s20, importer 0.7.1).** The importer and the round
    trip live in `GoldBox.Data/Module/Por/` (the Client imports with them); the CLI stays in `GoldBox.Importer`.
 3. **Round-trip test:** for every raw resource, module → original block must be byte-identical to the DAX block. All
    existing real-data tests also pass with the Client and Core reading the module instead of the game folder.

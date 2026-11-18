@@ -198,7 +198,8 @@ Menu DS:055A (Order, Drop, Speed, Icon, Pics, Exit), prompt 0x19441; extended ke
   Slower while n < 9, and Exit (0x19286–0x19296); Down / F speed up, Up / S slow down, until Exit or Escape. The game delay is DS:49E2
   (`EclMemory.GameSpeed`): new game 1, the save copies it into $49FC, Load takes it back. The Client's Alter Speed,
   DELAY, the combat pauses and the Done menu's Speed all use `EclMemory.GameSpeed`.
-- **Icon**: the icon editor (character creation). `[?]` Not built: a notice.
+- **Icon**: the icon editor 0x1D1AC (character creation; read s20, start-menu.md §3, Core `IconEditor`). `[?]` Not wired
+  in the camp yet: a notice.
 - **Pics**: monsters on/off, portraits on/off, Exit (0x19449–0x19485); M and P toggle the two flags (saved as $49FF bit 1 and bit 0).
 
 ## Save (0x1FD3E) — P
@@ -223,5 +224,5 @@ slots are written as zero (leftover memory in the program).
 ## Open `[?]`
 
 - The camp Cast's effect messages' layout.
-- The icon editor; the roster-file deletion on save.
+- The icon editor in the camp (built for creation); the roster-file deletion on save.
 - Cell positions of the camp's messages other than the rest's (the Client keeps its own frame).

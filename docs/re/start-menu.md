@@ -1,10 +1,14 @@
 # Start of the game: party menu, character creation, new game (Pool of Radiance DOS v1.3)
 
-Status: **program read (s19)**, the creation routine **checked under emulation** on 798 cases (every race, gender,
-class and alignment pick, re-rolls), the menu flow and the new game's start **checked in DOSBox-X** (screens). Code:
-Core `CharacterCreation`, `PartyMenu`; Data `PorRoster`, `PorGame.NewGame`; Client `PartyMenuFlow`,
-`PartyMenuScreen`. Oracle: `tools/scripts/por_chargen_oracle.py` → `tests/fixtures-private/por/program-v1.3/chargen.json`
-(`CharacterCreationProgramTests`). Addresses are GAME.OVR file offsets unless marked START (unpacked image) or DS.
+Status: **program read (s19, s20)**, the creation routine **checked under emulation** on 798 cases (every race,
+gender, class and alignment pick, re-rolls), Modify on 1043 cases and the icon editor on 600 cases (s20); the menu
+flow and the new game's start **checked in DOSBox-X** (screens), and Save before Begin, Load of that save and Exit with
+a party (s20, the save byte for byte). Code: Core `CharacterCreation`, `CharacterModify`, `PartyMenu`, `IconEditor`;
+Data `PorRoster`, `PorGame.NewGame`, `UnstartedSave`, `LoadAtPartyMenu`; Client `PartyMenuFlow`, `PartyMenuScreen`.
+Oracles: `tools/scripts/por_chargen_oracle.py` → `tests/fixtures-private/por/program-v1.3/chargen.json`
+(`CharacterCreationProgramTests`), `por_modify_oracle.py` → `modify.json` (`CharacterModifyProgramTests`),
+`por_icon_oracle.py` → `icon_editor.json` (`IconEditorProgramTests`). Addresses are GAME.OVR file offsets unless marked
+START (unpacked image) or DS.
 No game text is quoted here: strings are named by their catalogue keys (`PartyMsg.*`, `PorTextCatalog`).
 
 ## 1. Start-up sequence
@@ -23,8 +27,12 @@ START's main program (image 0x00F6): start-up 0xE600; unless the first argument 
   area's first text and close-up portrait. `PorGame.NewGame` + `RunNewGameEntry` do this: fresh VM memory, the party
   and $6E3E, the square, disk 3, script 0 (init, then vector 4). This settles module-format §18's start-up `[?]` for
   PoR: the manifest's `start` is not used by the PoR VM profile.
-- Load from the party menu runs the program's Load (0x1F5E8) and the game loop on the loaded state (engine:
-  `PorGame.FromSave`).
+- Load from the party menu runs the program's Load (0x1F5E8), which reads the interface state DS:49F3 back from the
+  save (0x1F87B); the menu goes on to the game loop only when it is not 0 (0x19D8A, then DS:49F8 := 1). A save made at
+  the party menu or in the training hall (state 0) leaves the menu up with the save's party, the first member current
+  (0x1FB99), DS:49F8 still 0: Begin then runs `ECL<disk>` block $49F2 from the loaded memory as on a new game (section
+  5a). Engine: `PorGame.LoadAtPartyMenu` (`LoadedInterfaceState`); Begin → `RunNewGameEntry(party)`.
+- **After the game loop** the main program quits to DOS (START 0x142 → 0899:0000): section 8 (the party destroyed).
 
 ## 2. The party menu (0x19AE0)
 
@@ -45,7 +53,7 @@ Enabled bytes (0x19B2D–0x19BA3), `PartyMenu.Enabled`:
 
 Home / End select the previous / next member (0x23819, shared with the camp; wrapping `[?]`). Any key but E and S
 clears DS:557D (saved since the last change). Exit asks yes/no (`PartyMsg.QuitToDos`); with a party it saves until a
-save succeeds (DS:557D), then quits. The training hall (ECL PROGRAM 0) runs the same routine; there $6DA8 holds the
+save succeeds (DS:557D), then quits (section 5a). The training hall (ECL PROGRAM 0) runs the same routine; there $6DA8 holds the
 hall's classes and Train is offered.
 
 ## 3. Create (0x19EEB)
@@ -93,11 +101,36 @@ hall's classes and Train is offered.
 Cancelling any list leaves Create at once (0x1B84D), without a character.
 
 **Icon editor 0x1D1AC** (combat palette, grey ground): OLD at row 6 and NEW at row 12 (column 8), the ready and action
-frames at x 32 and 104 over bevelled boxes (icon slot 25's frames `[?]`), labels at rows 10 and 16. Menus (DS strings
-near the entries): parts (head 0..13, weapon 0..31, each next / previous / keep / exit), the two colour menus (low or
-high nibble of a part's colour byte), size (small / large), exit; then yes/no `PartyMsg.IconOk`. Built: head, weapon,
-size and the yes/no; `[?]` not built: the colour menus and the previous/keep/exit sub-menus (the engine steps forward
-and keeps at once).
+frames at x 32 and 104 over bevelled boxes (icon slot 25's frames `[?]`), labels at rows 10 and 16 (`PartyMsg.IconOld`,
+`IconNew`, `IconFrames`). Read s20, Core `IconEditor`, matched on 600 emulated cases (`por_icon_oracle.py`: random walks
+through the menus with Keep, Exit, Escape and No; `IconEditorProgramTests`).
+
+- **State byte [bp-8]**; each state's menu is the line DS:07BF + 41·state (string[40]) given to the menu routine
+  0x2CC8C (no prompt, colours 13/10/15), which answers a word's hotkey (its first capital letter or digit, so the two
+  colour words answer 1 and 2) or 0 for Escape. The exit test is the set {0, E} at CS:37F6 (0x1D7C7).
+- **1 main**: P → 2; 1 → 3 on the low nibbles ([bp-0x17] := 0), 2 → 3 on the high nibbles ([bp-0x17] := 1); S → 4.
+  With 1 or 2 the colour line's characters 13..16 (Pascal Delete / Insert, 0x1D3BD–0x1D3D4) are replaced by
+  `PartyMsg.IconHair` (low) or `PartyMsg.IconFace` (high). [bp-0x1a] (the menu Step returns to) := 1.
+- **2 parts**: [bp-0x1a] := 2; an exit key → 1, else the key is the part ([bp-0x1b]: H or W) → 5.
+- **3 colours**: [bp-0x1a] := 3; the key picks the colour byte [bp-0x16]: B 0xC1, A 0xC2, L 0xC3, H or F 0xC4,
+  S 0xC5, W 0xC6, any other 0xC1; an exit key → 1, else → 5.
+- **4 size**: the line is the other size's word (`PartyMsg.IconSmall` when 0xC0 = 2, else `IconLarge`, 0x1D2F5) before
+  the DS line. L: 0xC0 := 2, S: 0xC0 := 1 (staying in 4); K keeps ([bp-6] := 0xC0), E / Escape puts [bp-6] back; both
+  → 1.
+- **5 step**: after parts, head 0xBD (P: −1, 0 → 13; N: +1, 13 → 0) or weapon 0xBE (0..31 the same way); another part
+  letter does nothing. After colours, the chosen nibble of the byte ±1 mod 16 (N +1, P −1). K keeps (the head's Keep
+  reads the head of the record at DS:5D92, the one edited; the colour Keep copies all six bytes 0xC1..0xC6 to
+  [bp-0x15]); E / Escape puts the kept value back (all six colour bytes); both → [bp-0x1a].
+- An exit key in state 1 (in state 4, K and E become a space first) leaves the loop: the kept values [bp-4..6] and
+  [bp-0x15] go back into the record (0x1D7D6), then yes/no `PartyMsg.IconOk`; No starts again at 0x1D1DE: the kept
+  values and both pictures are taken from the record as it is (the old icon becomes the current one), state 1.
+- **Pictures**: 0x1E468(0) builds the record's icon (CHEAD/CBODY) into its slot 0xBF without colours, and once into
+  slot 12; each loop 0x1CF3D copies slot 0xBF to slot 12 and recolours slot 12 from the record's colour bytes; the new
+  icon (row 12) is drawn from slot 12 every loop, the old one (row 6) only at the start. Recolouring (0x1D08E, the
+  same as the icon builder's 0x1E585): identity, then for k = 1..6 colour DS:3CF5[k] (1, 2, 3, 4, 6, 7) := the low
+  nibble of byte 0xC0 + k and DS:3CF5[k] + 8 := its high nibble, a zero byte included (`CombatArt.ColourMap`).
+- With DS:49FA > 1 (camp on the overland) the editor also redraws the ICON pictures of slots 11 and 12 (0x1D84A); not
+  at creation.
 
 ## 4. Add, Remove, Drop, View
 
@@ -116,9 +149,63 @@ and keeps at once).
   and 0x1CC10 (no file is written); otherwise name + `PartyMsg.SighOfRelief`.
 - **View**: the character page (0x21084, as `CombatSheet` documents it) with the portrait. `[?]` The engine shows the
   page only; the program's View here is the camp's View menu (Items, Spells, …).
-- **Modify (0x1BA1E)**, **Save** before the game starts, **Train**: `[?]` not built in the engine (a notice says so).
-  Modify is not read beyond its strings (`PartyMsg.CantModify`, `ModifyPrompt`, `KeepExit`) and its HP-limit helper
-  0x1D932 (which calls the Con bonus 0x1D8B0).
+- **Train**: the training hall's (training.md). Save: section 5a.
+
+### Modify (0x1BA1E)
+
+Read s20; `CharacterModify` matches the routine under emulation on 1043 cases (`por_modify_oracle.py`: 343 characters
+made by Create with some bytes overwritten, 700 made-up records, key walks that run fields past their limits, each
+ended by K, E or Escape; plus the HP limits 0x1D932 / 0x1DA0B called directly on the made-up records). The party menu
+and the training hall (M, training.md) call the same routine on the current character (DS:5D92).
+
+- **Refusal** (0x1BA25): the experience dword 0xAC, signed, above 0 → name + `PartyMsg.CantModify` by the message
+  routine START 0x7DF8 (bottom line, colour 14, shown for game speed × 225 ms) and return. Negative experience may be
+  modified; no status, NPC or class test.
+- **Start**: the page (View 0x21084, which runs the stat recalculation START 0x1758); the six abilities 0x10..0x15,
+  exceptional strength 0x16 and max HP 0x32 are copied for Exit; the field cursor ([bp-0xD]) on Strength. The field is
+  drawn in colour 13 (0x1B9B2: an ability by 0x2193B, value at column 5, or 6 below 10, row 7 + i, Strength's "(nn)" at
+  column 7 in the same colour; the hit points by START 0x973 at column 4, row 18, showing current HP 0x11B), else as
+  View draws it (green; HP yellow below the maximum).
+- **Menu**: the word menu 0x2CC8C with prompt `PartyMsg.ModifyPrompt`, words `PartyMsg.KeepExit`, the keypad flag set
+  (keypad 2/4/6/8 act as the arrows). Extended Down (0x50) — or extended 0x0D, which no key gives — moves to the next
+  field (6 → 0), Up (0x48) to the previous (0 → 6); Left (0x4B) lowers, Right (0x4D) raises the field. Not extended:
+  E or Escape (the menu returns 0) is Exit, K is Keep; every other key (Return, space, Home, PgUp, …) only redraws:
+  **Return does not take the highlighted word**. Home / End do not switch members here.
+- **Left on an ability** (byte arithmetic): Strength with exceptional strength above 0 → that goes down by one
+  instead. Otherwise, after the step, a value below the race minimum (DS:3DA3 + 16·race: Strength's at + gender; Int,
+  Wis, Dex, Con, Cha at + 6, 8, 10, 12, 14) **or** below the class minimum (DS:3F81 + 6·class + i) is set to the
+  **race** minimum — which can be under the class minimum (a paladin's Charisma at its class minimum drops to the race
+  minimum; a program bug, kept).
+- **Right on an ability**: above the race maximum (Strength's at + 2 + gender; the others at + 7, 9, 11, 13, 15) →
+  the maximum; for Strength first, when the step went past 18, the fighter level 0x98 is above 0 (signed) and
+  exceptional strength is below the race's (+ 4 + gender), exceptional strength + 1. The class is never consulted.
+- **Wisdom** (either way): cleric slot 0xB2 := 1 when above 0, then the Wisdom bonus 0x2AC36 (0xB3 / 0xB4 are not
+  reset). The multi-class cleric's Wisdom 13 floor of Create is not applied.
+- **Constitution**: Left → max HP := min(max HP, 0x1DA0B); Right → max HP := max(max HP, 0x1D932); then current HP
+  0x11B := max HP.
+- **Hit points** (field 6): Left → max HP − 1, at least 0x1D932; Right → max HP + 1, at most 0x1DA0B; current HP :=
+  max HP. Dexterity changes leave the thief skills and nothing redoes the saving throws.
+- **0x1D932** (least max HP): Σ levels of the base classes with a level above 0 (signed), + 1 for a ranger (4) or monk
+  (7) level, a byte; **0x1DA0B** (most): per class L × 8 cleric / druid, L × 10 fighter / paladin, (L + 1) × 8
+  ranger, L × 4 magic-user, L × 6 thief, (L + 1) × 4 monk, a byte sum. Both then add the Con bonus 0x1D8B0 as Create
+  does (negative bonus b: (sum + b) / classes when sum > |b| + classes, else 1; otherwise (sum + b) / classes).
+  0x1DA0B takes the bonus of DS:5D92, not of its argument (the same record whenever Modify calls it).
+- **After every key but Exit**: the recalculation START 0x1758, the fighting block redraw 0x21642 (which runs it again)
+  and the cursor drawn on.
+- **Keep** (K): the NPC treasure share 0x85 := 1 and return. **Exit** (E, Escape): the saved abilities, exceptional
+  strength and max HP back, current HP := that max HP (a wounded character is healed), the recalculation, return; the
+  cleric slots a Wisdom change rewrote stay (a program bug, kept).
+- No generator draws, no file writes: the record in the party changes; the party menu's next key (not E or S) clears
+  DS:557D as for any entry.
+
+Engine: `CharacterModify` (Core); Client `PartyMenuFlow.Modify` (the refusal as the menu's notice) with
+`ModifyRequest` drawn by `PartyMenuScreen`. Keys as the program (arrows, digits 2/4/6/8, K, E, Escape; Return
+ignored), except Home / End, which move the word highlight as LB / RB do (the program only redraws). The pad: D-pad
+for fields and values, B Exit, LB / RB move the word highlight (the program's ',' / '.'), A takes the highlighted word
+(the program ignores Return; a controller-support departure). The mouse: a click on a field's row moves the cursor
+there, on the cursor's field left click raises and right click lowers, a word click chooses it, a right click off the
+fields is Exit. Seen on Xvfb (s20): the page with Wisdom and then HP in colour 13, the party list's HP after Keep.
+`[?]` Not compared with a DOSBox-X screen.
 
 ## 5. Roster files (SaveLoad unit 0x1DFE6)
 
@@ -131,6 +218,33 @@ Engine (`PorRoster`, the Client's `por-saves/characters/`): the same list file; 
 save's party-entry shape (`SavedCharacter`, module-format §15). A DOS `NAME.CHA` (+ `.ITM`, `.SPC`) is read when no
 JSON file has the name. `[?]` The program's file name is the name through its 8.3 clean-up; ours keeps letters, digits,
 '-' and '_'.
+
+## 5a. Save before Begin, Exit with a party (0x19D9C, 0x19E0E)
+
+- **Save** (entry 8, key S, 0x19D9C): when on and the party list DS:5D96 is not empty, the camp's save 0x1FD3E
+  (camp.md "Save"): the slot menu (`Msg.SaveWhich`, A–J; Escape gives up, 0x1FDA3 → 0x20299), the saving message, the
+  file; DS:557D := 1 at 0x2028F only when one was written. At the menu the program's variables are the start-up's
+  (section 1), so the save holds: disk byte 3 (DS:5376, set at 0x19AE7; $6E12 too); VM zones zero but for what the save
+  writes from variables; the party at 15,1 facing west; location type 1 (DS:49FA); interface state 0 (DS:49F3,
+  0x19AE7); $49FC = 1 (DS:49E2); $49FF = 3 (DS:49F5 + 2·DS:49F6, both 1 from 0xE965 / 0xE96A, read at 0x1FEDC); the
+  wall-set cells from DS:6AB2–6ABC (0xE926–0xE963 → the loop 0x1FE70: $4AFA = 0, $4AFD = 1, the other four 0xFFFF);
+  $6E3E = the party size (the joins'); an empty script area; then the members' files (the roster files of the members
+  are deleted, camp.md). **D** (s20, fixture `saves/unstarted/`): one roster character added, S, C gave exactly these
+  bytes; the engine's `PorGame.UnstartedSave` gives the same file but for the leftover memory after the stem
+  (`SaveWriteTests.Party_menu_save_before_begin_matches_the_program`). The engine's new game also starts with
+  $49FF = 3 now (it was 0: pictures shown as off in the camp's Pics menu).
+- **Load of such a save** (section 1): the menu stays up with its party, and Save writes the loaded memory (with the
+  menu's party), not a new game: engine `PorGame.SaveAtPartyMenu` on the loaded game (a training-hall save, also
+  state 0, keeps its flags, clock and script; `SaveWriteTests`). (**D**: a save made there equals it but for the
+  stem; Begin starts the new game, 15,1 W 00:00 and the area's first text). The program's Load also re-reads map
+  $49C5 = 0 (location type 1) and wall set 0 into slot 1 (0x1FBB3, 0x1FBEE) `[?]`; the engine notes a missing map 0
+  as a diagnostic, and the block's init loads its own.
+- **Exit with a party** (0x19E0E): after Yes, while DS:557D = 0 and the party list is not empty, the save 0x1FD3E
+  (Escape at the slot menu just asks again: a slot must be written), then the quit 0899:0000. DS:557D is cleared by
+  any non-extended menu key but E and S (the set at CS:0116, 0x19CB3), so S then E quits at once. **D** (s20): after
+  S, C: E, Y quit at once; after Load: E, Y gave the slot menu, Escape gave it again, D saved and quit.
+- Engine: `PartyMenuFlow` Save / Exit (`SaveGame` hook → `ClientPlayer.SaveAtPartyMenu`, an engine save `x.json`),
+  Load → `PorGame.LoadAtPartyMenu`.
 
 ## 6. Tables (DS offsets, v1.3; read from the player's program, `CreationTables`)
 
@@ -148,7 +262,8 @@ JSON file has the name. `[?]` The program's file name is the name through its 8.
 | 08B6 / 08BE / 05DE | HP dice count / sides / class bit |
 | 408E | Con HP bonus by Con |
 | 05D6 | usability bits by class |
-| 3CF5 | default icon colours 1..6 |
+| 3CF5 | default icon colours 1..6 (also the recolouring's colour pairs) |
+| 07BF | icon editor menu lines: 41 bytes per state 1..5 |
 | 286F / 287D | portrait head / body pictures 1..14 / 1..12 |
 
 These lie in `rules/program.json`'s data segment; the engine checks the level-stats tables sit at their v1.3 places
@@ -157,7 +272,39 @@ before it uses them (`PorProgramData.CreationTables`). `[?]` Not decoded into a 
 ## 7. Open `[?]`
 
 - Home / End wrapping on the party menu; the drop message's line and how long it stays.
-- Exit with a party before Begin: the program saves the (unstarted) game; the engine quits without saving.
-- Save from the party menu before Begin; Modify; the icon colour menus.
-- The icon editor's frame boxes (icon slot 25) and its palette are drawn as seen, not decoded.
-- File names of roster characters (8.3 clean-up).
+- Modify's page against a DOSBox-X screen (the highlight colour and positions are read from 0x2193B / START 0x973,
+  not seen in DOSBox-X); how long the refusal message stays (START 0x7DF8: game speed × 225 ms; the engine shows it as
+  the menu's notice until the next key).
+- The icon editor's frame boxes (icon slot 25) and its palette are drawn as seen, not decoded; the camp's Alter Icon
+  (the same routine, Core `IconEditor`) is not wired yet.
+- File names of roster characters (8.3 clean-up); the save's deletion of the members' roster files (camp.md).
+- Load at the party menu of a state-0 save: what the program's re-read of map $49C5 = 0 and wall set 0 gives.
+- The party-destroyed paths (section 8) are read, not run in DOSBox-X.
+- Load in the training hall of a state-0 save: the program's menu would stay up with the save's party; the engine
+  ends the hall and starts the loaded game.
+
+## 8. After the game loop: the party destroyed (0x403E, START 0x013D)
+
+v1.3 does **not** go back to the party menu: the program ends.
+
+- The main program (START image 0x00F6) calls the party menu 0x19AE0 once (START 0x127), the view colours 0x2EA4C and
+  the game loop 0x403E (START 0x13D); when the loop returns, START 0x142 calls 0899:0000, the same quit as the menu's
+  Exit (0x19E25): DS:5372 := DS:5373, sound off (08AE:00DC with DS:2612), DS:4A03 := 0, DS:4A02 := DS:4A1C and the
+  video mode back (0A32:000B), then Halt(0) (0AF8:00E9). The only other caller of 0x19AE0 is PROGRAM 0 (0x3B90, the
+  training hall); 0x403E has no other caller.
+- The loop 0x403E has one way out: DS:49FF ≠ 0 (tested at 0x4118, 0x4172, 0x4192, 0x41AF, 0x423B). The ECL run loop
+  (0x3EB7) stops too while DS:49FF is set (ecl-format.md). At 0x41A1 a pending script switch (DS:442F) is still
+  followed (0x3EFA) before 0x423B; then 0x4245 clears DS:49FF and the loop returns. Nothing is reset or saved on the
+  way: no party menu, no reset of VM memory, generator, disk byte, $6DA8 or DS:49FF beyond 0x4245 (the program ends).
+- DS:49FF := 1 in two places, each with its own end screen (texts not quoted; code-segment strings of their units):
+  - **After combat** (0x6AA5; the results 0x5A47 set it when no party member on the party side can act, outside a
+    duel; combat-format.md "After combat"): every party member has already left (0x1CC10, $6E3E = 0); 0x6B37: VM
+    $6DC7 := 0x80, a window (03F1:02E8 with 1, 1, 38, 22), a title line (unit 0x557E CS 0x14CE), a message (CS 0x14D7,
+    0709:0768), a press-a-key line and wait (CS 0x150D, 0709:0BF5); then DS:4A00 := 1 and $6E70–$6E72, $6DE3, $6DE6
+    := 0 as after every fight. The treasure list DS:6810 is not freed.
+  - **ECL DAMAGE** (0x3728–0x3740: set to 1, cleared when any member has in play 0x10D ≠ 0): 0x375A–0x37BB the same
+    kind of window and two lines (unit 0xD46 CS 0x272D, 0x2736), a Delay(3000) (0A40:029C), then the handler's usual
+    end from 0x37C0 (DS:5D92 restored, a press-a-key line CS 0x2752 and wait).
+- So after either screen and its key the ECL run stops, 0x403E returns and the program exits to DOS. Starting again
+  means running the program again; the party is gone with the program's memory, the roster and save files on disk are
+  as they were. A return to the party menu would be an engine option (off = quit, as the original).

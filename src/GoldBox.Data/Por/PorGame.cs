@@ -100,11 +100,14 @@ public sealed class PorGame
     /// <c>SAVGAMx.DAT</c>, converted first (<see cref="Module.Por.PorEngineSave"/>; its party files are looked up next
     /// to it, then in the content's save folder).
     /// </summary>
-    public static PorGame FromSave(IPorContent content, PorViewArt art, string savePath, PorPlayer player, uint seed) =>
-        Module.Por.PorEngineSave.IsEngineSave(savePath)
-            ? FromSave(content, art, Module.Por.PorEngineSave.Read(savePath), player, seed)
-            : FromSave(content, art, File.ReadAllBytes(savePath), Path.GetDirectoryName(Path.GetFullPath(savePath))!, player, seed,
-                Path.GetFileName(savePath));
+    public static PorGame FromSave(IPorContent content, PorViewArt art, string savePath, PorPlayer player, uint seed)
+    {
+        var (doc, problem) = ReadSave(content, savePath);
+        var g = FromSave(content, art, doc, player, seed);
+        if (problem is not null)
+            g.Vm.Diagnostics.Insert(0, problem);
+        return g;
+    }
 
     /// <summary>
     /// An original save's bytes, converted to an engine save first; the party files are looked up in
@@ -114,23 +117,33 @@ public sealed class PorGame
     public static PorGame FromSave(IPorContent content, PorViewArt art, byte[] save, string saveDir, PorPlayer player, uint seed,
         string? fileName = null)
     {
-        var module = Module.Por.PorEngineSave.Identity(content);
-        Module.EngineSaveDocument doc;
-        string? problem = null;
-        try
-        {
-            doc = Module.Por.PorEngineSave.FromFolders(save, fileName, module, content.LoadBlock,
-                [saveDir, .. content.SaveFolder is { } f ? new[] { f } : []]);
-        }
-        catch (Exception e) when (e is IOException or FormatException)
-        {
-            problem = "party files not loaded: " + e.Message;
-            doc = Module.Por.PorEngineSave.FromOriginal(save, readFile: null, module);
-        }
+        var (doc, problem) = ConvertOriginal(content, save, saveDir, fileName);
         var g = FromSave(content, art, doc, player, seed);
         if (problem is not null)
             g.Vm.Diagnostics.Insert(0, problem);
         return g;
+    }
+
+    /// <summary>A save file as an engine save: an engine save as it is, an original converted (<see cref="ConvertOriginal"/>).</summary>
+    private static (Module.EngineSaveDocument Doc, string? Problem) ReadSave(IPorContent content, string savePath) =>
+        Module.Por.PorEngineSave.IsEngineSave(savePath)
+            ? (Module.Por.PorEngineSave.Read(savePath), null)
+            : ConvertOriginal(content, File.ReadAllBytes(savePath), Path.GetDirectoryName(Path.GetFullPath(savePath))!,
+                Path.GetFileName(savePath));
+
+    private static (Module.EngineSaveDocument Doc, string? Problem) ConvertOriginal(IPorContent content, byte[] save, string saveDir,
+        string? fileName)
+    {
+        var module = Module.Por.PorEngineSave.Identity(content);
+        try
+        {
+            return (Module.Por.PorEngineSave.FromFolders(save, fileName, module, content.LoadBlock,
+                [saveDir, .. content.SaveFolder is { } f ? new[] { f } : []]), null);
+        }
+        catch (Exception e) when (e is IOException or FormatException)
+        {
+            return (Module.Por.PorEngineSave.FromOriginal(save, readFile: null, module), "party files not loaded: " + e.Message);
+        }
     }
 
     /// <summary>
@@ -140,6 +153,37 @@ public sealed class PorGame
     /// </summary>
     public static PorGame FromSave(IPorContent content, PorViewArt art, Module.EngineSaveDocument save, PorPlayer player, uint seed)
     {
+        var g = Loaded(content, art, save, player, seed);
+        g.RunLoadedEntry();
+        return g;
+    }
+
+    /// <summary>The interface state DS:49F3 Load read back from the save (0x1F87B): 0 for a save written at the party
+    /// menu or in the training hall.</summary>
+    public byte LoadedInterfaceState { get; private set; }
+
+    /// <summary>
+    /// The party menu's Load (0x1F5E8) of a save: as <see cref="FromSave(IPorContent, PorViewArt, string, PorPlayer, uint)"/>,
+    /// except that the menu goes on to the game only when the interface state read back from the save is not 0
+    /// (0x19D8A tests DS:49F3). A save written at the party menu or in the training hall (state 0) leaves the program in
+    /// the party menu with the save's party and memory (DS:49F8 stays 0): nothing runs here, and the menu's Begin runs
+    /// the game loop's first pass on that memory (<see cref="RunNewGameEntry"/>). <see cref="LoadedInterfaceState"/>
+    /// tells which.
+    /// </summary>
+    public static PorGame LoadAtPartyMenu(IPorContent content, PorViewArt art, string savePath, PorPlayer player, uint seed)
+    {
+        var (doc, problem) = ReadSave(content, savePath);
+        var g = Loaded(content, art, doc, player, seed);
+        if (problem is not null)
+            g.Vm.Diagnostics.Insert(0, problem);
+        if (g.LoadedInterfaceState != 0)
+            g.RunLoadedEntry();
+        return g;
+    }
+
+    /// <summary>The save's memory, party and script set up (Load 0x1F5E8 up to its return), nothing run.</summary>
+    private static PorGame Loaded(IPorContent content, PorViewArt art, Module.EngineSaveDocument save, PorPlayer player, uint seed)
+    {
         var notes = Module.Por.PorEngineSave.Check(save, content.VmProfile, Module.Por.PorEngineSave.Identity(content));
         var sg = Module.Por.PorEngineSave.ToSaveGame(save);
         var g = new PorGame(content, art, player, seed);
@@ -147,18 +191,23 @@ public sealed class PorGame
         if (Module.Por.PorEngineSave.Party(save) is { } party)
             g.Memory.Party = party;
         sg.ApplyTo(g.Memory);
+        g.LoadedInterfaceState = sg.InterfaceState;
         g.Vm.SetCurrentScript(sg.ScriptId, sg.Disk);
         // Load game (0x1FBB3–0x1FBC4) re-reads map $49C5 before vector 4 when DS:49FA (the save's location type) < 2.
         if (g.Memory.ViewMode < 2)
             g.Loop.LoadMap(g.Memory.Read(0x49C5));
+        return g;
+    }
+
+    private void RunLoadedEntry()
+    {
         // A NEWECL in this vector 4 is followed only after the next command's vector (DS:442F stays set).
-        g.EntryRun = g.Vm.RunLoadedGame();
-        g.FinishEntry(follow: false);
+        EntryRun = Vm.RunLoadedGame();
+        FinishEntry(follow: false);
         // [?] DS:6DDC after a load onto the overland: DOSBox-X shows frames 2 + 3 at the first command (load from the
         // main menu after the program start); the redraws of the load that advance it are not traced.
-        if (Overland.Shown(g.Memory))
-            g.Loop.MarkerCounter = 2;
-        return g;
+        if (Overland.Shown(Memory))
+            Loop.MarkerCounter = 2;
     }
 
     /// <summary>Enters area script <paramref name="script"/> with fresh VM memory at a square: script init, then vector 4.</summary>
@@ -190,19 +239,79 @@ public sealed class PorGame
     public static PorGame NewGame(IPorContent content, PorViewArt art, EclParty party, PorPlayer player, uint seed)
     {
         var g = new PorGame(content, art, player, seed);
-        g.Memory.Party = party;
-        g.Memory.Write(EclPartyRules.PartySizeCell, (ushort)party.Members.Count);
-        g.Memory.Disk = (byte)(content.ScriptDisk(NewGameScript) ?? NewGameDisk);
-        g.Memory.Position.X = NewGameX;
-        g.Memory.Position.Y = NewGameY;
-        g.Memory.Position.Facing = NewGameFacing;
+        NewGameState(content, g.Memory, party);
         return g;
     }
 
-    /// <summary>The game loop's first pass on a new game (0x403E with DS:49F8 = 0): the script loaded, its init, then vector 4.</summary>
-    public void RunNewGameEntry()
+    /// <summary>
+    /// The state at the party menu before Begin: fresh VM memory (the start-up 0xE600 zeroes the zones) with the party
+    /// and its size $6E3E, the disk byte, the square, the location type 1 and game speed 1 (<see cref="EclMemory"/>'s
+    /// defaults, DS:49FA / DS:49E2 at 0xE9C3 / 0xE999), and the picture flags as the start-up sets them (DS:49F5 =
+    /// DS:49F6 = 1 at 0xE965 / 0xE96A: portraits and monster pictures on; the engine keeps them in VM $49FF, the value the
+    /// save writes, 0x1FEDC).
+    /// </summary>
+    private static void NewGameState(IPorContent content, EclMemory m, EclParty party)
     {
-        Vm.LoadScript(NewGameScript, Memory.Disk);
+        m.Party = party;
+        m.Write(EclPartyRules.PartySizeCell, (ushort)party.Members.Count);
+        m.Disk = (byte)(content.ScriptDisk(NewGameScript) ?? NewGameDisk);
+        m.Position.X = NewGameX;
+        m.Position.Y = NewGameY;
+        m.Position.Facing = NewGameFacing;
+        m.Write(CampSettings.PicturesCell, 3);
+    }
+
+    /// <summary>
+    /// The party menu's Save (0x19D9C → the save 0x1FD3E) before Begin: the save of the state <see cref="NewGame"/>
+    /// starts from, as the program writes it there. Interface state 0 (the menu's DS:49F3, 0x19AE7), location type 1,
+    /// disk 3 (also $6E12), game speed 1 into $49FC, picture flags 3 into $49FF, the wall-set cells from the start-up's
+    /// DS:6AB2–6ABC (0xE926–0xE963 → the save's loop 0x1FE70: $4AFA = 0, $4AFD = 1, the others 0xFFFF), the party at
+    /// 15,1 facing west, an empty script area; the party's records as they are. Load from the party menu
+    /// (<see cref="LoadAtPartyMenu"/>) takes it back into the menu.
+    /// </summary>
+    public static Module.EngineSaveDocument UnstartedSave(IPorContent content, EclParty party, char letter)
+    {
+        var m = new EclMemory(profile: content.VmProfile);
+        NewGameState(content, m, party);
+        ushort[] wallSets = [0, 0xFFFF, 0xFFFF, 1, 0xFFFF, 0xFFFF];
+        for (int k = 0; k < wallSets.Length; k++)
+            m.Write((ushort)(0x4AFA + k), wallSets[k]);
+        return MenuSave(content, m, party, letter);
+    }
+
+    /// <summary>
+    /// The party menu's Save after a Load that stayed in the menu (<see cref="LoadAtPartyMenu"/>, interface state 0):
+    /// the loaded memory as it is (its $49FF, wall-set cells and speed came back with the load) with the menu's party
+    /// and its size $6E3E, interface state 0. DOSBox-X (s20): a save made there equals the loaded one but for the stem.
+    /// </summary>
+    public Module.EngineSaveDocument SaveAtPartyMenu(EclParty party, char letter)
+    {
+        Memory.Party = party;
+        Memory.Write(EclPartyRules.PartySizeCell, (ushort)party.Members.Count);
+        return MenuSave(Content, Memory, party, letter);
+    }
+
+    private static Module.EngineSaveDocument MenuSave(IPorContent content, EclMemory m, EclParty party, char letter)
+    {
+        var bytes = PorSaveGame.Build(m, party.Members.Count, letter, interfaceState: 0);
+        return Module.Por.PorEngineSave.FromOriginal(bytes, party, Module.Por.PorEngineSave.Identity(content),
+            content.LoadBlock, content.VmProfile);
+    }
+
+    /// <summary>
+    /// The game loop's first pass with DS:49F8 = 0 (0x403E → 0x7814): ECL&lt;disk&gt; block $49F2 (low byte, 0x406B) loaded,
+    /// its init, then vector 4. A new game has $49F2 = 0; a save loaded at the party menu with interface state 0 (the
+    /// menu's or the training hall's, <see cref="LoadAtPartyMenu"/>) goes on from its own $49F2. The party is the menu's:
+    /// <paramref name="party"/> (null: the one in memory) and its size $6E3E (the menu's joins and removals keep it).
+    /// </summary>
+    public void RunNewGameEntry(EclParty? party = null)
+    {
+        if (party is not null)
+        {
+            Memory.Party = party;
+            Memory.Write(EclPartyRules.PartySizeCell, (ushort)party.Members.Count);
+        }
+        Vm.LoadScript(Memory.Read(AreaLoop.PreviousScript) & 0xFF, Memory.Disk);
         EntryRun = Vm.RunVector(EclLayout.VectorInit);
         Vm.CommandRead();
         FinishEntry(follow: true);

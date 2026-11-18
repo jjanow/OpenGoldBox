@@ -64,7 +64,7 @@ public class PartyMenuScreenTests
         }
     }
 
-    private static Rig Start(uint seed)
+    private static Rig Start(uint seed, Action<PartyMenuFlow, CreationTables, BaseItemTable>? setup = null, string? saves = null)
     {
         var dir = new PorGameDirectory(Dir()!);
         var art = PorViewArt.Load(dir);
@@ -76,15 +76,21 @@ public class PartyMenuScreenTests
         var tables = program.CreationTables()!;
         var items = PorFight.Kit(dir)!.Items;
         var roster = Directory.CreateTempSubdirectory("goldbox-party-");
+        player.SaveFolder = saves;
+        string Slot(char l) => Path.Combine(saves!, GoldBox.Data.Module.Por.PorEngineSave.FileName(l));
         var flow = new PartyMenuFlow(runner.Ask, new PartyMenuTexts(program, player.Resources), tables, items,
             new PorRoster(roster.FullName), seed)
         {
             NewGame = (party, s) => rig!.Game = PorGame.NewGame(dir, art, party, who, s),
+            SaveGame = saves is null ? null : (l, party, loaded) => player.SaveAtPartyMenu(l, party, dir, loaded),
+            SaveSlots = saves is null ? null : () => [.. "ABCDEFGHIJ".Where(l => File.Exists(Slot(l)))],
+            LoadGame = saves is null ? null : (l, s) => rig!.Game = PorGame.LoadAtPartyMenu(dir, art, Slot(l), who, s),
         };
         var host = new Host();
         var screen = new PartyMenuScreen(flow, runner, host, art.Font, player.Resources, new ClientArt(dir, art, new ScreenPalette(), PorArtChoice.Dos),
             g => new ExploreScreen(g, player, runner, host)) { Program = program, Items = items };
         rig = new Rig { Screen = screen, Flow = flow, Runner = runner, Host = host, Roster = roster, Tables = tables, Items = items };
+        setup?.Invoke(flow, tables, items);
         runner.Start(flow.Run);
         return rig;
     }
@@ -242,5 +248,307 @@ public class PartyMenuScreenTests
         Click(3, 2);                             // A joins
         Click(5, 5, right: true);                // back out
         Assert.Single(r.Flow.Party.Members);
+    }
+
+    // ---- Modify (0x1BA1E) --------------------------------------------------------------------------------------------
+
+    /// <summary>A human fighter made by Core's creation (seed 31), joined to the party before the menu runs.</summary>
+    private static Rig WithFighter(uint xp = 0) => Start(5, (flow, t, items) =>
+    {
+        var cc = new CharacterCreation(t, new TurboPascalRandom(31).Next);
+        cc.PickRace(7);
+        cc.PickGender(0);
+        cc.PickClass(2);
+        cc.PickAlignment(cc.AlignmentChoices()[0]);
+        cc.Roll(items);
+        cc.SetName("MOD");
+        cc.Character.SetWord(CharacterModify.Experience, (ushort)xp);
+        PartyMenu.Join(flow.Party, cc.Character, c => LevelStats.Apply(c, t.Levels));
+    });
+
+    /// <summary>Core's Modify on a copy of the record (with the member's effects), the keys given in order.</summary>
+    private static byte[] Expected(Rig r, byte[] before, params ModifyKey[] keys)
+    {
+        var c = new EclCharacter((byte[])before.Clone());
+        foreach (var e in r.Flow.Party.Current!.Effects)
+            c.Effects.Add((byte[])e.Clone());
+        var m = new CharacterModify(r.Tables, r.Items, c);
+        foreach (var k in keys)
+            if (m.Press(k))
+                break;
+        return c.Record;
+    }
+
+    [Fact]
+    public void Keyboard_modifies_the_current_character()
+    {
+        if (Dir() is null)
+            return;
+        using var r = WithFighter();
+        var c = r.Flow.Party.Current!;
+        var before = (byte[])c.Record.Clone();
+        r.Key(Keys.M);
+        var md = Assert.IsType<ModifyRequest>(r.Runner.Pending);
+        Assert.Equal(0, md.Field);
+        Assert.Equal(["KEEP", "EXIT"], md.Actions);
+        r.Key(Keys.Right);
+        r.Key(Keys.Right);
+        r.Key(Keys.Down);
+        r.Key(Keys.Left);
+        r.Key(Keys.Enter);                       // ignored, as in the program
+        r.Key(Keys.D8);                          // the keypad flag: 8 is Up
+        r.Key(Keys.Up);                          // wraps to the hit points
+        Assert.Equal(CharacterModify.HpField, Assert.IsType<ModifyRequest>(r.Runner.Pending).Field);
+        r.Key(Keys.Left);
+        r.Key(Keys.Right);
+        r.Key(Keys.Right);
+        r.Key(Keys.K);
+        Assert.IsType<PartyMenuRequest>(r.Runner.Pending);
+        var want = Expected(r, before, ModifyKey.Right, ModifyKey.Right, ModifyKey.Down, ModifyKey.Left, ModifyKey.Other,
+            ModifyKey.Up, ModifyKey.Up, ModifyKey.Left, ModifyKey.Right, ModifyKey.Right, ModifyKey.Keep);
+        Assert.Equal(want, c.Record);
+        Assert.NotEqual(before, c.Record);
+        Assert.Equal(1, c[CharacterModify.TreasureShare]);
+
+        // E puts the values back.
+        var kept = (byte[])c.Record.Clone();
+        r.Key(Keys.M);
+        r.Key(Keys.Left);
+        r.Key(Keys.Down);
+        r.Key(Keys.Left);
+        r.Key(Keys.E);
+        Assert.IsType<PartyMenuRequest>(r.Runner.Pending);
+        Assert.Equal(Expected(r, kept, ModifyKey.Left, ModifyKey.Down, ModifyKey.Left, ModifyKey.Exit), c.Record);
+    }
+
+    [Fact]
+    public void A_character_with_experience_is_refused()
+    {
+        if (Dir() is null)
+            return;
+        using var r = WithFighter(xp: 1);
+        var before = (byte[])r.Flow.Party.Current!.Record.Clone();
+        r.Key(Keys.M);
+        var menu = Assert.IsType<PartyMenuRequest>(r.Runner.Pending);
+        Assert.StartsWith("MOD", menu.Notice);
+        Assert.Equal(before, r.Flow.Party.Current!.Record);
+    }
+
+    [Fact]
+    public void The_pad_modifies_exits_and_keeps()
+    {
+        if (Dir() is null)
+            return;
+        using var r = WithFighter();
+        var c = r.Flow.Party.Current!;
+        var before = (byte[])c.Record.Clone();
+        r.Act(GameAction.MenuDown);
+        r.Act(GameAction.MenuDown);              // Modify is the third entry (Create, Drop, Modify)
+        r.Act(GameAction.Confirm);
+        Assert.IsType<ModifyRequest>(r.Runner.Pending);
+        for (int k = 0; k < 4; k++)
+            r.Act(GameAction.MenuDown);          // Constitution
+        r.Act(GameAction.MenuLeft);
+        r.Act(GameAction.MenuLeft);
+        r.Act(GameAction.Cancel);                // B: Exit, all back
+        Assert.IsType<PartyMenuRequest>(r.Runner.Pending);
+        Assert.Equal(Expected(r, before, ModifyKey.Down, ModifyKey.Down, ModifyKey.Down, ModifyKey.Down, ModifyKey.Left,
+            ModifyKey.Left, ModifyKey.Exit), c.Record);
+
+        var now = (byte[])c.Record.Clone();
+        r.Act(GameAction.MenuDown);
+        r.Act(GameAction.MenuDown);
+        r.Act(GameAction.Confirm);               // Modify again
+        Assert.IsType<ModifyRequest>(r.Runner.Pending);
+        r.Act(GameAction.MenuRight);
+        r.Act(GameAction.NextMember);            // RB: the highlight to EXIT
+        r.Act(GameAction.PreviousMember);        // LB: back to KEEP
+        r.Act(GameAction.Confirm);               // A: Keep
+        Assert.IsType<PartyMenuRequest>(r.Runner.Pending);
+        Assert.Equal(Expected(r, now, ModifyKey.Right, ModifyKey.Keep), c.Record);
+        Assert.Equal(1, c[CharacterModify.TreasureShare]);
+    }
+
+    [Fact]
+    public void The_mouse_picks_fields_steps_them_and_keeps()
+    {
+        if (Dir() is null)
+            return;
+        using var r = WithFighter();
+        var c = r.Flow.Party.Current!;
+        var before = (byte[])c.Record.Clone();
+        void Click(int col, int row, bool right = false)
+        {
+            r.Input.Update(default, default, default, TimeSpan.Zero, _ => null);
+            if (r.Screen.MapClick(new ScreenClick(col * 8 + 3, row * 8 + 3, right)) is { } a)
+                r.Input.Inject(a);
+            r.Screen.Update(r.Input);
+        }
+        Click(5, 14);                            // MODIFY (row 12 + 2)
+        Assert.IsType<ModifyRequest>(r.Runner.Pending);
+        Click(2, 9, right: true);                // a right click on another field moves the cursor, no Exit
+        Assert.Equal(2, Assert.IsType<ModifyRequest>(r.Runner.Pending).Field);
+        Click(5, 9);                             // raise
+        Click(5, 9, right: true);                // lower
+        Click(5, 9, right: true);
+        Click(2, 18);                            // hit points
+        Click(4, 18);                            // raise
+        var md = Assert.IsType<ModifyRequest>(r.Runner.Pending);
+        Assert.Equal(CharacterModify.HpField, md.Field);
+        Click(md.Prompt!.Length, 24);            // KEEP
+        Assert.IsType<PartyMenuRequest>(r.Runner.Pending);
+        Assert.Equal(Expected(r, before, ModifyKey.Down, ModifyKey.Down, ModifyKey.Right, ModifyKey.Left, ModifyKey.Left,
+            ModifyKey.Down, ModifyKey.Down, ModifyKey.Down, ModifyKey.Down, ModifyKey.Right, ModifyKey.Keep), c.Record);
+    }
+
+    /// <summary>Create up to the icon editor with the keyboard (human, female, first class and alignment, "HERO").</summary>
+    private static void CreateToIcon(Rig r)
+    {
+        r.Key(Keys.C);
+        for (int i = 0; i < 5; i++)
+            r.Key(Keys.Down);
+        r.Key(Keys.Enter);
+        r.Key(Keys.Down);
+        r.Key(Keys.Enter);
+        r.Key(Keys.Enter);
+        r.Key(Keys.Enter);
+        r.Key(Keys.Y);
+        foreach (var k in new[] { Keys.H, Keys.E, Keys.R, Keys.O })
+            r.Key(k);
+        r.Key(Keys.Enter);
+        r.Key(Keys.K);
+        Assert.IsType<IconRequest>(r.Runner.Pending);
+    }
+
+    [Fact]
+    public void The_icon_editor_has_the_programs_menus_and_colours()
+    {
+        if (Dir() is null)
+            return;
+        using var r = Start(31);
+        CreateToIcon(r);
+        var main = Assert.IsType<IconRequest>(r.Runner.Pending);
+        Assert.Equal("P12SE", main.Hotkeys);     // Parts color-1 color-2 Size Exit (DS:07E8)
+        r.Key(Keys.D1);                           // color-1: the low nibbles
+        var colours = Assert.IsType<IconRequest>(r.Runner.Pending);
+        Assert.Equal("WBHSALE", colours.Hotkeys); // the third word is the hair word (0x1D16B)
+        r.Key(Keys.B);                            // body, byte 0xC1
+        Assert.Equal("NPKE", Assert.IsType<IconRequest>(r.Runner.Pending).Hotkeys);
+        var c = Assert.IsType<IconRequest>(r.Runner.Pending).Character;
+        byte before = c[IconEditor.Colours];
+        r.Key(Keys.N);
+        Assert.Equal((before & 0xF0) | ((before + 1) & 0x0F), c[IconEditor.Colours]);
+        r.Key(Keys.K);                            // keep, back to the colour menu
+        r.Key(Keys.E);
+        r.Key(Keys.S);                            // the size menu offers the other size first
+        Assert.Equal(c[IconEditor.Size] == 2 ? 'S' : 'L', Assert.IsType<IconRequest>(r.Runner.Pending).Hotkeys![0]);
+        r.Key(Keys.E);
+        r.Key(Keys.P);
+        r.Key(Keys.H);
+        byte head = c[IconEditor.Head];
+        r.Key(Keys.N);
+        r.Key(Keys.E);                            // Exit puts the head back
+        Assert.Equal(head, c[IconEditor.Head]);
+        r.Key(Keys.E);
+        r.Key(Keys.E);                            // leave the editor
+        r.Key(Keys.Y);
+        Assert.IsType<PartyMenuRequest>(r.Runner.Pending);
+        var saved = new PorRoster(r.Roster.FullName).Load("HERO")!;
+        Assert.Equal((before & 0xF0) | ((before + 1) & 0x0F), saved[IconEditor.Colours]);
+    }
+
+    private static void AddHero(Rig r)
+    {
+        var cc = new CharacterCreation(r.Tables, new TurboPascalRandom(5).Next);
+        cc.PickRace(7);
+        cc.PickGender(0);
+        cc.PickClass(cc.ClassChoices()[0]);
+        cc.PickAlignment(cc.AlignmentChoices()[0]);
+        cc.Roll(r.Items);
+        cc.SetName("HERO");
+        new PorRoster(r.Roster.FullName).Save(cc.Character, null);
+        r.Key(Keys.A);
+        r.Key(Keys.Enter);
+        r.Key(Keys.Escape);
+        Assert.Single(r.Flow.Party.Members);
+    }
+
+    [Fact]
+    public void Save_before_begin_writes_the_unstarted_game_and_load_takes_it_back_to_the_menu()
+    {
+        if (Dir() is null)
+            return;
+        var saves = Directory.CreateTempSubdirectory("goldbox-saves-");
+        try
+        {
+            using (var r = Start(11, saves: saves.FullName))
+            {
+                AddHero(r);
+                r.Key(Keys.S);
+                Assert.IsType<ChoiceRequest>(r.Runner.Pending);
+                r.Key(Keys.C);                    // slot C
+                Assert.IsType<PartyMenuRequest>(r.Runner.Pending);
+                var doc = GoldBox.Data.Module.Por.PorEngineSave.Read(Path.Combine(saves.FullName, "c.json"));
+                var sg = GoldBox.Data.Module.Por.PorEngineSave.ToSaveGame(doc);
+                Assert.Equal((3, 0, 1, 1), (sg.Disk, sg.InterfaceState, sg.LocationType, sg.PartySize));
+                var m = new EclMemory();
+                sg.ApplyTo(m);
+                Assert.Equal((15, 1, 6), (m.Position.X, m.Position.Y, m.Position.Facing));
+                Assert.Equal(3, m.Read(0x49FF));  // portraits and monster pictures on (DS:49F5 / 49F6 = 1)
+                Assert.Equal(1, m.Read(0x49FC));  // game speed 1
+                Assert.Equal(3, m.Read(0x6E12));
+                Assert.Equal([0, 0xFFFF, 0xFFFF, 1, 0xFFFF, 0xFFFF], Enumerable.Range(0x4AFA, 6).Select(a => (int)m.Read((ushort)a)));
+                Assert.Equal(1, m.Read(0x6E3E));
+                // Saved just now: Exit quits without asking for a slot again (DS:557D).
+                r.Key(Keys.E);
+                r.Key(Keys.Y);
+                Assert.Null(r.Runner.Pending);
+                Assert.Null(r.Flow.Started);
+            }
+            using (var r = Start(12, saves: saves.FullName))
+            {
+                r.Key(Keys.L);
+                r.Key(Keys.C);
+                // Interface state 0: the menu stays up with the save's party (0x19D8A), Load gone, Begin offered.
+                var menu = Assert.IsType<PartyMenuRequest>(r.Runner.Pending);
+                Assert.Null(r.Flow.Started);
+                Assert.Equal("HERO", r.Flow.Party.Current!.Name);
+                Assert.DoesNotContain(menu.Items, i => i.Item == PartyMenuItem.Load);
+                r.Key(Keys.B);
+                Assert.Same(r.Game, r.Flow.Started);
+                Assert.Same(r.Flow.Party, r.Game!.Memory.Party);
+                Assert.Equal((15, 1), (r.Game.Memory.Position.X, r.Game.Memory.Position.Y));
+                Assert.Equal(0, r.Game.Vm.CurrentScript);
+            }
+        }
+        finally
+        {
+            saves.Delete(true);
+        }
+    }
+
+    [Fact]
+    public void Exit_with_a_party_asks_for_a_slot_until_a_save_is_written()
+    {
+        if (Dir() is null)
+            return;
+        var saves = Directory.CreateTempSubdirectory("goldbox-saves-");
+        try
+        {
+            using var r = Start(13, saves: saves.FullName);
+            AddHero(r);
+            r.Key(Keys.E);
+            r.Key(Keys.Y);                        // quit: no save since the last key, so the slot menu
+            Assert.IsType<ChoiceRequest>(r.Runner.Pending);
+            r.Key(Keys.Escape);                   // no slot: asked again (0x19E23 jumps back to 0x19E0E)
+            Assert.IsType<ChoiceRequest>(r.Runner.Pending);
+            r.Key(Keys.D);
+            Assert.Null(r.Runner.Pending);
+            Assert.True(File.Exists(Path.Combine(saves.FullName, "d.json")));
+        }
+        finally
+        {
+            saves.Delete(true);
+        }
     }
 }

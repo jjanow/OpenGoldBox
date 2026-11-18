@@ -167,4 +167,136 @@ public class HallPlayTests
         Assert.Equal(2 * 4 + 2 * 6 + 6 + 3, frames);   // dragon 2 × 4 frames, spirit 2 × 6, block 8 once, three pauses
         Assert.Null(r.Player.Scene);
     }
+
+    private sealed class Stack : IScreenHost
+    {
+        public List<IScreen> Pushed { get; } = [];
+        public int Pops { get; private set; }
+        public void Push(IScreen screen) => Pushed.Add(screen);
+        public void Pop() => Pops++;
+        public void Quit() { }
+        public void SaveBindings() { }
+    }
+
+    /// <summary>The hall's roster entries are the party menu's (PartyMenuFlow on the game's party): Remove writes the
+    /// character to the roster and lowers $6E3E, Add brings it back over the overlay page and raises it again, and Load
+    /// ends the game for the screen to load the save.</summary>
+    [Fact]
+    public void Hall_roster_entries_run_the_party_menu_on_the_games_party()
+    {
+        if (Dir() is null)
+            return;
+        var dir = new PorGameDirectory(Dir()!);
+        var art = PorViewArt.Load(dir);
+        var runner = new ScriptRunner();
+        PorGame? game = null;
+        var player = new ClientPlayer(runner, () => game!.Memory) { Resources = ClientResources.Load(dir), Game = () => game };
+        game = PorGame.FromSave(dir, art, dir.Find("SAVGAMA.DAT")!, new PorPlayer(player, player, player, player), 7);
+        var program = dir.Program()!;
+        var folder = Directory.CreateTempSubdirectory("hall-roster-");
+        try
+        {
+            var flow = new PartyMenuFlow(runner.Ask, new PartyMenuTexts(program, player.Resources), program.CreationTables()!,
+                PorFight.Kit(dir)!.Items, new PorRoster(folder.FullName), 1)
+            {
+                SaveSlots = () => ['A'],
+                LoadGame = (_, _) => throw new InvalidOperationException("the hall does not load itself"),
+            };
+            flow.Party = game.Memory.Party!;
+            flow.Random = game.Rng;
+            player.HallHooks.Remove = flow.Remove;
+            player.HallHooks.Add = flow.Add;
+            player.HallHooks.Load = () =>
+            {
+                if (flow.PickSlot() is { } slot)
+                    throw new HallLoadException(slot);
+            };
+            player.HallHooks.Notice = flow.TakeNotice;
+            player.HallHooks.Modify = flow.Modify;
+            var host = new Stack();
+            char? loaded = null;
+            var input = new ActionInput(InputBindings.Defaults());
+            var screen = new ExploreScreen(game, player, runner, host)
+            {
+                PartyPages = () => new PartyMenuScreen(flow, runner, host, game.Art.Font, player.Resources,
+                    new ClientArt(dir, art, new ScreenPalette(), PorArtChoice.Dos), _ => null!) { Overlay = true },
+                LoadSave = slot =>
+                {
+                    loaded = slot;
+                    return new NoScreen();
+                },
+            };
+            var r = new Rig(screen, game, runner, input, player);
+            var party = game.Memory.Party!;
+            int size = party.Members.Count;
+            Assert.Equal(size, game.Memory.Read(Core.Ecl.EclPartyRules.PartySizeCell));
+            string name = party.Current!.Name;
+            runner.Start(() => player.TrainingHall());
+            Settle(r);
+            Key(r, Keys.R);                                  // Remove: to the roster
+            Settle(r);
+            Assert.IsType<HallMenuRequest>(runner.Pending);
+            Assert.Equal(size - 1, party.Members.Count);
+            Assert.Equal(size - 1, game.Memory.Read(Core.Ecl.EclPartyRules.PartySizeCell));
+            Assert.Contains(name, new PorRoster(folder.FullName).Entries(null));
+            Key(r, Keys.A);                                  // Add: the roster page goes over the hall
+            Settle(r);
+            var pick = Assert.IsType<PickRequest>(runner.Pending);
+            Frame(r);
+            var overlay = Assert.IsType<PartyMenuScreen>(Assert.Single(host.Pushed));
+            int row = pick.Rows.ToList().IndexOf(name);
+            Assert.True(row >= 0);
+            runner.Answer(new ListAnswer(PickRequest.RowChosen, row));
+            Settle(r);
+            if (runner.Pending is PickRequest again)        // Add ends by itself once six player characters are counted
+            {
+                runner.Answer(new ListAnswer(again.CancelAction, 0));
+                Settle(r);
+            }
+            Assert.IsType<HallMenuRequest>(runner.Pending);
+            overlay.Update(input);                           // the hall's menu is back: the overlay closes
+            Assert.Equal(1, host.Pops);
+            Assert.Equal(size, party.Members.Count);
+            Assert.Equal(name, party.Members[^1].Name);
+            Assert.Equal(size, game.Memory.Read(Core.Ecl.EclPartyRules.PartySizeCell));
+            Key(r, Keys.M);                                  // Modify: save A's characters have experience: refused
+            for (int guard = 0; runner.Pending is not DelayRequest && guard < 2000; guard++)
+            {
+                Thread.Sleep(2);
+                Frame(r);
+            }
+            Assert.Contains(party.Current!.Name.ToUpperInvariant(), player.Hall!.Message!.Value.Text);
+            Settle(r);
+            Assert.IsType<HallMenuRequest>(runner.Pending);
+            Key(r, Keys.B);                                  // Begin: the hall ends
+            Settle(r);
+            Assert.False(runner.Busy);
+            // Load is offered with no current character; a picked save ends the game and the screen loads it.
+            party.Members.Clear();
+            party.CurrentIndex = -1;
+            runner.Start(() => player.TrainingHall());
+            Settle(r);
+            Assert.Contains(Assert.IsType<HallMenuRequest>(runner.Pending).Entries, e => e.Key == 'L');
+            Key(r, Keys.L);
+            Settle(r);
+            Assert.IsType<ChoiceRequest>(runner.Pending);    // A, EXIT
+            Key(r, Keys.A);
+            Settle(r);
+            Assert.False(runner.Busy);
+            Assert.Equal('A', loaded);
+            Assert.IsType<NoScreen>(host.Pushed[^1]);
+        }
+        finally
+        {
+            runner.Dispose();
+            folder.Delete(true);
+        }
+    }
+
+    private sealed class NoScreen : IScreen
+    {
+        public GameAction? MapClick(ScreenClick click) => null;
+        public void Update(ActionInput input) { }
+        public void Draw(IndexedFrame frame, ActionInput input) { }
+    }
 }

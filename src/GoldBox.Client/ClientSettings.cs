@@ -47,6 +47,12 @@ public sealed class ClientSettings
     /// <summary>QoL, off = original: show the 320×200 screen stretched to 4:3 (pixels 1.2 times taller, as on a CRT).</summary>
     public bool Stretch43 { get; set; }
 
+    /// <summary>
+    /// QoL, off = original: after the party is destroyed, open the party menu again (a new menu, empty party, as at
+    /// start-up). The original's game loop then returns and the program quits to DOS (docs/re/start-menu.md §8).
+    /// </summary>
+    public bool AfterDefeatMenu { get; set; }
+
     public static string Folder
     {
         get

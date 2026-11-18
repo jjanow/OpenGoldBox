@@ -219,10 +219,14 @@ public sealed class CombatArt
             }
     }
 
-    /// <summary>The colour pairs of the party icons, in the order of the colour bytes 0xC1–0xC6.</summary>
+    /// <summary>The colour pairs of the party icons, in the order of the colour bytes 0xC1–0xC6 (DS:3CF5[1..6] in v1.3).</summary>
     private static readonly int[] PairLow = [1, 2, 3, 4, 6, 7];
 
-    /// <summary>The recolouring of <see cref="Party"/> [?]: index → index.</summary>
+    /// <summary>
+    /// The recolouring of <see cref="Party"/>: index → index. P (the icon builder 0x1E585 and the icon editor 0x1D08E,
+    /// s20): identity, then for k = 1..6 colour DS:3CF5[k] := the low nibble of byte 0xC0 + k and DS:3CF5[k] + 8 := its
+    /// high nibble, a zero byte included.
+    /// </summary>
     public static byte[] ColourMap(EclCharacter c)
     {
         var map = new byte[16];
@@ -231,8 +235,6 @@ public sealed class CombatArt
         for (int k = 0; k < PairLow.Length; k++)
         {
             byte b = c[IconColours + k];
-            if (b == 0)
-                continue; // [?] an unset byte keeps the art's colours
             map[PairLow[k]] = (byte)(b & 15);
             map[PairLow[k] + 8] = (byte)(b >> 4);
         }

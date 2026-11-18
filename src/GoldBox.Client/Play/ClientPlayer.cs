@@ -598,6 +598,34 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
         }
     }
 
+    /// <summary>
+    /// The party menu's Save before Begin (0x19D9C → 0x1FD3E): the unstarted game as the program saves it
+    /// (<see cref="GoldBox.Data.Por.PorGame.UnstartedSave"/>, interface state 0), written as an engine save
+    /// <c>x.json</c> into <see cref="SaveFolder"/>; the menu's Load takes it back into the menu. After such a Load
+    /// (<paramref name="loaded"/>) the loaded game's memory is saved instead
+    /// (<see cref="GoldBox.Data.Por.PorGame.SaveAtPartyMenu"/>). Returns null when written, else what went wrong.
+    /// </summary>
+    public string? SaveAtPartyMenu(char letter, EclParty party, GoldBox.Data.Por.IPorContent content,
+        GoldBox.Data.Por.PorGame? loaded = null)
+    {
+        if (SaveFolder is null)
+            return "NO SAVE FOLDER.";
+        try
+        {
+            var save = loaded is not null ? loaded.SaveAtPartyMenu(party, letter)
+                : GoldBox.Data.Por.PorGame.UnstartedSave(content, party, letter);
+            Directory.CreateDirectory(SaveFolder);
+            var path = Path.Combine(SaveFolder, GoldBox.Data.Module.Por.PorEngineSave.FileName(letter));
+            GoldBox.Data.Module.Por.PorEngineSave.Write(path, save);
+            Log.Add($"saved slot {letter} (party menu) to {path}");
+            return null;
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            return "SAVE FAILED: " + e.Message;
+        }
+    }
+
     /// <summary>The camp menu is up (the position line says CAMPING, DS:49F3 = 2).</summary>
     public bool Camping => Interface == Venue.Camp;
 }

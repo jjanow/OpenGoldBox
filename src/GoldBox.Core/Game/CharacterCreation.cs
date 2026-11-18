@@ -407,7 +407,10 @@ public sealed class CharacterCreation
     /// 0x1D8B0: Constitution bonus to hit points, a signed byte: DS:408E[Con] once per base class with a level, plus 1
     /// above Con 16 and 1 more above 17 when the class code is fighter (2).
     /// </summary>
-    public sbyte ConHpBonus(EclCharacter c)
+    public sbyte ConHpBonus(EclCharacter c) => ConHpBonus(_t, c);
+
+    /// <inheritdoc cref="ConHpBonus(EclCharacter)"/>
+    public static sbyte ConHpBonus(CreationTables t, EclCharacter c)
     {
         sbyte bonus = 0;
         byte con = c[Abilities + Con];
@@ -415,7 +418,7 @@ public sealed class CharacterCreation
         {
             if ((sbyte)c[Levels + cls] <= 0)
                 continue;
-            bonus = (sbyte)(bonus + (sbyte)_t.At(CreationTables.ConHp + con));
+            bonus = (sbyte)(bonus + (sbyte)t.At(CreationTables.ConHp + con));
             if (con > 16 && c[Class] == 2)
                 bonus++;
             if (con > 17 && c[Class] == 2)

@@ -92,6 +92,21 @@ public sealed class ExploreScreen : IScreen
 
     public PorGame Game => _game;
 
+    /// <summary>The creation and roster pages over the training hall (a <see cref="PartyMenuScreen"/> overlay), or null.</summary>
+    public Func<IScreen>? PartyPages { get; init; }
+
+    /// <summary>A save loaded in the training hall: the new game's screen (its entry run), or null when it failed.</summary>
+    public Func<char, IScreen?>? LoadSave { get; init; }
+
+    /// <summary>
+    /// The party menu after the party is destroyed (QoL <see cref="ClientSettings.AfterDefeatMenu"/>); null: as the
+    /// original, whose game loop returns and the program quits to DOS (START 0x142, docs/re/start-menu.md §8).
+    /// </summary>
+    public Func<IScreen?>? PartyMenu { get; init; }
+
+    /// <summary>This screen handed over to another game or the menu.</summary>
+    private bool _left;
+
     /// <summary>The shared menu highlight cell (0-based, DS:6B2B − 1).</summary>
     public int MenuHighlight => _highlight.Index;
 
@@ -135,17 +150,39 @@ public sealed class ExploreScreen : IScreen
         AfterCommand();
     }
 
-    /// <summary>The area loop ended (party destroyed, DS:49FF): the main menu would follow; not built yet.</summary>
+    /// <summary>The area loop ended (party destroyed, DS:49FF, after its screen and key): the program quits, or the
+    /// party menu follows with the option on.</summary>
     private void AfterCommand()
     {
-        if (_game.Loop.Ended)
-            _player.Notice = "THE PARTY IS DESTROYED. RESTART THE GAME.";
+        if (_left)
+            return;
+        if (_game.Loop.Ended && PartyMenu is not null && PartyMenu() is { } menu)
+            Leave(menu);
+        else if (_game.Loop.Ended)
+        {
+            _left = true;
+            _host.Quit();
+        }
         else if (_player.Halted is { } halt)
             _player.Notice = ClientPlayer.HaltNotice(halt);
     }
 
+    private void Leave(IScreen next)
+    {
+        _left = true;
+        _host.Replace(next);
+    }
+
     private void Report(Exception e)
     {
+        if (e is HallLoadException load)
+        {
+            if (LoadSave?.Invoke(load.Slot) is { } next)
+                Leave(next);
+            else
+                _player.Notice = $"SAVE {load.Slot} COULD NOT BE LOADED.";
+            return;
+        }
         if (e is ProgramHaltException halt)
         {
             // The original quits to DOS there (ClientPlayer.Halt showed it when the screen had the hook): the game is over.
@@ -417,6 +454,13 @@ public sealed class ExploreScreen : IScreen
         _anim.Show(shown);
         if (_runner.Pending is ChoiceRequest { Animates: true } && shown is not null)
             _anim.Tick(_clock.Elapsed, _art.Pictures.Delays(shown));
+        if (_left)
+            return;
+        if (PartyPages is { } pages && PartyMenuScreen.IsPage(_runner.Pending))
+        {
+            _host.Push(pages());
+            return;
+        }
         if (_runner.Pending is { } request)
         {
             var reply = Answer(request, input);

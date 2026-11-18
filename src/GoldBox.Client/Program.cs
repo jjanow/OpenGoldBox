@@ -68,6 +68,9 @@ PorViewArt? menuContent = null;
 PorProgramData? menuProgram = null;
 GoldBox.Core.Game.BaseItemTable? menuItems = null;
 string? problem = null;
+Func<PartyMenuFlow>? makeFlow = null;
+PartyMenuFlow? hallFlow = null;
+Func<char, PorGame>? loadSlot = null;
 if (options.ModuleDirectory is null && (string.IsNullOrWhiteSpace(gameDir) || !Directory.Exists(gameDir)))
     problem = "Pool of Radiance folder not set: start with --game DIR or --module DIR";
 else
@@ -128,22 +131,58 @@ else
         // The game seeds its generator from the DOS clock at start-up.
         uint seed = (uint)Environment.TickCount64;
         string? savePath = null;
-        if (startAtMenu)
+        // The party menu's pieces (the menu at start-up and after a destroyed party; the training hall's roster entries).
+        var tables = program?.CreationTables();
+        var items = PorFight.Kit(content)?.Items;
+        if (startAtMenu && tables is null)
+            throw new InvalidOperationException("the party menu's tables were not found (not Pool of Radiance DOS v1.3?)");
+        if (startAtMenu && items is null)
+            throw new InvalidOperationException("no item types");
+        PorGame WithSound(PorGame g) { g.Loop.Sound = player.Sound; return g; }
+        var roster = new PorRoster(Path.Combine(ClientSettings.SavesFolder, "characters"));
+        IReadOnlyList<char> Slots() => [.. "ABCDEFGHIJ".Where(l => ClientOptions.ResolveSave(l.ToString(), ClientSettings.SavesFolder, content.SaveFolder) is not null)];
+        string SlotPath(char slot) => ClientOptions.ResolveSave(slot.ToString(), ClientSettings.SavesFolder, content.SaveFolder)
+            ?? throw new FileNotFoundException($"save {slot} not found");
+        menuItems = items;
+        if (tables is not null && items is not null)
         {
-            var tables = program?.CreationTables()
-                ?? throw new InvalidOperationException("the party menu's tables were not found (not Pool of Radiance DOS v1.3?)");
-            var items = PorFight.Kit(content)?.Items ?? throw new InvalidOperationException("no item types");
-            PorGame WithSound(PorGame g) { g.Loop.Sound = player.Sound; return g; }
-            var roster = new PorRoster(Path.Combine(ClientSettings.SavesFolder, "characters"));
-            IReadOnlyList<char> Slots() => [.. "ABCDEFGHIJ".Where(l => ClientOptions.ResolveSave(l.ToString(), ClientSettings.SavesFolder, content.SaveFolder) is not null)];
-            partyMenu = new PartyMenuFlow(runner.Ask, new PartyMenuTexts(program, player.Resources), tables, items, roster, seed)
+            var texts = new PartyMenuTexts(program, player.Resources);
+            makeFlow = () => new PartyMenuFlow(runner.Ask, texts, tables, items, roster, (uint)Environment.TickCount64)
             {
                 NewGame = (party, s) => game = WithSound(PorGame.NewGame(content, art, party, who, s)),
                 SaveSlots = Slots,
-                LoadGame = (slot, s) => game = WithSound(PorGame.FromSave(content, art,
-                    ClientOptions.ResolveSave(slot.ToString(), ClientSettings.SavesFolder, content.SaveFolder)!, who, s)),
+                LoadGame = (slot, s) => game = WithSound(PorGame.LoadAtPartyMenu(content, art, SlotPath(slot), who, s)),
+                SaveGame = (slot, party, loaded) => player.SaveAtPartyMenu(slot, party, content, loaded),
             };
-            menuItems = items;
+            // The training hall (PROGRAM 0) runs the same menu routine 0x19AE0 on the game's party: its Create, Drop,
+            // Add, Remove and Load are the party menu's, drawing from the game's generator.
+            hallFlow = makeFlow();
+            var hf = hallFlow;
+            void OnGame(Action a)
+            {
+                if (game is { } g)
+                {
+                    hf.Party = g.Memory.Party ??= new GoldBox.Core.Ecl.EclParty();
+                    hf.Random = g.Rng;
+                }
+                a();
+            }
+            player.HallHooks.Create = () => OnGame(hf.Create);
+            player.HallHooks.Drop = () => OnGame(hf.Drop);
+            player.HallHooks.Modify = () => OnGame(hf.Modify);
+            player.HallHooks.Add = () => OnGame(hf.Add);
+            player.HallHooks.Remove = () => OnGame(hf.Remove);
+            player.HallHooks.Load = () =>
+            {
+                if (hf.PickSlot() is { } slot)
+                    throw new HallLoadException(slot);
+            };
+            player.HallHooks.Notice = hf.TakeNotice;
+            loadSlot = slot => game = WithSound(PorGame.FromSave(content, art, SlotPath(slot), who, (uint)Environment.TickCount64));
+        }
+        if (startAtMenu)
+        {
+            partyMenu = makeFlow!();
             runner.Start(partyMenu.Run);
             if (runner.Fault is { } menuFault)
                 throw menuFault;
@@ -184,17 +223,61 @@ else
 if (problem is not null)
     Console.Error.WriteLine(problem);
 
+// The screens a game hands over to: the explore screen (with the hall's creation pages, a hall Load and the party menu
+// after a destroyed party), and the party menu (a new menu on an empty party, as after the program's game loop ends).
+IScreen MenuScreen(PartyMenuFlow flow, IScreenHost host) =>
+    new PartyMenuScreen(flow, runner, host, menuContent!.Font, player!.Resources, clientArt!, g => ExploreFor(g, 'A', host))
+    {
+        Program = menuProgram,
+        Items = menuItems,
+    };
+IScreen? NewMenu(IScreenHost host)
+{
+    if (makeFlow is null || menuContent is null || player is null)
+        return null;
+    var flow = makeFlow();
+    runner.Start(flow.Run);
+    if (runner.Fault is { } f)
+    {
+        Console.Error.WriteLine("party menu: " + f);
+        return null;
+    }
+    return MenuScreen(flow, host);
+}
+IScreen? LoadInto(char slot, IScreenHost host)
+{
+    if (loadSlot is null)
+        return null;
+    PorGame? loaded = null;
+    runner.Start(() => loaded = loadSlot(slot));
+    if (runner.Fault is { } f)
+    {
+        Console.Error.WriteLine("load: " + f);
+        return null;
+    }
+    // [?] An entry vector that waits for the player during a load is not handed over (as at start-up with --save).
+    return loaded is null ? null : ExploreFor(loaded, slot, host);
+}
+ExploreScreen ExploreFor(PorGame g, char letter, IScreenHost host) => new(g, player!, runner, host, letter, clientArt)
+{
+    PartyPages = hallFlow is { } hf && menuContent is not null
+        ? () => new PartyMenuScreen(hf, runner, host, menuContent.Font, player!.Resources, clientArt!, _ => null!)
+        {
+            Program = menuProgram,
+            Items = menuItems,
+            Overlay = true,
+        }
+        : null,
+    LoadSave = slot => LoadInto(slot, host),
+    PartyMenu = settings.AfterDefeatMenu ? () => NewMenu(host) : null,
+};
+
 using var window = new GoldBoxGame(
     host =>
     {
         if (partyMenu is not null && player is not null && menuContent is not null)
         {
-            var menu = new PartyMenuScreen(partyMenu, runner, host, menuContent.Font, player.Resources, clientArt!,
-                g => new ExploreScreen(g, player, runner, host, 'A', clientArt))
-            {
-                Program = menuProgram,
-                Items = menuItems,
-            };
+            var menu = MenuScreen(partyMenu, host);
             if (clientArt?.Title() is not { } menuTitle)
                 return menu;
             host.Push(menu);
@@ -203,7 +286,7 @@ using var window = new GoldBoxGame(
         if (game is null || player is null)
             return null;
         char letter = options.Area is null ? ClientOptions.SlotOf(options.Save ?? "A") : 'A';
-        var explore = new ExploreScreen(game, player, runner, host, letter, clientArt);
+        var explore = ExploreFor(game, letter, host);
         // Best / Amiga: the title painting first (any key, button or click goes on to the game).
         if (clientArt?.Title() is not { } title)
             return explore;

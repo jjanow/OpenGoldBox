@@ -22,6 +22,12 @@ public interface IScreenHost
 {
     void Push(IScreen screen);
     void Pop();
+    /// <summary>Closes every screen and opens <paramref name="screen"/> (a game ends: the party menu, another game).</summary>
+    void Replace(IScreen screen)
+    {
+        Pop();
+        Push(screen);
+    }
     void Quit();
     void SaveBindings();
 }

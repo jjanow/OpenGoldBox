@@ -181,6 +181,9 @@ public class ArtSettingTests
         Assert.Equal(b + 7, m.Pixels[1]);
         var member = new Core.Ecl.EclCharacter();
         member[CombatArt.IconBody] = 1;
+        byte[] defaults = [0x91, 0xA2, 0xB3, 0xC4, 0xE6, 0xF7];  // the creation's colour bytes: the art's own colours
+        for (int k = 0; k < 6; k++)
+            member[CombatArt.IconColours + k] = defaults[k];
         Assert.Equal(1, art.Party(member, false)!.Pixels[300]);  // [?] party icons stay DOS
 
         art.UseArt(PorArtChoice.Dos, palette.Base);

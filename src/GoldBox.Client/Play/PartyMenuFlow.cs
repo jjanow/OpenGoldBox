@@ -43,21 +43,39 @@ public sealed record SheetRequest(EclCharacter Character, IReadOnlyList<string> 
 /// <summary>The icon editor's page (0x1D1AC): the old and the new combat icon, ready and action frames.</summary>
 public sealed record IconRequest(EclCharacter Character, byte[] OldRecord, IReadOnlyList<string> Actions) : PlayerRequest
 {
+    /// <summary>The answer for Escape in the editor's menus (the menu routine's 0).</summary>
+    public const int Escape = -1;
+
     public string? Prompt { get; init; }
     public int? CancelAction { get; init; }
+    /// <summary>The hotkey of each word (the menu routine 0x2CC8C takes a word's first capital letter or digit:
+    /// "color-1" answers 1); null = first letters.</summary>
+    public string? Hotkeys { get; init; }
+}
+
+/// <summary>
+/// Modify Character's page (0x1BA1E): the character page with the field <see cref="Field"/> (0..5 an ability, 6 the
+/// hit points) drawn in colour 13, and the words (Keep, Exit) after <see cref="Prompt"/>. The answer is a
+/// <see cref="ModifyKey"/>, or an int: the field to move the cursor to (a mouse click on another field).
+/// </summary>
+public sealed record ModifyRequest(EclCharacter Character, int Field, IReadOnlyList<string> Actions) : PlayerRequest
+{
+    public string? Prompt { get; init; }
 }
 
 /// <summary>
 /// The party menu (GAME.OVR 0x19AE0) and what it runs: Create (0x19EEB), Drop, View, Add, Remove, Load, Begin and Exit,
 /// as game logic on the <see cref="ScriptRunner"/> thread. The rules are Core's (<see cref="PartyMenu"/>,
 /// <see cref="CharacterCreation"/>); the characters go to the roster files (<see cref="PorRoster"/>) as the program's do.
-/// Not built yet (a notice says so): Modify, Save before the game starts, the icon colours. Train is the training
+/// Modify (0x1BA1E). Save writes the unstarted (or loaded) game (<see cref="SaveGame"/>), Load takes such a save back
+/// into the menu. Train is the training
 /// hall's (offered only when $6DA8 is set, never at start-up).
 /// </summary>
 public sealed class PartyMenuFlow(Func<PlayerRequest, object?> ask, PartyMenuTexts texts, CreationTables tables,
     BaseItemTable items, PorRoster roster, uint seed)
 {
-    public EclParty Party { get; } = new();
+    /// <summary>The party the entries work on: the menu's own before a game, the game's in the training hall.</summary>
+    public EclParty Party { get; set; } = new();
 
     /// <summary>
     /// The program's shared menu highlight (DS:6B2B, <see cref="MenuHighlight"/>): the word menus on the bottom line
@@ -67,12 +85,13 @@ public sealed class PartyMenuFlow(Func<PlayerRequest, object?> ask, PartyMenuTex
     public MenuHighlight Highlight { get; } = new();
 
     /// <summary>The game's generator: creation draws from it, and a new game goes on with its seed.</summary>
-    public TurboPascalRandom Random { get; } = new(seed);
+    public TurboPascalRandom Random { get; set; } = new(seed);
 
     /// <summary>A new game for the party (not run yet), when Begin is chosen.</summary>
     public Func<EclParty, uint, PorGame>? NewGame { get; init; }
 
-    /// <summary>The save slots present (letters, in order) and a game loaded from one (its entry run).</summary>
+    /// <summary>The save slots present (letters, in order) and a game loaded from one
+    /// (<see cref="PorGame.LoadAtPartyMenu"/>: its entry run unless the save's interface state is 0).</summary>
     public Func<IReadOnlyList<char>>? SaveSlots { get; init; }
     public Func<char, uint, PorGame>? LoadGame { get; init; }
 
@@ -85,8 +104,27 @@ public sealed class PartyMenuFlow(Func<PlayerRequest, object?> ask, PartyMenuTex
     /// <summary>The level stats 0x2AA87 the join runs.</summary>
     private void LevelStatsOf(EclCharacter c) => LevelStats.Apply(c, tables.Levels);
 
+    /// <summary>
+    /// The party menu's Save (0x19D9C → 0x1FD3E) before Begin: writes the game with the menu's party to slot A..J,
+    /// interface state 0: the unstarted game, or the game a Load left in the menu (the third argument, else null); null
+    /// when written, else what went wrong.
+    /// </summary>
+    public Func<char, EclParty, PorGame?, string?>? SaveGame { get; init; }
+
     private string? _notice;
     private bool[]? _enabled;
+    /// <summary>DS:557D: a save was written since the last menu key other than E and S (set at 0x2028F).</summary>
+    private bool _saved;
+    /// <summary>A save loaded with interface state 0: the menu goes on with its party; Begin runs its memory.</summary>
+    private PorGame? _loaded;
+
+    /// <summary>The message an entry left for the bottom line (Drop's farewell, no saves), taken once.</summary>
+    public string? TakeNotice()
+    {
+        var n = _notice;
+        _notice = null;
+        return n;
+    }
 
     /// <summary>Runs the menu until a game starts (Begin, Load) or Exit is confirmed.</summary>
     public void Run()
@@ -109,6 +147,9 @@ public sealed class PartyMenuFlow(Func<PlayerRequest, object?> ask, PartyMenuTex
             }
             if (pick < 0 || pick >= shown.Count)
                 continue;
+            // 0x19CB3: any key but E and S clears DS:557D (Home / End, extended, branch off before).
+            if (shown[pick].Item2 is not (PartyMenuItem.Save or PartyMenuItem.Exit))
+                _saved = false;
             Highlight.Chosen((int)shown[pick].Item2);
             switch (shown[pick].Item2)
             {
@@ -121,32 +162,40 @@ public sealed class PartyMenuFlow(Func<PlayerRequest, object?> ask, PartyMenuTex
                 case PartyMenuItem.View:
                     View();
                     break;
+                case PartyMenuItem.Modify:
+                    Modify();
+                    break;
                 case PartyMenuItem.Add:
                     Add();
                     break;
                 case PartyMenuItem.Remove:
-                    if (Party.Current is { } cur)
-                    {
-                        roster.Save(cur, Party);
-                        PartyMenu.RemoveCurrent(Party);
-                    }
+                    Remove();
                     break;
                 case PartyMenuItem.Load:
                     Load();
                     break;
                 case PartyMenuItem.Begin:
-                    if (Party.Members.Count > 0 && NewGame is { } make)
+                    if (Party.Members.Count > 0 && (_loaded ?? NewGame?.Invoke(Party, Random.Seed)) is { } g)
                     {
-                        var g = make(Party, Random.Seed);
+                        // A save loaded here with interface state 0 goes on from its memory, with the menu's party and
+                        // generator (one generator in the program).
+                        if (_loaded is not null)
+                            g.Rng.Seed = Random.Seed;
                         Started = g;
-                        g.RunNewGameEntry();
+                        g.RunNewGameEntry(Party);
                     }
+                    break;
+                case PartyMenuItem.Save:
+                    if (Party.Members.Count > 0)
+                        _saved = SaveMenu();
                     break;
                 case PartyMenuItem.Exit:
                     if (YesNo(texts.QuitToDos))
                     {
-                        // [?] With a party the program saves until a save succeeds (0x19E0E); no game exists before
-                        // Begin here, so nothing is saved.
+                        // 0x19E0E: with a party, the save (slot menu, Escape asks again) until one is written, unless
+                        // one was since the last other key (DS:557D); then the quit 0899:0000.
+                        while (!_saved && Party.Members.Count > 0 && SaveGame is not null)
+                            _saved = SaveMenu();
                         Quit?.Invoke();
                         return;
                     }
@@ -233,33 +282,60 @@ public sealed class PartyMenuFlow(Func<PlayerRequest, object?> ask, PartyMenuTex
     }
 
     /// <summary>
-    /// The icon editor (0x1D1AC), the parts and the size: Head steps the head picture 0..13 (CHEAD), Weapon the body
-    /// picture 0..31 (CBODY), Size small / large; the IconOk question (PartyMsg.IconOk) ends it. [?] The colour menus (color-1, color-2)
-    /// are not built.
+    /// The icon editor (0x1D1AC) with the program's menus (Core's <see cref="IconEditor"/>): Parts (head 0..13, weapon
+    /// 0..31: Next, Prev, Keep, Exit), color-1 / color-2 (the low / high nibble of a part's colour byte 0xC1..0xC6), Size,
+    /// Exit; then the IconOk question (PartyMsg.IconOk). No starts again from the icon as it is (0x1D1DE), which becomes
+    /// the old icon. The new icon is drawn from the record, so it shows each step at once.
     /// </summary>
     private void Icon(EclCharacter c)
     {
+        var ed = new IconEditor(c);
         var old = (byte[])c.Record.Clone();
         while (true)
         {
-            var a = ask(new IconRequest(c, old, texts.IconMenu) { CancelAction = texts.IconMenu.Count - 1 });
-            switch (a)
+            var (items, keys) = texts.IconMenu(ed.State, ed.HighNibble, ed.OffersSmall);
+            if (ask(new IconRequest(c, old, items) { Hotkeys = keys, CancelAction = IconRequest.Escape }) is not int i)
+                continue;
+            if (!ed.Key(i >= 0 && i < keys.Length ? keys[i] : '\0'))
+                continue;
+            Highlight.Index = 1;
+            if (ask(new IconRequest(c, old, texts.YesNo) { Prompt = texts.IconOk }) is 0)
+                return;
+            ed.Restart();
+            old = (byte[])c.Record.Clone();
+        }
+    }
+
+    // ---- Modify -----------------------------------------------------------------------------------------------------
+
+    /// <summary>
+    /// Modify Character (0x1BA1E) on the current character (<see cref="CharacterModify"/>): refused with the name and
+    /// <c>PartyMsg.CantModify</c> when it has experience; else the page with the field cursor, Up / Down move it, Left /
+    /// Right step the value, Keep keeps, Exit (or Escape) puts the old values back. Nothing is written to the roster:
+    /// the party's record changes.
+    /// </summary>
+    public void Modify()
+    {
+        if (Party.Current is not { } c)
+            return;
+        if (!CharacterModify.CanModify(c))
+        {
+            _notice = texts.CantModify(c.Name);
+            return;
+        }
+        var m = new CharacterModify(tables, items, c);
+        while (true)
+        {
+            var a = ask(new ModifyRequest(c, m.Field, texts.KeepExit) { Prompt = texts.ModifyPrompt });
+            if (a is int target and >= 0 and < CharacterModify.FieldCount)
             {
-                case 0:
-                    c[CharacterCreation.IconHead] = (byte)((c[CharacterCreation.IconHead] + 1) % 14);
-                    break;
-                case 1:
-                    c[CharacterCreation.IconBody] = (byte)((c[CharacterCreation.IconBody] + 1) % 32);
-                    break;
-                case 2:
-                    c[CharacterCreation.IconSize] = (byte)(c[CharacterCreation.IconSize] == 2 ? 1 : 2);
-                    break;
-                default:
-                    Highlight.Index = 1;
-                    if (ask(new IconRequest(c, old, texts.YesNo) { Prompt = texts.IconOk }) is 0)
-                        return;
-                    break;
+                // A click on another field: the cursor steps down to it, as Down would.
+                while (m.Field != target)
+                    m.Press(ModifyKey.Down);
+                continue;
             }
+            if (m.Press(a is ModifyKey k ? k : ModifyKey.Other))
+                return;
         }
     }
 
@@ -280,8 +356,17 @@ public sealed class PartyMenuFlow(Func<PlayerRequest, object?> ask, PartyMenuTex
         }
     }
 
+    /// <summary>Remove: SaveChar (0x1E684) of the current character, then 0x1CC10.</summary>
+    public void Remove()
+    {
+        if (Party.Current is not { } cur)
+            return;
+        roster.Save(cur, Party);
+        PartyMenu.RemoveCurrent(Party);
+    }
+
     /// <summary>Drop (0x1B8B6): asked twice, then the character leaves for good (its file stays, off the list).</summary>
-    private void Drop()
+    public void Drop()
     {
         if (Party.Current is not { } c)
             return;
@@ -295,7 +380,7 @@ public sealed class PartyMenuFlow(Func<PlayerRequest, object?> ask, PartyMenuTex
     }
 
     /// <summary>Add (0x1C9EC): the roster list; a picked name is marked and joins when the party rules allow.</summary>
-    private void Add()
+    public void Add()
     {
         var entries = roster.Entries(Party);
         if (entries.Count == 0)
@@ -324,19 +409,61 @@ public sealed class PartyMenuFlow(Func<PlayerRequest, object?> ask, PartyMenuTex
     /// <summary>Load (0x1F5E8): a slot of the saves present; the game goes on from it.</summary>
     private void Load()
     {
+        if (PickSlot() is not { } slot || LoadGame is null)
+            return;
+        var g = LoadGame(slot, Random.Seed);
+        if (g.LoadedInterfaceState != 0)
+        {
+            Started = g;
+            return;
+        }
+        // 0x19D8A: a save with interface state 0 (written here or in the training hall) leaves the menu up with its
+        // party, the first member current (0x1FB99).
+        _loaded = g;
+        Party.Members.Clear();
+        if (g.Memory.Party is { } p)
+            Party.Members.AddRange(p.Members);
+        Party.CurrentIndex = Party.Members.Count > 0 ? 0 : -1;
+    }
+
+    /// <summary>Load's slot menu (the letters of the saves present, then Exit): the slot, or null (none, Exit).</summary>
+    public char? PickSlot()
+    {
         var slots = SaveSlots?.Invoke() ?? [];
         if (slots.Count == 0 || LoadGame is null)
         {
             _notice = texts.NoSaves;
-            return;
+            return null;
         }
         var words = slots.Select(s => s.ToString()).ToList();
         words.Add(texts.Exit);
         if (ask(new ChoiceRequest(null, words, false, words.Count - 1) { MenuPrompt = texts.LoadWhich }) is not int k
             || k < 0 || k >= slots.Count)
-            return;
-        var g = LoadGame(slots[k], Random.Seed);
-        Started = g;
+            return null;
+        return slots[k];
+    }
+
+    /// <summary>
+    /// The save 0x1FD3E from the menu: the slot menu (the camp's words, <see cref="PartyMenuTexts.SaveSlots"/>; Escape
+    /// gives up), then <see cref="SaveGame"/>. Returns whether a save was written (DS:557D := 1 at 0x2028F).
+    /// </summary>
+    private bool SaveMenu()
+    {
+        if (SaveGame is null)
+        {
+            _notice = texts.NotBuilt(texts.MenuItem((int)PartyMenuItem.Save));
+            return false;
+        }
+        var (items, keys) = texts.SaveSlots;
+        if (ask(new ChoiceRequest(null, items, false, -1) { MenuPrompt = texts.SaveWhich, Hotkeys = keys }) is not int i
+            || i < 0 || i >= items.Count || keys[i] is < 'A' or > 'J')
+            return false;
+        if (SaveGame(keys[i], Party, _loaded) is { } problem)
+        {
+            _notice = problem;
+            return false;
+        }
+        return true;
     }
 }
 
@@ -360,12 +487,40 @@ public sealed class PartyMenuTexts(PorProgramData? program, ClientResources reso
     public string AddPrompt => T("AddPrompt") ?? "ADD: ";
     public string LoadWhich => T("LoadWhich") ?? "LOAD: ";
     public string IconOk => T("IconOk") ?? "ICON OK? ";
+    public string ModifyPrompt => T("ModifyPrompt") ?? "MODIFY: ";
+    /// <summary>The save's slot menu (0x1FCAB, 0x1FCBD), the camp's words.</summary>
+    public string SaveWhich => resources.Texts[Msg.SaveWhich].TrimEnd();
+    public (List<string> Items, string Hotkeys) SaveSlots => CampScreens.ParseMenu(resources.Texts.Original(Msg.SaveSlots));
 
     public IReadOnlyList<string> AddExit => Words(T("AddExit"), ["ADD", "EXIT"]);
+    public IReadOnlyList<string> KeepExit => Words(T("KeepExit"), ["KEEP", "EXIT"]);
     public IReadOnlyList<string> PortraitMenu => Words(T("PortraitMenu"), ["HEAD", "BODY", "KEEP"]);
     public IReadOnlyList<string> YesNo => Words(program?.Text("CombatMsg.YesNo"), ["YES", "NO"]);
-    /// <summary>The icon editor's words: ours (the program's menus are DS strings with colour parts, not read yet [?]).</summary>
-    public IReadOnlyList<string> IconMenu { get; } = ["HEAD", "WEAPON", "SIZE", "EXIT"];
+    /// <summary>
+    /// The icon editor's menu line (<see cref="IconEditor.MenuLine"/>, DS:07BF + 41·state) as the routine builds it: the
+    /// colour line's third word (characters 13..16) replaced by the hair word (color-1) or the face word (color-2), the
+    /// size line after the other size's word; split into words and hotkeys as the menu routine reads them. Without the
+    /// program, short wordings of ours with the same hotkeys.
+    /// </summary>
+    public (List<string> Items, string Hotkeys) IconMenu(IconEditor.Menu m, bool highNibble, bool offersSmall)
+    {
+        string line = program?.PascalString(IconEditor.MenuLine(m), 40) is { Length: > 0 } s ? s : m switch
+        {
+            IconEditor.Menu.Main => "Parts tint-1 tint-2 Size Exit",
+            IconEditor.Menu.Parts => "Head Weapon Exit",
+            IconEditor.Menu.Colours => "Weapon Body .... Shield Arm Leg Exit",
+            IconEditor.Menu.Size => " Keep Exit",
+            _ => "Next Prev Keep Exit",
+        };
+        if (m == IconEditor.Menu.Colours && line.Length >= IconEditor.ColourWordAt - 1 + IconEditor.ColourWordLength)
+        {
+            string word = highNibble ? T("IconFace") ?? "Face" : T("IconHair") ?? "Hair";
+            line = line.Remove(IconEditor.ColourWordAt - 1, IconEditor.ColourWordLength).Insert(IconEditor.ColourWordAt - 1, word);
+        }
+        if (m == IconEditor.Menu.Size)
+            line = (offersSmall ? T("IconSmall") ?? "Small" : T("IconLarge") ?? "Large") + line;
+        return CampScreens.ParseMenu(line);
+    }
     /// <summary>The lists' Exit word: the first word of the menu's Exit entry.</summary>
     public string Exit => MenuItem((int)PartyMenuItem.Exit).Split(' ')[0].ToUpperInvariant();
 
@@ -373,6 +528,7 @@ public sealed class PartyMenuTexts(PorProgramData? program, ClientResources reso
     public string DumpOutBack(string name) => (T("YouDump") ?? "") + name + (T("OutBack") ?? " IS GONE.");
     public string BidsFarewell(string name) => name + (T("BidsFarewell") ?? " IS GONE.");
     public string SighOfRelief(string name) => name + (T("SighOfRelief") ?? " STAYS.");
+    public string CantModify(string name) => name + (T("CantModify") ?? " HAS EXPERIENCE: NO CHANGES.");
     public string NotBuilt(string what) => what.ToUpperInvariant() + ": NOT IN THIS BUILD YET.";
     public string NoSaves => "NO SAVED GAMES FOUND.";
 

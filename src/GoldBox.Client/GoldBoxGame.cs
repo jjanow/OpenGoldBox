@@ -84,6 +84,13 @@ public sealed class GoldBoxGame : Game, IScreenHost
         Input.Swallow();
     }
 
+    public void Replace(IScreen screen)
+    {
+        _screens.Clear();
+        _screens.Push(screen);
+        Input.Swallow();
+    }
+
     public void Quit() => Exit();
 
     public void SaveBindings() => ClientSettings.SaveBindings(Input.Bindings);

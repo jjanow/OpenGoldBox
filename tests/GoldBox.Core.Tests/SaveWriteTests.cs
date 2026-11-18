@@ -1,4 +1,6 @@
 using GoldBox.Core.Ecl;
+using GoldBox.Core.Explore;
+using GoldBox.Core.Game;
 using GoldBox.Core.Tests.Support;
 using GoldBox.Data.Por;
 
@@ -49,6 +51,88 @@ public class SaveWriteTests
                 }
             var back = PorParty.Load(new PorSaveGame(written), tmp.FullName);
             Assert.Equal(party.Members.Count, back.Members.Count);
+        }
+        finally
+        {
+            tmp.Delete(recursive: true);
+        }
+    }
+
+    /// <summary>
+    /// The party menu's Save before Begin (0x19D9C → 0x1FD3E): <c>saves/unstarted/SAVGAMC.DAT</c> was written by the
+    /// program in DOSBox-X with one roster character added; the engine's unstarted save of that party gives the same
+    /// bytes (but the leftover memory after the stem), and loading it at the party menu leaves the menu up.
+    /// </summary>
+    [CaptureFact]
+    public void Party_menu_save_before_begin_matches_the_program()
+    {
+        var dir = Path.Combine(Captures.Dir!, "saves", "unstarted");
+        var original = File.ReadAllBytes(Path.Combine(dir, "SAVGAMC.DAT"));
+        var save = new PorSaveGame(original);
+        var party = PorParty.Load(save, dir);
+        Assert.Single(party.Members);
+        var content = PorData.Open();
+        var doc = PorGame.UnstartedSave(content, party, 'C');
+        var written = GoldBox.Data.Module.Por.PorEngineSave.ToSavgam(doc, 'C');
+        for (int i = 0; i < PorSaveGame.Size; i++)
+        {
+            if (i >= PorSaveGame.OffNames)
+            {
+                int slot = (i - PorSaveGame.OffNames) / 41, pos = (i - PorSaveGame.OffNames) % 41;
+                if (slot >= save.PartySize || pos > original[PorSaveGame.OffNames + 41 * slot])
+                    continue;
+            }
+            Assert.True(original[i] == written[i], $"byte {i}: {original[i]} vs {written[i]}");
+        }
+        Assert.Equal(File.ReadAllBytes(Path.Combine(dir, "CHRDATC1.SAV")),
+            GoldBox.Data.Module.Por.PorEngineSave.Character(doc.Party![0]).Record);
+
+        var tmp = Directory.CreateTempSubdirectory("goldbox-save-");
+        try
+        {
+            var path = Path.Combine(tmp.FullName, "c.json");
+            GoldBox.Data.Module.Por.PorEngineSave.Write(path, doc);
+            var player = new PorPlayer(new ScriptedEclHost { StopWhenInputMissing = true },
+                new ScriptedEncounterUi { StopWhenInputMissing = true }, new RecordingCombatRunner(), new ScriptedAreaUi());
+            var g = PorGame.LoadAtPartyMenu(content, PorViewArt.Load(content), path, player, 1);
+            Assert.Equal(0, g.LoadedInterfaceState);
+            Assert.Equal(0, g.Vm.CurrentScript);
+            g.RunNewGameEntry();
+            Assert.Equal((15, 1, 6), (g.Memory.Position.X, g.Memory.Position.Y, g.Memory.Position.Facing));
+        }
+        finally
+        {
+            tmp.Delete(recursive: true);
+        }
+    }
+
+    /// <summary>
+    /// A save with interface state 0 that is not a new game (e.g. the training hall's): loaded at the party menu it stays
+    /// there, and the menu's Save writes the loaded memory back (DOSBox-X s20: equal but for the stem), not a new game.
+    /// Save A with its interface byte set to 0 stands in for one.
+    /// </summary>
+    [PorFact]
+    public void Party_menu_save_after_a_menu_load_keeps_the_loaded_game()
+    {
+        var content = PorData.Open();
+        var bytes = File.ReadAllBytes(content.Find("SAVGAMA.DAT")!);
+        bytes[PorSaveGame.OffInterface] = 0;
+        var doc = GoldBox.Data.Module.Por.PorEngineSave.FromFolders(bytes, "SAVGAMA.DAT",
+            GoldBox.Data.Module.Por.PorEngineSave.Identity(content), content.LoadBlock, [content.Root]);
+        var tmp = Directory.CreateTempSubdirectory("goldbox-save-");
+        try
+        {
+            var path = Path.Combine(tmp.FullName, "a.json");
+            GoldBox.Data.Module.Por.PorEngineSave.Write(path, doc);
+            var player = new PorPlayer(new ScriptedEclHost { StopWhenInputMissing = true },
+                new ScriptedEncounterUi { StopWhenInputMissing = true }, new RecordingCombatRunner(), new ScriptedAreaUi());
+            var g = PorGame.LoadAtPartyMenu(content, PorViewArt.Load(content), path, player, 1);
+            Assert.Equal(0, g.LoadedInterfaceState);
+            var again = GoldBox.Data.Module.Por.PorEngineSave.ToSavgam(g.SaveAtPartyMenu(g.Memory.Party!, 'B'), 'B');
+            var before = new PorSaveGame(bytes);
+            for (int i = 0; i < PorSaveGame.OffNames; i++)
+                Assert.True(bytes[i] == again[i], $"byte {i}: {bytes[i]} vs {again[i]}");
+            Assert.Equal(before.PartySize, again[PorSaveGame.OffPartySize]);
         }
         finally
         {

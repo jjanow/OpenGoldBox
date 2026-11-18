@@ -29,6 +29,14 @@ B DS:49F3 := 4 and return, E the quit question then the save loop and halt. **J*
 password string at 0x19AC2, sets DS:470C (the cheat: Train without status, money, hall or experience checks) and shows
 a message. `[?]` The Client does not offer J (no hidden text entry yet); Core takes the flag.
 
+Engine (s20): the Client's hall (`HallScreens.Run`) runs Train, View, Save, Begin and Exit itself; Create, Drop, Modify,
+Add and Remove are the party menu's (`PartyMenuFlow` through `HallHooks`, on the game's party and generator; the
+creation and roster pages open as a `PartyMenuScreen` overlay over the explore screen), with $6E3E following the list
+(the join 0x1F42C adds one, 0x1CC10 takes one off) and their messages (Drop's farewell, Modify's refusal) on the
+bottom line. Load ends the game and the screen loads the save (`HallLoadException`; the program leaves the menu after a
+successful load, 0x19D91). `[?]` A save with interface state 0 loaded here would keep the program's menu up with the
+save's party (start-up's Load does, start-menu.md §5a); the engine starts the loaded game instead.
+
 ## Train Character (0x1C32D) — P, E, D
 
 In order (Core `TrainingHall.Check` / `Train`):

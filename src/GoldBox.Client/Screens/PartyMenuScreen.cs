@@ -37,6 +37,15 @@ public sealed class PartyMenuScreen(PartyMenuFlow flow, ScriptRunner runner, ISc
     /// <summary>The program data the portrait tables are read from (null: the head and body ids as picked).</summary>
     public PorProgramData? Program { get; init; }
 
+    /// <summary>
+    /// Over the training hall (the explore screen pushes it when the hall's Create or Add asks for a creation page): it
+    /// answers the pages of <see cref="PartyMenuFlow"/> and closes itself when the hall's menu (or anything else) asks.
+    /// </summary>
+    public bool Overlay { get; init; }
+
+    /// <summary>The requests the overlay answers: the creation and roster pages, and the questions asked over them.</summary>
+    public static bool IsPage(PlayerRequest? r) => r is PickRequest or SheetRequest or IconRequest or ModifyRequest;
+
     /// <summary>A message for the bottom line (a fault of the game logic).</summary>
     public string? Problem { get; private set; }
 
@@ -73,10 +82,19 @@ public sealed class PartyMenuScreen(PartyMenuFlow flow, ScriptRunner runner, ISc
     {
         if (_switched)
             return true;
+        if (Overlay)
+        {
+            var r = runner.Pending;
+            if (IsPage(r) || (r is TextRequest or ChoiceRequest or KeyRequest && _background is not null))
+                return false;
+            _switched = true;
+            host.Pop();
+            return true;
+        }
         if (flow.Started is { } game)
         {
             _switched = true;
-            host.Push(explore(game));
+            host.Replace(explore(game));
             return true;
         }
         if (!runner.Busy && Problem is null)
@@ -98,12 +116,13 @@ public sealed class PartyMenuScreen(PartyMenuFlow flow, ScriptRunner runner, ISc
         _word = 0;
         _typed = "";
         _hasClick = false;
-        if (r is PartyMenuRequest or PickRequest or SheetRequest or IconRequest)
+        if (r is PartyMenuRequest or PickRequest or SheetRequest or IconRequest or ModifyRequest)
             _background = r;
         _word = r switch
         {
             SheetRequest s => flow.Highlight.Start(s.Actions.Count),
             IconRequest ic => flow.Highlight.Start(ic.Actions.Count),
+            ModifyRequest md => flow.Highlight.Start(md.Actions.Count),
             ChoiceRequest c => flow.Highlight.Start(c.Items.Count),
             _ => 0,
         };
@@ -166,7 +185,9 @@ public sealed class PartyMenuScreen(PartyMenuFlow flow, ScriptRunner runner, ISc
                 if (s.PartySelect && input.Pressed(GameAction.NextMember)) return new Reply(ChoiceRequest.NextMember);
                 return Words(s.Actions, s.CancelAction, input);
             case IconRequest ic:
-                return Words(ic.Actions, ic.CancelAction, input);
+                return Words(ic.Actions, ic.CancelAction, input, ic.Hotkeys);
+            case ModifyRequest md:
+                return ModifyKeys(md, input);
             case ChoiceRequest c:
                 return Words(c.Items, c.CancelIndex, input);
             case TextRequest t:
@@ -180,9 +201,9 @@ public sealed class PartyMenuScreen(PartyMenuFlow flow, ScriptRunner runner, ISc
 
     /// <summary>
     /// A line of words on the bottom row (the menu routine 0x2CC8C): Left / Right, Return, the first letters (each moves
-    /// the shared highlight), Esc (leaves it).
+    /// the shared highlight), Esc (leaves it). With <paramref name="hotkeys"/> a word's key is its hotkey (digits too).
     /// </summary>
-    private Reply? Words(IReadOnlyList<string> words, int? cancel, ActionInput input)
+    private Reply? Words(IReadOnlyList<string> words, int? cancel, ActionInput input, string? hotkeys = null)
     {
         int w = words.Count;
         if (w == 0)
@@ -191,12 +212,69 @@ public sealed class PartyMenuScreen(PartyMenuFlow flow, ScriptRunner runner, ISc
         if (input.Pressed(GameAction.MenuRight)) _word = (_word + 1) % w;
         if (input.Pressed(GameAction.Confirm)) return Chosen(_word);
         if (input.Pressed(GameAction.Cancel) && cancel is { } c) return new Reply(c);
+        if (hotkeys is not null)
+        {
+            if (input.NewInput is (InputDevice.Keyboard, var name) && KeyChar(name) is { } hk)
+                for (int i = 0; i < w && i < hotkeys.Length; i++)
+                    if (hotkeys[i] == hk)
+                        return Chosen(i);
+            return null;
+        }
         if (Key(input, out var k))
             for (int i = 0; i < w; i++)
                 if (words[i].Length > 0 && words[i][0] == k)
                     return Chosen(i);
         return null;
     }
+
+    /// <summary>
+    /// Modify's keys (0x1BA1E with the menu routine's keypad flag): Up / Down move the field, Left / Right step it, K / E
+    /// the words, Escape Exit; Home / End (LB / RB) move the word highlight (the program's ',' / '.'). The program
+    /// ignores Return here; the pad's A (and a mouse-made Confirm) take the highlighted word, so the pad can keep.
+    /// </summary>
+    private Reply? ModifyKeys(ModifyRequest md, ActionInput input)
+    {
+        int w = md.Actions.Count;
+        if (input.Pressed(GameAction.MenuUp)) return new Reply(ModifyKey.Up);
+        if (input.Pressed(GameAction.MenuDown)) return new Reply(ModifyKey.Down);
+        if (input.Pressed(GameAction.MenuLeft)) return new Reply(ModifyKey.Left);
+        if (input.Pressed(GameAction.MenuRight)) return new Reply(ModifyKey.Right);
+        // The keypad flag: the digits 2, 8, 4, 6 (top row or keypad) are the arrows.
+        if (input.NewInput is (InputDevice.Keyboard, var name) && name is "D2" or "D8" or "D4" or "D6" or "NumPad2"
+                or "NumPad8" or "NumPad4" or "NumPad6")
+            return new Reply(name[^1] switch
+            {
+                '2' => ModifyKey.Down,
+                '8' => ModifyKey.Up,
+                '4' => ModifyKey.Left,
+                _ => ModifyKey.Right,
+            });
+        if (w > 0 && input.Pressed(GameAction.PreviousMember)) flow.Highlight.Index = _word = (_word + w - 1) % w;
+        if (w > 0 && input.Pressed(GameAction.NextMember)) flow.Highlight.Index = _word = (_word + 1) % w;
+        if (input.Pressed(GameAction.Cancel)) return new Reply(ModifyKey.Exit);
+        if (input.Pressed(GameAction.Confirm))
+            return input.NewInput is (InputDevice.Keyboard, _) || w == 0 ? new Reply(ModifyKey.Other) : ModifyWord(_word);
+        if (Key(input, out var k))
+            for (int i = 0; i < w; i++)
+                if (md.Actions[i].Length > 0 && md.Actions[i][0] == k)
+                    return ModifyWord(i);
+        return null;
+    }
+
+    /// <summary>Modify's words in the program's order: Keep, then Exit.</summary>
+    private Reply ModifyWord(int word)
+    {
+        flow.Highlight.Chosen(word);
+        return new Reply(word == 0 ? ModifyKey.Keep : ModifyKey.Exit);
+    }
+
+    /// <summary>Modify's field under a cell: an ability's row (7–12) or the hit points' (18), label and value columns.</summary>
+    private static int? ModifyFieldAt(int col, int row) => row switch
+    {
+        >= 7 and <= 12 when col is >= 1 and <= 10 => row - 7,
+        18 when col is >= 1 and <= 7 => CharacterModify.HpField,
+        _ => null,
+    };
 
     private Reply Chosen(int word)
     {
@@ -332,6 +410,9 @@ public sealed class PartyMenuScreen(PartyMenuFlow flow, ScriptRunner runner, ISc
             case IconRequest ic when row == MenuRow && WordAt(ic.Actions, col, WordsStart(ic.Prompt)) is { } w:
                 _word = w;
                 break;
+            case ModifyRequest md when row == MenuRow && WordAt(md.Actions, col, WordsStart(md.Prompt)) is { } w:
+                _word = w;
+                break;
             case ChoiceRequest c when row == MenuRow && WordAt(c.Items, col, WordsStart(c.MenuPrompt)) is { } w:
                 _word = w;
                 break;
@@ -391,6 +472,26 @@ public sealed class PartyMenuScreen(PartyMenuFlow flow, ScriptRunner runner, ISc
                     Give(iw);
                 }
                 return null;
+            case ModifyRequest md:
+            {
+                // A click on a field moves the cursor there; on the cursor's field, left raises and right lowers it.
+                // A right click off the fields is Exit.
+                var field = ModifyFieldAt(col, row);
+                if (click.Right)
+                {
+                    if (field is not { } rf)
+                        return GameAction.Cancel;
+                    Give(rf == md.Field ? ModifyKey.Left : rf);
+                }
+                else if (field is { } fl)
+                    Give(fl == md.Field ? ModifyKey.Right : fl);
+                else if (row == MenuRow && WordAt(md.Actions, col, WordsStart(md.Prompt)) is { } mw)
+                {
+                    flow.Highlight.Chosen(mw);
+                    Give(mw == 0 ? ModifyKey.Keep : ModifyKey.Exit);
+                }
+                return null;
+            }
             case ChoiceRequest c:
                 if (click.Right)
                     return c.CancelIndex is not null ? GameAction.Cancel : null;
@@ -439,6 +540,9 @@ public sealed class PartyMenuScreen(PartyMenuFlow flow, ScriptRunner runner, ISc
             case IconRequest ic:
                 DrawIcons(f, ic);
                 break;
+            case ModifyRequest md:
+                DrawSheet(f, md.Character, md.Field);
+                break;
             default:
                 Chrome.Box(f, 0, 0, 39, 23);
                 break;
@@ -455,7 +559,10 @@ public sealed class PartyMenuScreen(PartyMenuFlow flow, ScriptRunner runner, ISc
                 Line(f, s.Prompt, PromptColour, s.Actions, _word);
                 break;
             case IconRequest ic:
-                Line(f, ic.Prompt, PromptColour, ic.Actions, _word);
+                Line(f, ic.Prompt, PromptColour, ic.Actions, _word, hotkeys: ic.Hotkeys);
+                break;
+            case ModifyRequest md:
+                Line(f, md.Prompt, PromptColour, md.Actions, _word);
                 break;
             case ChoiceRequest c:
                 Line(f, c.MenuPrompt, PromptColour, c.Items, _word);
@@ -468,9 +575,10 @@ public sealed class PartyMenuScreen(PartyMenuFlow flow, ScriptRunner runner, ISc
             Chrome.Text(f, font, 0, MenuRow, Fit(p2, 40), Chrome.Yellow);
     }
 
-    /// <summary>The bottom line: a prompt in colour 13, then words (the highlighted one white, others with a white first letter).</summary>
+    /// <summary>The bottom line: a prompt in colour 13, then words (the highlighted one white, others with a white
+    /// hotkey: the first letter, or the word's character in <paramref name="hotkeys"/>).</summary>
     private void Line(IndexedFrame f, string? prompt, byte promptColour, IReadOnlyList<string> words, int selected,
-        int? start = null)
+        int? start = null, string? hotkeys = null)
     {
         Chrome.Clear(f, 0, MenuRow, 40);
         if (prompt is { Length: > 0 })
@@ -482,7 +590,8 @@ public sealed class PartyMenuScreen(PartyMenuFlow flow, ScriptRunner runner, ISc
             if (col + w.Length > 40)
                 break;
             Chrome.Text(f, font, col, MenuRow, w, i == selected ? Chrome.White : Chrome.Green);
-            Chrome.Text(f, font, col, MenuRow, w[..1], Chrome.White);
+            int k = hotkeys is not null && i < hotkeys.Length ? Math.Max(0, w.IndexOf(hotkeys[i])) : 0;
+            Chrome.Text(f, font, col + k, MenuRow, w[k..(k + 1)], Chrome.White);
             col += w.Length + 1;
         }
     }
@@ -524,8 +633,12 @@ public sealed class PartyMenuScreen(PartyMenuFlow flow, ScriptRunner runner, ISc
                 i == _selected ? Chrome.White : Chrome.Green);
     }
 
-    /// <summary>The character page (View 0x21084) with the portrait window at columns 27–39, rows 0–12.</summary>
-    private void DrawSheet(IndexedFrame f, EclCharacter c)
+    /// <summary>
+    /// The character page (View 0x21084) with the portrait window at columns 27–39, rows 0–12. Modify's field cursor
+    /// (<paramref name="field"/>) draws that value in colour 13: an ability (0x2193B, with Strength's exceptional part)
+    /// or the hit points (START 0x973).
+    /// </summary>
+    private void DrawSheet(IndexedFrame f, EclCharacter c, int? field = null)
     {
         Chrome.Box(f, 0, 0, 39, 23);
         byte[]? weapon = null, armour = null;
@@ -538,7 +651,9 @@ public sealed class PartyMenuScreen(PartyMenuFlow flow, ScriptRunner runner, ISc
         foreach (var (col, row, text, colour) in CombatSheet.Build(resources, c, weapon, armour,
                      it => ItemNames.Compose(it, resources.ItemWord).Trim().ToUpperInvariant()))
             if (c.Name.Length > 0 || row != 1)
-                Chrome.Text(f, font, col, row, Fit(text, 40 - col), colour);
+                Chrome.Text(f, font, col, row, Fit(text, 40 - col),
+                    field is { } h && (h < 6 ? row == 7 + h && col is >= 5 and <= 7 : row == 18 && col == 4)
+                        ? PromptColour : colour);
         Chrome.Box(f, 27, 0, 39, 12);
         int head = c[CharacterCreation.PortraitHead], body = c[CharacterCreation.PortraitBody];
         if (head > 0 && body > 0)
