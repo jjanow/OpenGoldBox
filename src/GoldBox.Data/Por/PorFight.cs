@@ -11,11 +11,17 @@ namespace GoldBox.Data.Por;
 public static class PorFight
 {
     /// <summary>The kit from the game directory; null when a table is not found.</summary>
-    public static FightKit? Kit(PorGameDirectory game)
+    public static FightKit? Kit(PorGameDirectory game) => Kit(game, game);
+
+    /// <summary>
+    /// The kit from the program in <paramref name="programFolder"/> and the item types of <paramref name="content"/>
+    /// (the folder's <c>ITEMS</c> or a module's <c>records/itemTypes.json</c>); null when a table is not found.
+    /// </summary>
+    public static FightKit? Kit(PorGameDirectory programFolder, IPorContent content)
     {
-        if (PorProgram.Open(game) is not { } program || game.Find("ITEMS") is not { } items)
+        if (PorProgram.Open(programFolder) is not { } program || content.ItemTypes() is not { } items)
             return null;
-        return Kit(program, BaseItemTable.FromItemsFile(File.ReadAllBytes(items)));
+        return Kit(program, items);
     }
 
     /// <summary>The kit from the program and the base item table; null when a table is not found.</summary>
@@ -32,6 +38,7 @@ public static class PorFight
             Names = PorSpellData.Names(program),
             Experience = PorSpellData.ExperienceTable(program),
             TurnUndead = program.TurnUndeadTable(),
+            LevelTables = PorSpellData.LevelTables(program),
         };
     }
 

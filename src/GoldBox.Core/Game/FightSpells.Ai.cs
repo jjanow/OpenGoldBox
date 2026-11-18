@@ -237,6 +237,8 @@ public sealed partial class FightSpells
             return false;
         if (UsingItem && spell > 0x38)
             spell -= 0x17;
+        if (UsingItem)
+            ItemUsed?.Invoke(user, item);
         UsingItem = true;
         bool ai = user[CombatRules.AutoCombat] != 0;
         bool done;

@@ -64,6 +64,25 @@ public sealed class EclMemory
     public byte ViewMode { get; set; } = 1;
 
     /// <summary>
+    /// DS:49F9, the view mode before the last script switch: 0x3EFA copies DS:49FA here before setting it to 1; the new
+    /// game sets 1 (0xE9BE). Load does not touch it.
+    /// </summary>
+    public byte PreviousViewMode { get; set; } = 1;
+
+    /// <summary>
+    /// DS:4431: LOADFILES or LOADPIECES ran (handler 0x19BA sets it at 0x19C8) since the last NEWECL (cleared at
+    /// 0x19AA) or area entry (0x4053). The script switch 0x3EFA uses it to decide the redraw after vector 4.
+    /// </summary>
+    public bool FilesLoadedSinceSwitch { get; set; }
+
+    /// <summary>
+    /// DS:49E2, the game speed 0 (fastest) … 9: DELAY waits speed × 225 ms (START 0x7E4E) and PRINT text speed × 10 ms
+    /// per character (START 0x7782), both through the Crt-style Delay(ms) START 0xA69C. The new game sets 1 (0xE99A);
+    /// Save copies it into $49FC (0x1FECE) and Load takes $49FC's low byte back (0x1F8F1); only then does $49FC change.
+    /// </summary>
+    public byte GameSpeed { get; set; } = 1;
+
+    /// <summary>
     /// Last value written to each special write address (writer 0x814A): $03DE → DS:84CC (sound picked by CALL
     /// $BA03: 8 or 10), $00B8 / $00B9 → DS:84CE / DS:84D0 (never read by the program), $C059 / $C05F → low byte to
     /// DS:6F68 / DS:6F69 (3D-view background colour codes, applied at the next redraw; the script init sets them to

@@ -214,7 +214,10 @@ branches of this roll (0x28EF–0x2A0F; checked by listing every access in 0x26F
 or 49 gives **the previous item's type again** (and its generator rolls again: a new plus, new scroll spells …). For
 the **first** item of a TREASURE the byte is never initialised: it holds whatever an earlier routine left in that
 stack slot (the handler's 0x174-byte frame is not cleared; the dispatcher calls every opcode handler at the same
-depth, so it is residue of earlier instructions' calls) `[?]`. The engine takes it as a setting
+depth, so it is residue of earlier instructions' calls) `[?]`. Still open after s15: the slot is the absolute stack cell
+handler-bp − 0x65, which every earlier opcode handler and its callees may have written (and, between handlers, any
+interrupt that runs on the game's stack), so its value depends on the script path that led to the TREASURE; no
+single value can be read from the program. The installed DOSBox-X has no debugger to sample it. The engine takes it as a setting
 (`EncounterHost.FirstItemTypeResidue`, default 0); type 0 makes no rolls and gives a blank item (type 0, `hidden` 6).
 Chance per item: 0.6 × 0.02 = 1.2 %.
 

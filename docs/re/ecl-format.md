@@ -392,8 +392,14 @@ Without both flags bit 0x80 only selects (e.g. ECL1 block 18 $AD24, after editin
 
 **WHO s** (0x3879): clears the text area (1,17)–(38,22), then the character pick menu (START.EXE 0x37E8, prompt
 = string slot 1, no Exit item) writes the chosen record straight into DS:5D92. DS:4430 is not set, so the choice
-outlives EXIT. The menu walks the list with two keys and ends on Select / Return. `[?]` What Escape returns there
-(the routine stores nil for key 0 or "E"; whether the menu can return them without an Exit item is not read).
+outlives EXIT. The picker loops until the key is Return, Escape, E or S (set at START 0x37BF). Each pass draws the
+party (0x1307) and runs the menu 0x2CC8C (`shop-format.md` "The menu routine"; keypad flag 1, so 7 / 1 act as
+Home / End): extended Home → the member before the current one (the head wraps to the last), End → the next (the
+last wraps to the head); a non-extended key 0 or E writes **nil**. Escape makes the menu return 0 (s15), so Escape
+writes nil and the loop goes on (0 is not an exit key); Select or Enter then leaves WHO with **no current
+character**; Home would pick the last member, End would read the interrupt table through the nil pointer. E never
+comes back from this menu ("Select" is its only item). The VM takes a pick of −1 (`IEclHost.NoCharacter`) as that
+nil (s15).
 
 **CHKPARTY s, v, a1..a4** (0x217B). The selector s is the raw field when operand 1 has type 1 (an address names the
 field), else its value; e = low byte of v.
@@ -408,9 +414,10 @@ field), else its value; e = low byte of v.
 does (0x1EEAA: `MON<d>CHA/ITM/SPC` block m, icon size, **five 1d6** icon colours), then record 0xAB = Random(256)
 (START.EXE 0xC140), and the portrait: the classes with a level byte 0x96 + k > 0 (k = 0..6, signed) are listed
 (none: class 2), **1d(count)** picks one; record 0xBC = DS table (0x8D7 for class 0, 0x8EB for 5, 0x8F5 for 6,
-0x8E1 otherwise) [5·g + **1d5**] (portrait body), g = record 0x9E (gender, signed); record 0xBB (portrait head) = DS:0x8C7 [8·g + **1d8**] (DS tables in START.EXE's data segment). The record is
+0x8E1 otherwise) [5·g + **1d5**] (portrait body), g = record 0x9E (gender, signed); record 0xBB (portrait head) = DS:0x8C7 [8·g + **1d8**] (DS tables in START.EXE's data segment, indexed 1-based: heads DS:08C8–08D7, bodies base + 1 … base + 10; read
+from the player's program by `PorProgram.NpcPortraitBases` through the code that indexes them, s15). The record is
 appended at the end of the party list and **becomes current** (0x1F42C: icon slot 0xBF = lowest of 0..7 not used by
-a list member, $6E3E + 1, then 0x2AA87, `[?]` presumably the stat recalculation, not read), then 0x1E468 (`[?]` the
+a list member, $6E3E + 1, then the level stats 0x2AA87, spells-effects.md "Level stats"; `[?]` not called by Core's ADDNPC yet), then 0x1E468 (`[?]` the
 combat icon load, by its calls; no random draws in it). Then, whether or not a record was added: current record 0x84
 (morale) = (low byte of v2 / 2) OR 0x80, record 0x10E (hostile) = 1 if m = 24 else 0, and START.EXE 0x1758 and 0x1307
 (`[?]` not read; 0x1307 is called after most changes to a character, presumably a display refresh). With a full party the morale lands on whoever is current.
@@ -429,6 +436,10 @@ door) writes to $007D / $007E, so $6E7D keeps its value (0 from the script init 
 - DOSBox (`party_opcodes`, s11): `SPELL #40, [$6EB8], [$6EB9]` after a SAVE wrote 1 to $00B8 and 0 to $00B9 (DS:84CE /
   84D0) and left $6EB8/$6EB9 alone: the residue was non-zero there and the search did not run. The VM's policy
   default follows that (`EclVmPolicy.SpellFoundResidue`).
+- Still open (s15): the byte is the absolute stack cell handler-bp − 8, shared by every opcode handler's frame (the
+  dispatcher calls them all at one depth) and their callees, so it holds whatever the previous instructions left;
+  in ECL3 block 14 the SPELL follows HMENU and ONGOTO. Either way the writes land on $007D / $007E, which the VM
+  ignores, so no v1.3 outcome depends on it.
 
 **DAMAGE f, n, s, b, t** (0x34BB). Values as low bytes. Damage d = n d s + b (dice 0x2BCCD), **rolled first**.
 - f AND 0x40: whole party; else a target index r = 1d($6E3E) is rolled next (also in the attack form).
@@ -475,8 +486,10 @@ roll per item (RandSeed).
   (e.g. ECL4 block 21 $9BD8: the parchment). EXIT, when DS:84E2 is set, shows a prompt and redraws (0xD4D–0xDA7, display only).
 
 **CALL $C018** (0x3AFA): only when DS:49FA = 1, the wall type ahead DS:6AB0 ($C04E) is read again (0x2ED72 at
-x, y, facing). DS:49FA (view mode) is 1 at start-up and is set by 0x3EFA before each vector 4: 1, then after vector 4
-2 / 3 / 4 when $49E6 = 0 in block 25 / 26 / 27; nothing else writes it.
+x, y, facing). DS:49FA (view mode = the save's location type) is 1 at a new game (0xE9C3) and is set by 0x3EFA
+before each vector 4: 1, then after vector 4 2 / 3 / 4 when $49E6 = 0 in block 25 / 26 / 27; Load reads it from the
+save (0x1F862); nothing else writes it. Save writes it as the location type byte (0x1FF9D). DS:49F9 keeps the
+value from before the switch (0x3F28).
 
 ### Steps, doors and script switches (program read s11)
 
@@ -494,6 +507,12 @@ x, y, facing). DS:49FA (view mode) is 1 at start-up and is set by 0x3EFA before 
   DS:49FA = 1, vector 4 (**DS:442F is not tested afterwards**), view mode, redraw, DS:442F = 0 (0x3FFA), vector 0,
   and unless DS:442F was set again vector 1 and the saved current character restored; repeat while DS:442F is set.
   The run loop never clears DS:442F; only 0x3FFA and the area entry 0x403E (0x4062) do.
+  - The redraw 0x2DCF4 after vector 4 runs (0x3FD2–0x3FF5) when DS:49F9 = 1 and DS:49FA = 1, or when (DS:49F9 > 1
+    or DS:49FA = 1) and DS:4431 ≠ 0. DS:4431 = "LOADFILES / LOADPIECES ran": set by their handler (0x19C8), cleared
+    by NEWECL (0x19AA) and the area entry (0x4053). So leaving the wilderness redraws only when vector 4 loaded files,
+    and entering it (1 → 2..4) never does. 0x2DCF4 itself re-reads the event byte only when DS:49FA = 1 or $49E6 ≠ 0.
+    Before vector 4, when DS:49F9 > 1 and DS:49FA = 1, a message is printed (0x3F9E–0x3FCD). Modelled in
+    `EclVm.FollowScriptChanges` (s15).
   - **NEWECL in a vector 4** after a switch: the newest script's vectors 0 and 1 run, not its vector 4.
   - **NEWECL in a vector 4 on area entry / Load** (0x403E): nothing runs at once (0x40A8 runs vector 4 and goes on
     to the command loop). DS:442F stays set, so after the next key's vector 0 (or vector 1 in search mode) 0x3EFA
@@ -850,7 +869,8 @@ Run: `python3 -I tools/scripts/ecl.py check <gamedir>` on PoR DOS v1.3 (files as
   switches", `DoorMap.LeavesMap`); the comparison harness applies it from the map planes since s11. Not checked in
   DOSBox (no capture steps into an edge wall); program read only.
 - `[?]` Valjevo hedge maze (ECL5 block 5): the reload of the current map from the edge table is read from the script
-  (`geo-format.md`), not yet seen in play (no capture walks the maze).
+  (`geo-format.md`), not yet seen in play (no capture walks the maze). s15 traced which squares take it (only map 6's
+  two south gates for the edge table, and the event-7 disorientation squares); a DOSBox check needs a late-game save.
 - T: Which value $49E6 has at each wilderness LOADFILES 4/5/6/127/255 (scripts write it; not followed per path).
 - Meanings of DS:84D2 / DS:84D3 (set by writes of 0 to $6C00 / $6B00) and of the record bytes in the redirection
   table that `character-format.md` names differently from Lee.
@@ -859,8 +879,7 @@ Run: `python3 -I tools/scripts/ecl.py check <gamedir>` on PoR DOS v1.3 (files as
   CLEARBOX, ROB's item rule, CALL $C018, the impassable edge face ($6DD5), the step into a door face, NEWECL in a
   vector 4 ("Party, damage and text-box opcodes", "Steps, doors and script switches"). DOSBox capture
   `party_opcodes` (s11) checks LOADCHAR, ROB (money rounding included), SPELL, CHKPARTY and DAMAGE. Still open:
-  SPELL's residue in other contexts, WHO's Escape, DAMAGE's effect handlers (trigger classes 12 and 16), ADDNPC's
-  portrait tables (not read from START.EXE yet), PROTECT's glyph drawing (display, not captured).
+  SPELL's residue in other contexts, DAMAGE's effect handlers (trigger classes 12 and 16), PROTECT's glyph drawing (display, not captured).
 - The text box layout of PRINT/PRINTCLR: program read in s12 (`view3d.md` "Text window").
 - Stack residue outside COMPARE: what an undefined read returns in other handlers (e.g. block 10's `SAVE [$C059]`,
   after LOADFILES/LOADPIECES) and what an unknown operand type's value fetch returns. The VM uses

@@ -209,7 +209,7 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
     private CombatChooser? _chooser;
 
     /// <summary>The player's side of the combat menu (passed to the game as <c>PorPlayer.FightMenu</c>).</summary>
-    public CombatChooser Chooser => _chooser ??= new CombatChooser(runner.Ask, FightView);
+    public CombatChooser Chooser => _chooser ??= new CombatChooser(runner.Ask, FightView) { Resources = () => Resources };
 
     /// <summary>
     /// The real fight (arena and placement done): shown on the combat screen while it runs; party members not on Quick

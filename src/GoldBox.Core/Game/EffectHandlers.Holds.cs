@@ -42,12 +42,13 @@ public sealed partial class EffectHandlers
     /// </summary>
     public int[]? ExperienceTable { get; set; }
 
-    /// <summary>0x2AA87 (after a level changes): [?] not read (it sets record 0x2D and 0x73 from the level table DS:3C7C
-    /// and the fighter attacks 0xA1); without it nothing happens and a diagnostic is noted.</summary>
+    /// <summary>0x2AA87 (after a level changes): <see cref="Game.LevelStats.Apply"/> with the program's tables, set by
+    /// <see cref="FightKit.WireLevels"/>; without it nothing happens and a diagnostic is noted.</summary>
     public Action<EclCharacter>? LevelStats { get; set; }
 
-    /// <summary>START 0x3AF7 (creature, class): true when the race's level limit stops that class. [?] Not read here
-    /// (race 0x2E, class levels and Strength); without it no class is stopped and a diagnostic is noted.</summary>
+    /// <summary>START 0x3AF7 (creature, class): true when the race's level limit stops that class
+    /// (<see cref="Game.LevelStats.RaceLimitStops"/>, set by <see cref="FightKit.WireLevels"/>); without it no class is
+    /// stopped and a diagnostic is noted.</summary>
     public Func<EclCharacter, int, bool>? RaceLevelLimit { get; set; }
 
     private Fight? _attached;

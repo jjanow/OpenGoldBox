@@ -16,7 +16,8 @@ public static class StatRecalc
     public const int ItemCount = 0xC7, Hands = 0x100, SaveBonus = 0x101, Weight = 0x102, BaseThac0 = 0x2D, BaseAc = 0xA9,
         BaseMove = 0x72, Race = 0x2E, StrBonusFlag = 0xAA, SweepBase = 0x98;
 
-    /// <summary>Item byte 0x2F value of the bag that carries 5000 coins' weight for free (START 0x18DA). [?] which item.</summary>
+    /// <summary>Item byte 0x2F (name word slot 1) of the bag that carries 5000 coins' weight for free when readied
+    /// (START 0x18DA): word 0xBA "Holding", i.e. the Bag of Holding (random item array entry 137, type 70).</summary>
     public const byte BagMarker = 0xBA;
 
     public static void Recalculate(EclCharacter c, BaseItemTable items)

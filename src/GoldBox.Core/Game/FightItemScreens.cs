@@ -170,11 +170,31 @@ public sealed class FightItemScreens(IItemScreenChooser chooser, Action<EclChara
     /// <summary>
     /// 0x21F32 in a fight (the menu's Use, and View's Items) for the current creature: while not done, the item count
     /// 0xC7 is above 0 and the player does not leave: the entries (<see cref="ItemsEntries"/>) and the item list; the
-    /// chosen entry acts on the chosen item: Ready → 0x2250A; Use → "must be readied" unless readied, else for a usable
+    /// chosen entry acts on the chosen item: Ready → 0x2250A; Use → a "needs readying" message unless readied, else for a usable
     /// item the item use 0x22AC4 (<see cref="FightSpells.UseItemNow"/>; done as it reports); Drop → <see cref="CanLetGo"/>
     /// and "drop it?", then the item leaves (START 0x20A9); Halve (0x22827); Join (0x228D7). After each choice the stats
     /// are recalculated (START 0x1758). Returns done.
     /// </summary>
+    public bool Use(Fight fight, EclCharacter c, FightMenu menu) => FromMenu(menu, () => Use(fight, c));
+
+    public bool View(Fight fight, EclCharacter c, FightMenu menu) => FromMenu(menu, () => View(fight, c));
+
+    private FightMenu? _menu;
+
+    private bool FromMenu(FightMenu menu, Func<bool> screen)
+    {
+        var saved = _menu;
+        _menu = menu;
+        try
+        {
+            return screen();
+        }
+        finally
+        {
+            _menu = saved;
+        }
+    }
+
     public bool Use(Fight fight, EclCharacter c)
     {
         bool done = false;
@@ -232,7 +252,7 @@ public sealed class FightItemScreens(IItemScreenChooser chooser, Action<EclChara
             }, c, item);
     }
 
-    /// <summary>0x222F0: Use of an item: not readied → "must be readied", nothing else; a usable item (a scroll, or power
+    /// <summary>0x222F0: Use of an item: not readied → a "needs readying" message, nothing else; a usable item (a scroll, or power
     /// 0x3D &gt; 0 with kind 0x3E &lt; 0x80) → 0x22AC4; anything else → nothing.</summary>
     private bool UseItem(Fight fight, EclCharacter c, byte[] item)
     {
@@ -249,10 +269,12 @@ public sealed class FightItemScreens(IItemScreenChooser chooser, Action<EclChara
             return false;
         }
         int scrollSpell = FightSpells.IsScroll(fight.Items, item) ? Chooser.ChooseScrollSpell(c, item) : 0;
-        return spells.UseItemNow(fight, c, item, scrollSpell, spell => PlayerPick(fight, spells, c, spell));
+        return spells.UseItemNow(fight, c, item, scrollSpell,
+            _menu is { } menu ? menu.PickForItem : spell => PlayerPick(fight, spells, c, spell));
     }
 
-    /// <summary>The player's pick for an item's spell: the aim (<see cref="IItemScreenChooser.AimItem"/>) and the target
+    /// <summary>The player's pick for an item's spell outside the combat menu (opened from the menu, the menu's aim
+    /// runs: <see cref="FightMenu.PickForItem"/>): the aim (<see cref="IItemScreenChooser.AimItem"/>) and the target
     /// pick 0x148BE over what it chose (<see cref="FightSpells.Pick"/>). Aborted → not picked.</summary>
     private bool PlayerPick(Fight fight, FightSpells spells, EclCharacter user, int spell) =>
         Chooser.AimItem(fight, user, spell) is { } aim && spells.Pick(fight, user, spell, aim.Targets, aim.Square);

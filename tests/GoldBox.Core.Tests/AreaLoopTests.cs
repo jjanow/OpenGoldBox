@@ -205,6 +205,28 @@ public class AreaLoopTests
     }
 
     [PorFact]
+    public void Steps_and_Look_age_the_partys_timed_effects()
+    {
+        // 0x241A1 runs 0x23DCC after every advance (step, Look, CLOCK): a 1-minute step takes a minute off each timed
+        // effect, Look 10; one with no more minutes than the step goes. The flags DS:471E are the session's (PorGame.Camp).
+        var dir = PorData.Open();
+        var player = new PorPlayer(new ScriptedEclHost { StopWhenInputMissing = true },
+            new ScriptedEncounterUi { StopWhenInputMissing = true }, new RecordingCombatRunner(), new ScriptedAreaUi());
+        var g = PorGame.FromSave(dir, PorViewArt.Load(dir), dir.Find("SAVGAMA.DAT")!, player, 1);
+        var c = g.Memory.Party!.Members[0];
+        c.Effects.Clear();
+        EffectHandlers.AddEffect(c, 0x1C, 12, 4, false);
+        g.Loop.Execute(AreaCommand.Forward);
+        Assert.Equal(11, c.Effects.Single()[1]);
+        Assert.Equal(1, g.Camp.EffectFlags[0]);
+        g.Loop.Execute(AreaCommand.Look);
+        Assert.Equal(1, c.Effects.Single()[1]);
+        g.AreaHost.Clock(1);                                       // the CLOCK opcode's advance
+        Assert.Empty(c.Effects);
+        Assert.Equal(0, g.Camp.EffectFlags[0]);
+    }
+
+    [PorFact]
     public void Area_map_is_refused_where_49FB_is_set()
     {
         var dir = PorData.Open();

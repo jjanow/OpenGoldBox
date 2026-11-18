@@ -1,53 +1,28 @@
-using GoldBox.Core.Ecl;
 using GoldBox.Core.Game;
-using GoldBox.Data.Dax;
 
 namespace GoldBox.Data.Por;
 
 /// <summary>
-/// Monster and treasure-list data for <see cref="EncounterHost"/>, from the player's files:
-/// <c>MON&lt;d&gt;CHA/ITM/SPC.DAX</c> (docs/re/character-format.md) and <c>ITEM&lt;d&gt;.DAX</c> (docs/re/item-format.md).
-/// The disk digit is the current disk (DS:5376), as in the program.
+/// Monster and treasure-list data for <see cref="EncounterHost"/>: <c>MON&lt;d&gt;CHA/ITM/SPC</c>
+/// (docs/re/character-format.md) and <c>ITEM&lt;d&gt;</c> (docs/re/item-format.md) from the content (the player's
+/// DAX files or an imported module); the random item array from the player's program. The disk digit is the current
+/// disk (DS:5376), as in the program.
 /// </summary>
-public sealed class PorEncounterData(PorGameDirectory game) : IEncounterData
+public sealed class PorEncounterData(IPorContent content, PorGameDirectory? programFolder) : IEncounterData
 {
-    private readonly Dictionary<string, DaxFile?> _files = [];
-
-    private DaxFile? File(string name)
+    public PorEncounterData(PorGameDirectory game) : this(game, game)
     {
-        if (!_files.TryGetValue(name, out var f))
-        {
-            var path = game.Find(name);
-            f = path is null ? null : DaxFile.Open(path);
-            _files[name] = f;
-        }
-        return f;
     }
 
-    private static List<byte[]> Records(byte[]? block, int size)
-    {
-        var list = new List<byte[]>();
-        if (block is null)
-            return list;
-        for (int k = 0; k + size <= block.Length; k += size)
-            list.Add(block[k..(k + size)]);
-        return list;
-    }
-
-    public MonsterData? Monster(int disk, int id)
-    {
-        var cha = File($"MON{disk}CHA.DAX")?.Block(id);
-        if (cha is null)
-            return null;
-        return new MonsterData(cha,
-            Records(File($"MON{disk}ITM.DAX")?.Block(id), EclCharacter.ItemRecordSize),
-            Records(File($"MON{disk}SPC.DAX")?.Block(id), EclCharacter.EffectRecordSize));
-    }
+    public MonsterData? Monster(int disk, int id) => content.Monster(disk, id);
 
     private ushort[]? _randomTable;
     private bool _randomTableRead;
 
-    /// <summary>The random item array from the player's START.EXE / GAME.OVR (<see cref="PorProgram"/>), or null.</summary>
+    /// <summary>
+    /// The random item array from the player's START.EXE / GAME.OVR (<see cref="PorProgram"/>), or null. [?] Not in
+    /// a module yet (rules tables, docs/module-format.md §12): read from the program folder.
+    /// </summary>
     public IReadOnlyList<ushort>? RandomItemTable
     {
         get
@@ -55,15 +30,28 @@ public sealed class PorEncounterData(PorGameDirectory game) : IEncounterData
             if (!_randomTableRead)
             {
                 _randomTableRead = true;
-                _randomTable = PorProgram.Open(game)?.RandomItemTable();
+                _randomTable = programFolder is null ? null : PorProgram.Open(programFolder)?.RandomItemTable();
             }
             return _randomTable;
         }
     }
 
-    public IReadOnlyList<byte[]>? ItemList(int disk, int id)
+    public IReadOnlyList<byte[]>? ItemList(int disk, int id) => content.TreasureList(disk, id);
+
+    private PorProgram? _program;
+    private bool _programRead;
+
+    /// <summary>
+    /// ADDNPC's portrait table bytes from the player's START.EXE (<see cref="PorProgram.NpcPortraitByte"/>), or null.
+    /// [?] Not in a module yet (rules tables, docs/module-format.md §12): read from the program folder.
+    /// </summary>
+    public byte? NpcPortraitByte(int dsOffset)
     {
-        var b = File($"ITEM{disk}.DAX")?.Block(id);
-        return b is null ? null : Records(b, EclCharacter.ItemRecordSize);
+        if (!_programRead)
+        {
+            _programRead = true;
+            _program = programFolder is null ? null : PorProgram.Open(programFolder);
+        }
+        return _program?.NpcPortraitByte(dsOffset);
     }
 }

@@ -35,8 +35,11 @@ payments and was recomputed when View opened. **D** for those entries and the pa
 - **Paying** rewrites the payer's coins. Character (0x24DB9, one word argument): the five coin words := 0,
   platinum := n div 5, gold := n mod 5. Pool (0x24E0E, one word): the same on the pool dwords. So after any purchase
   the payer holds only platinum and up to 4 gold; silver and copper are gone (converted at their value). The
-  weight word is **not** recomputed by these routines (`[?]` when the program next recalculates +0x102: START 0x1758
-  runs in Buy's copy step, before the payment).
+  weight word is **not** recomputed by these routines. The next recalculation (START 0x1758) of the payer is in
+  View: its character page (0x21084) calls 0x21642, which recalculates the current character first (0x2165C), and
+  the items screen (0x21F32) recalculates after every action (0x224AF). Buy's copy step recalculates before the
+  payment, so after a purchase +0x102 counts the item and the old coins until View (settled s15; matches the s11 /
+  s12 DOSBox notes).
 - **Price checks**: Buy (0x7035) and the temple (0x4636) compare the price with the **low word** of the character's
   total; Identify compares the 32-bit total. The pool is compared as a signed 32-bit total. The remaining pool
   total is passed as one word (so a pool above 65,535 gold loses the excess) — settled, was `[?]`.
@@ -72,7 +75,9 @@ characters with the value right-aligned at the end (the list's text; s12).
 
 **View → items** (0x21AED, P where marked). In a shop (DS:49F3 = 1) the items menu adds **Sell** and **Id**
 (strings at unit 0x2103A + 0xEA8 / 0xEAE; 0x22104–0x2217E). Sell is added for a member with 0x84 < 0x80, and for
-others only when in play = 0 or status = 1 (`[?]` intent).
+others only when in play = 0 or status = 1 — the same gate as Trade in View (0x21BFE) and in the items menu
+(0x22034): an NPC's goods can be traded or sold only once it is out of play or animated (status 1). Settled s15
+(the rule was read in s12; only its intent was open). Core: `FightItemScreens.ItemsEntries` (`MayDeal`).
 - **Sell** (S, 0x22472): first 0x21DAA: a readied item is refused (a "must be unreadied" message); a scroll (0x2A255) whose
   props hold a byte > 0x7F (spell flagged for scribing) asks for confirmation first. Then 0x22D28: price = value / 2;
   with count > 1, price = (count × price, 16-bit) / 20. (The program has a branch for count × price without the
@@ -97,8 +102,9 @@ loses that much weight, and its seven words are zeroed. Other members (NPCs) kee
 
 **Share** (0x252C3, P):
 1. n = members with 0x84 = 0 or 0xB3 (0x25269). For each kind with a positive pool: share = pool div n,
-   remainder = pool mod n (longint, kept as words); else both 0. `[?]` n = 0 with money in the pool is a division
-   by zero.
+   remainder = pool mod n (longint, kept as words); else both 0. n = 0 with money in the pool (only NPCs other
+   than 0xB3 in the party) reaches the longint division START 0xB9F6 with a zero divisor: run-time error 200
+   (0xBA5D → RunError 0xB062), the program quits to DOS before anything changes (s15; `ProgramHaltException`).
 2. For each member with 0x84 < 0x80 (so 0xB3 members count in n but receive nothing here), kinds 6 down to 0:
    if the share fits (not overloaded), add it, then one coin of the remainder if the **whole remainder** would fit (0x25450 tests the remainder, then adds 1); else add `room` and
    put share − room back into the remainder.
@@ -159,9 +165,16 @@ even for Raise Dead / Stone to Flesh on a target that does not qualify, which th
 
 ## Open `[?]`
 
-- When the weight word is recomputed after a payment (coins rewritten, weight not): seen at View in DOSBox (shop
-  items screen, temple View); the routine that does it is not read.
-- Sell's extra condition for members with 0x84 ≥ 0x80; the menu routine 0x2CC8C's output byte.
-- Temple: effect handler 0x4E on a revived character, DS:681F, the intent of the raise
-  dead hit-point rule.
-- Share with n = 0.
+- Temple: effect handler 0x4E on a revived character, DS:681F, the intent of the raise dead hit-point rule.
+
+## The menu routine (0x2CC8C) — P (s15)
+
+Arguments (Pascal order, as WHO's picker START 0x37E8 passes them): prompt, item line, three bytes ([bp+0x12],
+[bp+0x10], [bp+0x0E]; colours by their use), keypad flag [bp+0x0C], a flag [bp+0x0A] that enables a timed repeat
+(not read further), var extended [bp+6]. Keys (upper-cased by START 0xC7AA): Escape returns **0** (not extended);
+Enter returns 13 only when [bp+0x10] or [bp+0x0E] is non-zero (else it is ignored); ',' / '.' move the highlight
+back / on (wrapping); space returns ' '; a letter or digit that is an item's hotkey moves the highlight there and
+returns it; a zero-prefixed key returns its scan code (extended = 1 only with the keypad flag); with the keypad
+flag a digit that is no hotkey (or a backslash) returns a cursor-pad scan code (1 End, 2 Down, 3 PgDn, 4 Left, 5 ' ', 6 Right, 7 Home,
+8 Up, 9 PgUp, backslash 0x37; table DS:288C) with extended = 1; other keys are ignored. The extended byte is also
+stored in DS:6B2C. This is the "output byte" the shop's G / O test does not look at.

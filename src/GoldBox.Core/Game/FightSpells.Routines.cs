@@ -7,7 +7,8 @@ namespace GoldBox.Core.Game;
 public sealed partial class FightSpells
 {
     /// <summary>VM $49E6 (word [DS:49D2]+0x1CC): 0 makes Fireball rebuild its target list with range 2 (0x29683).
-    /// [?] What the cell means is not read (the area scripts set it).</summary>
+    /// $49E6 = 0 is the wilderness overland (the script init sets 1; the wilderness scripts write 0/1; save-format.md),
+    /// so outdoors Fireball reaches range 2 (a 5-square diameter).</summary>
     public const ushort FireballRangeCell = 0x49E6;
 
     /// <summary>DS:4845: the exceptional Strength Enlarge gives, also written by Dispel Magic (an effect's level).</summary>
@@ -221,8 +222,8 @@ public sealed partial class FightSpells
 
     /// <summary>
     /// 0x29087: DS:6820 = 1, the target list emptied, budget = casting level. Walking the whole creature list while the
-    /// budget lasts: a dead (status 6) creature of type 0 whose square takes it (0x317E1, the seam
-    /// <see cref="EffectHandlers.CanRevive"/>) is raised: param = casting level + its old hostile byte × 16; hostile =
+    /// budget lasts: a dead (status 6) creature of type 0 whose square takes it (0x317E1,
+    /// <see cref="EffectHandlers.PutBackOnSquare"/>) is raised: param = casting level + its old hostile byte × 16; hostile =
     /// the current character's, computer-controlled, undead level 0x76 = 2, 0x6B = 0, base movement 6, memorised spells
     /// cleared, NPC byte 0x84 → 0xB2 when above 0x7F else 0xB3, type 4; in a fight its last target is cleared. The budget
     /// drops by one, then 0x2C753 puts it back with its maximum HP; when that works it gets effect 0x20 (permanent,
@@ -240,7 +241,7 @@ public sealed partial class FightSpells
                 break;
             if (p[EffectHandlers.Status] != 6 || p[EffectHandlers.CreatureType] != 0)
                 continue;
-            if (Effects.CanRevive is { } can ? !can(p) : NoSquareTest())
+            if (!Effects.PutBackOnSquare(p))
                 continue;
             byte param = (byte)(CasterLevel(spell) + ((sbyte)p[FightRules.Hostile] << 4));
             p[FightRules.Hostile] = cur[FightRules.Hostile];
@@ -261,12 +262,6 @@ public sealed partial class FightSpells
                 p[EffectHandlers.Status] = 1;
             }
         }
-    }
-
-    private bool NoSquareTest()
-    {
-        Diag("[?] Animate Dead's square test (0x317E1) not modelled; taken as free");
-        return false;
     }
 
     // ---- 39 Cure Disease, 41/46 Dispel Magic, 43 Remove Curse -------------------------------------------------
@@ -474,7 +469,7 @@ public sealed partial class FightSpells
         while (left > 0)
         {
             int tx = Aim.X, ty = Aim.Y;
-            var line = BoltLine.Start(tx, ty, (short)(tx + (tx - sx) * dir * left), (short)(ty + (ty - sy) * dir * left));
+            var line = CombatMap.LineWalk.Start(tx, ty, (short)(tx + (tx - sx) * dir * left), (short)(ty + (ty - sy) * dir * left));
             while (true)
             {
                 int slot = 0, terrain = 0;
@@ -494,7 +489,7 @@ public sealed partial class FightSpells
                 if (rebound)
                 {
                     Aim = (line.Cx, line.Cy);
-                    var back = BoltLine.Start(Aim.X, Aim.Y, sx, sy);
+                    var back = CombatMap.LineWalk.Start(Aim.X, Aim.Y, sx, sy);
                     while (back.Next())
                     {
                     }
@@ -510,53 +505,6 @@ public sealed partial class FightSpells
             }
         }
         Effects.Cells.MultiTarget = 0;
-    }
-
-    /// <summary>The line state of 0x2FCF2 / 0x2FE1E (as <c>CombatMap</c>'s own walk, which is private there).</summary>
-    private struct BoltLine
-    {
-        public int Ex, Ey, Err, Adx, Ady, IncD, IncS, StepX, StepY, Cx, Cy;
-        public byte Dist;
-
-        public static BoltLine Start(int sx, int sy, int ex, int ey)
-        {
-            var l = new BoltLine { Ex = ex, Ey = ey, Cx = sx, Cy = sy };
-            l.Adx = Math.Abs(ex - sx);
-            l.Ady = Math.Abs(ey - sy);
-            l.StepX = Math.Sign(ex - sx);
-            l.StepY = Math.Sign(ey - sy);
-            int major = Math.Max(l.Adx, l.Ady), minor = Math.Min(l.Adx, l.Ady);
-            l.Err = minor * 2 - major;
-            l.IncD = (minor - major) * 2;
-            l.IncS = minor * 2;
-            return l;
-        }
-
-        public bool Next()
-        {
-            bool xMajor = Adx > Ady;
-            if (xMajor ? Cx == Ex : Cy == Ey)
-                return false;
-            if (Err >= 0)
-            {
-                if (xMajor)
-                    Cy = (short)(Cy + StepY);
-                else
-                    Cx = (short)(Cx + StepX);
-                Err = (short)(Err + IncD);
-                Dist += 3;
-            }
-            else
-            {
-                Err = (short)(Err + IncS);
-                Dist += 2;
-            }
-            if (xMajor)
-                Cx = (short)(Cx + StepX);
-            else
-                Cy = (short)(Cy + StepY);
-            return true;
-        }
     }
 
     // ---- 56 Restoration, 58 ---------------------------------------------------------------------------------------

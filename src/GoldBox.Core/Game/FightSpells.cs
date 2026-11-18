@@ -92,6 +92,11 @@ public sealed partial class FightSpells : IFightSpells
     public (int X, int Y) Aim { get; set; }
 
     public event Action<EclCharacter, int, EffectEvent>? Event;
+    /// <summary>[Display hook] 0x27D48: the cast message (caster, spell) shown before the target pick when the spell
+    /// is not cast from an item or scroll (DS:6DBF = 0).</summary>
+    public Action<EclCharacter, int>? Announce { get; set; }
+    /// <summary>[Display hook] 0x22B58: an item with a power (DS:6DBF = 1, not a scroll) is about to be used (user, item).</summary>
+    public Action<EclCharacter, byte[]>? ItemUsed { get; set; }
     public List<string> Diagnostics { get; } = [];
 
     private EclCharacter? Current => Effects.CurrentCharacter();
@@ -279,10 +284,9 @@ public sealed partial class FightSpells : IFightSpells
         }
         Event?.Invoke(caster, spell, EffectEvent.BeginsCasting);
         rec[CombatRecord.SpellCast] = (byte)spell;
-        if (rec.InitiativeValue > delay)
-            rec.InitiativeValue = (sbyte)(rec.InitiativeValue - delay);
-        else
-            rec.InitiativeValue = 1;
+        // The turn ends with the actions not over: the creature is picked again this round (an AI cast too, DOSBox
+        // fight_casts q29 → q30: the charmed cleric's Bless).
+        fight.Postpone(caster, rec.InitiativeValue > delay ? (sbyte)(rec.InitiativeValue - delay) : (sbyte)1);
         return true;
     }
 
@@ -299,6 +303,8 @@ public sealed partial class FightSpells : IFightSpells
         fight.State.Current = caster;
         try
         {
+            if (!UsingItem)
+                Announce?.Invoke(caster, spell);
             if (!pick())
             {
                 Event?.Invoke(caster, spell, EffectEvent.SpellAborted);

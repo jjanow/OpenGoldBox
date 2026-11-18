@@ -66,20 +66,33 @@ public static class Carrying
     /// <summary>
     /// The carried weight the stat recalculation writes to +0x102 (START 0x17B4–0x1948): Σ item weight (word 0x37) ×
     /// count (byte 0x39, 0 counts as 1) + the seven money words (each coin, gem or jewel weighs 1). 16-bit sums.
-    /// [?] A carried bag-of-holding kind of item subtracts 5000 (START 0x1AEC); which item flag selects it is not
-    /// read, so it is not applied.
+    /// A readied Bag of Holding (item byte 0x2F = <see cref="StatRecalc.BagMarker"/>, name word "Holding"; START
+    /// 0x18DA) takes 5000 off, floored at 0 (START 0x1AEC), but never below the readied items' own weight (DS:4846).
     /// </summary>
     public static ushort Weight(EclCharacter c)
     {
-        ushort w = 0;
+        ushort w = 0, readied = 0;
+        bool bag = false;
         foreach (var it in c.Items)
         {
             ushort iw = (ushort)(it[0x37] | it[0x38] << 8);
-            int n = it[0x39] == 0 ? 1 : it[0x39];
-            w = unchecked((ushort)(w + iw * n));
+            if (it[0x39] > 0)
+                iw = unchecked((ushort)(iw * it[0x39]));
+            w = unchecked((ushort)(w + iw));
+            if (it[CombatRules.ItemEquipped] == 0)
+                continue;
+            readied = unchecked((ushort)(readied + iw));
+            if (it[0x2F] == StatRecalc.BagMarker)
+                bag = true;
         }
         for (int k = 0; k < 7; k++)
             w = unchecked((ushort)(w + c.Word(Money.Coins + 2 * k)));
+        if (bag)
+        {
+            w = w < 5000 ? (ushort)0 : (ushort)(w - 5000);
+            if (w < readied)
+                w = readied;
+        }
         return w;
     }
 

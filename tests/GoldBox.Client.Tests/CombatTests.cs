@@ -101,6 +101,67 @@ public class CombatScreenUnitTests
     }
 
     [Fact]
+    public void The_item_screens_ask_through_pages()
+    {
+        var asked = new List<PlayerRequest>();
+        object? answer = null;
+        var view = new CombatView();
+        var chooser = new CombatChooser(q => { asked.Add(q); return answer; }, view) { Pauses = false };
+        var c = new EclCharacter { Name = "Darkstar" };
+        byte[] darts = new byte[0x3F], ring = new byte[0x3F];
+        darts[FightSpells.ItemCount] = 11;
+        darts[CombatRules.ItemEquipped] = 1;
+        ring[FightSpells.ItemCount] = 1;
+        ItemsEntry[] entries = [ItemsEntry.Ready, ItemsEntry.Use, ItemsEntry.Drop, ItemsEntry.Halve, ItemsEntry.Join, ItemsEntry.Exit];
+
+        // The Items page (from the menu's Use: grey); the answer is the entry and the selected row.
+        answer = new ListAnswer(3, 1);
+        var pick = chooser.ChooseItem(c, entries, [darts, ring]);
+        Assert.Equal(ItemsEntry.Halve, pick.Entry);
+        Assert.Same(ring, pick.Item);
+        var req = Assert.IsType<PageRequest>(asked[^1]);
+        Assert.Equal(["READY", "USE", "DROP", "HALVE", "JOIN", "EXIT"], req.Entries);
+        Assert.Equal(5, req.CancelEntry);
+        var page = view.Page!;
+        Assert.True(page.Grey);
+        Assert.Equal([0, 2, 23], page.FrameRows);
+        Assert.Equal((1, 1, "DARKSTAR'S"), (page.Texts[0].Col, page.Texts[0].Row, page.Texts[0].Text));
+        Assert.Equal(12, page.Texts[1].Col);              // the title at name length + 4
+        Assert.StartsWith(" YES  ", page.Rows[0]);
+        Assert.StartsWith(" NO   ", page.Rows[1]);
+        Assert.Equal(CombatMode.Page, view.Mode);
+
+        // Escape: Exit with no item.
+        answer = new ListAnswer(5, 0);
+        Assert.Equal(ItemsEntry.Exit, chooser.ChooseItem(c, entries, [darts, ring]).Entry);
+
+        // Drop it?: the warning on the page, No highlighted, the selection hidden while asked.
+        answer = 0;
+        Assert.True(chooser.ConfirmDrop(c, ring));
+        var q = Assert.IsType<ChoiceRequest>(asked[^1]);
+        Assert.Equal(1, q.Selected);
+        Assert.Equal(chooser.Text[CombatMsg.DropIt], q.MenuPrompt);
+        Assert.Empty(view.Page!.Warning);
+
+        // View: the program's prompt, then Items from it is black.
+        answer = new ListAnswer(0, 0);
+        Assert.Equal(ViewEntry.Items, chooser.ChooseView(c, [ViewEntry.Items, ViewEntry.Exit]));
+        Assert.Equal("VIEW:", Assert.IsType<PageRequest>(asked[^1]).Prompt);
+        answer = new ListAnswer(0, 0);
+        chooser.ChooseItem(c, entries, [darts]);
+        Assert.False(view.Page!.Grey);
+    }
+
+    [Fact]
+    public void The_drop_warning_wraps_into_the_two_row_window()
+    {
+        var two = CombatChooser.WrapWarning("YOUR 2 POTIONS OF EXTRA HEALING WILL BE GONE FOREVER");
+        Assert.Equal(["YOUR 2 POTIONS OF EXTRA HEALING WILL", "BE GONE FOREVER"], two);
+        Assert.All(two, l => Assert.True(l.Length <= 38));
+        Assert.Equal(["YOUR 5 DARTS WILL BE GONE FOREVER"], CombatChooser.WrapWarning("YOUR 5 DARTS WILL BE GONE FOREVER"));
+    }
+
+    [Fact]
     public void Combat_texts_fall_back_to_our_words()
     {
         var t = new CombatText();
@@ -301,6 +362,92 @@ public class CombatScreenGameTests
         }
         Assert.False(v.Active);
         Assert.False(r.Game.Loop.Defeated);
+        r.Runner.Dispose();
+    }
+
+    [Fact]
+    public void View_and_Use_open_the_programs_item_screens_in_a_fight()
+    {
+        if (Dir() is null)
+            return;
+        var r = ToFight();
+        var v = r.Player.FightView;
+        var fight = v.Fight!;
+        Assert.IsType<FightItemScreens>(Assert.IsType<MenuController>(fight.Controller).Screens);
+        var me = v.Current!;
+        Assert.NotEmpty(me.Items);
+
+        // Use (0x21F32): the Items page on the combat palette, the program's entries, Exit back to the menu.
+        Key(r, Keys.U);
+        var use = Assert.IsType<PageRequest>(r.Runner.Pending);
+        Assert.Equal(CombatMode.Page, v.Mode);
+        Assert.Equal(["READY", "USE"], use.Entries.Take(2));
+        Assert.Equal("EXIT", use.Entries[^1]);
+        Assert.Null(use.Prompt);
+        var page = v.Page!;
+        Assert.True(page.Grey);
+        Assert.Equal(me.Items.Count, page.Rows.Count);
+        Assert.Contains(page.Texts, t => t.Row == 3 && t.Text == "READY ITEM");
+        var f = new IndexedFrame(320, 200);
+        r.Screen.Draw(f, r.Input);
+        Assert.Equal(8, f[100, 100]);                    // grey background (0 ↔ 8)
+        int count = me.Items.Count;
+        // Halve on a stack, then Join: the list grows by one, then shrinks back.
+        int stack = me.Items.FindIndex(i => i[FightSpells.ItemCount] >= 2);
+        if (stack >= 0)
+        {
+            page.Selected = stack;
+            Key(r, Keys.H);
+            Assert.Equal(count + 1, me.Items.Count);
+            Key(r, Keys.J);
+            Assert.Equal(count, me.Items.Count);
+        }
+        // Drop of a readied item: refused ("must be unreadied"), nothing asked.
+        int readied = me.Items.FindIndex(i => i[CombatRules.ItemEquipped] != 0);
+        if (readied >= 0)
+        {
+            v.Page!.Selected = readied;
+            Key(r, Keys.D);
+            Assert.IsType<PageRequest>(r.Runner.Pending);
+            Assert.Equal(count, me.Items.Count);
+        }
+        Key(r, Keys.E);
+        Assert.True(AtMainMenu(r));
+        Assert.Null(v.Page);
+
+        // View (0x21AED): "VIEW:" and its entries; Items from it is drawn black; Escape twice back to the menu.
+        Key(r, Keys.V);
+        var view = Assert.IsType<PageRequest>(r.Runner.Pending);
+        Assert.Equal("VIEW:", view.Prompt);
+        Assert.Equal("ITEMS", view.Entries[0]);
+        Key(r, Keys.I);
+        Assert.IsType<PageRequest>(r.Runner.Pending);
+        Assert.False(v.Page!.Grey);
+        Press(r, GameAction.Cancel);
+        Assert.Equal("VIEW:", Assert.IsType<PageRequest>(r.Runner.Pending).Prompt);
+        Press(r, GameAction.Cancel);
+        Assert.True(AtMainMenu(r));
+        Assert.Same(me, v.Current);
+
+        // Drop money (0x234E1) from View: the coin list (Return picks the row), the amount typed, one coin less.
+        if (FightItemScreens.ViewEntries(me, FightItemScreens.InFight).Contains(ViewEntry.Drop))
+        {
+            int kind = Enumerable.Range(0, FightItemScreens.CoinKinds).First(k => FightItemScreens.Coins(me, k) > 0);
+            ushort before = FightItemScreens.Coins(me, kind);
+            Key(r, Keys.V);
+            Key(r, Keys.D);
+            var coins = Assert.IsType<PageRequest>(r.Runner.Pending);
+            Assert.True(coins.PickRows);
+            Assert.Equal(0, v.Page!.Selected);
+            Press(r, GameAction.Confirm);
+            Assert.IsType<TextRequest>(r.Runner.Pending);
+            Key(r, Keys.D1);
+            Press(r, GameAction.Confirm);
+            Assert.Equal(before - 1, FightItemScreens.Coins(me, kind));
+            for (int g = 0; g < 4 && !AtMainMenu(r); g++)
+                Press(r, GameAction.Cancel);
+            Assert.True(AtMainMenu(r));
+        }
         r.Runner.Dispose();
     }
 

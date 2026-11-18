@@ -35,6 +35,41 @@ public static class PorSpellData
     }
 
     /// <summary>
+    /// The tables of the level-stats routine GAME.OVR 0x2AA87 (<see cref="LevelStats"/>): the routine is found by its
+    /// opening (<c>les di,[bp+6] / mov byte es:[di+0x2D],0 / mov byte [bp-1],0</c>, after a frame of 8 bytes) and each
+    /// DS offset is the immediate of the instruction that reads the table, at its place in the v1.3 routine and its two
+    /// helpers (0x2ACDC, 0x2ADB0); every opcode is checked. Null when not found.
+    /// </summary>
+    public static LevelStatsTables? LevelTables(PorProgram p)
+    {
+        if (p.Overlay is not { } o)
+            return null;
+        ReadOnlySpan<byte> pat = [0x55, 0x89, 0xE5, 0x83, 0xEC, 0x08, 0xC4, 0x7E, 0x06, 0x26, 0xC6, 0x45, 0x2D, 0x00, 0xC6, 0x46, 0xFF, 0x00];
+        int r = o.AsSpan().IndexOf(pat);
+        if (r < 0)
+            return null;
+        int? Imm(int at, byte op1, byte op2)
+        {
+            int i = r + at;
+            return i + 4 <= o.Length && o[i] == op1 && o[i + 1] == op2
+                ? BinaryPrimitives.ReadUInt16LittleEndian(o.AsSpan(i + 2)) : null;
+        }
+        if (Imm(0x3B, 0x8A, 0x85) is not { } thac0 || Imm(0xCD, 0x8A, 0x95) is not { } cleric ||
+            Imm(0x103, 0x81, 0xC7) is not { } spells || Imm(0x169, 0x8A, 0x95) is not { } mage ||
+            Imm(0x2BD, 0x8A, 0x95) is not { } saves || Imm(0x377, 0x8A, 0x85) is not { } thief ||
+            Imm(0x396, 0x8A, 0x85) is not { } race || Imm(0x426, 0x8A, 0x85) is not { } dex)
+            return null;
+        if (p.DataSegment >= p.Image.Length)
+            return null;
+        return new LevelStatsTables
+        {
+            Data = p.Image.AsSpan(p.DataSegment).ToArray(),
+            Thac0 = thac0, ClericSlots = cleric, SpellTable = spells, MageSlots = mage, Saves = saves,
+            ThiefBase = thief, ThiefRace = race, ThiefDex = dex,
+        };
+    }
+
+    /// <summary>
     /// The experience table DS:409B (8 classes × 14 levels of signed dwords at + 0x38·class + 4·level, plus one more
     /// dword, as the program can read level 14), flat. Its DS offset is the immediate − 2 of GAME.OVR's
     /// <c>mov dx,0x38 / mul dx / mov di,ax / add di,cx / cmp word [di+imm],0</c> (Restoration and level drain). Entries

@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Reads the player's original game files (DAX containers, data files) and writes a module (docs/module-format.md).
+    The only part of the engine that reads the original containers. CLI: goldbox-import por GAMEDIR OUTDIR.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>GoldBox.Importer</RootNamespace>
+    <AssemblyName>goldbox-import</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\GoldBox.Core\GoldBox.Core.csproj" />
+    <ProjectReference Include="..\GoldBox.Data\GoldBox.Data.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -245,8 +245,10 @@ movement as follows:
 3. Encumbrance cap (START 0xF40): excess = encumbrance (0x102) − strength allowance (START 0x1F4B, indexed by a
    strength code from START 0x1D8A; −350 … 15,000 coins), floored at 0. Excess ≤ 512 → no cap; 513–768 → 9;
    769–1024 → 6; more → 3. Movement := min(movement, cap).
-   Encumbrance (START 0x17B4–0x1948) = Σ item weight × max(count, 1) + the 7 money words; a carried item of the
-   bag-of-holding kind subtracts 5000 (START 0x1AEC) `[?]` which flag selects it.
+   Encumbrance (START 0x17B4–0x1948) = Σ item weight × max(count, 1) + the 7 money words; a
+   **readied** item whose byte 0x2F (name word slot 1) is 0xBA marks the bag (START 0x18DA): word 0xBA is "Holding",
+   which the random item array gives only to the Bag of Holding (entry 137, type 70; Lee's item 137). Then encumbrance := max(0, encumbrance − 5000), but not below the readied items' weight (DS:4846)
+   (START 0x1AE3–0x1B24; settled s15).
 
 The ECL ADD NPC command (OVR 0x38C4) loads the monster record, sets 0x84 and 0x10E, then runs the recalculation
 (OVR 0x3933). **Combat monsters are recalculated too** (DOSBox-X, 2026-11-17, RAM read at the start of the Slums
@@ -267,7 +269,7 @@ wrote `[?]` (the Client takes code 0).
 **Carrying allowance** in coins (START 0x1F4B, by strength code): 1–3 → −350, 4–5 → −250, 6–7 → −150, 12–13 → 100,
 14–15 → 200, 16 → 350, 17–21 → 500 + 250 × (code − 17), 22–26 → 2000 + 1000 × (code − 22), 27 → 7500, 28–30 → 9000 +
 3000 × (code − 28); every other code (0, 8–11) → 0. The money routines' carrying limit (0x24C89) is this + 1500
-(`shop-format.md`). Code: `GoldBox.Core.Game.Carrying` (also the weight sum below, without the bag-of-holding term).
+(`shop-format.md`). Code: `GoldBox.Core.Game.Carrying` (also the weight sum below, with the Bag of Holding term).
 
 ## MONnCHA.DAX, MONnITM.DAX, MONnSPC.DAX
 

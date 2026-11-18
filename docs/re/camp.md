@@ -52,7 +52,7 @@ the interrupted flag to 0x3B19.
 
 Menu lines (the menu routine, START): every capital letter or digit starts an item and is its hotkey, so a word with
 its capital in the middle has that letter as hotkey and a lower-case word joins the item before it; Escape answers 0. The Client parses the lines the same way and draws the
-hotkey letter white. `[?]` The menu routine itself (0x2CC8C, highlight and Enter handling) was not re-read here.
+hotkey letter white. The menu routine itself (0x2CC8C: keys, highlight, Enter, the extended byte) is in `shop-format.md` "The menu routine" (s15).
 
 ## Rest (0x17FAB → 0x24A66) — P, D
 
@@ -118,9 +118,13 @@ cleared first) walks its effect list up to the record that was last when the ste
 record, except when the record before the removed one was the list head: then it starts again at the head, which ages
 a second time in that step. Records after the walk set the flag when they have minutes left.
 
-`[?]` Outside camp the same routine runs after every clock advance (steps, Look, CLOCK, combat rounds). Core's
-`GameClock.Advance` does not call it yet (only the camp does, through `CampTime.Advance`): wiring it into exploration
-and the fight is left to those areas, so their DOSBox replays can be checked with it.
+Outside camp the same routine runs after every clock advance (0x241A1 calls it with its own count and unit: steps,
+Look, CLOCK, combat rounds), and in a fight (DS:49F3 = 5) the list DS:5D96 holds the monsters too, so they age as well.
+Core: `CampTime.AdvanceOutsideCamp` / the `TimeOutEffects` overload with the flags; exploration through
+`AreaLoop.EffectTimeout` (wired by `PorGame`), the fight's end of round through `FightKit.WireClock`. The flags
+DS:471E are one array per session (`PorGame.Camp`, `PorPlayer.Camp`): what a fight or a step leaves in them decides
+which members a later rest ages. DOSBox `fight_casts`: the Mirror Image's minutes 2 → 1 at the end of round 0, gone at
+the end of round 2.
 
 ## Magic menu (0x18C22) — P
 
@@ -191,8 +195,9 @@ Menu DS:055A (Order, Drop, Speed, Icon, Pics, Exit), prompt 0x19441; extended ke
   decreased): the member leaves the list, the one before it (or the new head) becomes current, $6E3E − 1. No →
   the message 0x190FC.
 - **Speed (0x192C8)**: the speed line (0x19261, the value, 0x1926F; row 18); the menu offers Faster while n > 0,
-  Slower while n < 9, and Exit (0x19286–0x19296); Down / F speed up, Up / S slow down, until Exit or Escape. The game delay is DS:49E2;
-  the save copies it into $49FC. The Client keeps it in $49FC (its DELAY reads that cell).
+  Slower while n < 9, and Exit (0x19286–0x19296); Down / F speed up, Up / S slow down, until Exit or Escape. The game delay is DS:49E2
+  (`EclMemory.GameSpeed`): new game 1, the save copies it into $49FC, Load takes it back. The Client keeps it in $49FC
+  (its DELAY reads that cell), which matches as long as no script reads $49FC between saves.
 - **Icon**: the icon editor (character creation). `[?]` Not built: a notice.
 - **Pics**: monsters on/off, portraits on/off, Exit (0x19449–0x19485); M and P toggle the two flags (saved as $49FF bit 1 and bit 0).
 
@@ -209,13 +214,14 @@ written again only when there are items / effects) and the roster files `<name>.
 give the same bytes, except the leftover memory after each stem; the member files come back byte for byte.
 
 The Client writes saves to its own folder (`$XDG_DATA_HOME/goldbox/por-saves/`), never into the game folder; `--save
-X` looks there first. `[?]` The roster-file deletion (its name-to-file rule) is not done. `[?]` Location type: the
-Client writes 1 in a 3D area, 2 otherwise (the wilderness is not built). The bytes after each stem and unused name
+X` looks there first. `[?]` The roster-file deletion (its name-to-file rule) is not done. Location type: the
+program writes DS:49FA, the view mode (0x1FF9D; `save-format.md`); `PorSaveGame.Build(memory, n, letter, state)` takes
+it from `EclMemory.ViewMode` and $49FC from `EclMemory.GameSpeed` (s15). The Client still calls the older overload
+with 1 in a 3D area, 2 otherwise. The bytes after each stem and unused name
 slots are written as zero (leftover memory in the program).
 
 ## Open `[?]`
 
-- Exploration and fights do not run the effect timeout 0x23DCC after their clock advances yet (see "Rest").
 - The camp Cast's effect messages' layout.
-- The icon editor; the roster-file deletion on save; the menu routine's own rules (0x2CC8C).
+- The icon editor; the roster-file deletion on save.
 - Cell positions of the camp's messages other than the rest's (the Client keeps its own frame).

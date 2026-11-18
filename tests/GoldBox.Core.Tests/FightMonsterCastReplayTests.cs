@@ -104,11 +104,7 @@ public class FightMonsterCastReplayTests(ITestOutputHelper output)
     /// DOSBox, q12 → q13 (76 → 129 draws after q01): the 5th-level magic-user (list 6) casts Charm Person (spell 10) at
     /// Brother Sean: its first memorised copy (slot 0x18) goes, Sean gets effect 0x0B (record 0B 00 00 A5 01) and the
     /// magic-user's +0x0A points at him; Bakshi keeps 7 HP; Rhiannon's menu comes 129 draws after q01. Core matches
-    /// since the AI cast aim (0x14611 / 0x148BE, s13). Later in the same capture, from q19 on, the Mirror Image effect's
-    /// minutes run out in DOSBox but not in Core (no per-round effect clock in a fight yet); after that the replay drifts
-    /// (not yet matched): Magic Missile from the same magic-user takes Phineas from 6 HP to
-    /// dying (q24 → q25, its first Magic Missile slot cleared), a second Charm Person lands on Darkstar (q27 → q28),
-    /// and the party falls in round 7 (q34, RandSeed d8fe9216).
+    /// since the AI cast aim (0x14611 / 0x148BE, s13). The rest of the capture: <see cref="The_fight_runs_to_the_party_fall"/>.
     /// </summary>
     [CastsFact]
     public void The_magic_user_charms_Brother_Sean()
@@ -117,6 +113,32 @@ public class FightMonsterCastReplayTests(ITestOutputHelper output)
         var (_, _, diffs) = r.States.Single(x => x.State == "q13_rhiannon_menu");
         Assert.True(diffs.Count == 0, string.Join("; ", diffs));
         Assert.Contains("menu of #2 at draw 129", r.Trace);
+    }
+
+    /// <summary>
+    /// The whole capture after q13: Rhiannon's Mirror Image (1 minute left at q16) runs out at the end of round 2 (the
+    /// end of round's clock 0x241A1 → 0x23DCC, <see cref="FightKit.WireClock"/>); Magic Missile takes Phineas to dying
+    /// (q24 → q25); Charm Person lands on Darkstar (q27 → q28); the charmed Brother Sean (on the enemy side, NPC byte
+    /// above 0x7F) begins Bless (casting time 3) and is picked again in the round to cast it (q29 → q30: his slot 0x29
+    /// gone, his 10 HP kept); Hold Person holds Thrender, who is then struck down (q31); Magic Missile takes Rhiannon
+    /// down and the party falls in round 7. Every state taken between turns matches field for field, and the fight ends
+    /// after 1060 draws. The states taken in the middle of a turn (q19, q20, q22–q27, q29, q31, q32) differ only in that
+    /// window (the acting creature's turn bytes, or a dropped creature's square and effects before the drop removes
+    /// them): the replay compares right before the next draw. [?] q34 (the end screen, list freed) comes 3 draws later
+    /// (1063): those draws after the fight are not identified and the replay does not run the after-combat step.
+    /// </summary>
+    [CastsFact]
+    public void The_fight_runs_to_the_party_fall()
+    {
+        var r = Replay();
+        foreach (var name in new[] { "q16_bakshi_menu", "q21", "q28", "q30", "q33" })
+        {
+            var (_, _, diffs) = r.States.Single(x => x.State == name);
+            Assert.True(diffs.Count == 0, $"{name}: {string.Join("; ", diffs)}");
+        }
+        Assert.DoesNotContain(r.Trace, t => t.StartsWith("stopped", StringComparison.Ordinal));
+        Assert.Equal(1060, r.DrawsAtEnd);
+        Assert.Equal(1063, Checkpoints().Single(x => x.Name == "q34_the_end").Draws);
     }
 
     /// <summary>Set GOLDBOX_FIGHT_TRACE to print every draw, the menus reached and each captured state's differences.</summary>

@@ -220,7 +220,9 @@ Code: `GoldBox.Core.Explore.AreaLoop` (one command at a time), `GameClock`, `Are
 - **Clock 0x241A1** (count, unit): cells $49C6–$49CC (segment, minute ones, minute tens, hour, day, month, year); adds
   1 to cell `unit` `count` times, carrying after each add with the limits at DS:363A (10, 10, 6, 24, 30, 12, 256); a
   year cell at 256 or more is not wrapped, every creature of the party list gets record word 0x30 (age) + 1 instead.
-  Then 0x23DCC(count, unit) runs `[?]` (not read; likely effect durations).
+  Then the effect timeout 0x23DCC(count, unit) runs (read: camp.md "Effect timeout"; outside camp every creature of
+  the list ages its timed effects by the same duration). Core: `AreaLoop.AdvanceClock` with `AreaLoop.EffectTimeout`,
+  wired by `PorGame` to the session's flags (`PorGame.Camp`).
 - **Redraw 0x2DCF4** (3D): reads the event byte of the party's square again (DS:6AB1), switches the area map off
   where $49FB ≠ 0, recomputes the backdrop.
 - **Camp menu 0x196A0** (s12): DS:49F3 = 2 (saved and restored), a camp message in the text box, then the menu
@@ -256,7 +258,8 @@ EXIT: (1, 17), no clear).
    drawn on row 24 in colour 13, the program waits for a key, blanks the box and prints the word; otherwise the next
    pass prints it on the new row. (A test at 0x79A9 for a word ending exactly on x1 can never be true.)
 4. Else the word is drawn (0x7737), one cell per character; while DS:4A00 is set (PRINT sets it) each character is
-   followed by a delay of DS:49E2 × 10 ms `[?]` (the Client shows the text at once).
+   followed by Delay(DS:49E2 × 10) (START 0x7782 → the Crt-style Delay START 0xA69C, calibrated milliseconds; s15)
+   (the Client shows the text at once).
 5. After the string a cursor past x1 goes to column x0 of the next row.
 The window never scrolls. Code: `GoldBox.Client.Play.TextWindow`.
 

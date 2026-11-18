@@ -1,15 +1,19 @@
 using GoldBox.Core.Ecl;
+using GoldBox.Core.Explore;
+using GoldBox.Core.Game;
 using GoldBox.Data.Dax;
 
 namespace GoldBox.Data.Por;
 
 /// <summary>The player's Pool of Radiance (DOS) folder. File names are matched case-insensitively.</summary>
-public sealed class PorGameDirectory : IEclScriptSource
+public sealed class PorGameDirectory : IPorContent
 {
     private readonly Dictionary<string, string> _files;
     private readonly Dictionary<int, DaxFile?> _ecl = [];
 
     public string Root { get; }
+
+    public string Origin => Root;
 
     public PorGameDirectory(string root)
     {
@@ -61,4 +65,41 @@ public sealed class PorGameDirectory : IEclScriptSource
 
     /// <summary>Disk whose ECL file holds <paramref name="script"/> (block ids are unique over the eight files).</summary>
     public int? DiskOf(int script) => EclFiles().Where(x => x.File.Contains(script)).Select(x => (int?)x.Disk).FirstOrDefault();
+
+    public int? ScriptDisk(int script) => DiskOf(script);
+
+    /// <summary>GEO&lt;disk&gt; block <paramref name="id"/>, or null when absent or not a 1026-byte map.</summary>
+    public AreaMap? LoadMap(int disk, int id) =>
+        Dax($"GEO{disk}.DAX")?.Block(id) is { Length: PorGeo.BlockSize } b ? PorGeo.Parse(b, id) : null;
+
+    public int? MapDisk(int id) => PorGeo.DiskOf(this, id);
+
+    private static List<byte[]> Records(byte[]? block, int size)
+    {
+        var list = new List<byte[]>();
+        if (block is null)
+            return list;
+        for (int k = 0; k + size <= block.Length; k += size)
+            list.Add(block[k..(k + size)]);
+        return list;
+    }
+
+    public MonsterData? Monster(int disk, int id)
+    {
+        var cha = Dax($"MON{disk}CHA.DAX")?.Block(id);
+        if (cha is null)
+            return null;
+        return new MonsterData(cha,
+            Records(Dax($"MON{disk}ITM.DAX")?.Block(id), EclCharacter.ItemRecordSize),
+            Records(Dax($"MON{disk}SPC.DAX")?.Block(id), EclCharacter.EffectRecordSize));
+    }
+
+    public IReadOnlyList<byte[]>? TreasureList(int disk, int id)
+    {
+        var b = Dax($"ITEM{disk}.DAX")?.Block(id);
+        return b is null ? null : Records(b, EclCharacter.ItemRecordSize);
+    }
+
+    public BaseItemTable? ItemTypes() =>
+        Find("ITEMS") is { } path && File.ReadAllBytes(path) is { Length: > 2 } bytes ? BaseItemTable.FromItemsFile(bytes) : null;
 }

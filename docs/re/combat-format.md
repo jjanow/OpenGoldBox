@@ -182,7 +182,8 @@ Read in full in s12: `combat-menu.md` (menu, move, aim, Done menu, cast frame, s
 **AI** (0xABCF): read in full in s12, `combat-ai.md` (opening dice, morale 0xBC97, item 0xAFA4, turn undead 0xADC3,
 spell 0xB105, weapon 0xBF8A, target search 0x15FDF, move/attack 0xB6FC, step 0xB3B2).
 
-**End of round** (0xA087, P): one minute passes (clock routine 0x241A1, unit 1); DS:6DE3 + 1; 0x15074 (enemy hit
+**End of round** (0xA087, P): one minute passes (clock routine 0x241A1, count 1, unit 1, which runs the effect
+timeout 0x23DCC over the whole list: camp.md "Effect timeout"; D: `fight_casts`); DS:6DE3 + 1; 0x15074 (enemy hit
 points, below); for every
 creature effects with trigger 0x13 (0x2B1E4) and 0x2B9D1 `[?]`; a creature with status 5 (dying) adds 1 to combat
 record +0x0E and becomes dead (6) when that exceeds 9; a message when a party member is dying (0xA806); team counts

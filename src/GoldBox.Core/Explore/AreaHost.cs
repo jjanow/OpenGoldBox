@@ -30,7 +30,7 @@ public sealed class AreaHost(AreaLoop loop, IEclHost inner) : IEclHost
 
     public void Clock(ushort minutes)
     {
-        GameClock.Advance(Loop.Memory, GameClock.Minutes, minutes);
+        Loop.AdvanceClock(GameClock.Minutes, minutes);
         Inner.Clock(minutes);
     }
 

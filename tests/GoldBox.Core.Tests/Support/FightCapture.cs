@@ -68,9 +68,10 @@ public sealed class FightCapture
         }
         var map = new CombatMap(kit.Tables);
         Hex(root.GetProperty("arena")).CopyTo(map.Arena.Bytes, 0);
-        var effects = new EffectHandlers(Random, kit.Names);
+        var effects = new EffectHandlers(Random, kit.Names) { ExperienceTable = kit.Experience };
+        FightKit.WireLevels(effects, kit.LevelTables);
         var ai = new MonsterAi(kit.AiSteps, null, kit.TurnUndead);
-        var menu = new MenuController(chooser, ai, null, kit.TurnUndead);
+        var menu = new MenuController(chooser, ai, chooser is IItemScreenChooser ic ? new FightItemScreens(ic) : null, kit.TurnUndead);
         var controller = new StopAtMenu(menu);
         var encounter = new EncounterState();
         fight = new Fight(memory, encounter, kit.Items, Random, controller, map, effects) { Moves = new FightMoves(map) };
@@ -80,6 +81,7 @@ public sealed class FightCapture
         effects.Recalculate = fight.Recalculate;
         fight.Spells = new FightSpells(kit.Spells, effects, Random);
         effects.Attach(fight);
+        FightKit.WireClock(fight, effects, new CampState());
 
         long cur = root.GetProperty("pointers").GetProperty("current_5d92").GetProperty("linear").GetInt64();
         EclCharacter? current = null;
@@ -289,8 +291,20 @@ public sealed class StopAtMenu(MenuController inner) : IFightController
 
 /// <summary>A scripted player: main-menu commands in order, a spell id for Cast, the aim on one creature, the
 /// attack-ally question answered yes, Quit in the Done menu; Quick when the script is used up.</summary>
-public sealed class ScriptedChooser(params FightCommand[] commands) : IFightMenuChooser
+public sealed class ScriptedChooser(params FightCommand[] commands) : IFightMenuChooser, IItemScreenChooser
 {
+    /// <summary>The item the Use screen uses (once; then Exit).</summary>
+    public byte[]? UseItem { get; set; }
+
+    public ViewEntry ChooseView(EclCharacter c, IReadOnlyList<ViewEntry> entries) => ViewEntry.Exit;
+
+    public ItemChoice ChooseItem(EclCharacter c, IReadOnlyList<ItemsEntry> entries, IReadOnlyList<byte[]> items)
+    {
+        var it = UseItem;
+        UseItem = null;
+        return it is null ? new ItemChoice(ItemsEntry.Exit, null) : new ItemChoice(ItemsEntry.Use, it);
+    }
+
     private readonly Queue<FightCommand> _commands = new(commands);
     public int? Spell { get; init; }
     public EclCharacter? AimAt { get; set; }
@@ -303,8 +317,21 @@ public sealed class ScriptedChooser(params FightCommand[] commands) : IFightMenu
     public DoneCommand ChooseDone(FightMenu menu, IReadOnlyList<DoneCommand> entries) => DoneCommand.Quit;
     public MoveInput ChooseMove(FightMenu menu, int movementLeft) => MoveInput.Escape;
 
+    /// <summary>Cursor keys for Manual; when set, the first aim menu answers Manual (0x155F5) and the cursor follows
+    /// these keys (Exit when they run out).</summary>
+    public Queue<ManualInput>? Manual { get; init; }
+    public List<ManualView> ManualSeen { get; } = [];
+
+    public ManualInput ChooseManual(FightMenu menu, ManualView view)
+    {
+        ManualSeen.Add(view);
+        return Manual is { Count: > 0 } q ? q.Dequeue() : ManualInput.Exit;
+    }
+
     public AimKey ChooseAim(FightMenu menu, AimView view)
     {
+        if (Manual is not null && ManualSeen.Count == 0)
+            return AimKey.Manual;
         AimSeen.Add(view.Candidate);
         if (ReferenceEquals(view.Candidate, AimAt))
             return AimKey.Target;

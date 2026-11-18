@@ -87,7 +87,7 @@ public sealed class GoldBoxGame : Game, IScreenHost
 
     protected override void Update(GameTime gameTime)
     {
-        var pad = GamePad.GetState(PlayerIndex.One);
+        var pad = FirstConnectedPad(GamePad.MaximumGamePadCount, i => GamePad.GetState(i));
         Input.Update(Keyboard.GetState(), pad, Mouse.GetState(), gameTime.TotalGameTime, ToFrame);
         if (_screens.Count == 0)
         {
@@ -105,6 +105,18 @@ public sealed class GoldBoxGame : Game, IScreenHost
                 Input.Inject(a);
         screen.Update(Input);
         base.Update(gameTime);
+    }
+
+    /// <summary>
+    /// The pad to read: the first connected one of the <paramref name="slots"/> slots (SDL hands a pad the first free
+    /// slot, so after a reconnect it may sit in slot 2 or later), or slot 0's state when none is connected.
+    /// </summary>
+    public static GamePadState FirstConnectedPad(int slots, Func<int, GamePadState> state)
+    {
+        for (int i = 0; i < slots; i++)
+            if (state(i) is { IsConnected: true } s)
+                return s;
+        return slots > 0 ? state(0) : default;
     }
 
     /// <summary>Window pixel → frame pixel, or null outside the frame.</summary>

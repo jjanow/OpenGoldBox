@@ -133,6 +133,19 @@ public class EclPartyOpcodeTests
         Assert.Equal(2, party.CurrentIndex);
     }
 
+    [Fact]
+    public void Who_after_escape_leaves_no_current_character()
+    {
+        var party = Party("A", "B", "C");
+        party.CurrentIndex = 1;
+        var rig = Rig(new EclAsm().Op(EclOpcodes.Who, Text("WHO")).Op(EclOpcodes.Exit), party);
+        rig.Host.CharacterPicks.Enqueue(IEclHost.NoCharacter);
+        rig.Vm.CommandRead();
+        rig.Run();
+        Assert.Equal(-1, party.CurrentIndex);
+        Assert.Null(party.Current);
+    }
+
     // ---- CHKPARTY --------------------------------------------------------------------------------------------------
 
     [Fact]
@@ -400,6 +413,30 @@ public class EclPartyOpcodeTests
         Assert.Equal(0, rig[F + 10]);  // script 2's vectors 0/1 did not
         Assert.Equal(0, rig[F + 24]);  // script 3's vector 4 skipped
         Assert.Equal([1, 1], new[] { rig[F + 20], rig[F + 21] }.Select(x => (int)x)); // script 3's vectors 0 and 1
+    }
+
+    [Theory]
+    [InlineData(1, false, true)]  // 3D → 3D: always redrawn
+    [InlineData(3, false, false)] // leaving the wilderness, no LOADFILES in vector 4: no redraw (0x3FD2–0x3FF5)
+    [InlineData(3, true, true)]   // ... with a LOADFILES: redrawn
+    public void Script_switch_redraw_follows_49F9_49FA_and_4431(byte before, bool loadFiles, bool redrawn)
+    {
+        var init = new EclAsm().Label("init");
+        if (loadFiles)
+            init.Op(EclOpcodes.LoadFiles, Imm8(255), Imm8(0), Imm8(255));
+        var target = init.Op(EclOpcodes.Exit).Label("v").Op(EclOpcodes.Exit)
+            .Vector(4, "init").Vector(0, "v").Vector(1, "v").Build();
+        var rig = VmRig.Of(new EclAsm().Op(EclOpcodes.NewEcl, Imm8(2)));
+        rig.Vm.Scripts = new Scripts(new() { [(0, 2)] = target });
+        rig.Memory.ViewMode = before;
+        var reads = new List<bool>();
+        rig.Vm.ScriptSwitchEventByte = after => { reads.Add(after); return 0; };
+        rig.Run();
+        rig.Vm.FollowScriptChanges();
+        Assert.Equal(before, rig.Memory.PreviousViewMode);
+        Assert.Equal(1, rig.Memory.ViewMode);
+        Assert.Equal(loadFiles, rig.Memory.FilesLoadedSinceSwitch);
+        Assert.Equal(redrawn, reads.Contains(true));
     }
 
     [Fact]

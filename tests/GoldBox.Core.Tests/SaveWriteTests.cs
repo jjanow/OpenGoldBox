@@ -18,7 +18,9 @@ public class SaveWriteTests
         var memory = new EclMemory();
         save.ApplyTo(memory);
         var party = PorParty.Load(save, charFolder);
-        var written = PorSaveGame.Build(memory, party.Members.Count, letter, save.LocationType, save.InterfaceState);
+        // Location type and $49FC come back from DS:49FA / DS:49E2, which ApplyTo restored (the program's own load/save).
+        Assert.Equal(save.LocationType, memory.ViewMode);
+        var written = PorSaveGame.Build(memory, party.Members.Count, letter, save.InterfaceState);
         Assert.Equal(PorSaveGame.Size, written.Length);
         for (int i = 0; i < PorSaveGame.Size; i++)
         {
@@ -78,5 +80,19 @@ public class SaveWriteTests
         Assert.Equal(2, d[PorSaveGame.OffPartySize]);
         Assert.Equal("CHRDATC2", new PorSaveGame(d).PartyFileStems[1]);
         Assert.Throws<ArgumentOutOfRangeException>(() => PorSaveGame.Build(m, 1, 'K', 1, 2));
+    }
+
+    [Fact]
+    public void Location_type_is_the_view_mode_and_the_speed_goes_to_49fc()
+    {
+        var m = new EclMemory { ViewMode = 3, GameSpeed = 7 };
+        m.Write(0x49FC, 2); // stale until a save, as in the program
+        var d = PorSaveGame.Build(m, 1, 'A', 2);
+        Assert.Equal(3, d[PorSaveGame.OffLocationType]);
+        Assert.Equal(7, m.Read(0x49FC));
+        var back = new EclMemory();
+        new PorSaveGame(d).ApplyTo(back);
+        Assert.Equal(3, back.ViewMode);
+        Assert.Equal(7, back.GameSpeed);
     }
 }

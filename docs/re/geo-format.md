@@ -162,9 +162,14 @@ Two bits per face, read only when that face's wall type is non-zero:
       3 + Random(4), which can also be the current one.
     - So only the hedge-maze script reloads the map the party is on; all the others enter another map, whose doors
       are as stored in GEO. Maps 16, 24–27, 29–32 and 6 have no locked or barred face (`geo.py list`); maps 3, 4, 5
-      and 7 do (2, 1, 2 and 1 faces), so in Valjevo Castle these paths re-lock doors in the middle of a visit
-      `[?]` (which squares and events take them in play is not traced). None of this was tried in DOSBox-X: all
-      need late-game positions.
+      and 7 do (2, 1, 2 and 1 faces), so in Valjevo Castle these paths re-lock doors in the middle of a visit.
+      Traced from the data (s15): of the castle's outer edges only map 6's south faces at (4,15) and (11,15) (wall
+      type 11, barrier 1) are passable, so the edge table's in-place reload happens only there (map 6, which has no
+      locked face: nothing re-locks). The disorientation is event 7 (vector 1 ONGOTO slot 7 → $9C8A): map 3
+      (0–1, 6–8) and (12,11), map 4 (14–15, 5–7) and (6,10), map 5 (3,4) and (15,9), map 6 (9,5) and (1,13); it puts
+      the party on map 3 + r at (12,11), (6,10), (3,4) or (9,5) for r = Random(4), so with chance 1/4 the current map
+      is re-read and map 3's barred (3,7) E / (3,8) E, map 4's (13,2) E or map 5's (12,7) W / (12,8) W close again.
+      None of this was tried in DOSBox-X: all need late-game positions.
   - The restored state is the barrier stored in the GEO block. DOSBox-X: the Slums door at (10,2) N was bashed
     open (plane 3 byte 0x16 → 0x15). It stayed 0x15 through the fight that followed, the camp and the save to
     slot B. After loading slot B it was 0x16 again (locked).
@@ -395,7 +400,8 @@ the numbers below test the shipped code.
      Valhingen Graveyard, Nomad Camp, the four Valjevo quadrants, two western lairs) and 97–99.6% on 7 more.
 3. **Hedge maze.** The FAQ hedge-maze map is drawn as one 24 × 24 picture with wrapped labels. It matches the inner
    corners of GEO 3 (NW), 4 (NE), 6 (SW) and 5 (SE). Every hedge edge (`"`, 781 of 782) is a wall with **barrier 0**. So
-   crossing a hedge, which Lee says costs damage, must be scripted `[?]`.
+   crossing a hedge, which Lee says costs damage, is scripted: ECL5 block 5 vector 0, the move vector, when no edge was crossed ($9AFB, $9B38–$9BD8) asks when the
+   wall ahead ($C04E) is type 7 or 9, then DAMAGE (the thorn) and CALL $C01E (the step through) (s15).
 4. **Event byte.** On numbered squares, Lee's location number equals `event & 0x3F` on 407 of 448 squares. GEO 26, whose
    map Lee doesn't draw, matched all 5 of the coordinates he lists.
 5. **ASCII render.** We ran `geo.py ascii --cell none` and parsed its output with the same parser as Lee's maps, then

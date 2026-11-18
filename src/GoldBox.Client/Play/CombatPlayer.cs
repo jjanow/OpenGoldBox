@@ -21,7 +21,7 @@ public sealed record CombatCursorRequest(int Range) : PlayerRequest
 public sealed record AimPick(int X, int Y);
 
 /// <summary>What the combat screen shows in each phase (the line on rows 23/24 and what the map highlights).</summary>
-public enum CombatMode { Watch, Menu, Move, Aim, Manual, Done, Speed, Question, Spell }
+public enum CombatMode { Watch, Menu, Move, Aim, Manual, Done, Speed, Question, Spell, Page }
 
 /// <summary>One line of the status panel's message area (rows 10 and down): text and EGA colour.</summary>
 public readonly record struct PanelLine(string Text, byte Colour);
@@ -61,6 +61,10 @@ public sealed class CombatView
     public byte Speed { get; set; }
     /// <summary>A 3D area (DUNGCOM ground) or the wilderness (WILDCOM).</summary>
     public bool Dungeon { get; set; } = true;
+    /// <summary>The character screen over the whole frame (View, Items, drop money), or null for the map.</summary>
+    public CombatPage? Page { get; set; }
+    /// <summary>The message routine's line (START 0x1693: row 24, green) while a page waits out its pause.</summary>
+    public string? PageMessage { get; set; }
 
     /// <summary>
     /// [?] The view's scrolling (0x310D0) is not read. DOSBox-X: the fight starts with the first creature's cell − 3
@@ -102,6 +106,8 @@ public sealed class CombatView
         Attacking.Clear();
         Messages.Clear();
         StatusLine = null;
+        Page = null;
+        PageMessage = null;
         Mode = CombatMode.Watch;
     }
 }
@@ -112,7 +118,7 @@ public sealed class CombatView
 /// screen answers with keyboard, mouse or pad. The menus are the program's (same words and order); the AI's and the
 /// party's actions are shown through the fight's display hooks, each with a pause.
 /// </summary>
-public sealed class CombatChooser(Func<PlayerRequest, object?> ask, CombatView view) : IFightMenuChooser
+public sealed partial class CombatChooser(Func<PlayerRequest, object?> ask, CombatView view) : IFightMenuChooser, IItemScreenChooser
 {
     public CombatView View { get; } = view;
     public CombatText Text { get; set; } = new();
@@ -144,6 +150,14 @@ public sealed class CombatChooser(Func<PlayerRequest, object?> ask, CombatView v
         fight.TurnStarted = TurnStarted;
         fight.AttackMade = AttackMade;
         fight.Moves = new ShownMoves(fight.Moves, Stepped);
+        if (fight.Spells is FightSpells spells)
+        {
+            spells.Announce = Announce;
+            spells.ItemUsed = ItemUsed;
+            spells.Event += SpellEvent;
+        }
+        if (fight.Controller is MenuController { Ai: MonsterAi ai })
+            ai.Message = AiSays;
     }
 
     public void Detach(Fight fight)
@@ -152,6 +166,16 @@ public sealed class CombatChooser(Func<PlayerRequest, object?> ask, CombatView v
             View.Speed = mc.GameSpeed;
         fight.TurnStarted = null;
         fight.AttackMade = null;
+        if (fight.Spells is FightSpells spells)
+        {
+            spells.Announce = null;
+            spells.ItemUsed = null;
+            spells.Event -= SpellEvent;
+        }
+        if (fight.Controller is MenuController { Ai: MonsterAi ai })
+            ai.Message = null;
+        _menu = null;
+        _announced = null;
         View.Clear();
     }
 
@@ -173,6 +197,8 @@ public sealed class CombatChooser(Func<PlayerRequest, object?> ask, CombatView v
     private void TurnStarted(EclCharacter c)
     {
         Remember();
+        View.Page = null;
+        _announced = null; // a cast-now spell the list announced but never cast (no target) is forgotten
         View.Current = View.Shown = c;
         View.Messages.Clear();
         View.HitMarker = null;
@@ -211,9 +237,8 @@ public sealed class CombatChooser(Func<PlayerRequest, object?> ask, CombatView v
 
     /// <summary>
     /// The attack message in the panel (DOSBox-X: attacker, the attacks word, the defender, the damage words, then a
-    /// blank line and the defender with the "goes down" word). [?] The message routine (before 0x12AF4) is not read:
-    /// which words show for which outcome, line breaks, and the dying / killed choice are taken from the screen and
-    /// the record's status.
+    /// blank line and the defender with the "goes down" word, then the dying or killed words by status: 0x12AF4,
+    /// read in s15). [?] The line breaks of START 0x16EC are taken from the screen.
     /// </summary>
     private void AttackMade(EclCharacter attacker, EclCharacter defender, FightRules.AttackOutcome outcome, int hpBefore)
     {
@@ -245,9 +270,18 @@ public sealed class CombatChooser(Func<PlayerRequest, object?> ask, CombatView v
         {
             View.Messages.Add(new PanelLine("", 10));
             View.Messages.Add(new PanelLine(Name(defender), 12));
-            // [?] DOSBox-X showed the down word (0x12AB3) for an orc that dropped; when the program shows the dying or
-            // killed words (0x12ABD, 0x12AEA) instead is not read: we show the down word for every creature that drops.
+            // 0x12D4B: out of play → the defender and the down word (0x12AB3, START 0x16EC), two rows on; then status 5
+            // (dying) → the dying words (0x12ABD) in green at column 23; status 6, 7 or 8 (the set at 0x12ACA) → the
+            // defender and the killed words (0x12AEA). [?] The name's colour in START 0x16EC is the one DOSBox-X showed.
             View.Messages.Add(new PanelLine(t[CombatMsg.GoesDown].Trim(), 10));
+            byte status = defender[FightRules.Status];
+            if (status == 5)
+                View.Messages.Add(new PanelLine(t[CombatMsg.AndIsDying].Trim(), 10));
+            else if (status is 6 or 7 or 8)
+            {
+                View.Messages.Add(new PanelLine(Name(defender), 12));
+                View.Messages.Add(new PanelLine(t[CombatMsg.IsKilled].Trim(), 10));
+            }
         }
         View.Attacking.Add(attacker);
         Pause(MessageMs);
@@ -255,10 +289,15 @@ public sealed class CombatChooser(Func<PlayerRequest, object?> ask, CombatView v
         View.HitMarker = null;
     }
 
-    /// <summary>[?] The program's delays are not read: game speed × 225 ms for messages (as DELAY), at least 600 ms.</summary>
-    private int MessageMs => Math.Max(600, 225 * View.Speed);
+    /// <summary>
+    /// The messages' pause, START 0x709:0x0DBE: Delay(DS:49E2 × 225) ms (the game speed; speed 0 does not wait), the
+    /// routine the attack messages (0x12CFB, 0x12E12), the item use and the message routine 0x1693 call.
+    /// </summary>
+    private int MessageMs => 225 * View.Speed;
     /// <summary>[?] A step or a turn change: 60 ms + 30 ms per speed step.</summary>
     private int StepMs => 60 + 30 * View.Speed;
+
+    private object? Ask(PlayerRequest request) => ask(request);
 
     private void Pause(int ms)
     {
@@ -322,15 +361,16 @@ public sealed class CombatChooser(Func<PlayerRequest, object?> ask, CombatView v
 
     public FightCommand Choose(FightMenu menu, IReadOnlyList<FightCommand> entries)
     {
+        View.Page = null;
         ShowCurrent(menu);
         _goal = null;
         var words = entries.Select(Word).ToList();
         int i = Choose(CombatMode.Menu, null, words);
         var cmd = entries[Math.Clamp(i, 0, entries.Count - 1)];
-        // [?] View (0x21AED) and Use (0x21F32) are not read, and the game builds the fight with no item screens: the
-        // menu runs them as screens that do nothing (not done) and shows itself again.
-        if (cmd is FightCommand.View or FightCommand.Use)
-            Say(new PanelLine(Word(cmd) + ":", 10), new PanelLine("NOT IN THIS", 14), new PanelLine("BUILD YET", 14));
+        // View (0x21AED) and Use (0x21F32) run as FightItemScreens, asking this chooser (CombatItemScreens.cs).
+        _menu = menu;
+        _fromView = false;
+        _itemRow = 0;
         return cmd;
     }
 
@@ -518,9 +558,16 @@ public sealed class CombatChooser(Func<PlayerRequest, object?> ask, CombatView v
         View.Mode = CombatMode.Menu;
         if (a is null || a.Action != 0 || a.Row < 0 || a.Row >= castable.Count)
             return null;
-        Say(new PanelLine(Name(menu.Creature), NameColour(menu.Creature)), new PanelLine(Text[CombatMsg.Casts].Trim(), 10),
-            new PanelLine(rows[a.Row], 10));
-        return castable[a.Row];
+        int spell = castable[a.Row];
+        // 0x27C38 shows the cast message before its target pick; the Core menu aims first and casts after, so a spell
+        // cast now is announced here (before the aim) and its Announce call is skipped. A begun spell is announced
+        // when it goes off, after its aim [?].
+        if (menu.Fight.Spells.UsableInCombat(spell) && menu.Fight.Spells.CastingTime(spell) == 0)
+        {
+            SayCast(menu.Creature, spell);
+            _announced = (menu.Creature, spell);
+        }
+        return spell;
     }
 
     public void Notice(FightNotice notice, EclCharacter? who)

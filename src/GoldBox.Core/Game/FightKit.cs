@@ -25,6 +25,19 @@ public sealed class FightKit
     public int[]? Experience { get; init; }
     /// <summary>The turn-undead table (START.EXE); null = clerics can't turn.</summary>
     public TurnUndeadTable? TurnUndead { get; init; }
+    /// <summary>The level-stats routine's tables (0x2AA87, <see cref="LevelStats"/>); null = not loaded.</summary>
+    public LevelStatsTables? LevelTables { get; init; }
+
+    /// <summary>
+    /// The level seams of an effect engine: the race level limit (START 0x3AF7, <see cref="LevelStats.RaceLimitStops"/>)
+    /// and, with <paramref name="tables"/>, the level stats 0x2AA87 (<see cref="LevelStats.Apply"/>).
+    /// </summary>
+    public static void WireLevels(EffectHandlers effects, LevelStatsTables? tables)
+    {
+        effects.RaceLevelLimit = LevelStats.RaceLimitStops;
+        if (tables is not null)
+            effects.LevelStats = c => LevelStats.Apply(c, tables);
+    }
 
     /// <summary>
     /// One fight over the creature list in <paramref name="memory"/>'s party (DS:5D96, party first, then the monsters),
@@ -33,12 +46,15 @@ public sealed class FightKit
     /// <paramref name="chooser"/>; with no chooser they act through the AI as if on Quick [our choice: a headless
     /// fight]. The VM-cell part of 0xE402 (<see cref="EncounterHost"/>) is the caller's.
     /// </summary>
+    /// <remarks><paramref name="time"/>: the session's program variables (the effect flags DS:471E the end of round's
+    /// clock uses, <see cref="WireClock"/>); null = a fresh set for this fight.</remarks>
     public Fight Create(EclMemory memory, EncounterState encounter, Func<ushort, ushort> random, FightStartArea area,
-        IFightMenuChooser? chooser = null, IFightItemScreens? screens = null)
+        IFightMenuChooser? chooser = null, IFightItemScreens? screens = null, CampState? time = null)
     {
         var map = new CombatMap(Tables);
         var effects = new EffectHandlers(random, Names);
         effects.ExperienceTable = Experience;
+        WireLevels(effects, LevelTables);
         var ai = new MonsterAi(AiSteps, null, TurnUndead);
         // The View / Use screens (0x21AED / 0x21F32) when the chooser also answers them.
         screens ??= chooser is IItemScreenChooser itemChooser ? new FightItemScreens(itemChooser) : null;
@@ -54,9 +70,20 @@ public sealed class FightKit
         effects.Recalculate = fight.Recalculate;
         fight.Spells = new FightSpells(Spells, effects, random);
         effects.Attach(fight);
+        WireClock(fight, effects, time ?? new CampState());
         FightPlacement.Start(fight, map, area);
         return fight;
     }
+
+    /// <summary>
+    /// The end of round's minute (0xA087 → the clock 0x241A1 with count 1, unit 1): the game clock $49C6–$49CC, then
+    /// the effect timeout 0x23DCC (<see cref="CampTime.AdvanceOutsideCamp"/>; DS:49F3 = 5 in a fight, so every flag of
+    /// <paramref name="time"/> is set first) over the whole creature list, monsters included: each effect with minutes
+    /// left loses one, one with 1 minute left is removed (0x2AF10, its handler with "removed" first when byte 4 is set).
+    /// </summary>
+    public static void WireClock(Fight fight, EffectHandlers effects, CampState time) =>
+        fight.MinutePassed = () => CampTime.AdvanceOutsideCamp(fight.Memory, time, Explore.GameClock.Minutes, 1,
+            (c, e) => effects.RemoveEffect(c, e[0], e));
 
     /// <summary>A headless controller: every creature acts through the AI (party members as if on Quick).</summary>
     public sealed class AllQuickController(MonsterAi ai) : IFightController

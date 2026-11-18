@@ -108,8 +108,8 @@ public class FightCastCaptureTests(ITestOutputHelper output)
     /// <summary>
     /// Brother Sean attacks Rhiannon (an ally, AC 0, with 4 mirror images): Aim, Next, Next, Target, Yes. DOSBox: the
     /// attack misses, no image is lost, $6E33 (allies attacked) = 1; the round ends and round 1 starts at Thrender's
-    /// menu (state q01, 73 draws after b08). Everything matches but the image's minutes: see
-    /// <see cref="Effect_minutes_count_down_at_the_end_of_a_round"/>.
+    /// menu (state q01, 73 draws after b08). Everything matches, the image's minutes included
+    /// (<see cref="Effect_minutes_count_down_at_the_end_of_a_round"/>).
     /// </summary>
     [CastsFact]
     public void Attack_on_an_ally_with_mirror_images()
@@ -126,15 +126,14 @@ public class FightCastCaptureTests(ITestOutputHelper output)
         Assert.Same(s.List[0], next);
         var diffs = FightCapture.Diff(s.Fields(), FightCapture.Fields(S("q01_thrender_menu_r1")));
         Report(diffs, "q01_thrender_menu_r1");
-        Assert.Equal(["#2 effects 6B0000FF00 1C02000400 vs 6B0000FF00 1C01000400"], diffs);
+        Assert.Empty(diffs);
     }
 
     /// <summary>
     /// The same play: at the end of round 0 the Mirror Image effect's minutes (byte +1) go 2 → 1 (one round = one
-    /// minute; spells-effects.md "Open": the clock 0x241A1 counting effect minutes down). Core's fight does not count
-    /// effect minutes down.
+    /// minute: the end of round's clock 0x241A1 runs the effect timeout 0x23DCC, <see cref="FightKit.WireClock"/>).
     /// </summary>
-    [CastsFact(Skip = "Core mismatch (effect expiry, clock 0x241A1 not read): effect minutes are not counted down per round; DOSBox q01 shows the image effect at 1 minute (was 2)")]
+    [CastsFact]
     public void Effect_minutes_count_down_at_the_end_of_a_round()
     {
         var chooser = new ScriptedChooser(FightCommand.Aim);

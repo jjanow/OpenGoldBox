@@ -137,3 +137,25 @@ public class ClientOptionsTests
         Assert.Equal("/x/MY.DAT", ClientOptions.SaveFileName("/x/MY.DAT"));
     }
 }
+
+public class PadSlotTests
+{
+    [Fact]
+    public void The_first_connected_pad_is_read_whatever_its_slot()
+    {
+        var connected = new GamePadState(default, default, new GamePadButtons(Buttons.A), default);
+        Assert.True(connected.IsConnected);
+        var asked = new List<int>();
+        GamePadState State(int i)
+        {
+            asked.Add(i);
+            return i == 2 ? connected : default;
+        }
+        var s = GoldBoxGame.FirstConnectedPad(4, State);
+        Assert.True(s.IsConnected);
+        Assert.Equal(ButtonState.Pressed, s.Buttons.A);
+        Assert.Equal([0, 1, 2], asked);
+        // None connected: slot 0's (disconnected) state.
+        Assert.False(GoldBoxGame.FirstConnectedPad(4, _ => default).IsConnected);
+    }
+}

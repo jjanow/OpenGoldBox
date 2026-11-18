@@ -22,6 +22,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\GoldBox.Core\GoldBox.Core.csproj" />
     <ProjectReference Include="..\..\src\GoldBox.Data\GoldBox.Data.csproj" />
+    <ProjectReference Include="..\..\src\GoldBox.Importer\GoldBox.Importer.csproj" />
   </ItemGroup>
 
 </Project>

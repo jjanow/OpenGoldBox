@@ -76,6 +76,20 @@ public sealed class AreaLoop
 
     public EclVm Vm { get; }
     public EclMemory Memory => Vm.Memory;
+
+    /// <summary>
+    /// The effect timeout 0x23DCC (count, unit) that the clock routine 0x241A1 runs after every advance (a step, Look,
+    /// the CLOCK opcode through <see cref="AreaHost"/>): <see cref="GoldBox.Core.Game.CampTime.TimeOutEffects(EclMemory, byte[], bool, int, int, Action{EclCharacter, byte[]})"/>
+    /// with the session's flags. Null: the clock alone.
+    /// </summary>
+    public Action<int, int>? EffectTimeout { get; set; }
+
+    /// <summary>0x241A1: the game clock (<see cref="GameClock.Advance"/>), then <see cref="EffectTimeout"/>.</summary>
+    public void AdvanceClock(int unit, int count)
+    {
+        GameClock.Advance(Memory, unit, count);
+        EffectTimeout?.Invoke(count, unit);
+    }
     public TurboPascalRandom Rng { get; }
     public IAreaUi Ui { get; }
 
@@ -136,11 +150,11 @@ public sealed class AreaLoop
 
     /// <summary>
     /// The view redraw's state part (0x2DCF4): the event byte of the party's square is read again; the area map is
-    /// switched off where $49FB ≠ 0. [?] The program does this when DS:49FA = 1 or $49E6 ≠ 0; we test $49E6 only.
+    /// switched off where $49FB ≠ 0. The program does this when DS:49FA = 1 or $49E6 ≠ 0 (0x2DCFA–0x2DD15).
     /// </summary>
     public void Redraw()
     {
-        if (!InView3D)
+        if (Map is null || (Memory.ViewMode != 1 && Memory.Read(View3DCell) == 0))
             return;
         Memory.Position.EventByte = EventHere();
         if (Memory.Read(NoAreaMap) != 0)
@@ -185,7 +199,7 @@ public sealed class AreaLoop
                 return;
             case AreaCommand.Look:
                 Memory.Write(SearchMode, (ushort)(Memory.Read(SearchMode) | 2));
-                GameClock.Advance(Memory, GameClock.TenMinutes, 1);
+                AdvanceClock(GameClock.TenMinutes, 1);
                 break;
             case AreaCommand.Forward:
                 ForwardKey();
@@ -357,8 +371,8 @@ public sealed class AreaLoop
         DoorFlags.Reset();
         p.EventByte = EventHere();
         if (SearchOn)
-            GameClock.Advance(Memory, GameClock.TenMinutes, 1);
+            AdvanceClock(GameClock.TenMinutes, 1);
         else
-            GameClock.Advance(Memory, GameClock.Minutes, 1);
+            AdvanceClock(GameClock.Minutes, 1);
     }
 }

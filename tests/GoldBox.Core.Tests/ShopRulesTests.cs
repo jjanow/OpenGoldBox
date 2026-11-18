@@ -165,6 +165,22 @@ public class ShopRulesTests
     }
 
     [Fact]
+    public void Share_with_no_eligible_member_halts_like_the_program()
+    {
+        // n = 0 (only NPCs, 0x84 ≠ 0 / 0xB3): the program's longint division by 0 is run-time error 200 (START 0xBA5D).
+        var npc = Char(weight: 9);
+        npc[0x84] = 0xB1;
+        var party = new List<EclCharacter> { npc };
+        var pool = new uint[] { 0, 0, 0, 7, 0, 0, 0 };
+        var e = Assert.Throws<ProgramHaltException>(() => ShopRules.Share(party, pool, _ => Allowance));
+        Assert.Equal(200, e.Code);
+        Assert.Equal(7u, pool[Money.PoolGold]);
+        Assert.Equal(9, npc.Word(Money.Weight));
+        // An empty pool never divides.
+        Assert.False(ShopRules.Share(party, new uint[7], _ => Allowance));
+    }
+
+    [Fact]
     public void Share_gives_the_odd_coin_only_when_the_whole_remainder_would_fit()
     {
         // 11 gold over 4 members: share 2, remainder 3. The first member has room for 3 more coins: its share

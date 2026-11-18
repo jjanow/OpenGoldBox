@@ -34,6 +34,9 @@ public sealed record ChoiceRequest(string? Prompt, IReadOnlyList<string> Items, 
     /// </summary>
     public string? Hotkeys { get; init; }
 
+    /// <summary>The item highlighted first (the program's yes/no for a drop starts on No; the combat screen).</summary>
+    public int Selected { get; init; }
+
     /// <summary>Items answered by the Up / Down actions of a horizontal menu (the rest-time menu's Inc / Dec); null = none.</summary>
     public int? UpAnswer { get; init; }
     public int? DownAnswer { get; init; }

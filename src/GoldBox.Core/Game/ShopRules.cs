@@ -251,7 +251,10 @@ public static class ShopRules
     /// down to 0: the share if it fits (and then one coin of the remainder if the whole remainder would fit), else as much as fits
     /// (the rest joins the remainder). Then each remainder, kinds 6 down to 0, goes to every member in list order
     /// (no 0x84 test) up to the room each has left. The pool keeps what is left; returns the new "pooled" byte
-    /// (DS:6DC0 = 1 when anything is left). [?] With n = 0 and money in the pool the program divides by zero.
+    /// (DS:6DC0 = 1 when anything is left). With n = 0 (every member an NPC other than 0xB3) and money in the pool, the
+    /// first positive kind reaches the longint division (START 0xB9F6) with a zero divisor: run-time error 200
+    /// (0xBA5D → 0xB062), the program quits to DOS. That is raised as <see cref="ProgramHaltException"/>; nothing
+    /// has changed by then.
     /// </summary>
     public static bool Share(IReadOnlyList<EclCharacter> party, uint[] pool, Func<EclCharacter, int> strengthAllowance)
     {
@@ -263,6 +266,8 @@ public static class ShopRules
             int v = (int)pool[k];
             if (v > 0)
             {
+                if (n == 0)
+                    throw new ProgramHaltException(200, "Share: no member with 0x84 = 0 or 0xB3 (pool div 0, run-time error 200)");
                 per[k] = (ushort)(v / n);
                 rem[k] = (ushort)(v % n);
             }

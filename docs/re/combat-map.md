@@ -83,7 +83,9 @@ every creature the trigger-8 effects; enemy HP % (0x15074); DS:49F3 = 5.
 
 **DS:6DBB** is not part of the start: a list of 19-byte records made by an area spell (0x28B29: +0 caster, +4 next,
 +0x0B.. one flag per cell covered, +0x10/+0x11 the centre cell, +0x12 a count; the cells hold terrain 0x1E). The fight
-start sets it to nil and the clean-up (0x9807) frees it. Spells are not read here `[?]`.
+start sets it to nil and the clean-up (0x9807) frees it (Core: `FightPlacement.Start` empties
+`EffectHandlers.Clouds`; spell 34 and handler 40 in spells-effects.md). The line walk 0x2FCF2 / 0x2FE1E
+(`CombatMap.LineWalk`) is also Lightning Bolt's line (0x29973).
 
 **DOSBox** (`fight_quick`, the Slums goblin fight entered at 10,1 facing N after bashing the door north of 10,2): from
 the RandSeed of `pre_fight`, after the monster loader's draws, the dungeon builder reproduces the captured arena byte

@@ -17,8 +17,27 @@ public enum DoneCommand { Guard, Delay, Quit, Bandage, Speed, Exit }
 /// <summary>The game-speed menu's entries (0xA8FD).</summary>
 public enum SpeedCommand { Slower, Faster, Exit }
 
-/// <summary>Keys of the aim menu (0x1529B) the Core model takes (Manual and Center are screen-only).</summary>
-public enum AimKey { Next, Prev, Target, Exit }
+/// <summary>Keys of the aim menu (0x1529B) the Core model takes (Center is screen-only). Manual opens the cursor on
+/// squares (0x155F5, <see cref="IFightMenuChooser.ChooseManual"/>).</summary>
+public enum AimKey { Next, Prev, Target, Exit, Manual }
+
+/// <summary>
+/// What Manual (0x155F5) reads: a cursor direction 0–7 (0 N, clockwise: the arrow, Home, PgUp, End, PgDn keys),
+/// Center (re-centres the view, the cursor stays), Target (Return or T) or Exit (E or Escape).
+/// </summary>
+public readonly record struct ManualInput(int Direction)
+{
+    public static readonly ManualInput Center = new(8), Target = new(-1), Exit = new(-2);
+    public bool IsDirection => Direction is >= 0 and <= 7;
+}
+
+/// <summary>
+/// The Manual cursor as 0x155F5 shows it: the square (0..49 × 0..24), the creature under it (a live creature's slot,
+/// or a body on ground 0x1F; null on an empty square or one the line from the aimer does not reach), the path
+/// distance from the aimer in squares (0x2FF74, half squares ÷ 2; "Range = n" is shown in attack mode when the line
+/// reaches the square), the aim's range, and whether Target is offered.
+/// </summary>
+public sealed record ManualView(int X, int Y, EclCharacter? Creature, int Distance, int Range, bool TargetOffered, bool Attack);
 
 /// <summary>Messages the fight shows (paraphrased names; the text is the Client's).</summary>
 public enum FightNotice
@@ -60,6 +79,8 @@ public interface IFightMenuChooser
     MoveInput ChooseMove(FightMenu menu, int movementLeft);
     /// <summary>The aim menu on one candidate.</summary>
     AimKey ChooseAim(FightMenu menu, AimView view);
+    /// <summary>Manual (0x155F5), once per cursor position; the default leaves at once (Exit).</summary>
+    ManualInput ChooseManual(FightMenu menu, ManualView view) => ManualInput.Exit;
     /// <summary>The flee question (moving off the map).</summary>
     bool ConfirmFlee(FightMenu menu);
     /// <summary>The attack-ally question (0x15193).</summary>
@@ -83,6 +104,10 @@ public interface IFightItemScreens
 {
     bool View(Fight fight, EclCharacter c) => false;
     bool Use(Fight fight, EclCharacter c) => false;
+    /// <summary>The same screens opened from the combat menu: an item's spell aims through the menu's aim
+    /// (<see cref="FightMenu.PickForItem"/>).</summary>
+    bool View(Fight fight, EclCharacter c, FightMenu menu) => View(fight, c);
+    bool Use(Fight fight, EclCharacter c, FightMenu menu) => Use(fight, c);
 }
 
 /// <summary>Screens that do nothing.</summary>
@@ -228,7 +253,7 @@ public sealed class FightMenu
                 return Move();
             case FightCommand.View:
             {
-                bool done = Screens.View(Fight, c);
+                bool done = Screens.View(Fight, c, this);
                 FightRules.RecalcAttacksLeft(c, Record, Fight.Items, Fight.State, Fight.Effects);
                 return done;
             }
@@ -236,7 +261,7 @@ public sealed class FightMenu
                 return Aim();
             case FightCommand.Use:
             {
-                bool done = Screens.Use(Fight, c);
+                bool done = Screens.Use(Fight, c, this);
                 FightRules.RecalcAttacksLeft(c, Record, Fight.Items, Fight.State, Fight.Effects);
                 return done;
             }
@@ -592,22 +617,26 @@ public sealed class FightMenu
     /// 0x15D53 in attack mode with the weapon's range (the menu's Aim): the candidates are the area search from the
     /// creature (range 0x7F), walked from the first with Next / Prev (wrapping, 0x15B84), skipping those that fail the
     /// target check in the direction of travel. Target (when offered) attacks (<see cref="TargetAttack"/>) and rebuilds
-    /// the list; Aim goes on while not done, until Exit. Returns "done". Manual aim (a cursor on squares) is not modelled.
+    /// the list; Aim goes on while not done, until Exit. Returns "done". Manual (<see cref="Manual"/>) moves a cursor
+    /// over squares (square mode 0 here, 0x9BEE: only a creature's square can be taken).
     /// </summary>
-    public bool Aim() => AimAt(RangeFromWeapon, true, out _);
+    public bool Aim() => AimAt(RangeFromWeapon, true, false, out _, out _);
 
     /// <summary>
-    /// 0x15D53 (creature, range, attack mode, square mode, done, result) on the candidate list; manual squares are not
-    /// modelled, so square mode changes nothing here. <paramref name="range"/> 0xFF = from the weapon
-    /// (<see cref="AimRange"/>); a range of 0 or 0xFF becomes 1 (0x15DC6). The result is cleared first (0x15D77). In
-    /// attack mode Target attacks (<see cref="TargetAttack"/>); otherwise (0x15438 with attack mode 0) it only takes
-    /// the candidate as the result and reports done. Aim goes on while not done, until Exit. Returns "done";
-    /// <paramref name="result"/> is the creature taken (null when none).
+    /// 0x15D53 (creature, range, attack mode, square mode, done, result) on the candidate list. <paramref name="range"/>
+    /// 0xFF = from the weapon (<see cref="AimRange"/>); a range of 0 or 0xFF becomes 1 (0x15DC6). The result is cleared
+    /// first (0x15D77). In attack mode Target attacks (<see cref="TargetAttack"/>); otherwise (0x15438 with attack mode
+    /// 0) it only takes the candidate and its square as the result and reports done. Manual runs the cursor
+    /// (<see cref="Manual"/>, starting on the shown candidate), then the list is built again (0x15AE1) and the walk
+    /// goes on from the same place. Aim goes on while not done, until Exit (E or Escape, set CS:0x3538). Returns
+    /// "done"; <paramref name="result"/> is the creature taken (null when none, or for a bare square taken by Manual
+    /// in square mode) and <paramref name="square"/> the square taken (null when nothing was taken).
     /// </summary>
-    private bool AimAt(int range, bool attack, out EclCharacter? result)
+    private bool AimAt(int range, bool attack, bool squareMode, out EclCharacter? result, out (int X, int Y)? square)
     {
         var c = Creature;
         result = null;
+        square = null;
         range = range == RangeFromWeapon ? AimRange(c, Fight.Items) : (byte)range;
         if (range is 0 or 0xFF)
             range = 1;
@@ -650,6 +679,7 @@ public sealed class FightMenu
                     if (!attack)
                     {
                         result = cand; // 0x15438 with attack mode 0: result = the candidate and its square, done
+                        square = Fight.Map is { } m && m.OnMap(cand) ? m.Position(cand) : null;
                         return true;
                     }
                     done = TargetAttack(cand);
@@ -660,6 +690,15 @@ public sealed class FightMenu
                         return false;
                     idx = idx >= list.Count ? 0 : idx; // same place in the rebuilt list (step 0, 0x15B84 wraps)
                     break;
+                case AimKey.Manual:
+                    done = Manual(cand, range, attack, squareMode, out result, out square);
+                    if (done)
+                        return true;
+                    list = FightSearch.Nearby(Fight, c, AimSearchRange); // 0x15AE1 again, step 0
+                    if (list.Count == 0)
+                        return false;
+                    idx = idx >= list.Count ? 0 : idx;
+                    break;
                 default:
                     return done;
             }
@@ -667,6 +706,113 @@ public sealed class FightMenu
     }
 
     private static int Wrap(int i, int n) => ((i % n) + n) % n;
+
+    /// <summary>
+    /// The player's pick for an item's spell (0x22AC4 → 0x27C38 with ai = 0, the same pick loop as a cast from the
+    /// menu): the aim (<see cref="AimSpell"/>: 0x148BE / 0x14611 / 0x15D53, Manual included) and the target pick
+    /// (<see cref="FightSpells.Pick"/>); not picked → the abort question (0x27EF2): yes → not picked, no → aim again.
+    /// Not picked still uses the item up in a fight when the spell's table byte 11 ≠ 0 (<see cref="FightSpells.UseItemNow"/>).
+    /// Needs <see cref="FightSpells"/>.
+    /// </summary>
+    public bool PickForItem(int spell)
+    {
+        if (Fight.Spells is not FightSpells fs)
+            return false;
+        while (true)
+        {
+            var (picked, targets, square) = AimSpell(spell);
+            if (picked)
+                return fs.Pick(Fight, Creature, spell, targets, square);
+            if (Chooser.ConfirmAbortSpell(this) || Reject())
+                return false;
+        }
+    }
+
+    /// <summary>
+    /// 0x155F5, Manual: a cursor on squares, starting on <paramref name="start"/>'s square. Each pass moves it one square
+    /// in the direction read (Center and other keys: none), kept within 0..49 × 0..24, then: the line from the aimer
+    /// (0x2FF74, any length) to the cursor; when it reaches the square, the creature there is the live creature in its
+    /// slot, else on a body (ground 0x1F) the last body of the list DS:66D6 lying there. Target is offered when the line
+    /// reached it, the distance (half squares ÷ 2) ≤ <paramref name="range"/> and the ground's cost is not 0xFF; and
+    /// with a creature: it passes the target check (0x13880), and in attack mode it is not the aimer, not a body with
+    /// no live occupant, and the ranged-weapon rule of <see cref="TargetOffered"/> holds; with no creature: only in
+    /// <paramref name="squareMode"/>. Target with Target offered: the result is the creature (or none) and the square;
+    /// in attack mode the attack (0x15438, <see cref="TargetAttack"/>) gives "done", otherwise done = 1. Target
+    /// otherwise, or not done, or Exit: the result is cleared, done 0. Manual ends after any Target or Exit (set
+    /// CS:0x2DA7: Escape, Return, E, T). Needs the combat map (<see cref="CombatMap"/>); without one it ends at once
+    /// [our choice].
+    /// </summary>
+    public bool Manual(EclCharacter start, int range, bool attack, bool squareMode, out EclCharacter? result, out (int X, int Y)? square)
+    {
+        var c = Creature;
+        result = null;
+        square = null;
+        if (Fight.Geometry is not CombatMap map || !map.OnMap(start) || !map.OnMap(c))
+            return false;
+        var (x, y) = map.Position(start);
+        int dir = CombatTables.Center;
+        while (true)
+        {
+            x = Math.Clamp(x + CombatTables.DirDx[dir], 0, CombatArena.Width - 1);
+            y = Math.Clamp(y + CombatTables.DirDy[dir], 0, CombatArena.Height - 1);
+            var (slot, ground) = map.Contents(x, y);
+            var (cx, cy) = map.Position(c);
+            int tx = x, ty = y, dist = 0xFF;
+            bool offered = map.WalkLine(cx, cy, ref tx, ref ty, ref dist);
+            dist >>= 1;
+            EclCharacter? who = null;
+            if (offered)
+            {
+                if (slot > 0)
+                    who = map.SlotCreature(slot);
+                else if (ground == ArenaBuilder.Body)
+                    foreach (var b in map.Bodies)
+                        if (b is not null && (byte)b.X == x && (byte)b.Y == y)
+                            who = b.Creature;
+            }
+            if ((byte)range < dist || map.Tables.Cost((byte)ground) == 0xFF)
+                offered = false;
+            if (who is not null)
+            {
+                if (!Targetable(Fight, c, who))
+                    offered = false;
+                if (attack)
+                {
+                    if (ReferenceEquals(who, c) || (slot == 0 && ground == ArenaBuilder.Body))
+                        offered = false;
+                    else if (FightRules.HasRangedWeapon(c, Fight.Items))
+                    {
+                        if (!FightRules.FindRangedAmmo(c, Fight.Items, out _))
+                            offered = false;
+                        else if (FightSearch.EnemiesNear(Fight, c, 1).Count > 0 && !FightRules.HasThrowableWeapon(c, Fight.Items))
+                            offered = false;
+                    }
+                }
+            }
+            else if (!squareMode)
+                offered = false;
+            var key = Chooser.ChooseManual(this, new ManualView(x, y, who, dist, range, offered, attack));
+            if (key == ManualInput.Target)
+            {
+                bool done = false;
+                if (offered)
+                {
+                    result = who;
+                    square = (x, y);
+                    done = !attack || (who is not null && TargetAttack(who));
+                }
+                if (!done)
+                {
+                    result = null;
+                    square = null;
+                }
+                return done;
+            }
+            if (key == ManualInput.Exit)
+                return false;
+            dir = key.IsDirection ? key.Direction : CombatTables.Center;
+        }
+    }
 
     /// <summary>
     /// 0x15438, attack mode: the attack-ally check (not allowed → not done); the sweep when it applies → actions end,
@@ -764,7 +910,7 @@ public sealed class FightMenu
     /// (0x27741), attack mode 0, and leaves the caster's +0x0A = the creature taken (none after Exit, 0x14648).
     /// Returns picked, the creatures taken and the aimed square (DS:6DB9/6DBA).
     /// </summary>
-    private (bool Picked, List<EclCharacter> Targets, (int X, int Y)? Square) AimSpell(int spell)
+    public (bool Picked, List<EclCharacter> Targets, (int X, int Y)? Square) AimSpell(int spell)
     {
         var c = Creature;
         int mode = Fight.Spells is FightSpells fs ? fs.Table[spell].Area & 0x0F : 0;
@@ -772,23 +918,35 @@ public sealed class FightMenu
         if (mode == 0)
             return (true, targets, null);
         int range = Fight.Spells.Range(Fight, c, spell);
-        EclCharacter? AimOnce()
+        (int X, int Y)? aimed = null;
+        EclCharacter? AimOnce(bool squareMode, out bool done)
         {
-            AimAt(range, false, out var t);
+            done = AimAt(range, false, squareMode, out var t, out aimed);
             Record.Other = t; // 0x14648: +0x0A = the aim's result
             return t;
         }
-        if (mode >= 8)
+        if (mode == 0x0F)
         {
-            if (AimOnce() is not { } t)
+            if (AimOnce(false, out _) is not { } t)
                 return (false, targets, null);
             targets.Add(t);
-            return (true, targets, Fight.Map is { } map && mode != 0x0F ? map.Position(t) : null);
+            return (true, targets, null);
+        }
+        if (mode >= 8)
+        {
+            // Square mode 1 (0x14A27): picked when the aim is done; the list is built around the aimed square
+            // (DS:6DB9/6DBA = the result's square), a bare square taken by Manual included.
+            var t = AimOnce(true, out bool done);
+            if (!done || aimed is null)
+                return (false, targets, null);
+            if (t is not null)
+                targets.Add(t);
+            return (true, targets, aimed);
         }
         int picks = (Fight.Spells is FightSpells f2 ? f2.Table[spell].Area & 3 : 0) + 1;
         while (picks > 0)
         {
-            if (AimOnce() is not { } t)
+            if (AimOnce(false, out _) is not { } t)
             {
                 picks--;
                 continue;

@@ -244,8 +244,9 @@ public sealed class CombatMap : IFightMap, IFightAuraRange, IFightTerrain, IFigh
         };
     }
 
-    /// <summary>The line state of 0x2FCF2 / 0x2FE1E (the request record, field offsets in the comments).</summary>
-    private struct LineWalk
+    /// <summary>The line state of 0x2FCF2 / 0x2FE1E (the request record, field offsets in the comments); also the
+    /// bolt's line (Lightning Bolt 0x29973).</summary>
+    public struct LineWalk
     {
         public int Sx, Sy, Ex, Ey, Err, Adx, Ady, IncD, IncS, StepX, StepY, Cx, Cy; // +0 … +0x16 (words; steps bytes)
         public byte Dist; // +0x18, a byte: 2 per straight step, 3 per diagonal

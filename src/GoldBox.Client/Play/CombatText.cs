@@ -26,6 +26,15 @@ public enum CombatMsg
     AlreadyTargeted, AbortSpell, SpellAborted,
     // The status panel (START 0x1583; its strings are in START.EXE, offsets in the unpacked image).
     PanelHitpoints, PanelAc, PanelHelpless,
+    // The View menu (0x21AED): entries and prompt.
+    ViewItems, ViewSpells, ViewTrade, ViewDrop, ViewExit, ViewPrompt,
+    // The Items screen (0x21F32): entries, title, column heading, messages; let go (0x21DAA).
+    ItemsReady, ItemsUse, ItemsTrade, ItemsDrop, ItemsHalve, ItemsJoin, ItemsSell, ItemsId, ItemsTitle, ItemsHeading,
+    MustBeReadied, Your, GoneForever, DropIt, MustBeUnreadied, ScribeWarning, OkayToLose,
+    // Ready (0x2250A), Halve (0x22827), item use (0x22AC4), drop money (0x234E1).
+    Cursed, WrongClass, AlreadyUsing, HandsFull, CannotHalve, UsesAnItem, ItemLabel, SelectCoin, HowMuch, WillYouDrop,
+    // The AI's messages (0xABC0–0xBC8C).
+    FleesInPanic, AiMagicOn, AiMagicOff, ForcedToFlee, Surrenders,
 }
 
 /// <summary>
@@ -95,6 +104,44 @@ public sealed class CombatText
         [CombatMsg.AlreadyTargeted] = (0x148A8, "PICKED ALREADY"),
         [CombatMsg.AbortSpell] = (0x27C1C, "GIVE UP THE SPELL? "),
         [CombatMsg.SpellAborted] = (0x27C2A, "SPELL GIVEN UP"),
+        [CombatMsg.ViewItems] = (0x21AA6, "ITEMS "),
+        [CombatMsg.ViewSpells] = (0x21AAD, "SPELLS "),
+        [CombatMsg.ViewTrade] = (0x21AB5, "TRADE "),
+        [CombatMsg.ViewDrop] = (0x21ABC, "DROP "),
+        [CombatMsg.ViewExit] = (0x21AC2, "EXIT"),
+        [CombatMsg.ViewPrompt] = (0x21AC7, "VIEW:"),
+        [CombatMsg.ItemsReady] = (0x21EBD, "READY"),
+        [CombatMsg.ItemsUse] = (0x21EC3, " USE"),
+        [CombatMsg.ItemsTrade] = (0x21EC8, " TRADE"),
+        [CombatMsg.ItemsDrop] = (0x21ECF, " DROP"),
+        [CombatMsg.ItemsHalve] = (0x21ED5, " HALVE"),
+        [CombatMsg.ItemsJoin] = (0x21EDC, " JOIN"),
+        [CombatMsg.ItemsSell] = (0x21EE2, " SELL"),
+        [CombatMsg.ItemsId] = (0x21EE8, " ID"),
+        [CombatMsg.ItemsTitle] = (0x21EEC, "ITEMS"),
+        [CombatMsg.ItemsHeading] = (0x21EF2, "READY ITEM"),
+        [CombatMsg.MustBeReadied] = (0x21EFD, "READY IT FIRST"),
+        [CombatMsg.Your] = (0x21F0D, "THE "),
+        [CombatMsg.GoneForever] = (0x21F13, "WILL BE LOST"),
+        [CombatMsg.DropIt] = (0x21F28, "DROP: "),
+        [CombatMsg.MustBeUnreadied] = (0x21D5A, "UNREADY IT FIRST"),
+        [CombatMsg.ScribeWarning] = (0x21D6C, " WANTED TO COPY THIS SCROLL"),
+        [CombatMsg.OkayToLose] = (0x21D92, "LOSE IT? "),
+        [CombatMsg.Cursed] = (0x224CE, "CURSED"),
+        [CombatMsg.WrongClass] = (0x224DA, "NOT FOR THIS CLASS"),
+        [CombatMsg.AlreadyUsing] = (0x224E6, "IN USE: "),
+        [CombatMsg.HandsFull] = (0x224F5, "NO FREE HAND"),
+        [CombatMsg.CannotHalve] = (0x22816, "CAN'T SPLIT"),
+        [CombatMsg.UsesAnItem] = (0x22AB1, "USES AN ITEM"),
+        [CombatMsg.ItemLabel] = (0x22ABE, "ITEM:"),
+        [CombatMsg.SelectCoin] = (0x234B2, "WHICH COINS"),
+        [CombatMsg.HowMuch] = (0x234C7, "HOW MANY "),
+        [CombatMsg.WillYouDrop] = (0x234D1, "TO DROP? "),
+        [CombatMsg.FleesInPanic] = (0xABC0, "RUNS IN FEAR"),
+        [CombatMsg.AiMagicOn] = (0xBB6E, "MAGIC ON"),
+        [CombatMsg.AiMagicOff] = (0xBB77, "MAGIC OFF"),
+        [CombatMsg.ForcedToFlee] = (0xBC7A, "MUST RUN"),
+        [CombatMsg.Surrenders] = (0xBC8C, "GIVES UP"),
     };
 
     /// <summary>START.EXE strings (offsets in the unpacked image, PorProgram.Image), read before the status panel 0x1583.</summary>

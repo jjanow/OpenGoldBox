@@ -21,10 +21,31 @@ public sealed partial class EffectHandlers
     public Func<byte, byte>? CasterLevel { get; set; }
 
     /// <summary>
-    /// The map test of 0x2C753 (0x317E1 on the creature's square, argument 1) before a creature is put back in play.
-    /// [?] Not read; without it the creature can always come back (diagnostic noted).
+    /// Replaces <see cref="PutBackOnSquare"/> (the map test of 0x2C753 and Animate Dead) when set; for tests.
     /// </summary>
     public Func<EclCharacter, bool>? CanRevive { get; set; }
+
+    /// <summary>
+    /// 0x317E1(creature, its square 0x31321 / 0x31349, 1), the test 0x2C753 and Animate Dead (0x29101) make before a
+    /// creature comes back: outside a fight (DS:49F3 ≠ 5) true; in a fight the combat map puts it on its square
+    /// (<see cref="CombatMap.TryPlace"/>, moving: a party member's own bodies are cleared) and says whether the square
+    /// takes it. <see cref="CanRevive"/> replaces it when set. Without a combat map in a fight: taken as free, with a
+    /// diagnostic.
+    /// </summary>
+    public bool PutBackOnSquare(EclCharacter c)
+    {
+        if (CanRevive is { } f)
+            return f(c);
+        if (!InCombat)
+            return true;
+        if (Map is { } m)
+        {
+            var (x, y) = m.SlotPosition(m.Slot(c));
+            return m.TryPlace(c, x, y, true, F);
+        }
+        Diag("[?] 0x317E1 needs the combat map; taken as free");
+        return true;
+    }
 
     partial void CallMoreHandlers(byte id, EclCharacter c, byte[]? node, bool removed, ref bool handled)
     {
@@ -382,20 +403,13 @@ public sealed partial class EffectHandlers
     }
 
     /// <summary>
-    /// 0x2C753: when the creature's square allows it (0x317E1 [?]), status 0, in play, HP = <paramref name="hp"/>;
-    /// (in a fight the icon is redrawn, 0x319D2; a message by side) and the teams are counted (START 0x2F7B). True then.
+    /// 0x2C753: when the creature's square takes it (0x317E1, <see cref="PutBackOnSquare"/>), status 0, in play, HP =
+    /// <paramref name="hp"/>; (in a fight the icon is redrawn, 0x319D2; a message by side) and the teams are counted
+    /// (START 0x2F7B). True then.
     /// </summary>
     public bool Revive(EclCharacter c, byte hp)
     {
-        bool ok;
-        if (CanRevive is { } f)
-            ok = f(c);
-        else
-        {
-            Diag("[?] 0x2C753 square test (0x317E1) not modelled; taken as free");
-            ok = true;
-        }
-        if (!ok)
+        if (!PutBackOnSquare(c))
             return false;
         c[Status] = 0;
         c[InPlay] = 1;

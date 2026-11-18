@@ -88,7 +88,7 @@ Lee lists these five bytes as GBVM $C04B..$C04F.
 
 | Field | Codes |
 |---|---|
-| location type (12806) | 1 3D map (towns and dungeons), 2 western wilderness, 3 central wilderness, 4 eastern wilderness (talonius `C_Area`). On load the game reloads the 3D map when the value is < 2 (talonius, DrEvil) |
+| location type (12806) | DS:49FA, the view mode (program read s15: Save 0x1FF9D writes it, Load 0x1F862 reads it back, and reloads the 3D map $49C5 when it is < 2, 0x1FBB3). 1 3D map (towns, dungeons, wilderness lairs), 2 / 3 / 4 the western / central / eastern wilderness overland (set by 0x3EFA in blocks 25 / 26 / 27 with $49E6 = 0) |
 | interface state (12807) | 0 main menu / training hall, 1 shop or temple, 2 camp, 3 moving outdoors, 4 moving indoors, 5 combat, 6 looting, 7 game won (talonius `C_Ifc`, `ending.pas`). Both shipped saves: 2 (saved from camp) |
 
 ### Known GBVM cells
@@ -100,9 +100,9 @@ Cells read by the tool. All in the $4900 or $6B00 areas; addresses from Lee 12.4
 | $49C3, $49C4 | `location.outdoor_x/y` | X, Y coordinate (Lee: outdoors) `[?]`: 0 in both shipped saves although the party is in a 3D map |
 | $49C5 | `location.map_id` | Current map / ECL script id (the block id in `GEOn.DAX` and `ECLn.DAX`) |
 | $49C6..$49CC | `time.*` | Clock: minute segment (unused), minutes ones digit, minutes tens digit, hour, day, month, years elapsed |
-| $49E6 | `location.view_3d` | Lee: "outdoors flag"; talonius: non-zero when a 3D view is loaded (towns too). 1 in both shipped saves (party in a town map). `[?]` name |
+| $49E6 | `location.view_3d` | Non-zero = a 3D map is up (towns, dungeons, wilderness lairs); 0 on the wilderness overland. The script init sets 1; the wilderness scripts write 0 / 1. Read by LOADFILES (map vs BACPAC picture), the redraw 0x2DCF4, the switch 0x3EFA (view modes 2–4), the encounter distance and Fireball (0 → the smaller outdoor area, `spells-effects.md`). 1 in both shipped saves (s15) |
 | $49F0, $49F1, $49F2 | `location.previous.*` | Previous X, Y and previous ECL script id |
-| $49FC | `settings.game_speed` | Game speed (written from the options before saving) |
+| $49FC | `settings.game_speed` | Game speed: Save copies DS:49E2 here (0x1FECE), Load takes the low byte back (0x1F8F1); in between it is stale |
 | $49FD, $49FE | – | Sky and ceiling colour codes |
 | $49FF | `settings.portraits`, `monster_pics` | bit 0 portraits on, bit 1 monster pictures on |
 | $4A00..$4AFF | `flags` (256 values) | Script flags: most quest and world state. $4A00..$4A1F are reset whenever a new script loads; $4A20..$4AFF persist. Per-flag meanings: Lee 12.4.1 (not copied here) |

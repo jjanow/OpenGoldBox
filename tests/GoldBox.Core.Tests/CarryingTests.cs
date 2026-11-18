@@ -74,6 +74,31 @@ public class CarryingTests
     }
 
     [Fact]
+    public void A_readied_bag_of_holding_carries_5000_but_not_the_readied_items()
+    {
+        var c = new EclCharacter();
+        var bag = new byte[EclCharacter.ItemRecordSize];
+        bag[0x2F] = StatRecalc.BagMarker; // name word "Holding"
+        bag[0x37] = 150;
+        var sword = new byte[EclCharacter.ItemRecordSize];
+        sword[0x37] = 60;
+        sword[0x34] = 1;
+        c.Items.Add(bag);
+        c.Items.Add(sword);
+        c.SetWord(Money.Platinum, 6000);
+        Assert.Equal(150 + 60 + 6000, Carrying.Weight(c)); // bag not readied: no effect
+        bag[0x34] = 1;
+        Assert.Equal(150 + 60 + 6000 - 5000, Carrying.Weight(c));
+        c.SetWord(Money.Platinum, 100);
+        Assert.Equal(210, Carrying.Weight(c)); // floored at 0, then at least the readied weight (210)
+        // Same rule as the full recalculation.
+        var r = new EclCharacter();
+        r.Items.Add((byte[])bag.Clone());
+        r.SetWord(Money.Platinum, 5500);
+        Assert.Equal(650, Carrying.Weight(r));
+    }
+
+    [Fact]
     public void Copy_step_refuses_a_seventeenth_item()
     {
         var c = new EclCharacter();

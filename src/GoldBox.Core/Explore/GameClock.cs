@@ -28,7 +28,8 @@ public static class GameClock
     /// 0x241A1: add <paramref name="count"/> (a byte) to cell <paramref name="unit"/> one at a time, carrying after each
     /// add (0x240BE: one pass over cells 0..6; a cell at or over its limit loses the limit and the next cell gains 1; a
     /// year overflow does not wrap, it ages every creature of the party list DS:5D96 by one, record word 0x30).
-    /// [?] The routine then calls 0x23DCC(count, unit), not read (probably spell effect durations); not modelled.
+    /// The routine then runs the effect timeout 0x23DCC(count, unit): not here (this is the clock alone), see
+    /// <see cref="AreaLoop.AdvanceClock"/>, <see cref="GoldBox.Core.Game.CampTime.AdvanceOutsideCamp"/> and the camp.
     /// </summary>
     public static void Advance(EclMemory memory, int unit, int count)
     {

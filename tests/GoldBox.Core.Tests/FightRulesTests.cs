@@ -463,6 +463,32 @@ public class FightRulesTests
     }
 
     [Fact]
+    public void The_end_of_round_minute_ages_every_creatures_effects()
+    {
+        // 0xA087 → 0x241A1(1, 1) → 0x23DCC: one minute on the clock; every creature of the list (monsters too) loses a
+        // minute per effect, an effect with 1 minute left goes (0x2AF10), permanent ones (0 minutes) stay.
+        var hero = Creature("H");
+        var goblin = Creature("G", hostile: true);
+        var memory = new EclMemory { Party = new EclParty { CurrentIndex = 0 } };
+        memory.Party.Members.Add(hero);
+        memory.Party.Members.Add(goblin);
+        EffectHandlers.AddEffect(hero, 0x1C, 2, 4, false);
+        EffectHandlers.AddEffect(hero, 0x6B, 0, 0xFF, false);
+        EffectHandlers.AddEffect(goblin, 0x34, 1, 12, false);
+        var effects = new EffectHandlers(new Rng().Next);
+        var fight = new Fight(memory, new EncounterState(), NoItems, new Rng().Next, new EndActionsController(), new GridGeometry(), effects);
+        var time = new CampState { Camping = true }; // a fight from an interrupted rest: DS:49F3 = 5 all the same
+        FightKit.WireClock(fight, effects, time);
+        ushort before = memory.Read(GoldBox.Core.Explore.GameClock.FirstCell + 1);
+        fight.EndOfRound(out _);
+        Assert.Equal(before + 1, memory.Read(GoldBox.Core.Explore.GameClock.FirstCell + 1));
+        Assert.Equal(["1C01000400", "6B0000FF00"], hero.Effects.Select(e => Convert.ToHexString(e, 0, 5)));
+        Assert.Empty(goblin.Effects);
+        Assert.Equal(1, time.EffectFlags[0]);
+        Assert.Equal(0, time.EffectFlags[1]);
+    }
+
+    [Fact]
     public void A_fight_with_an_empty_side_ends_at_once()
     {
         var memory = new EclMemory { Party = new EclParty { CurrentIndex = 0 } };

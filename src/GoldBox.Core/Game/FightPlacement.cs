@@ -46,7 +46,8 @@ public static class FightPlacement
     /// wilderness builder), the combat records (the map part of 0xD8B2: +0x13 for list positions past $6E3E, facing =
     /// DS:02F2[party facing ÷ 2], + 4 mod 8 for hostile creatures), placement (0xDFC6), the view's upper-left cell =
     /// the first creature's cell − 3, then for every creature in list order the trigger-8 effects, and the enemy HP
-    /// percentage (0x15074). Also DS:6E30 (quick magic) = 0, DS:6DE3 (round counter) = 0 and DS:6822 (attack roll) = 0 (0xE457–0xE461).
+    /// percentage (0x15074). Also DS:6E30 (quick magic) = 0, DS:6DE3 (round counter) = 0 and DS:6822 (attack roll) = 0 (0xE457–0xE461),
+    /// the bodies (DS:6715 = 0) and the stinking-cloud list DS:6DBB = nil (<see cref="EffectHandlers.Clouds"/> emptied).
     /// Sets <see cref="Fight.Geometry"/>'s map: pass the same <paramref name="map"/> as the fight's geometry.
     /// </summary>
     public static void Start(Fight fight, CombatMap map, FightStartArea area)
@@ -56,6 +57,8 @@ public static class FightPlacement
         fight.State.QuickMagic = false;
         map.State = fight.State;
         map.Bodies.Clear();
+        if (fight.Effects is EffectHandlers eh)
+            eh.Clouds.Clear();
         map.Arena.ResetHeader();
         if (area.ViewMode == 1)
             ArenaBuilder.BuildDungeon(map.Arena, map.Tables, area.Map ?? throw new ArgumentException("a 3D fight needs the map", nameof(area)),

@@ -70,10 +70,24 @@ public sealed class PorSaveGame
     /// from its variables).
     /// </summary>
     public static byte[] Build(EclMemory memory, int partySize, char letter, byte locationType, byte interfaceState)
+        => Build(memory, partySize, letter, locationType, interfaceState, gameSpeed: null);
+
+    /// <summary>
+    /// The save as the program builds it from its own variables: the location type is DS:49FA
+    /// (<see cref="EclMemory.ViewMode"/>, written at 0x1FF9D) and $49FC := DS:49E2 (<see cref="EclMemory.GameSpeed"/>,
+    /// 0x1FECE).
+    /// </summary>
+    public static byte[] Build(EclMemory memory, int partySize, char letter, byte interfaceState) =>
+        Build(memory, partySize, letter, memory.ViewMode, interfaceState, memory.GameSpeed);
+
+    private static byte[] Build(EclMemory memory, int partySize, char letter, byte locationType, byte interfaceState,
+        byte? gameSpeed)
     {
         letter = char.ToUpperInvariant(letter);
         if (letter is < 'A' or > 'J')
             throw new ArgumentOutOfRangeException(nameof(letter), "save slots are A..J");
+        if (gameSpeed is { } speed)
+            memory.Write(0x49FC, speed);
         memory.Write(0x6E12, memory.Disk);
         var d = new byte[Size];
         d[OffDisk] = memory.Disk;
@@ -131,6 +145,8 @@ public sealed class PorSaveGame
         memory.Position.Facing = Facing;
         memory.Position.WallAhead = WallAhead;
         memory.Position.EventByte = EventByte;
+        memory.ViewMode = LocationType;                        // the location type byte is DS:49FA (0x1F862 reads it back)
+        memory.GameSpeed = (byte)memory.Read(0x49FC);          // DS:49E2 := low byte of $49FC (0x1F8F1)
     }
 
     /// <summary>

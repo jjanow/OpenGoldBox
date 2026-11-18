@@ -33,6 +33,8 @@ public sealed class CombatScreen
 
     private PlayerRequest? _shown;
     private int _selected;
+    /// <summary>The digits typed into a number request (drop money's amount).</summary>
+    private string _typed = "";
     private TimeSpan _delayEnd;
     private object? _clickAnswer;
     private bool _hasClickAnswer;
@@ -121,6 +123,10 @@ public sealed class CombatScreen
                     CursorItem(cr, item);
                 return null;
             }
+            case PageRequest pr:
+                return PageClick(pr, click);
+            case TextRequest:
+                return NumberClick(click);
             case ChoiceRequest c:
                 if (click.Right)
                     return c.CancelIndex is not null ? GameAction.Cancel : null;
@@ -144,6 +150,12 @@ public sealed class CombatScreen
         {
             case ListRequest l:
                 _list.Hover(l, x / 8, y / 8);
+                break;
+            case PageRequest pr when _view.Page is { } page:
+                if (PageRowAt(page, y / 8) is { } r)
+                    page.Selected = r;
+                else if (y / 8 == MenuRow && WordAt(pr.Entries, x / 8 - (pr.Prompt?.Length ?? 0)) is { } e)
+                    _selected = e;
                 break;
             case ChoiceRequest { Vertical: false } c when y / 8 == MenuRow && WordAt(c.Items, x / 8 - MenuStart(c)) is { } i:
                 _selected = i;
@@ -185,7 +197,8 @@ public sealed class CombatScreen
         if (ReferenceEquals(request, _shown))
             return;
         _shown = request;
-        _selected = 0;
+        _selected = request is ChoiceRequest c ? c.Selected : 0;
+        _typed = "";
         _hasClickAnswer = false;
         if (request is ListRequest l)
             _list.Sync(l);
@@ -276,6 +289,10 @@ public sealed class CombatScreen
                 return false;
             case CombatCursorRequest cr:
                 return DecideCursor(cr, input, out answer);
+            case PageRequest pr:
+                return DecidePage(pr, input, out answer);
+            case TextRequest t:
+                return DecideNumber(t, input, out answer);
             case ChoiceRequest c:
                 return DecideChoice(c, input, out answer);
             default:
@@ -421,6 +438,239 @@ public sealed class CombatScreen
         return false;
     }
 
+    // ---- Character pages (View, Items, drop money) -------------------------------------------------------------------
+
+    /// <summary>The first list row shown (the list scrolls to keep the selected row in its window).</summary>
+    private static int PageTop(CombatPage p)
+    {
+        int visible = p.LastRow - p.FirstRow + 1;
+        return Math.Clamp(p.Selected - visible + 1, 0, Math.Max(0, p.Rows.Count - visible));
+    }
+
+    private static int? PageRowAt(CombatPage p, int row)
+    {
+        int i = PageTop(p) + row - p.FirstRow;
+        return row >= p.FirstRow && row <= p.LastRow && i >= 0 && i < p.Rows.Count ? i : null;
+    }
+
+    private GameAction? PageClick(PageRequest pr, ScreenClick click)
+    {
+        if (_view.Page is not { } page)
+            return null;
+        if (click.Right)
+            return GameAction.Cancel;
+        int col = click.X / 8, row = click.Y / 8;
+        if (row == MenuRow && WordAt(pr.Entries, col - (pr.Prompt?.Length ?? 0)) is { } e)
+        {
+            Answer(new ListAnswer(e, page.Selected));
+            return null;
+        }
+        if (PageRowAt(page, row) is { } i)
+        {
+            // A click on the selected row: the coin list takes it; other pages run the highlighted entry on it.
+            if (i == page.Selected)
+                Answer(new ListAnswer(pr.PickRows ? PageRequest.RowPicked : _selected, i));
+            page.Selected = i;
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// The page's menu: rows with Up / Down (and the original's Home / End: the party keys), entries with Left / Right
+    /// and their hotkeys, Return / A runs the highlighted entry on the selected row (on the coin list: picks the row),
+    /// Escape / B the cancel entry.
+    /// </summary>
+    private bool DecidePage(PageRequest pr, ActionInput input, out object? answer)
+    {
+        answer = null;
+        if (_view.Page is not { } page)
+        {
+            answer = new ListAnswer(pr.CancelEntry, 0);
+            return true;
+        }
+        int n = page.Rows.Count, m = pr.Entries.Count;
+        if (n > 0 && (input.Pressed(GameAction.MenuUp) || input.Pressed(GameAction.PreviousMember)))
+            page.Selected = (page.Selected + n - 1) % n;
+        if (n > 0 && (input.Pressed(GameAction.MenuDown) || input.Pressed(GameAction.NextMember)))
+            page.Selected = (page.Selected + 1) % n;
+        if (m > 0 && input.Pressed(GameAction.MenuLeft)) _selected = (_selected + m - 1) % m;
+        if (m > 0 && input.Pressed(GameAction.MenuRight)) _selected = (_selected + 1) % m;
+        if (input.Pressed(GameAction.Confirm))
+        {
+            answer = new ListAnswer(pr.PickRows && n > 0 ? PageRequest.RowPicked : _selected, page.Selected);
+            return true;
+        }
+        if (input.Pressed(GameAction.Cancel))
+        {
+            answer = new ListAnswer(pr.CancelEntry, page.Selected);
+            return true;
+        }
+        if (input.NewInput is (InputDevice.Keyboard, { Length: 1 } key))
+            for (int i = 0; i < m; i++)
+                if (pr.Entries[i].Length > 0 && pr.Entries[i][0] == key[0])
+                {
+                    answer = new ListAnswer(i, page.Selected);
+                    return true;
+                }
+        return false;
+    }
+
+    /// <summary>The number buttons for pad and mouse (row 22): steps, then OK.</summary>
+    private static readonly string[] NumberButtons = ["-10", "-1", "+1", "+10", "OK"];
+    private const int NumberButtonRow = 22;
+
+    private static char? Digit(string name) => name switch
+    {
+        { Length: 2 } when name[0] == 'D' && char.IsAsciiDigit(name[1]) => name[1],
+        { Length: 7 } when name.StartsWith("NumPad", StringComparison.Ordinal) && char.IsAsciiDigit(name[6]) => name[6],
+        _ => null,
+    };
+
+    private void Step(TextRequest t, int delta)
+    {
+        long v = long.TryParse(_typed, NumberStyles.None, CultureInfo.InvariantCulture, out var x) ? x : 0;
+        long max = (long)Math.Pow(10, t.MaxLength) - 1;
+        v = Math.Clamp(v + delta, 0, max);
+        _typed = v.ToString(CultureInfo.InvariantCulture);
+    }
+
+    /// <summary>
+    /// A number (drop money's amount; the input routine 0x24F1D is not read [?]): keyboard digits, Backspace, Return,
+    /// Escape (nothing); pad Up / Down ±1, Right / Left ±10, A done, B nothing; the mouse uses the buttons on row 22.
+    /// </summary>
+    private bool DecideNumber(TextRequest t, ActionInput input, out object? answer)
+    {
+        answer = null;
+        if (input.NewInput is (InputDevice.Keyboard, var name))
+        {
+            if (Digit(name) is { } ch)
+            {
+                if (_typed.Length < t.MaxLength)
+                    _typed = (_typed == "0" ? "" : _typed) + ch;
+                return false;
+            }
+            if (name == "Back")
+            {
+                if (_typed.Length > 0)
+                    _typed = _typed[..^1];
+                return false;
+            }
+        }
+        if (input.Pressed(GameAction.Confirm))
+        {
+            answer = _typed;
+            return true;
+        }
+        if (input.Pressed(GameAction.Cancel))
+        {
+            answer = "";
+            return true;
+        }
+        if (input.Pressed(GameAction.MenuUp)) Step(t, 1);
+        if (input.Pressed(GameAction.MenuDown)) Step(t, -1);
+        if (input.Pressed(GameAction.MenuRight)) Step(t, 10);
+        if (input.Pressed(GameAction.MenuLeft)) Step(t, -10);
+        return false;
+    }
+
+    private GameAction? NumberClick(ScreenClick click)
+    {
+        if (click.Right)
+            return GameAction.Cancel;
+        if (_runner.Pending is not TextRequest t || click.Y / 8 != NumberButtonRow)
+            return null;
+        switch (WordAt(NumberButtons, click.X / 8 - 1))
+        {
+            case 0: Step(t, -10); break;
+            case 1: Step(t, -1); break;
+            case 2: Step(t, 1); break;
+            case 3: Step(t, 10); break;
+            case 4: Answer(_typed); break;
+        }
+        return null;
+    }
+
+    private void DrawPage(IndexedFrame f, CombatPage p, ActionInput input)
+    {
+        f.Clear(0);
+        int top = p.FrameRows.Min(), bottom = p.FrameRows.Max();
+        foreach (var r in p.FrameRows)
+            Chrome.HLine(f, r, 0, 39);
+        Chrome.VLine(f, 0, top, bottom);
+        Chrome.VLine(f, 39, top, bottom);
+        foreach (var r in p.FrameRows)
+        {
+            Chrome.BraidCell(f, 0, r, true);
+            Chrome.BraidCell(f, 39, r, true);
+        }
+        foreach (var (col, row, text, colour) in p.Texts)
+            Text(f, col, row, Fit(text, 39 - col), colour);
+        int first = PageTop(p);
+        for (int k = 0; p.FirstRow + k <= p.LastRow && first + k < p.Rows.Count; k++)
+        {
+            int i = first + k;
+            bool sel = i == p.Selected && p.ShowSelection;
+            Text(f, p.RowCol, p.FirstRow + k, Fit(p.Rows[i], 39 - p.RowCol), sel ? Chrome.White : Chrome.Green);
+        }
+        for (int k = 0; k < p.Warning.Count; k++)
+            Text(f, 1, 21 + k, Fit(p.Warning[k], 38), Chrome.Yellow);
+
+        switch (_runner.Pending)
+        {
+            case PageRequest pr:
+                if (pr.Prompt is { Length: > 0 } prompt)
+                    Text(f, 0, MenuRow, prompt, PromptColour);
+                DrawEntries(f, pr.Entries, pr.Prompt?.Length ?? 0, _selected);
+                if (input.LastDevice != InputDevice.Keyboard)
+                    Text(f, 1, NumberButtonRow, Fit(PageHint(input, p.Rows.Count > 0), 38), Chrome.Grey);
+                break;
+            case ChoiceRequest { Vertical: false } c:
+                if (c.MenuPrompt is { Length: > 0 } mp)
+                    Text(f, 0, MenuRow, mp, PromptColour);
+                DrawEntries(f, c.Items, MenuStart(c), _selected);
+                break;
+            case DelayRequest when _view.PageMessage is { } msg:
+                Text(f, 0, MenuRow, Fit(msg, 40), Chrome.Green);
+                break;
+            case TextRequest t:
+                Text(f, 0, MenuRow, Fit(t.Prompt + " " + _typed + "_", 40), Chrome.Green);
+                if (input.LastDevice != InputDevice.Keyboard)
+                {
+                    int col = 1;
+                    foreach (var b in NumberButtons)
+                    {
+                        Text(f, col, NumberButtonRow, b, Chrome.White);
+                        col += b.Length + 1;
+                    }
+                }
+                break;
+        }
+    }
+
+    private void DrawEntries(IndexedFrame f, IReadOnlyList<string> words, int start, int selected)
+    {
+        int col = start;
+        for (int i = 0; i < words.Count; i++)
+        {
+            var w = words[i];
+            if (w.Length == 0 || col + w.Length > 40)
+                break;
+            Text(f, col, MenuRow, w[..1], Chrome.White);
+            Text(f, col + 1, MenuRow, w[1..], i == selected ? Chrome.White : Chrome.Green);
+            col += w.Length + 1;
+        }
+    }
+
+    /// <summary>How to work a page on the pad or with the mouse (the keyboard uses the original's keys).</summary>
+    private static string PageHint(ActionInput input, bool rows)
+    {
+        if (input.LastDevice == InputDevice.Mouse)
+            return rows ? "CLICK A ROW, THEN A WORD BELOW" : "CLICK A WORD BELOW";
+        var b = input.Bindings;
+        string L(GameAction a) => PromptLabels.For(b, a, InputDevice.Gamepad);
+        return (rows ? "UP/DOWN ROW " : "") + $"LEFT/RIGHT {L(GameAction.Confirm)} OK {L(GameAction.Cancel)} BACK";
+    }
+
     // ---------------------------------------------------------------------------------------------------------------
     // Draw
     // ---------------------------------------------------------------------------------------------------------------
@@ -431,6 +681,13 @@ public sealed class CombatScreen
         if (_runner.Pending is ListRequest page)
         {
             _list.Draw(f, _font, page, input);
+            return;
+        }
+        if (_view.Page is { } cp)
+        {
+            DrawPage(f, cp, input);
+            if (cp.Grey)
+                SwapGrey(f);
             return;
         }
         f.Clear(0);
@@ -495,8 +752,9 @@ public sealed class CombatScreen
     }
 
     /// <summary>
-    /// [?] Icons face right in the art; DOSBox-X shows the party (facing 7, NW) mirrored and the goblins (facing 3,
-    /// SE) as stored: we mirror facings 5–7. Which way N and S face is not seen.
+    /// Icons face right in the art; DOSBox-X shows the party (facing 7, NW) mirrored and the goblins (facing 3, SE)
+    /// as stored: facings 5–7 are mirrored. s15 (save K, Rhiannon moved): facing 0 (a step north) and 4 (a step south
+    /// after facing 6) show the stored icon, facing 6 the mirrored one. The drawing routine itself is not read [?].
     /// </summary>
     private bool Mirrored(EclCharacter c) =>
         _view.Fight is { } fight && fight.Record(c)[CombatRecord.Facing] is >= 5 and <= 7;

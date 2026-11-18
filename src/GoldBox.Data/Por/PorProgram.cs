@@ -115,6 +115,50 @@ public sealed class PorProgram
         return new Core.Game.TurnUndeadTable(Image.AsSpan(DataSegment + b, Core.Game.TurnUndeadTable.Length).ToArray());
     }
 
+    /// <summary>
+    /// The DS bases of ADDNPC's portrait tables (GAME.OVR 0x1F248; docs/re/ecl-format.md "ADDNPC"), found through the
+    /// code that indexes them: <c>add di,dx; mov al,[di+imm]; les di,[bp-12h]; mov es:[di+0BBh|0BCh],al</c>. Head = the
+    /// one base written to record 0xBB (v1.3: 0x08C7); bodies = the bases written to 0xBC in code order (v1.3: 0x08D7
+    /// class 0, 0x08EB class 5, 0x08F5 class 6, 0x08E1 the others). Null when the code is not found as expected.
+    /// </summary>
+    public (int Head, int[] Bodies)? NpcPortraitBases()
+    {
+        if (Overlay is null)
+            return null;
+        ReadOnlySpan<byte> pre = [0x03, 0xFA, 0x8A, 0x85];
+        ReadOnlySpan<byte> post = [0xC4, 0x7E, 0xEE, 0x26, 0x88, 0x85];
+        var o = Overlay.AsSpan();
+        var heads = new List<int>();
+        var bodies = new List<int>();
+        for (int i = o.IndexOf(pre); i >= 0 && i + 14 <= o.Length;)
+        {
+            if (o.Slice(i + 6, post.Length).SequenceEqual(post) && o[i + 13] == 0)
+            {
+                int imm = BinaryPrimitives.ReadUInt16LittleEndian(o[(i + 4)..]);
+                if (o[i + 12] == 0xBB)
+                    heads.Add(imm);
+                else if (o[i + 12] == 0xBC)
+                    bodies.Add(imm);
+            }
+            int next = o[(i + 1)..].IndexOf(pre);
+            i = next < 0 ? -1 : i + 1 + next;
+        }
+        return heads.Count == 1 && bodies.Count == 4 ? (heads[0], bodies.ToArray()) : null;
+    }
+
+    /// <summary>
+    /// A byte of the NPC portrait tables at DS:<paramref name="ds"/> (<see cref="Core.Game.IEncounterData.NpcPortraitByte"/>),
+    /// or null unless the program's tables sit at the v1.3 bases Core indexes (0x08C7 head; 0x08D7, 0x08E1, 0x08EB,
+    /// 0x08F5 bodies). Any DS offset is answered, as the program reads whatever byte a gender outside 0/1 indexes.
+    /// </summary>
+    public byte? NpcPortraitByte(int ds)
+    {
+        if (NpcPortraitBases() is not { } t || t.Head != 0x08C7 ||
+            !t.Bodies.Order().SequenceEqual([0x08D7, 0x08E1, 0x08EB, 0x08F5]))
+            return null;
+        return ds >= 0 && DataSegment + ds < Image.Length ? Image[DataSegment + ds] : null;
+    }
+
     // ---- Text tables (found through the code that indexes them; nothing is stored in our code) --------------------
 
     /// <summary>A Pascal string of at most <paramref name="max"/> printable characters at DS:<paramref name="ds"/>, or null.</summary>

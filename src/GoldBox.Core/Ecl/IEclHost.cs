@@ -131,8 +131,13 @@ public interface IEclHost
     // ---- Added in s11 (program read; default implementations keep older hosts working) -------------------------
     /// <summary>
     /// WHO (0x39, GAME.OVR 0x3879): the character pick menu with <paramref name="prompt"/>; returns the 0-based index of
-    /// the chosen party-list member, which the VM makes current, or null for no change. [?] What Escape leaves.
+    /// the chosen party-list member, which the VM makes current, or null for no change. −1 (<see cref="NoCharacter"/>):
+    /// the program's picker (START 0x37E8) after Escape — the menu (0x2CC8C) returns key 0, which writes nil into
+    /// DS:5D92 and keeps the menu open; Select / Enter then leave WHO with no current character. (Home after that picks
+    /// the last member; End reads the interrupt table through the nil pointer.)
     /// </summary>
+    const int NoCharacter = -1;
+
     int? PickCharacter(string prompt)
     {
         Who(prompt);

@@ -74,7 +74,10 @@ public sealed class Fight
             MonsterAi.RecalcHands(this, c);
     }
 
-    /// <summary>One game minute passes per round (clock routine 0x241A1, unit 1); the caller's clock.</summary>
+    /// <summary>
+    /// One game minute passes per round (clock routine 0x241A1, count 1, unit 1, with the effect timeout 0x23DCC):
+    /// <see cref="FightKit.WireClock"/> sets it. Null: no clock (tests with hand-made fights).
+    /// </summary>
     public Action? MinutePassed { get; set; }
     /// <summary>DS:49F4: when set, the "continue battle" question is not asked.</summary>
     public bool NoContinueQuestion { get; set; }

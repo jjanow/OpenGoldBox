@@ -179,12 +179,15 @@ public static class MoneyScreens
     }
 
     /// <summary>The money of a character as "N KIND" parts, highest kind first (for the view and lists).</summary>
-    public static string MoneyLine(TradeContext t, EclCharacter c)
+    public static string MoneyLine(TradeContext t, EclCharacter c) => MoneyLine(t.Text, c);
+
+    /// <summary>As <see cref="MoneyLine(TradeContext, EclCharacter)"/> from the texts alone.</summary>
+    public static string MoneyLine(GameText text, EclCharacter c)
     {
         var parts = new List<string>();
         for (int k = 6; k >= 0; k--)
             if (c.Word(Money.Coins + 2 * k) is var v and > 0)
-                parts.Add($"{v} {t.Text.Coin(k)}");
+                parts.Add($"{v} {text.Coin(k)}");
         return string.Join(" ", parts);
     }
 }

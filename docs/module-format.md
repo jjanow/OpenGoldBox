@@ -1,0 +1,400 @@
+# Module format (draft 0, s15)
+
+The contract between the importer, the engine and (later) the editor. A **module** is everything the engine needs to
+play one game or one community adventure: maps, scripts, art, records, text and the rule tables. The engine never reads
+the original containers (DAX, HLIB, FRUA design folders). Only `GoldBox.Importer` reads them.
+
+Inputs:
+- PoR: the `docs/re/*-format.md` specs.
+- The three late-engine surveys, section "implications" of each:
+  - `docs/re/survey-dqk.md` §9 (Dark Queen of Krynn);
+  - `docs/re/survey-pod.md` §8 (Pools of Darkness);
+  - `docs/re/survey-frua.md` §9 (Unlimited Adventures).
+
+The format must hold all four without loss. "Without loss" means the importer can write the original bytes of every
+raw resource back out, so they can be compared against the source and against saves.
+
+Status: draft, first implementation under way (s15): `src/GoldBox.Data/Module/` reads modules, `goldbox-import por`
+writes scripts, areas, maps, monsters, item/effect/treasure lists and item types, and the engine and Client
+(`--module DIR`) run PoR from them. `[?]` marks choices still open. See "Implementation order" for what is done.
+
+## 1. Principles
+
+1. **Original ids are kept.** Scripts, maps, monsters, items, pictures and wall sets keep the number the original
+   used. Saves and ECL then stay valid without translation tables.
+2. **Raw next to decoded.** A record whose layout is not fully known is stored as its raw bytes plus the fields we
+   have decoded. The engine uses the decoded fields. The raw bytes keep round trips exact and let a later decode
+   fill in more fields without re-importing. (Format 0.x: for PoR records raw is authoritative and the engine uses
+   it; see section 11.)
+3. **The engine is generic; per-game behaviour is named.** A module names a **rules profile** and a **VM profile**.
+   Both are code and tables in the engine (public). Numbers read from the player's program (combat tables, spell data,
+   program strings) are game data: the importer writes them into the module's `rules/` and `text/` folders, never into
+   the engine source.
+4. **Modules layer.** A module may depend on others. A resource is found by its key in the module itself first, then
+   in its dependencies, in the order they are listed. This is FRUA's "design file first, then the engine library"
+   rule, and it also covers sequels and community add-ons on top of an imported game.
+5. **No platform formats inside.** Art becomes indexed PNG plus JSON metadata. Text becomes UTF-8 JSON. Scripts are
+   the exception: ECL is kept as bytecode, because the VM runs it as-is.
+6. **Versioned.** Every module states `formatVersion`. The engine refuses a newer major version and migrates older
+   ones.
+
+## 2. Resource keys
+
+Every resource is addressed by **(kind, bank, id)**.
+
+- `kind`: `script`, `map`, `area`, `wallset`, `picture`, `sprite`, `icon`, `backdrop`, `combatGround`, `tile`, `monster`,
+  `itemList`, `treasureList`, `effectList`, `itemTemplate`, `font`, `sound`, `music`, `events`, `textPool`.
+  `treasureList` is PoR's placed treasure (`ITEM<d>`): its ids collide with the monster item lists (section 16).
+- `bank`: a namespace for ids the original reuses. PoR picks `WALLDEF<d>`, `8X8D<d>`, `MON<d>CHA/ITM/SPC` and
+  `ITEM<d>` by the disk digit, and the same id means different data on different disks. For those kinds the bank is the
+  disk number. Scripts and maps have ids that are unique over all disks, so they use bank 0. Bank 0 is the default
+  everywhere. DQK, PoD and FRUA have no disk files, so they use bank 0 throughout.
+- `id`: the original number.
+
+The VM profile says, per kind, whether lookups go through the bank. For PoR, the current bank is VM $6E12 (DS:5376,
+the disk byte). In paths a key is written `<kind>/<bank>/<id>`, e.g. `wallsets/3/0.json`, `monsters/2/41.json`.
+
+The PoR script's disk is still needed: $6E12 is VM state that scripts read and write. The importer records each
+script's and each map's disk as `meta.disk` in its JSON. The key stays bank 0, but the `ecl-por-1.3` profile checks
+`meta.disk` against the current disk: the program opens `ECL<d>`/`GEO<d>` of the current disk and fails when the block
+is not there, and the module must fail the same way (a lookup that ignored the disk would succeed where the original
+stops). A resource without `meta.disk` (a hand-made module) is found on any disk. (Changed in s15: the draft said the
+engine does not use the disk to find a script.)
+
+## 3. Layout
+
+```
+module.json                    manifest (section 4)
+areas/<id>.json                what an area is: view kind, script or events, maps, entry points (section 6)
+maps/<bank>/<id>.json          one grid: size, edge rule, named layers (section 7)
+scripts/<bank>/<id>.ecl        ECL bytecode exactly as the VM loads it (section 8)
+scripts/<bank>/<id>.json       sidecar: original prefix bytes, disk, source block
+events/<area>.json             typed events, FRUA style (section 9)
+art/<variant>/<kind>/<bank>/<id>.png   (+ .json)   indexed images (section 10)
+records/monsters/<bank>/<id>.json      creature records (section 11)
+records/itemLists/<bank>/<id>.json     monster inventories
+records/treasureLists/<bank>/<id>.json placed treasure (PoR ITEM<d>)
+records/effectLists/<bank>/<id>.json
+records/itemTemplates.json, records/itemTypes.json
+rules/*.json                   tables read from the player's program (section 12)
+text/<lang>.json               program and module text by key (section 13)
+audio/                         sounds and music by id (optional)
+transfer.json                  what characters bring in and take out (section 14)
+saves/                         shipped saves / premade characters (optional; section 15)
+```
+
+A module is a directory, or the same tree in a zip. File names are lower case, and ids are decimal with no padding.
+
+## 4. Manifest (`module.json`)
+
+```json
+{
+  "formatVersion": "0.1",
+  "id": "por",
+  "title": "Pool of Radiance",
+  "version": "1.3.0",
+  "kind": "game",
+  "rules": "por-1.3",
+  "vm": "ecl-por-1.3",
+  "start": { "area": 0, "map": 0, "x": 0, "y": 0, "facing": 0 },
+  "dependsOn": [],
+  "art": { "variants": ["dos", "amiga"], "defaults": { "portrait": "amiga", "picture": "amiga", "wall": "dos" } },
+  "source": {
+    "importer": "GoldBox.Importer 0.1",
+    "game": "por", "platform": "dos", "release": "1.3",
+    "inputs": [ { "file": "GAME.OVR", "sha256": "…" } ]
+  },
+  "credits": "", "license": ""
+}
+```
+
+- `kind`: `game` (imported original), `base` (shared library, e.g. `frua-base` built from the FRUA install), `design`
+  (a FRUA or community adventure), `addon`.
+- `rules` and `vm` name profiles that ship with the engine. `vm` is absent for event-only modules (FRUA designs).
+- `dependsOn`: `[{ "id": "frua-base", "version": ">=1.2" }]`. Resolution order is the list order, after the module
+  itself.
+- `source` records the files the import read, by hash. This is enough to say "re-import needed" when the importer
+  changes, and it ties bug reports to a release.
+- `start`: for imported games, the new-game position. The original start position is a script matter (PoR runs a
+  script at start-up); `start` is what the engine passes to it `[?]` until the start-up sequence is specified.
+
+## 5. Profiles (in the engine, not in the module)
+
+### 5.1 VM profile
+
+One per ECL dialect. All of these differ between PoR, PoD and DQK (surveys):
+
+| Field | PoR v1.3 | PoD | DQK |
+|---|---|---|---|
+| Script load address, prefix bytes dropped, size cap | $9900, 2, 7,680 | $8000, 0 `[?]`, `[?]` | $8000, 0, 12,003 |
+| Memory map: regions, cell width, saved or not | 4 regions, 16-bit cells + byte script area | 1 KB byte globals, 510-byte character window at $0401 | game block $0001–$0400, character window $0401–$0800 |
+| Operand width rule | from the address region | from the operand type | from the operand type |
+| Special cells (live engine state: x, y, facing, …) | `ecl-format.md` "Special addresses" | survey §3.3 | survey §3 |
+| Unmapped read | stack residue | 0 | 0 |
+| Opcode table: handler per number, operand counts, variadic count position | 0x00–0x3D | 66 | 0x00–0x41 |
+| IF-skip table | PoR's own, with its six mis-skips | separate table | correct skips |
+| RETURN on an empty stack | falls through | `[?]` | exits |
+| CALL and PROGRAM id maps | PoR | PoD | DQK |
+| Character view (script field → record field, write whitelist) | $6B00 redirections | raw record window | 58 translated fields |
+| Script bytes saved with the game | yes | no (reload by id) | no |
+| Banked kinds | wallset, monster, itemList, treasureList, effectList (by disk); script and map ids checked against the disk (section 2) | none | none |
+
+The profile is C# (handlers) plus a table file in `src/GoldBox.Core/Ecl/Profiles/`. It is ours, written from the specs,
+and it holds no game data. Today's `EclVm`, `EclMemory` and `EclOpcodes` are the `ecl-por-1.3` profile with the
+choices hard-coded. Turning those choices into profile fields is engine work. The module format only names the
+profile.
+
+### 5.2 Rules profile
+
+Names the rule code (combat, spells, levels, treasure, shop, temple, camp) and the shape of the tables it expects in
+`rules/`. Profiles: `por-1.3` first, then one per game. `frua` covers FRUA designs. A community `goldbox-modern`
+could reuse a profile's code with edited tables.
+
+## 6. Areas (`areas/<id>.json`)
+
+An area is what the party is "in": one script, or one event set, plus the maps it may show. The id is the script id
+for ECL games (PoR: 0–29) and the area number for FRUA (1–40).
+
+```json
+{
+  "id": 24,
+  "views": [ "3d" ],
+  "script": { "kind": "script", "bank": 0, "id": 24 },
+  "maps": [ 24, 31 ],
+  "noWrapOffMap": false,
+  "notes": "LOADFILES with a computed map operand: maps lists only the immediate ones [?]"
+}
+```
+
+- `views`: the views the area's script switches between: `3d` (grid maps), `overland-tiles` (PoR's wilderness: a tile
+  table plus special locations), `overland-picture` (DQK: a big picture plus script logic, no grid); empty for a
+  script with no view of its own (PoR 19, the silver dragon lair). A list, not one value (changed in s15): PoR's
+  wilderness scripts 25–27 are both 3D lairs and the overland (`$49E6`), and 8 and 11 load map 0 (the draft listed
+  them as map-less).
+- `name` is optional. Area names are not in the PoR files, so the importer writes none.
+- `script` xor `events` (section 9). A FRUA area has `events` and exactly one map. `maps` lists the maps the script is
+  known to load. It is for tools and checks only; the script decides at run time. The PoR importer takes the immediate
+  map operands of LOADFILES on code reachable from the vectors that name a GEO block on the script's own disk; computed
+  operands (blocks 3, 5, 24) are noted in `notes` with `[?]`.
+- `noWrapOffMap`: PoR returns 0 off the map while scripts 0 or 10 run (`geo-format.md` "Edges"). Fields like this
+  are per-area flags taken from program rules, written by the importer. The engine still applies its own copy of
+  the rule (`is 0 or 10`); reading the flag from the module instead is rules-profile work `[?]`.
+- FRUA area header fields go in `areas/<id>.json` under `frua`: entry points, wall/backdrop/combat-art ids, 8 zones
+  (backdrop, combat art, rest encounter, text), step events, summoned monster, undead modifier, camp and treasure
+  pictures, area-view flag. The raw 290-byte header is kept beside them (`raw`, base64).
+- Overland (`overland-tiles`): `tiles` (width, height, 1-based tile numbers), `specialLocations` (x, y, tile). The
+  rule saying when each special location shows is rules-profile code. PoR's table comes from START.EXE at import.
+
+## 7. Maps (`maps/<bank>/<id>.json`)
+
+```json
+{
+  "width": 16, "height": 16,
+  "edges": "wrap",
+  "layers": {
+    "wallN": [ … w×h … ], "wallE": [ … ], "wallS": [ … ], "wallW": [ … ],
+    "barrierN": [ … ], "barrierE": [ … ], "barrierS": [ … ], "barrierW": [ … ],
+    "event": [ … ]
+  },
+  "raw": { "header": "AAQ=" },
+  "meta": { "disk": 1 },
+  "source": { "container": "GEO1.DAX", "block": 24 }
+}
+```
+
+- Any size: DQK is up to 39 × 39, and FRUA areas are 11–50 per side with at most 576 cells. Each layer is a row-major
+  array of `width × height` integers, x east and y south (`geo-format.md`).
+- `edges`: `wrap` (PoR), `solid` (DQK `[?]`), `none`.
+- **Layers are named, and the rules profile interprets them.** Every square stores its own four faces, because PoR's
+  one-way walls come from faces that disagree. PoR uses wall type and barrier per face, plus the event byte. FRUA uses
+  `wallN..W` (graphic) and `doorN..W` (door kind: secret, locked, wizard-locked, key n, blocked, false), plus
+  `eventSlot`, `backdrop` and `zone`. A layer the profile does not know is kept and ignored.
+- `raw.header`: bytes before the planes that are not decoded. PoR has a 2-byte size word; DQK has 6 bytes `[?]`.
+- PoR layers hold the **stored** values (wall nibbles, the 2-bit barrier of every face, the event byte), not what
+  the engine's accessors compute: a face with no wall reads as passable whatever its barrier bits say, and those bits
+  are kept so the block rebuilds.
+- `meta.disk` and `source`: section 2 (disk check) and the original block, as for scripts.
+- Wall graphics are not named by the map. In PoR, the script loads wall sets into slots (LOADPIECES, $6E22–$6E26).
+  In FRUA, the area header names them. The map only holds slot-relative wall types.
+
+## 8. Scripts (`scripts/<bank>/<id>.ecl`)
+
+- The bytes the VM loads at the profile's load address, with the container prefix removed (PoR: the 2-byte 0x1388;
+  DQK and PoD: nothing). The sidecar `.json` keeps the dropped prefix, the source container and block, and PoR's
+  disk number: `{ "prefix": "iBM=", "meta": { "disk": 2 }, "source": { "container": "ECL2.DAX", "block": 20 } }`.
+  These are enough to rebuild the original block byte for byte. The PoR engine source hands the VM the rebuilt
+  block (prefix + bytecode), as the DAX reader does.
+- The text inside a script (6-bit packed strings) stays in the bytecode. Translation works by override: `text/<lang>.json`
+  may hold `script:<bank>.<id>@<address>` keys that the host prints instead of the decoded string `[?]`. This is not
+  needed for parity.
+- Self-modifying scripts are why PoR saves the script. A save records which module script it started from (section 15).
+- A later readable module script (PLAN §8) compiles to one of two targets: ECL for a VM profile, or typed events.
+  It is not part of format 0.x.
+
+## 9. Typed events (`events/<area>.json`)
+
+For FRUA designs, and later for hand-made modules that don't want bytecode.
+
+```json
+{
+  "slots": [
+    { "slot": 1, "type": "text", "once": true, "chain": 0, "condition": { "kind": "always" },
+      "fields": { "text": 12, "picture": 0 }, "raw": "base64 of the 20 bytes" }
+  ],
+  "text": { "12": "WELCOME TO …" }
+}
+```
+
+- The head every event shares: type, run-once and chain bits, one condition from a closed list, and the next slot
+  (survey-frua §4.2). `fields` hold the decoded per-type values. `raw` holds the record exactly as stored.
+- FRUA's numbering is part of the data: slots 1–100, text slots 1–400, done bits area × 100 + slot − 1. Imports keep
+  it. `text` is the area's text pool, keyed by slot.
+- **Engine services are event types**: shop, temple, training, tavern, inn, vault, combat setup, encounter menu.
+  ECL hosts call the same services, so one Core implementation serves both. The event-type list and its JSON
+  schemas are defined in phase 7, from `SCRIPT.GLB`'s field descriptions (bit position, range, choices). Those
+  descriptions also drive the editor's forms.
+
+## 10. Art (`art/<variant>/<kind>/<bank>/<id>.png` + `.json`)
+
+- **Indexed PNG, never flattened to RGB.** The palette stays the palette, so colour cycling and palette swaps keep
+  working. 16-colour EGA art is a 16-entry PNG. A 256-colour picture carries the colours it owns, and the JSON says
+  where they sit in the 256-entry screen palette.
+- One file per frame: `<id>.png` for a single image, `<id>/<frame>.png` for frames and animations.
+- Sidecar JSON:
+
+```json
+{ "transparent": 255, "hotspot": [0, 0], "paletteRange": [32, 63], "cycles": [ { "from": 40, "to": 47, "rate": 4 } ],
+  "egaFallback": [ … ], "frames": 3, "delta": "xor", "source": { "container": "PIC1.DAX", "block": 5 } }
+```
+
+- **Variants**: `dos` is always complete. `amiga` holds only the assets the Amiga version has (section 4.3 of the
+  PLAN). The engine looks in the variant the player chose, then in `dos`. `module.json` `art.defaults` gives the
+  "Best" mix per category. A wrong or missing Amiga asset therefore never breaks a module.
+- `kind` names follow what the engine draws: `picture`, `portraitHead`, `portraitBody`, `sprite`, `icon`, `wallset`
+  (symbol sheets, plus the WALLDEF layout in JSON), `backdrop`, `combatGround`, `tile`, `frame`, `font`, `title`.
+- The palette values themselves come from the player's files at import. The engine source holds none (see PLAN §9,
+  the held-back Amiga palette scripts).
+
+## 11. Records
+
+- **Raw is authoritative in format 0.x.** Byte arrays are written as base64. Each record carries `raw` (its bytes)
+  and `fields` (the decoded view, nested objects named as in the `docs/re` specs and the `gbchar.py`/`gbitem.py`
+  JSON). The engine builds its records from `raw`: Core works on the PoR byte layouts (the VM reads character bytes
+  through the $6B00 window). `fields` is a read-only view for tools and people; writing a record's fields back over
+  its raw bytes gives the raw bytes (tested). When an editor needs to change records, fields will win over raw where
+  both exist `[?]`. (Changed in s15: principle 2 says the engine uses the decoded fields; for PoR records it does not
+  yet.)
+- **Monsters** (`records/monsters/<bank>/<id>.json`): `fields` (decoded, named as in `character-format.md`), `raw`
+  (the record bytes), `items` (an `itemList` key), `effects` (an `effectList` key). The record shape is per rules
+  profile: PoR 285 bytes, PoD 510, DQK a character record plus a variable tail, FRUA 450. The profile's codec names
+  the fields.
+- **Item lists**, **treasure lists** and **effect lists**: `{ "recordSize": 63, "records": [ { "fields": {…},
+  "raw": "…" } ], "trailing": null, "source": {…} }`, item records (63 bytes in PoR) or effect records (9 bytes).
+  `trailing` holds bytes after the last whole record (none in PoR). PoR's ECL TREASURE operand `k < 0x80` reads
+  `treasureLists/<disk>/<k>`; a monster's inventory is `itemLists/<disk>/<id>`.
+- **Item templates and types**: PoR's `ITEMS` (128 × 16) goes to `itemTypes.json`: `{ "entrySize": 16, "header":
+  "…" (the 2 bytes the program skips), "types": [ { "type": 0, "fields": {…}, "raw": "…" } ] }`. FRUA's `ITEM.DAT`/`ITEMS.DAT`
+  go to `itemTemplates.json` and `itemTypes.json`. PoD's 17-byte templates go to `itemTemplates.json`.
+- **Characters** are not module data. Premade parties are save data (section 15).
+
+## 12. Rules data (`rules/*.json`)
+
+Tables the rules profile needs, read by the importer from the player's program (today `PorStartExe`, `PorProgram` and
+`PorSpellData` read them at run time):
+
+- combat tables (THAC0, saves, to-hit, damage), level and XP tables, the spell table, race and class limits;
+- the random-treasure tables, shop and temple price tables;
+- the overland tile table and special locations (also referenced from `areas/`).
+
+Each file names the profile and the program offset it came from. A file is decoded where the spec is settled and raw
+where it is not. The rules profile checks that every table it needs is there when the module loads.
+
+## 13. Text (`text/<lang>.json`)
+
+```json
+{ "program.menu.camp": "CAMP", "program.0x1A2B": "…", "frua.label.1.42": "…" }
+```
+
+- Program strings, read from the EXE by offset per release (the offsets differ between v1.0 and v1.1 in DQK), keyed
+  by a stable name where the engine uses them and by offset otherwise.
+- Area text pools of FRUA designs live with the events (section 9). Script text lives in the scripts (section 8).
+- The printed journal is not in the files, so it is never imported. A module may add `journal.<n>` entries itself
+  (community modules, or a player's own transcription for the in-game journal QoL option).
+- Case is kept as written: FRUA and DQK script text is upper-case only.
+
+## 14. Transfer (`transfer.json`)
+
+What a character may bring in and take out: level caps, item stripping, gold reset, and the source games or modules
+accepted (`from: ["por", "frua:*"]`). The original chains are built in (PLAN §5). The character manager chains
+conversions (PoR → Curse → Silver Blades → PoD), so `transfer.json` names only its own direct sources. Format details
+belong to phase 4 `[?]`.
+
+## 15. Saves (engine side; recorded here because the module fixes them)
+
+- An engine save names the module (id, version, a content hash) and holds: VM memory (the regions the VM profile marks
+  as saved), position, party, clock, and either the current script bytes (VM profiles that save them, PoR) or the
+  script key (PoD, DQK, FRUA).
+- **Import of original saves**: the importer converts `SAVGAMx.DAT` + `CHRDAT*` into an engine save. PoR's stored
+  script is checked against `scripts/0/<id>.ecl`. If they differ (a self-modified script), the stored copy wins, as in
+  the game.
+- Shipped saves (PoR's ready-made party in slot A/J, FRUA premade `.CCH`, DQK's quick-start party) go to `saves/`.
+
+## 16. What the PoR importer writes (mapping)
+
+| Original | Module |
+|---|---|
+| `ECL<d>.DAX` block n | `scripts/0/<n>.ecl` (+ `.json`: prefix 0x1388, disk d) and `areas/<n>.json` |
+| `GEO<d>.DAX` block n | `maps/0/<n>.json` (16 × 16, `wrap`, 9 layers, header word) |
+| `WALLDEF<d>.DAX` block n + `8X8D<d>.DAX` | `art/dos/wallset/<d>/<n>.png` + `.json` (WALLDEF layout) |
+| `MON<d>CHA/ITM/SPC.DAX` block n | `records/monsters/<d>/<n>.json`, `records/itemLists/…`, `records/effectLists/…` (monster) |
+| `ITEM<d>.DAX` block k | `records/treasureLists/<d>/<k>.json` (placed treasure; the ids collide with `MON<d>ITM`, below) |
+| `ITEMS` | `records/itemTypes.json` |
+| `PIC`, `CPIC`, `CHEAD`, `CBODY`, `SPRIT`, `COMSPR`, `DUNGCOM`, `WILDCOM`, `RANDCOM`, `BACPAC`, `SQRPACI`, `TITLE`, `8X8D` symbols… | `art/dos/<kind>/<bank>/<id>.png` |
+| Amiga `*.dax` | `art/amiga/…` where an asset maps to the same key |
+| START.EXE / GAME.OVR tables | `rules/*.json`, `text/en.json`, the overland in `areas/` |
+| `SAVGAMA.DAT`, `SAVGAMJ.DAT` + `CHRDAT*` | `saves/a/`, `saves/j/` (engine save + converted characters) |
+
+`ITEM<d>` and `MON<d>ITM` both use block ids per disk. **They collide** (checked by the importer on v1.3, s15): 11 ids
+on 5 disks are both, with different bytes every time: disk 1: 6, 9, 22; disk 2: 1, 2, 3, 5; disk 3: 51, 53; disk 4:
+29; disk 8: 32. So placed treasure has its own kind, `treasureList`.
+
+PoR v1.3 import (s15): 29 scripts and areas, 29 maps, 172 monsters, 105 monster item lists, 42 effect lists, 46
+treasure lists, 128 item types; all 424 blocks (and the `ITEMS` file) rebuild byte for byte, from the files and again
+through the engine's reader (847 comparisons).
+
+## 17. Implementation order
+
+1. `GoldBox.Data/Module`: the manifest, resource keys, a resolver over the module plus its dependencies, readers for
+   maps, scripts and records. Interfaces replace `PorGameDirectory` where Core reaches data. `IEclScriptSource`
+   already exists for scripts; maps, wall sets, monsters, item lists and pictures need similar interfaces.
+   **Done (s15)** for scripts, maps, monsters, item/effect/treasure lists and item types: `IAreaMapSource` (Core),
+   `IPorContent` (Data; implemented by `PorGameDirectory` and `Module.Por.PorModule`). Wall sets and pictures: not yet.
+2. `GoldBox.Importer` (CLI `goldbox-import por GAMEDIR OUTDIR`): scripts, maps, records, item types first. Then art
+   (DOS, then Amiga), rules tables, text, saves. **Done (s15)** for the first group, areas included.
+3. **Round-trip test:** for every raw resource, module → original block must be byte-identical to the DAX block. All
+   existing real-data tests also pass with the Client and Core reading the module instead of the game folder.
+   **Done (s15)** for the imported kinds (`PorRoundTrip`, also run by the CLI); the same scripts, saves and golden
+   DOSBox captures run identically from the module (`PorModuleTests`).
+4. Client `--module DIR` next to `--game DIR`. `--game` imports to a cache folder first, then loads the module.
+   **Started (s15):** `--module DIR` reads scripts, maps, monsters, treasure and the fight's item types from the
+   module. Until art, rules tables, text and saves are imported, the Client and `PorGame` still read those from the
+   game folder (a transitional hybrid: the engine still opens DAX art and the program); the Client's screens also
+   still read `ITEMS` from the folder (`ClientResources`: scroll test, item slot). The cache-folder import is not
+   done.
+5. JSON schemas under `src/GoldBox.Data/Module/Schemas/`, tested against the importer's output.
+
+## 18. Open `[?]`
+
+- JSON arrays vs a binary sidecar for large layers and raw blobs. JSON is used until size or load time says otherwise.
+- The start-up sequence (new game vs load), and therefore what `start` means.
+- DQK's 6 map-header bytes and edge rule; PoD's script prefix and RETURN-on-empty.
+- Settled (s15): PoR's `ITEM<d>` and `MON<d>ITM` ids collide (section 16); `treasureList` added.
+- The zip form of a module (section 3): only folders are read so far.
+- The importer does not detect the PoR release; it writes `por-1.3` / `ecl-por-1.3` (the engine supports v1.3 only).
+- `source.inputs` hashes the files read; a test copy with a patched `GAME.OVR` would hash differently from a clean
+  install (GAME.OVR is not read by this import yet).
+- Areas: maps loaded through computed LOADFILES operands are not listed (PoR 3, 5, 24).
+- Fields over raw: when an editor changes records, which wins (section 11).
+- Script text translation keys (section 8).
+- How a 256-colour game's screen palette is assembled from per-asset ranges (DQK, PoD art specs pending).
+- FRUA hacks (replaced engine files, EXE patches): imported as data overrides where possible, reported otherwise.

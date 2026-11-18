@@ -137,10 +137,13 @@ public sealed class CaptureReport
 /// the port-E9 trace (PC, opcode, flags before each instruction); their boot's RandSeed is unknown, so each roll is
 /// searched: the first value whose run stays on the trace.
 /// </summary>
-public sealed class EclCaptureComparer(string fixturesDir, PorGameDirectory game)
+/// <param name="content">Scripts, maps and records (an imported module); null = <paramref name="game"/>. Saves and
+/// the program still come from <paramref name="game"/>.</param>
+public sealed class EclCaptureComparer(string fixturesDir, PorGameDirectory game, IPorContent? content = null)
 {
     public string FixturesDir { get; } = fixturesDir;
     public PorGameDirectory Game { get; } = game;
+    public IPorContent Content { get; } = content ?? game;
 
     /// <summary>Upper bound on replays for one roll search.</summary>
     public int MaxAttempts { get; set; } = 20_000;
@@ -195,9 +198,9 @@ public sealed class EclCaptureComparer(string fixturesDir, PorGameDirectory game
         // from the same queue as the other menus, in the order the player gave them.
         var encounter = new EncounterHost(memory, host,
             new ScriptedEncounterUi(host.MenuChoices) { StopWhenInputMissing = true }, new RecordingCombatRunner(),
-            new PorEncounterData(Game));
+            new PorEncounterData(Content, Game));
         var sink = new ListTraceSink();
-        var vm = new EclVm(memory, encounter) { Scripts = Game, Trace = extraSink is null ? sink : new TeeSink(sink, extraSink) };
+        var vm = new EclVm(memory, encounter) { Scripts = Content, Trace = extraSink is null ? sink : new TeeSink(sink, extraSink) };
         encounter.CurrentBlock = () => vm.CurrentScript;
         encounter.Vm = vm;
         vm.ScriptSwitchEventByte = afterInit =>
@@ -306,12 +309,8 @@ public sealed class EclCaptureComparer(string fixturesDir, PorGameDirectory game
     }
 
     /// <summary>The current map's planes from <c>GEO&lt;disk&gt;.DAX</c> (block $49C5, 2-byte header dropped), or null.</summary>
-    private MapPlanes? GeoMap(EclMemory memory)
-    {
-        var path = Game.Find($"GEO{memory.Disk}.DAX");
-        var block = path is null ? null : Dax.DaxFile.Open(path).Block(memory.Read(0x49C5));
-        return block is { Length: >= 2 + 512 } ? new MapPlanes(block[2..]) : null;
-    }
+    private MapPlanes? GeoMap(EclMemory memory) =>
+        Content.LoadMap(memory.Disk, memory.Read(0x49C5)) is { } m ? new MapPlanes(m.PlanesArray) : null;
 
     private void SetPosition(EclMemory memory, string capture)
     {

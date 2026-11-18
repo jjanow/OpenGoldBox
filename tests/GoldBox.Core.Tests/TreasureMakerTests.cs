@@ -215,4 +215,19 @@ public class TreasureMakerTests
             Assert.True(t[magic + 4] > 0, $"entry {magic}: value");
         }
     }
+
+    [PorFact]
+    public void Player_program_holds_the_npc_portrait_tables_at_the_bases_addnpc_reads()
+    {
+        var game = PorData.Open();
+        var prog = PorProgram.Open(game)!;
+        var t = prog.NpcPortraitBases();
+        Assert.NotNull(t);
+        Assert.Equal(0x08C7, t.Value.Head);
+        Assert.Equal([0x08D7, 0x08EB, 0x08F5, 0x08E1], t.Value.Bodies); // code order: class 0, 5, 6, others
+        var data = new PorEncounterData(game);
+        for (int k = 1; k <= 16; k++)
+            Assert.Equal(prog.Image[prog.DataSegment + 0x08C7 + k], data.NpcPortraitByte(0x08C7 + k));
+        Assert.All(Enumerable.Range(1, 16), k => Assert.True(data.NpcPortraitByte(0x08C7 + k) > 0));
+    }
 }

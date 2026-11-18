@@ -47,9 +47,11 @@ public static class CharacterView
         t.Dialog.Say(what + ": NOT IN THIS BUILD YET.", colour: 14);
 
     /// <summary>The character page's lines: name, abilities, levels, hit points, money, weight.</summary>
-    public static List<ListLine> Sheet(TradeContext t, EclCharacter c)
+    public static List<ListLine> Sheet(TradeContext t, EclCharacter c) => Sheet(t.Text, c);
+
+    /// <summary>The character page's lines from the program's texts alone (the fight's View has no trade context).</summary>
+    public static List<ListLine> Sheet(GameText x, EclCharacter c)
     {
-        var x = t.Text;
         string I(int v) => v.ToString(CultureInfo.InvariantCulture);
         string L(Msg m) => x[m].Trim(); // the program pads its labels for its own layout
         var lines = new List<ListLine> { new(c.Name.ToUpperInvariant(), 15, 1) };
@@ -73,7 +75,7 @@ public static class CharacterView
         lines.Add(new($"HP {I(c[0x11B])}/{I(c[0x32])}  AC {I(60 - c[0x111])}", 10, 1));
         byte st = c[0x10C];
         lines.Add(new($"{L(Msg.Status)} {(st < Statuses.Length ? Statuses[st] : I(st))}", 10, 1));
-        lines.Add(new(MoneyScreens.MoneyLine(t, c), 14, 1));
+        lines.Add(new(MoneyScreens.MoneyLine(x, c), 14, 1));
         lines.Add(new($"{L(Msg.Encumbrance)} {I(c.Word(Money.Weight))}  {L(Msg.Movement)} {I(c[0x11C])}", 10, 1));
         // One row each (the screen places the lines top down from row 1).
         return lines;

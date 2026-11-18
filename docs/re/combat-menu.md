@@ -145,12 +145,21 @@ Arguments: creature, range (0xFF = from the weapon), attack mode (1 from the men
   square; the sweep when it applies → actions end (START 0x31D7; the move path does not do this); otherwise note the
   direction (0x13FF1), ammunition = the ranged weapon's ammunition, except a throwable weapon at distance 1 uses none;
   MakeAttack (0x1407F) with it. Aim keeps running while not done and the key was not Exit / Escape.
-- **Manual** (0x155F5): a cursor on squares (0..49 × 0..24), path distance from the creature (0x2FF74) shown; Target
-  / Return accept a square when reachable, distance ≤ range, its ground cost is not 0xFF, the creature there passes
-  the target check, and in attack mode it is not the creature itself, not a downed creature's square (ground 0x1F
-  with no live occupant; the bodies list DS:66D6, 7-byte entries, count DS:6715), plus the ranged-weapon rule above;
-  with no creature on it only in square mode. The Core model takes targets from the candidate list only; manual
-  squares are left to the Client `[?]`.
+- **Manual** (0x155F5; read in full s15): a cursor on squares, starting on the shown candidate's square. Each pass
+  moves it one square (arrows, Home, PgUp, End, PgDn: directions 0–7 through DS:2736/273F; C centres the view and
+  the cursor stays; any other key: no move), clamped to 0..49 × 0..24. Then the line 0x2FF74 from the aimer to the
+  cursor (length argument 0xFF, so only blocking terrain stops it); the distance shown is the walked half squares ÷ 2
+  ("Range = n" on row 23 in attack mode when the line got through). The creature under the cursor, only when the line
+  got through: the one in the cell's slot (0x30BF8), else on ground 0x1F the last entry of the bodies list DS:66D6
+  (7-byte entries, count DS:6715) lying there. Target is offered when the line got through, range ≥ distance and the
+  ground's cost (DS:2744) is not 0xFF; and with a creature: it passes the target check (0x13880; run even when out of
+  range), and in attack mode it is not the aimer, not a body square with no live occupant, plus the ranged-weapon rule
+  above; with no creature: only in square mode. Menu: a cursor-keys hint + a target word (when offered) + "Center
+  Exit". Target / Return: when offered, the result = the creature (or none) and the square; attack mode → the attack
+  0x15438 (done as it reports), else done = 1; when not offered or not done the result is cleared and done = 0.
+  Manual ends after Target, Return, E or Escape (set CS:0x2DA7); Aim then builds its list again (0x15AE1) and goes on
+  from the same place unless done. The menu's Aim passes square mode 0 (0x9BEE). Core: `FightMenu.Manual`
+  (`IFightMenuChooser.ChooseManual`, `ManualView`, `ManualInput`; needs the `CombatMap`).
 - **D**: `m09`/`m10` (aim starts on the creature itself at range 0, Next goes to a goblin at range 1 with Target
   offered, Target makes the melee attack); `fight_ranged` (darts, range 6 − 1 = 5: a goblin at range 3 is offered;
   three darts thrown, count 11 → 8).
@@ -185,7 +194,9 @@ can't be cast in a fight (a message that the spell is for camping only, nothing 
 - After a pick, in a fight (0x27D9C–0x27E00): the caster **faces the aimed square** (the first direction whose cone,
   0x300CD, holds DS:6DB9/6DBA; its own square gives 0) through 0x31232, so combat record +9 changes. **D**: Rhiannon's
   +9 6 → 0 casting Sleep at the goblin north of her, DS:6DB9/6DBA = 26,12 afterwards (`fight_moves` s03, r01).
-- Manual squares (a bare square in square mode) are not modelled; the Core aims at candidates only `[?]`.
+- Square mode (8–0x0E only, 0x14A27; the other modes pass 0): Manual may take a bare square; the pick is made when the
+  aim is done and the list is built around the aimed square (DS:6DB9/6DBA = the result's square), the caster's +0x0A
+  = none. Core: `FightMenu.AimSpell` (`FightManualAimTests`: Sleep at an empty square).
 
 ## Sweep attacks (0x1367D, attacker, defender) — P
 
@@ -274,7 +285,7 @@ entries, then the item list (0x2D669: an entry key and the item under the cursor
 | Entry | Shown when | Does |
 |---|---|---|
 | Ready | always | ready / unready 0x2250A (`combat-ai.md` "Ready / unready") |
-| Use | in play, VM $49E5 = 0, and DS:49F3 is 2–4, or a fight with combat record +2 (item use allowed) ≠ 0 | not readied → "must be readied"; a scroll (0x2A255) or power 0x3D > 0 with kind 0x3E < 0x80 → item use 0x22AC4 (`combat-ai.md` "Item use"), done as it reports (outside a fight done is reset to 0); else nothing |
+| Use | in play, VM $49E5 = 0, and DS:49F3 is 2–4, or a fight with combat record +2 (item use allowed) ≠ 0 | not readied → a "needs readying" message; a scroll (0x2A255) or power 0x3D > 0 with kind 0x3E < 0x80 → item use 0x22AC4 (`combat-ai.md` "Item use"), done as it reports (outside a fight done is reset to 0); else nothing. The player's pick is 0x27C38's (ai = 0): the same aim and abort loop as a cast from the menu (Core: `FightMenu.PickForItem`, through `IFightItemScreens.Use(fight, c, menu)`; `IItemScreenChooser.AimItem` only when the screens are opened without the menu) |
 | Trade | not an NPC in play, not in a fight | 0x21DAA, then 0x2276E `[?]` |
 | Drop | always | 0x21DAA, then "drop it?" → the item leaves the list (START 0x20A9) |
 | Halve | 0xC7 < 16 | 0x22827 |
@@ -329,8 +340,9 @@ and Speed menus, an AI attack at game speed 9). Code: `src/GoldBox.Client/Screen
 - **Icons**: player characters (record 0x84 < 0x80) get the party icon, other creatures the CPIC block = their icon slot's picture (LoadCombatIcon; a joined NPC not checked `[?]`), attack pose + 128 (seen in the AI
   burst); party members are CBODY + CHEAD (head on the top rows) recoloured by 0xC1–0xC6, + 64 for icon size 2: all six
   members of save A matched pixel for pixel (`CombatArt.Party`). Colour 0 is see-through. Facing 5–7 mirrors the
-  icon (party at 7 mirrored, orcs at 3 not, both pixel-exact); facing 0 and 4 `[?]`. The party's attack pose (+ 128)
-  is from the art only `[?]`.
+  icon (party at 7 mirrored, orcs at 3 not, both pixel-exact); s15 (save K, Rhiannon stepping): facing 0 and 4 show
+  the stored icon, 6 the mirrored one. The party's attack pose (+ 128) is from the art only `[?]`; DOSBox-X drew a
+  creature that had just stepped with the sword raised (the other pose?) `[?]`.
 - **Cursor box**: under the icon of the creature whose menu is up (and of the aim candidate, the manual cursor): fill
   colour 7, top row and left two columns white, right two columns and bottom row black (colour 8 before the swap).
   None while moving or during the AI's turns.
@@ -338,27 +350,62 @@ and Speed menus, an AI attack at game speed 9). Code: `src/GoldBox.Client/Screen
   the first entry); the highlighted entry all white, the others with a white hotkey. Aim adds the range line on row 23;
   Manual shows its own prompt (GAME.OVR 0x155E2) with Target (when the square's creature can be taken), Center, Exit,
   and the panel shows the creature under the cursor (blank on an empty square). The speed menu's prompt is
-  0xA8D6 + the speed + ") : ".
+  0xA8D6 + the speed + ") : ". The highlighted entry when a menu opens `[?]`: the first combat menu after loading
+  a save highlighted View (index 1, as the area menu's Cast before it), later ones Move (s15).
 - **Attack messages** (strings 0x12A2D–0x12AEA): attacker name, the attacks word, defender name, then on a hit the
   damage on two lines (the hitting word + the number; the points word + the damage word) or the misses word; a creature
   that drops: a blank line, its name in light red, the down word (0x12AB3). A skull on red (COMSPR 11) covers the hit
-  defender's square while the message is up. When the program shows the dying or killed words (0x12ABD, 0x12AEA) instead is
-  not read `[?]`; the Client always shows the down word.
+  defender's square while the message is up. **Read (s15, 0x12D4B)**: a defender out of play (0x10D = 0) gets the
+  down message (START 0x16EC, defender + 0x12AB3) two rows on; then status 5 → the dying words 0x12ABD in green at
+  column 23 on the next row; status 6, 7 or 8 (Pascal set at 0x12ACA) → START 0x16EC with the killed words 0x12AEA.
+- **Pauses** (read s15): START 0x709:0x0DBE is `Delay(DS:49E2 × 225)` ms (game speed; 0 = no wait), called after the
+  attack message, by the message routine and the item use. Steps and turn changes `[?]` (the Client: 60 + 30 × speed ms).
+- **Messages** (read s15): START 0x1693 clears row 24, writes the text at column 0 in green, pauses, clears row 24
+  again (the item screens' refusals). START 0x16EC writes a creature and a text into the panel from a given row
+  (cols 23–38). The cast message (0x27D48, only when 0x27C38's third argument ≠ 0 and DS:6DBF = 0, i.e. not from an
+  item or scroll) comes **before** the target pick: caster, 0x27C16, spell name (0x2A332). The AI's 0x27C38(spell, 1, 1)
+  shows it. The Client announces the player's cast-now spells from the spell list (before the aim) and everything
+  else through `FightSpells.Announce` (a begun player spell after its aim `[?]`). Item use (0x22B58, DS:6DBF = 1, not
+  scrolls): START 0x16EC with 0x22AB1 from row 10, "Item:" (0x22ABE) on row 23 col 0 green and the item name at col 5,
+  the pause (`FightSpells.ItemUsed`). The AI's own messages: 0xABC0, 0xBB6E, 0xBB77, 0xBC7A, 0xBC8C (panel, layout `[?]`).
 - **Not read `[?]`**: the view's scrolling (0x310D0; the Client keeps the creature in the inner 3 × 3 squares and the
-  view inside the arena), the delays (the Client: speed × 225 ms per message, at least 600; steps 60 + 30 × speed ms),
+  view inside the arena),
   the spell list 0x239D6 (the Client: a full-screen list; spell names from START.EXE's string array of the widest
   entries, taken to start at spell 1), the Guard message, monster icon recolouring (orc icons matched unchanged).
 - **Manual in the Client**: the cursor picks a creature; the chooser then answers Next until the aim reaches it and
-  Target (Core aims only over its candidate list). Side effect `[?]`: every candidate stepped over runs the target
-  check (triggers 1 and 0), which the program's Manual runs only on the chosen square. A square with no creature
-  (square mode) is not offered.
+  Target. Side effect: every candidate stepped over runs the target check (triggers 1 and 0), which the program's
+  Manual runs only on the squares the cursor visits. Core now has the program's Manual (`AimKey.Manual`,
+  `ChooseManual`, s15); the Client still uses the stand-in and offers no bare square.
+
+- **Parity check** (s15): save K's fight start (Rhiannon's first menu) in the Client and in DOSBox-X: the map window
+  and the status panel equal pixel for pixel; differences only in the braided frame (stand-in) and the menu's starting
+  highlight (above).
+
+### View / Use screens in a fight (Client, s15) — D measured, P partly
+
+DOSBox-X, save K (Darkstar, Thrender), `Play/CombatItemScreens.cs` (`CombatChooser` as `IItemScreenChooser`):
+
+- **Items** (0x21F32): braid on rows 0, 2 and 23 and columns 0 and 39 (yellow corners); row 1 the name + "'S" in the
+  name colour and 0x21EEC at column name length + 4 in green (0x2220B); row 3 the heading 0x21EF2 in white; the list
+  window (1,5)–(38,22) (0x2229B): readied word at column 2, the item's name at column 7, the selected row white, the
+  others green; menu row 24 with no prompt: Ready, Use (when allowed), Drop, Halve, Join, Exit, first entry
+  highlighted each time, the row kept. Opened by the menu's Use it stays on the combat palette (grey); opened from
+  View it is black. The keypad's Home / End move the list (the arrow keys do not).
+- **Drop**: a warning naming the item (it will be lost for good) in yellow on row 21 (0x22401, window rows 21–22), every row green,
+  then a drop question with Yes / No and No highlighted. Must be readied etc.: the message routine 0x1693 (row 24).
+- **View** (0x21AED, page 0x21084): black, braid rows 0 and 23, name row 1 cyan; rows 3–5 gender, race, "Age", the
+  alignment, the class; rows 7–12 the abilities (col 1) with the money by kind from col ~12 (Platinum, Silver right-
+  aligned); row 15 Level and Exp (col 17); rows 17–18 AC / HP, THAC0 / Damage, Encumbrance / Movement in three
+  columns; row 20 Weapon; row 22 Status; row 24 "VIEW:" and the entries. The Client draws its own sheet `[?]`.
+- **Drop money** (0x234E1): a coin-type prompt (colour 13) then Exit; the sheet's money lines are the list (picked
+  one white); then an amount question naming the coin, in green on row 24 and the typed number.
 
 ## Open `[?]`
 
 - Trade (0x2276E, 0x23190), Sell (0x22D28) and Id (0x22F8C) on the item screens (not shown in a fight); the money
   input 0x24F1D in detail; the area search's order (0x3045B) and the path distance; the step
   routines (0x130AD, 0x12F0D) and flee (0x13465) in detail (combat-map work).
-- Manual aim in the Core model (also a spell aimed at a bare square).
+- Manual: the view scrolling 0x310D0 and the cursor drawing 0x30A0F (display only); no DOSBox capture of Manual yet.
 - The abort question's wording and what it shows (0x27EF2); the 1–7 mode's repeat message (0x14B7F).
 - Sweep with a defender missing from the adjacent-enemy list.
 - Turn undead against real undead (no capture yet).

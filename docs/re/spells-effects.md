@@ -232,7 +232,7 @@ the program's data; `PorSpellData.Names` reads them from the player's program.
 | 82 | 0x10803 | fight start: each creature's first 0x52 goes (the carrier's too); in play on the other side: save vs. 0 with +1 when DS:6814 + its side ≥ 6 and +2 for race 7, then 0x34 for 1d4 min (after the save), param 12, save negates |
 | 83 | 0x10908 | gaze at the last target (message); gazer with 0x7F and a target's readied item with name word 0x76 (bytes 0x2F–0x31) → reflected (message), the gazer is the victim; victim fails a save vs. 1 → stone (0xECB3, status 7) |
 | 84 | 0x10AD2 | charm gaze: target check 0x13880 and sight 0x2FF74 (`[?]` range = an uninitialised stack byte; 255 taken); message; DS:681B = 10 and **left so** (a later weapon hit on a Mirror Image creature then counts as a spell, see 28); save vs. 4 with −2; charm 0x0B (permanent, param = hostile × 128 + 12, removal on, save negates); charm handler on it |
-| 85, 86 | 0x10FFF, 0x1101D | level drain (0x10D7D) of 1 / 2 on the last target: animated → gone (status 8), max HP 0. Else per level unless gone: 0x74 + 1; n = max HP ÷ Σ class levels (0 → divide error `[?]`); n × (max HP, 0xB1, HP − 1 floor 0; 0x75 + 1); 0x73 < 2 → gone, max HP 0, and draining 2 zeroes the top class's level; else the top class (0x10C5D: highest level, threshold ≥, last wins) − 1, HP 0 → dead, level stats 0x2AA87 `[?]`. Then 0x73 = top class level, XP 0xAC = its threshold (DS:409B, 0 for level ≤ 1), recalculation START 0x1758 |
+| 85, 86 | 0x10FFF, 0x1101D | level drain (0x10D7D) of 1 / 2 on the last target: animated → gone (status 8), max HP 0. Else per level unless gone: 0x74 + 1; n = max HP ÷ Σ class levels (0 → divide error `[?]`); n × (max HP, 0xB1, HP − 1 floor 0; 0x75 + 1); 0x73 < 2 → gone, max HP 0, and draining 2 zeroes the top class's level; else the top class (0x10C5D: highest level, threshold ≥, last wins) − 1, HP 0 → dead, level stats 0x2AA87. Then 0x73 = top class level, XP 0xAC = its threshold (DS:409B, 0 for level ≤ 1), recalculation START 0x1758 |
 | 88 | — | no table entry: 0x11DFD never writes DS:6828 + 4·88 (`[?]` a carrier would far-call whatever is there) |
 | 121 | 0x11877 | acid breath: 1d100 ≤ 25 and the target nearer than 4 (START 0x30FB): actions end, message, 8d4 (count to 681C), save vs. 3 (after the dice), non-weapon damage halved when saved (element left as it was); this record and the first 0x50 go |
 
@@ -264,8 +264,9 @@ save type, effect id, when (0 not in a fight), casting time, AI priority, offens
 
 **Combat cast** (0x14C0F, spell, AI flag): spell 0 → the spell menu (0x239D6 `[?]`); a spell with "when" = 0 is
 refused. Delay = casting time ÷ 3. Delay 0: cast now (0x27C38) and the actions end (START 0x31D7). Else the caster
-begins casting: combat record +0 = spell, initiative − delay when above it, else 1. On its later turn the menu
-(0x9B21) and the AI cast +0 (0x27C38) and the actions end. Damage before that clears +0 (0x12AF4 / 0x2C22E).
+begins casting: combat record +0 = spell, initiative − delay when above it, else 1; the turn ends with the actions
+not over, so the creature is picked again in the same round (D: `fight_casts` q29 → q30, the charmed Sean's AI Bless).
+On its later turn the menu (0x9B21) and the AI cast +0 (0x27C38) and the actions end. Damage before that clears +0 (0x12AF4 / 0x2C22E).
 
 **Cast** (0x27C38, in a fight): the target pick (DS:6B84 = 0x148BE). Not picked: the AI loses the spell at once
 (the menu asks first): message, memorised copy removed. Picked: the caster faces the aimed square (0x27D9C–0x27E00:
@@ -322,7 +323,7 @@ Draw order per target: save 1d20, attack 1d20, duration dice; and inside: handle
 | 41, 46 Dispel Magic | 0x2939D | DS:6820 = 1; count times, always on the **first** target (reads DS:6C95 each pass, a quirk): each record with param < 255: DS:4845 = param AND 0x0F; chance 50 + 5 × (level − it), 50 − 2 × (it − level), or 50 (byte); 1d100 ≤ chance → removed (0x2AF10); any → message |
 | 42 Prayer | 0x294EE | strength = level + current's hostile × 16 (byte); plain |
 | 43 Remove Curse | 0x29558 | first target loses Bestow Curse 0x24 (message) → message; else its first item with 0x36 ≠ 0 gets 0 → message |
-| 47, 64 Fireball | 0x29683 | DS:6820 = 1; dice = 1d3 × 2 + 1 (64, wand) else level; VM $49E6 (word [DS:49D2]+0x1CC) = 0 → the list is rebuilt: 0x3045B around the aim, range 2, no cone, size 1, every slot listed; (draw 0x310D0); resolution with (dice)d6 (count to 681C), element 9 |
+| 47, 64 Fireball | 0x29683 | DS:6820 = 1; dice = 1d3 × 2 + 1 (64, wand) else level; VM $49E6 (word [DS:49D2]+0x1CC) = 0 (the wilderness overland, `save-format.md`) → the list is rebuilt: 0x3045B around the aim, range 2, no cone, size 1, every slot listed; (draw 0x310D0); resolution with (dice)d6 (count to 681C), element 9 |
 | 48 Haste, 55 Slow | 0x298AA / 0x29C21 → 0x2977C | side = caster's (Haste) / other (Slow); DS:6820 = 1, budget = level; a target of the side while budget lasts uses one and leaves when it loses the opposite effect (Slow 0x2A / Haste 0x27, message); others leave; resolution; class 0x12 on each left |
 | 51 Lightning Bolt | 0x29BCF | damage (level)d6 (0x2BCCD, 681C untouched); 0x298D4 on the aimed square; the bolt 0x29973 (8, damage, 4, rebound bonus) |
 | 60 | 0x29F65 | 0x298D4 with 1d6 + 20 on the aimed square; then 0x29973 (3, 20, 4, no bonus) |
@@ -363,11 +364,35 @@ byte is not 0. `[?]` The menu's own list (0x239D6) is not read.
   out-of-combat cast and 0x27AA9 are in camp.md); the map target list 0x3045B (implemented by
   the map code through `IFightTargetList` / `IFightAuraRange`; without it auras in a fight are not found and area
   spells fall back to the map distance with a diagnostic).
-- Effect expiry in a fight: the clock (0x241A1) counting effect minutes down, one round = one minute (DOSBox
-  `fight_casts` q01 shows it; the expiry routine 0x23DCC itself is read, camp.md).
-- Level stats 0x2AA87 (table DS:3C7C; 0x2D, 0x73, 0xA1) and the race level limit START 0x3AF7: seams
-  `EffectHandlers.LevelStats` / `RaceLevelLimit`, not read. Handler 84's sight range; handler 88's missing entry.
+- Handler 84's sight range; handler 88's missing entry.
 - Everything else here is **P**; the Sleep cast below is **D**; the routines under "Checked under emulation" are **E**.
+
+## Level stats (0x2AA87) and the race level limit (START 0x3AF7) — P, E (s15)
+
+**0x2AA87** (creature; after a level changes: Restoration, level drain, ADDNPC): 0x2D (base THAC0) := 0; for each
+class 0..7 with level L (record 0x96 + class, signed): 0x2D := DS:3C7C[class × 11 + L] when larger (unsigned); 0x73 := L
+when larger (signed). Fighter (2): 0xA1 := 3 when L > 6, else 2. Cleric (0), L > 1: slots 0xB2..0xB4 := DS:40BC[L × 3
++ 1..3]; the Wisdom bonus (0x2AC36: Wisdom above 12 and 13 → 0xB2 + 1 each, above 14 and 15 → 0xB3, above 16 → 0xB4,
+each only when that slot is already non-zero); every cleric spell (table DS:31FA byte 0 = 0) of spells 1..56 whose
+level (byte 1) has slots becomes known (0x32 + spell := 1). Magic-user (5), L > 1: 0xB5..0xB7 := DS:41D4[L × 3 + 1..3].
+Then the saves (0x2ACDC): each of 0x6D..0x71 := 20, then the lowest (unsigned) DS:426E[class × 0x2D + L × 5 + save]
+over the classes with L > 0. With a thief level 0x9C > 0 (signed), the thief skills (0x2ADB0): 0x77..0x7E (i = 1..8):
+base b = DS:3CF3[level × 8 + i], race adjustment r = DS:3D3B[race × 8 + i] (signed); r < 0 and |r| > b → 0; else b + r,
+and for i < 6 + DS:3D4E[Dexterity × 5 + i] (signed), all byte sums. The tables are read where the program reads them
+(Pascal arrays with bases, so rows overlap). Core: `LevelStats.Apply` (tables `PorSpellData.LevelTables`), wired by
+`FightKit.WireLevels` into the fight's and `PorGame`'s effect engines.
+
+**START 0x3AF7** (00BA:2F57; creature, class) → stopped: level L ≤ 0 → no. Dwarf (race 1), fighter: L = 8 with
+Strength (0x10) 17, or L = 7 with Strength below 17. Elf (2), fighter: L = 7; 6 with 17; 5 below 17. Gnome (3),
+fighter: L = 6; 5 below 18. Half-elf (4): cleric L = 5; fighter L = 8; 7 with 17; 6 below 17. Halfling (5), fighter:
+L = 6; 5 with 17; 4 below 17. Anything else: no. Core: `LevelStats.RaceLimitStops`.
+
+**E**: `tools/scripts/por_level_oracle.py` runs both routines on 400 made-up creatures (fixture
+`program-v1.3/level_stats.json`); `LevelStatsProgramTests` matches every byte and every answer.
+
+**0x317E1 in 0x2C753 and Animate Dead** (s15): (creature, its square 0x31321 / 0x31349, 1): outside a fight (DS:49F3
+≠ 5) yes; in a fight the creature is put on its square (`CombatMap.TryPlace`, moving) and the answer is whether the
+square takes it. Core: `EffectHandlers.PutBackOnSquare` (`CanRevive` only overrides it in tests).
 
 ## Checked under emulation — E
 

@@ -113,6 +113,17 @@ public static class CampTime
     }
 
     /// <summary>
+    /// 0x241A1 outside camp (DS:49F3 ≠ 2: a step, Look, the CLOCK opcode, a fight's end of round): the game clock, then
+    /// the effect timeout over every creature of the list with the session's flags DS:471E
+    /// (<see cref="CampState.EffectFlags"/>), whatever <see cref="CampState.Camping"/> says.
+    /// </summary>
+    public static void AdvanceOutsideCamp(EclMemory memory, CampState s, int unit, int count, Action<EclCharacter, byte[]> removeEffect)
+    {
+        GameClock.Advance(memory, unit, count);
+        TimeOutEffects(memory, s.EffectFlags, false, count, unit, removeEffect);
+    }
+
+    /// <summary>
     /// 0x23DCC: ages the party's timed effects (record word +1, minutes) by <paramref name="count"/> units of
     /// <paramref name="unit"/>. Outside camp (DS:49F3 ≠ 2) every flag DS:471E is set first; in camp nothing happens
     /// unless a flag of positions 1..$6E3E is set. The duration in minutes (count × the clock limits below the unit,
@@ -123,11 +134,18 @@ public static class CampTime
     /// before the removed one was the head: then it starts again at the head, which ages a second time in that step.
     /// The records after the walk set the flag when they have minutes left.
     /// </summary>
-    public static void TimeOutEffects(EclMemory memory, CampState s, int count, int unit, Action<EclCharacter, byte[]> removeEffect)
+    public static void TimeOutEffects(EclMemory memory, CampState s, int count, int unit, Action<EclCharacter, byte[]> removeEffect) =>
+        TimeOutEffects(memory, s.EffectFlags, s.Camping, count, unit, removeEffect);
+
+    /// <summary>
+    /// 0x23DCC with the flags DS:471E (<paramref name="flags"/>, position 1 at index 0) and DS:49F3 = 2
+    /// (<paramref name="camping"/>) given; see the other overload. The list is the creature list DS:5D96
+    /// (<see cref="EclMemory.Party"/>'s members: in a fight the monsters too).
+    /// </summary>
+    public static void TimeOutEffects(EclMemory memory, byte[] flags, bool camping, int count, int unit, Action<EclCharacter, byte[]> removeEffect)
     {
         var party = memory.Party?.Members ?? [];
-        var flags = s.EffectFlags;
-        if (!s.Camping)
+        if (!camping)
             Array.Fill(flags, (byte)1);
         else
         {

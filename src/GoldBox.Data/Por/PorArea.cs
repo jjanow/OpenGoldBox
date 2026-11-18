@@ -84,14 +84,16 @@ public sealed class PorArea
     }
 
     /// <summary>Main menu → Load: the save's memory and script, then vector 4 (as <see cref="PorSaveGame.LoadGame"/>).</summary>
-    public static PorArea FromSave(PorGameDirectory dir, PorViewArt art, string savePath) =>
-        FromSave(dir, art, File.ReadAllBytes(savePath), Path.GetDirectoryName(Path.GetFullPath(savePath))!);
+    public static PorArea FromSave(PorGameDirectory dir, PorViewArt art, string savePath, IPorContent? content = null) =>
+        FromSave(dir, art, File.ReadAllBytes(savePath), Path.GetDirectoryName(Path.GetFullPath(savePath))!, content);
 
-    /// <summary>As <see cref="FromSave(PorGameDirectory, PorViewArt, string)"/> from the save's bytes; the party files are looked up in <paramref name="saveDir"/>.</summary>
-    public static PorArea FromSave(PorGameDirectory dir, PorViewArt art, byte[] save, string saveDir)
+    /// <summary>As <see cref="FromSave(PorGameDirectory, PorViewArt, string, IPorContent?)"/> from the save's bytes; the party files are looked up in <paramref name="saveDir"/>.</summary>
+    /// <param name="content">Scripts and maps (an imported module); null = <paramref name="dir"/>.</param>
+    public static PorArea FromSave(PorGameDirectory dir, PorViewArt art, byte[] save, string saveDir, IPorContent? content = null)
     {
+        content ??= dir;
         var sg = new PorSaveGame(save);
-        var (vm, host, recorder) = NewVm(dir, art, sg.Disk);
+        var (vm, host, recorder) = NewVm(content, art, sg.Disk);
         try
         {
             vm.Memory.Party = PorParty.Load(sg, saveDir, dir.Root);
@@ -101,24 +103,26 @@ public sealed class PorArea
             // The scripts run without the party (their reads of it get the VM's defaults).
         }
         var run = sg.LoadGame(vm);
-        return Finish(dir, art, sg.ScriptId, sg.Disk, new PartyPosition(sg.X, sg.Y, sg.Facing), vm, host, recorder, run);
+        return Finish(content, sg.ScriptId, sg.Disk, new PartyPosition(sg.X, sg.Y, sg.Facing), vm, host, recorder, run);
     }
 
     /// <summary>
     /// Enters area script <paramref name="script"/> with fresh VM memory (no save) at the given square: script init,
     /// then vector 4.
     /// </summary>
-    public static PorArea Enter(PorGameDirectory dir, PorViewArt art, int script, int x, int y, int facing)
+    public static PorArea Enter(PorGameDirectory dir, PorViewArt art, int script, int x, int y, int facing,
+        IPorContent? content = null)
     {
-        int disk = dir.DiskOf(script) ?? throw new ArgumentException($"no ECL block {script} in {dir.Root}");
-        var (vm, host, recorder) = NewVm(dir, art, disk);
+        content ??= dir;
+        int disk = content.ScriptDisk(script) ?? throw new ArgumentException($"no ECL block {script} in {content.Origin}");
+        var (vm, host, recorder) = NewVm(content, art, disk);
         vm.Memory.Disk = (byte)disk;
         vm.Memory.Position.X = (byte)x;
         vm.Memory.Position.Y = (byte)y;
         vm.Memory.Position.Facing = (byte)facing;
         vm.LoadScript(script, disk);
         var run = vm.RunVector(EclLayout.VectorInit);
-        return Finish(dir, art, script, disk, new PartyPosition(x, y, facing), vm, host, recorder, run);
+        return Finish(content, script, disk, new PartyPosition(x, y, facing), vm, host, recorder, run);
     }
 
     private sealed class Recorder
@@ -126,7 +130,7 @@ public sealed class PorArea
         public int? Map;
     }
 
-    private static (EclVm, ScriptedEclHost, Recorder) NewVm(PorGameDirectory dir, PorViewArt art, int disk)
+    private static (EclVm, ScriptedEclHost, Recorder) NewVm(IPorContent dir, PorViewArt art, int disk)
     {
         var rec = new Recorder();
         var host = new ScriptedEclHost { StopWhenInputMissing = true };
@@ -137,14 +141,14 @@ public sealed class PorArea
         return (vm, host, rec);
     }
 
-    private static PorArea Finish(PorGameDirectory dir, PorViewArt art, int script, int disk, PartyPosition party,
+    private static PorArea Finish(IPorContent content, int script, int disk, PartyPosition party,
         EclVm vm, ScriptedEclHost host, Recorder rec, EclRunResult run)
     {
         bool guessed = rec.Map is null;
         int mapId = rec.Map ?? script;
-        int mapDisk = PorGeo.DiskOf(dir, mapId)
+        int mapDisk = content.MapDisk(mapId)
             ?? throw new InvalidOperationException($"script {script} loads no 3D map (the overland or a script without a map)");
-        var map = PorGeo.Load(dir, mapDisk, mapId);
+        var map = content.LoadMap(mapDisk, mapId) ?? throw new FormatException($"map {mapId} not readable in {content.Origin}");
         map.Bounded = script is 0 or 10;
         return new PorArea(script, disk, map, party, vm.Memory, run, [.. host.Calls], guessed);
     }

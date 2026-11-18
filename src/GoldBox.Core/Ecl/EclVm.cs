@@ -251,6 +251,7 @@ public sealed class EclVm
         }
         _afterLoadBeforeCommand = true;
         ScriptChanged = false;
+        Memory.FilesLoadedSinceSwitch = false; // DS:4431 := 0 (0x4053)
         LoadingSave = true;
         InitScript();
         Trace?.Event("restore", new Dictionary<string, string>
@@ -341,8 +342,8 @@ public sealed class EclVm
     /// The event accessor (0x2EE71) for the party's square on the map in memory, for the two re-reads at a script
     /// switch: at the start of each pass (argument false: the old map is still in memory) and in the view redraw after
     /// vector 4 (argument true: vector 4's LOADFILES has loaded the new map; 0x3FF5 → 0x2DD22). Null leaves
-    /// <see cref="EclPartyPosition.EventByte"/> as it is. [?] The redraw runs under conditions on DS:49F9/49FA/4431
-    /// that differ only in the wilderness blocks 25–27 (0x3F4C–0x3FF5); the VM always asks.
+    /// <see cref="EclPartyPosition.EventByte"/> as it is. The second read happens only when the redraw runs
+    /// (DS:49F9 / DS:49FA / DS:4431 test at 0x3FD2–0x3FF5) and the view is 3D (0x2DCF4's own test).
     /// </summary>
     public Func<bool, byte>? ScriptSwitchEventByte { get; set; }
 
@@ -366,6 +367,7 @@ public sealed class EclVm
                 Memory.Position.EventByte = ev;
             Memory.Write(EdgeStepCell, 0);
             var saved = Memory.Party?.Current;
+            Memory.PreviousViewMode = Memory.ViewMode; // DS:49F9 := DS:49FA (0x3F28)
             Memory.ViewMode = 1;
             last = RunVector(EclLayout.VectorInit, maxStepsPerRun);
             if (last.Reason is not (EclStopReason.Exit or EclStopReason.NewScript))
@@ -373,7 +375,12 @@ public sealed class EclVm
             LoadPending();
             if (ReadMem(0x49E6) == 0 && CurrentScript is >= 25 and <= 27)
                 Memory.ViewMode = (byte)(CurrentScript - 23);
-            if (ScriptSwitchEventByte?.Invoke(true) is { } ev2)
+            // The redraw 0x2DCF4 runs (0x3FD2–0x3FF5) when the view mode stayed 1, or when the old mode was outdoors or
+            // the new one is 1 and vector 4 loaded files (DS:4431); it re-reads the event byte only in the 3D view
+            // (DS:49FA = 1 or $49E6 ≠ 0, 0x2DCFA–0x2DD27).
+            byte before = Memory.PreviousViewMode, now = Memory.ViewMode;
+            bool redraw = (before == 1 && now == 1) || ((before > 1 || now == 1) && Memory.FilesLoadedSinceSwitch);
+            if (redraw && (now == 1 || ReadMem(0x49E6) != 0) && ScriptSwitchEventByte?.Invoke(true) is { } ev2)
                 Memory.Position.EventByte = ev2;
             ScriptChanged = false;
             last = RunVector(0, maxStepsPerRun);
@@ -523,6 +530,7 @@ public sealed class EclVm
                 // the run stops and the caller runs the new script's vectors 4, 0, 1.
                 int script = Value(1);
                 Memory.Write(0x49F2, (ushort)CurrentScript);
+                Memory.FilesLoadedSinceSwitch = false; // DS:4431 := 0 (0x19AA)
                 HostCall("ScriptChanging", [Num(script)], null, () => Host.ScriptChanging((ushort)script));
                 if (Scripts is null)
                 {
@@ -764,7 +772,13 @@ public sealed class EclVm
                     () => pick = Host.PickCharacter(prompt));
                 if (pick is { } k && Memory.Party is { } party)
                 {
-                    if (k >= 0 && k < party.Members.Count)
+                    if (k == IEclHost.NoCharacter)
+                    {
+                        // Escape, then Select: DS:5D92 = nil (START 0x3976–0x3993).
+                        party.CurrentIndex = -1;
+                        Diag("WHO: Escape left no current character (DS:5D92 = nil)");
+                    }
+                    else if (k >= 0 && k < party.Members.Count)
                         party.CurrentIndex = k;
                     else
                         Diag($"WHO: host picked {k}, not a party-list member");
@@ -927,9 +941,11 @@ public sealed class EclVm
                 return null;
             }
             case EclOpcodes.LoadFiles:
+                Memory.FilesLoadedSinceSwitch = true; // DS:4431 := 1 (0x19C8)
                 DoLoadFiles();
                 return null;
             case EclOpcodes.LoadPieces:
+                Memory.FilesLoadedSinceSwitch = true;
                 DoLoadPieces();
                 return null;
             case EclOpcodes.Clock:

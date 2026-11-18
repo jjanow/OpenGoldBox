@@ -1,6 +1,7 @@
 using GoldBox.Client;
 using GoldBox.Client.Play;
 using GoldBox.Client.Screens;
+using GoldBox.Data.Module.Por;
 using GoldBox.Data.Por;
 
 ClientOptions options;
@@ -38,6 +39,10 @@ else
     try
     {
         var dir = new PorGameDirectory(gameDir);
+        // --module: scripts, maps and records from the module; art, program tables and saves from the game folder.
+        IPorContent? content = options.ModuleDirectory is { } moduleDir ? PorModule.Open(moduleDir) : null;
+        if (content is not null)
+            Console.Error.WriteLine($"module: {content.Origin}");
         var art = PorViewArt.Load(dir);
         player = new ClientPlayer(runner, () => game!.Memory)
         {
@@ -66,8 +71,8 @@ else
         runner.Start(() =>
         {
             game = options.Area is { } script && options.At is var (x, y, f)
-                ? PorGame.Enter(dir, art, script, x, y, f, who, seed)
-                : PorGame.FromSave(dir, art, savePath!, who, seed);
+                ? PorGame.Enter(dir, art, script, x, y, f, who, seed, content)
+                : PorGame.FromSave(dir, art, savePath!, who, seed, content);
         });
         if (runner.Fault is { } fault)
             throw fault;
@@ -78,7 +83,7 @@ else
     }
     catch (Exception e) when (e is IOException or FormatException or ArgumentException or InvalidOperationException
                                    or UnauthorizedAccessException or GoldBox.Data.Dax.DaxFormatException
-                                   or GoldBox.Core.Ecl.EclVmFault)
+                                   or GoldBox.Core.Ecl.EclVmFault or System.Text.Json.JsonException)
     {
         problem = "could not load the game files: " + e.Message;
     }
