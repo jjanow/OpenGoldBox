@@ -163,10 +163,11 @@ public class EngineSaveTests
         Assert.Throws<FormatException>(() => PorEngineSave.Check(doc, EclProfiles.Por13, Module with { Id = "curse" }));
         Assert.Throws<FormatException>(() => PorEngineSave.Check(doc with { Memory = doc.Memory[..3] }, EclProfiles.Por13, Module));
         Assert.Throws<FormatException>(() => PorEngineSave.Check(doc with { FormatVersion = "1.0" }, EclProfiles.Por13, Module));
-        // Another version or content is loaded, with a note.
-        var notes = PorEngineSave.Check(doc, EclProfiles.Por13, Module with { Version = "1.4.0", ContentHash = "cd" });
-        Assert.Equal(2, notes.Count);
-        Assert.All(notes, n => Assert.StartsWith("[?]", n));
+        // Another module version is refused; other content with the same version is loaded, with a note.
+        Assert.Throws<FormatException>(() => PorEngineSave.Check(doc, EclProfiles.Por13, Module with { Version = "1.4.0" }));
+        var notes = PorEngineSave.Check(doc, EclProfiles.Por13, Module with { ContentHash = "cd" });
+        Assert.Single(notes);
+        Assert.StartsWith("[?]", notes[0]);
         // A game folder has no hash: nothing to compare.
         Assert.Empty(PorEngineSave.Check(doc, EclProfiles.Por13, new SaveModuleRef { Id = "por", Version = "1.3.0" }));
     }

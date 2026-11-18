@@ -601,19 +601,7 @@ public sealed class PartyMenuScreen(PartyMenuFlow flow, ScriptRunner runner, ISc
         Chrome.Box(f, 0, 0, 39, 23);
         var party = flow.Party;
         if (party.Members.Count > 0)
-        {
-            Chrome.Text(f, font, 1, 2, "NAME", Chrome.White);
-            Chrome.TextRight(f, font, 34, 2, "AC", Chrome.White);
-            Chrome.TextRight(f, font, 38, 2, "HP", Chrome.White);
-            for (int i = 0; i < party.Members.Count && i < 8; i++)
-            {
-                var c = party.Members[i];
-                string name = c.Name.ToUpperInvariant();
-                Chrome.Text(f, font, 1, RosterRow + i, name, i == party.CurrentIndex ? Chrome.White : Chrome.Cyan);
-                Chrome.TextRight(f, font, 34, RosterRow + i, (60 - c[0x111]).ToString(CultureInfo.InvariantCulture), Chrome.Green);
-                Chrome.TextRight(f, font, 38, RosterRow + i, c[0x11B].ToString(CultureInfo.InvariantCulture), Chrome.Green);
-            }
-        }
+            Chrome.PartyList(f, font, party, 1);
         for (int i = 0; i < m.Items.Count; i++)
         {
             string s = m.Items[i].Name.ToUpperInvariant();

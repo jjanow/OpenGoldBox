@@ -277,8 +277,8 @@ again is not read (the Client keeps it blank until the next command).
 - **Area maps** (5): 15,4; 9,8; 6,2; 4,12; 3,8.
 - **Result:** 0 differing pixels in all 14.
 - **Client screen** (Xvfb screenshot, save A, against the DOSBox-X screen): the party list, the position line and the
-  command line are identical too (0 differing pixels). The braided frame is a stand-in `[?]`, and the text window
-  holds our help lines.
+  command line are identical too (0 differing pixels). Since s21 the frame is drawn from the program's frame symbols
+  (below) and matches as well; the text window holds our help lines.
 
 **Other areas (s11).** Save A's party placed in another area (`PorSaveGame.PlaceInArea`, tool `goldbox-tools
 save-area`; the load also needs the disk in cell $6E12 and the area's wall-set ids at $4AFA–$4AFC), loaded from the
@@ -288,10 +288,20 @@ replays a step through the area loop). 0 differing pixels in all 11, pinned in `
 - Valhingen Graveyard (script 10, bounded, two-block set 21 with the two-flag rule, $C05F = 8 / $C059 = 11) at 0,4 E
   and 9,9 E: view, area map, and one step on (vector 0 sets $49FD = 8: black sky);
 - Kobold Caves (script 13, $49FB set) at 14,14 N: view, A refused (view stays), one step.
-- The Client's whole screen for New Phlan equals DOSBox-X except the braided frame (stand-in `[?]`) and our help lines.
+- The Client's whole screen for New Phlan equals DOSBox-X except our help lines (frame since s21).
 
 **Position line** (START.EXE 0x34AB, program read s11): "x,y " only where $49FB = 0, the facing, HH:MM (both padded
 to two digits), then " camping" (DS:49F3 = 2) or " search" ($6DCA bit 0). In Kobold Caves the line is the facing, the time and the search word. The
 command line highlights the item whose hotkey is the last letter key read (after loading slot C: CAST).
+**When it is drawn (s21):** only at fixed points: a turn or a member pick in the command routine (GAME.OVR 0x17266,
+0x173D9), after the step or its bump (0x17707, 0x17734), the camp (0x197F5, rest 0x1804A), the full redraw of
+interface states 2–4 (START 0x3379; state 1 and 6 do not draw it) and ECL CALL (0x3A15). A command whose script
+switches skips the step, so the line keeps the old square until the next command (DOSBox-X: slums → New Phlan shows
+"15,4 E", New Phlan → slums "0,4 W"; the overland entry the same). The party list (START 0x1307) is likewise drawn only
+at such points: LOADCHAR's current member does not show until a redraw (Client: the player's pick stays marked).
 
-Not checked yet: the Valjevo Castle and wilderness-lair areas, the frame picture.
+**Frames (s21, START 0x3F10 via the window routine 03F1:02E8):** 8 × 8 symbols 0x114 + 3 · style + piece, piece 0 the
+corners, 1 the left / right columns, 2 the top / bottom rows; symbols 276… are 8X8D1 block 202 tiles 20… Every window
+seen uses style 0 (styles 1–3 are tiles 23–30 `[?]` where used).
+
+Not checked yet: the Valjevo Castle and wilderness-lair areas.

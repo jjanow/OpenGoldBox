@@ -6,7 +6,7 @@ namespace GoldBox.Client;
 /// <summary>
 /// Command line of the Client:
 /// <code>
-///   GoldBox.Client [--game DIR] [--amiga DIR] [--module DIR] [--art dos|best|amiga] [--save A|FILE] [--area N --at X,Y,F] [--scale K]
+///   GoldBox.Client [--game DIR] [--amiga DIR] [--module DIR] [--art dos|best|amiga] [--save A|FILE] [--area N --at X,Y,F] [--scale K] [--seed N]
 /// </code>
 /// <c>--game</c> is the player's Pool of Radiance (DOS) folder; it is remembered in the settings, so it is needed once
 /// (the environment variable <c>GOLDBOX_POR_DIR</c> also works). The folder is imported into a module in the cache
@@ -32,6 +32,9 @@ public sealed record ClientOptions
     public int? Area { get; init; }
     public (int X, int Y, int Facing)? At { get; init; }
     public int Scale { get; init; } = 3;
+
+    /// <summary>--seed N: the random generator's start value (tests and replays); default the clock, as the game.</summary>
+    public uint? Seed { get; init; }
     /// <summary>--stretch / --no-stretch: 4:3 display (remembered).</summary>
     public bool? Stretch43 { get; init; }
     /// <summary>--amiga DIR: the unpacked Amiga disks for the overlay (remembered).</summary>
@@ -41,7 +44,7 @@ public sealed record ClientOptions
     /// <summary>--sound speaker|tandy|off (remembered).</summary>
     public string? Sound { get; init; }
 
-    public const string Usage = "usage: GoldBox.Client [--game DIR] [--amiga DIR] [--module DIR] [--art dos|best|amiga] [--save A|FILE] [--area N --at X,Y,F] [--scale K] [--stretch|--no-stretch] [--sound speaker|tandy|off]";
+    public const string Usage = "usage: GoldBox.Client [--game DIR] [--amiga DIR] [--module DIR] [--art dos|best|amiga] [--save A|FILE] [--area N --at X,Y,F] [--scale K] [--stretch|--no-stretch] [--sound speaker|tandy|off] [--seed N]";
 
     public static ClientOptions Parse(IReadOnlyList<string> args)
     {
@@ -57,6 +60,7 @@ public sealed record ClientOptions
                 "--area" => o with { Area = int.Parse(Next(), CultureInfo.InvariantCulture) },
                 "--at" => o with { At = ParseAt(Next()) },
                 "--scale" => o with { Scale = int.Parse(Next(), CultureInfo.InvariantCulture) },
+                "--seed" => o with { Seed = uint.Parse(Next(), CultureInfo.InvariantCulture) },
                 "--stretch" => o with { Stretch43 = true },
                 "--no-stretch" => o with { Stretch43 = false },
                 "--amiga" => o with { AmigaDirectory = Next() },

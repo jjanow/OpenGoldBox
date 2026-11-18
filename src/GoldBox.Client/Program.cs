@@ -63,6 +63,8 @@ ClientPlayer? player = null;
 GoldBox.Client.Audio.ClientAudio? audio = null;
 // No --save and no --area: the party menu, the original's first screen (create, add, load, begin).
 PartyMenuFlow? partyMenu = null;
+// The program's one menu highlight cell DS:6B2B, shared by the party menu, the hall and the game's menus.
+var sharedHighlight = new MenuHighlight();
 bool startAtMenu = options.Area is null && options.Save is null;
 PorViewArt? menuContent = null;
 PorProgramData? menuProgram = null;
@@ -99,6 +101,7 @@ else
         Console.Error.WriteLine($"content: {content.Origin}");
         var art = PorViewArt.Load(content);
         menuContent = art;
+        Chrome.FrameSymbols = art.Symbols;
         // The art setting (Original DOS / Best / Amiga) applies before the area entry loads its wall sets.
         clientArt = new ClientArt(content, art, palette, settings.ArtChoice);
         clientArt.Changed = c =>
@@ -129,7 +132,7 @@ else
         }
         var who = new PorPlayer(player, player, player, player, FightMenu: player.Chooser, QuickFight: true);
         // The game seeds its generator from the DOS clock at start-up.
-        uint seed = (uint)Environment.TickCount64;
+        uint seed = options.Seed ?? (uint)Environment.TickCount64;
         string? savePath = null;
         // The party menu's pieces (the menu at start-up and after a destroyed party; the training hall's roster entries).
         var tables = program?.CreationTables();
@@ -147,12 +150,13 @@ else
         if (tables is not null && items is not null)
         {
             var texts = new PartyMenuTexts(program, player.Resources);
-            makeFlow = () => new PartyMenuFlow(runner.Ask, texts, tables, items, roster, (uint)Environment.TickCount64)
+            makeFlow = () => new PartyMenuFlow(runner.Ask, texts, tables, items, roster, seed)
             {
                 NewGame = (party, s) => game = WithSound(PorGame.NewGame(content, art, party, who, s)),
                 SaveSlots = Slots,
                 LoadGame = (slot, s) => game = WithSound(PorGame.LoadAtPartyMenu(content, art, SlotPath(slot), who, s)),
                 SaveGame = (slot, party, loaded) => player.SaveAtPartyMenu(slot, party, content, loaded),
+                Highlight = sharedHighlight,
             };
             // The training hall (PROGRAM 0) runs the same menu routine 0x19AE0 on the game's party: its Create, Drop,
             // Add, Remove and Load are the party menu's, drawing from the game's generator.
@@ -178,7 +182,7 @@ else
                     throw new HallLoadException(slot);
             };
             player.HallHooks.Notice = hf.TakeNotice;
-            loadSlot = slot => game = WithSound(PorGame.FromSave(content, art, SlotPath(slot), who, (uint)Environment.TickCount64));
+            loadSlot = slot => game = WithSound(PorGame.FromSave(content, art, SlotPath(slot), who, seed));
         }
         if (startAtMenu)
         {
@@ -258,7 +262,8 @@ IScreen? LoadInto(char slot, IScreenHost host)
     // [?] An entry vector that waits for the player during a load is not handed over (as at start-up with --save).
     return loaded is null ? null : ExploreFor(loaded, slot, host);
 }
-ExploreScreen ExploreFor(PorGame g, char letter, IScreenHost host) => new(g, player!, runner, host, letter, clientArt)
+ExploreScreen ExploreFor(PorGame g, char letter, IScreenHost host) => new(g, player!, runner, host, letter, clientArt,
+    partyMenu is not null ? sharedHighlight : null)
 {
     PartyPages = hallFlow is { } hf && menuContent is not null
         ? () => new PartyMenuScreen(hf, runner, host, menuContent.Font, player!.Resources, clientArt!, _ => null!)

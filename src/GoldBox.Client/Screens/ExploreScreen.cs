@@ -34,8 +34,10 @@ public sealed class ExploreScreen : IScreen
     /// and the combat screen's menus. A command taken by its hotkey moves it there (DOSBox-X: after S, SEARCH; arrows
     /// leave it); it starts where the load menu left it, the loaded slot's place among the saves present (DOSBox-X:
     /// saves A, B, J, Load B → CAST, then the first combat menu on View).
+    /// When the Client started at the party menu, the cell is the one the menus share (the load menu left it on the
+    /// slot's place); with --save it starts at the slot's place among the original saves present.
     /// </summary>
-    private readonly MenuHighlight _highlight = new();
+    private readonly MenuHighlight _highlight;
 
     // State of the request on screen.
     private PlayerRequest? _shown;
@@ -65,15 +67,24 @@ public sealed class ExploreScreen : IScreen
 
     /// <summary>What the picture window shows: the camp's picture while camping, else the encounter picture (or null).</summary>
     private ViewPicture? ShownPicture =>
-        _player.Camping ? new ViewPicture(ViewPictureKind.Picture, CampPicture, null, 0, _game.Memory.Disk) : _player.ViewPicture;
+        _player.Camping ? new ViewPicture(ViewPictureKind.Picture, CampPicture, null, 0, _game.Memory.Disk)
+        : _player.Interface == Venue.Loot ? new ViewPicture(ViewPictureKind.Picture, LootPicture, null, 0, _game.Memory.Disk)
+        : _player.ViewPicture;
+
+    /// <summary>
+    /// The loot menu's picture: 0x644B redraws the screen for DS:49F3 = 6 (START 0x3379, case 6 at 0x3458), which shows
+    /// PIC block 1 through the same call as the camp's (0x3D0:0x2A) and draws no position line (read s21; DOSBox-X: the
+    /// treasure chest).
+    /// </summary>
+    public const int LootPicture = 1;
 
     /// <summary>The combat screen this screen hands over to during a fight.</summary>
     public CombatScreen Combat => _combat;
 
     public ExploreScreen(PorGame game, ClientPlayer player, ScriptRunner runner, IScreenHost host, char lastLetter = 'A',
-        ClientArt? art = null)
+        ClientArt? art = null, MenuHighlight? highlight = null)
     {
-        _highlight.Index = LoadMenuIndex(game.Content.SaveFolder, char.ToUpperInvariant(lastLetter));
+        _highlight = highlight ?? new MenuHighlight { Index = LoadMenuIndex(game.Content.SaveFolder, char.ToUpperInvariant(lastLetter)) };
         _game = game;
         _player = player;
         _runner = runner;
@@ -141,6 +152,14 @@ public sealed class ExploreScreen : IScreen
         };
         if (letter is { } l)
             Took(l);
+        // The position line as the program leaves it: A loops inside the command routine with no redraw; every other
+        // command redraws it (a turn, the step 0x17438, the camp) unless its script switches (see StaleStatusLine).
+        if (command != AreaCommand.AreaMap)
+        {
+            _staleLine = null;
+            _lineAtCommand = StatusLine(_game, _player.Camping);
+            _scriptAtCommand = _game.Vm.CurrentScript;
+        }
         _player.PictureArmed = true; // the area loop's pass sets DS:84E1 (0x4223)
         if (command == AreaCommand.Forward)
             _player.Text.Clear(); // [?] when the original clears the text window is not read; we clear on a step
@@ -467,6 +486,8 @@ public sealed class ExploreScreen : IScreen
             FollowHighlight(request, reply, input.Pressed(GameAction.Cancel));
             if (reply is { } answer)
             {
+                if (answer.Value is ChoiceRequest.PreviousMember or ChoiceRequest.NextMember)
+                    _memberPicked = true; // the pick (0x23819) redraws the list with the new current member
                 _runner.Answer(answer.Value);
                 if (_runner.Fault is { } e)
                     Report(e);
@@ -524,6 +545,9 @@ public sealed class ExploreScreen : IScreen
             case ChoiceRequest v:
                 _highlight.ItemList();
                 _selected = Math.Clamp(v.Selected, 0, Math.Max(0, v.Items.Count - 1));
+                break;
+            case KeyRequest { AsMenu: true } km:
+                _highlight.Start(km.MenuEntries);
                 break;
             case ListRequest l:
                 _list.Sync(l);
@@ -694,6 +718,16 @@ public sealed class ExploreScreen : IScreen
             return;
         }
         f.Clear(0);
+        if (_player.Window is { } window)
+        {
+            // A full-screen window (START 03F1:02E8 with 1, 1, 38, 22) and the bottom line.
+            Chrome.Box(f, 0, 0, 39, 23);
+            foreach (var line in window)
+                Chrome.Text(f, font, line.Column, line.Row, Fit(line.Text, 39 - line.Column), line.Colour);
+            if (pending is KeyRequest wk)
+                Chrome.Text(f, font, 0, MenuRow, Fit(KeyPrompt(wk, input), 40), wk.AsMenu ? Chrome.White : MenuPromptColour);
+            return;
+        }
         // Frame cells as on the original screen: outer box, the divider under the view and party list, the divider
         // between view and party list, the view's own box, the box over the command line.
         Chrome.Box(f, 0, 0, 39, 23);
@@ -708,7 +742,8 @@ public sealed class ExploreScreen : IScreen
         DrawView(f, font);
         DrawRoster(f, font);
 
-        Chrome.Text(f, font, 17, StatusRow, StatusLine(_game, _player.Camping), Chrome.Green);
+        if (_player.Interface != Venue.Loot)
+            Chrome.Text(f, font, 17, StatusRow, ShownStatusLine(), Chrome.Green);
         if (pending is ChoiceRequest choice)
         {
             Chrome.Text(f, font, 17, 12, Fit(ChoiceHint(choice, input), 22), Chrome.Grey);
@@ -752,7 +787,7 @@ public sealed class ExploreScreen : IScreen
         else if (pending is TextRequest tr)
             Chrome.Text(f, font, 0, MenuRow, Fit(tr.Prompt + (tr.Prompt.Length > 0 ? " " : "") + _typed + "_", 40), Chrome.White);
         else if (pending is KeyRequest k)
-            Chrome.Text(f, font, 0, MenuRow, Fit(KeyPrompt(k, input), 40), MenuPromptColour);
+            Chrome.Text(f, font, 0, MenuRow, Fit(KeyPrompt(k, input), 40), k.AsMenu ? Chrome.White : MenuPromptColour);
     }
 
     /// <summary>The menu routine's prompt colour and the page prompt's (0x2CC8C / START 0x7C85: 13).</summary>
@@ -796,6 +831,24 @@ public sealed class ExploreScreen : IScreen
         InputDevice.Mouse => "CLICK A NAME: WHO",
         var d => $"{PromptLabels.For(input.Bindings, GameAction.PreviousMember, d)}/{PromptLabels.For(input.Bindings, GameAction.NextMember, d)}: WHO",
     };
+
+    private string? _staleLine, _lineAtCommand;
+    private int _scriptAtCommand = int.MinValue;
+
+    /// <summary>
+    /// The position line on screen. The program draws it (START 0x34AB) only at fixed points: after a turn or a
+    /// member pick in the command routine (GAME.OVR 0x17266, 0x173D9), after the step or its bump (0x17707, 0x17734),
+    /// in the camp (0x197F5, rest 0x1804A), the full redraw of interface states 2–4 (START 0x3379; state 1 does not
+    /// draw it) and ECL CALL (0x3A15); read s21. A command whose script switches (an edge exit, NEWECL) skips the
+    /// step, so the line keeps the old square until the next command (DOSBox-X s21: walking east off the slums at
+    /// 15,4 into script 0 still shows "15,4 E"). Encounters and menus in the new area's entry leave it as well.
+    /// </summary>
+    private string ShownStatusLine()
+    {
+        if (_staleLine is null && _lineAtCommand is not null && _game.Vm.CurrentScript != _scriptAtCommand)
+            _staleLine = _lineAtCommand;
+        return _staleLine ?? StatusLine(_game, _player.Camping);
+    }
 
     /// <summary>
     /// The position line (START.EXE 0x34AB, program read s11): "x,y " only where the area map is allowed ($49FB = 0),
@@ -909,28 +962,22 @@ public sealed class ExploreScreen : IScreen
         }
     }
 
+    /// <summary>
+    /// The party list as the program last drew it. LOADCHAR changes the current member without a redraw (START 0x1307
+    /// runs at fixed points), and EXIT puts the player's pick (DS:4436) back, so while a script has changed it
+    /// (DS:4430) the list still marks the player's pick (DOSBox-X s21: the Tyr temple's party walk, LOADCHAR 0…7 in
+    /// ECL3 block 0 $AF56, leaves the first member white while its question waits).
+    /// </summary>
+    private bool _memberPicked;
+
     private void DrawRoster(IndexedFrame f, TextFont font)
     {
-        Chrome.Text(f, font, 17, 2, "NAME", Chrome.White);
-        Chrome.TextRight(f, font, 34, 2, "AC", Chrome.White);
-        Chrome.TextRight(f, font, 38, 2, "HP", Chrome.White);
-        if (_game.Memory.Party is not { } party)
-            return;
-        int shown = 0;
-        for (int i = 0; i < party.Members.Count && shown < 8; i++)
-        {
-            var m = party.Members[i];
-            if (i >= 8)
-                break;
-            byte colour = i == party.CurrentIndex ? Chrome.White : Chrome.Cyan;
-            var name = m.Name.Length > 15 ? m.Name[..15] : m.Name;
-            Chrome.Text(f, font, 17, 4 + i, name, colour);
-            // [?] AC shown as 60 − record byte 0x111 and HP as record byte 0x11B (PARTYSTR's fields, ecl-format.md);
-            // checked only against the six members of save A.
-            Chrome.TextRight(f, font, 34, 4 + i, (60 - m[0x111]).ToString(CultureInfo.InvariantCulture), Chrome.Green);
-            Chrome.TextRight(f, font, 38, 4 + i, m[0x11B].ToString(CultureInfo.InvariantCulture), Chrome.Green);
-            shown++;
-        }
+        var party = _game.Memory.Party;
+        if (party is not { ChangedByScript: true })
+            _memberPicked = false;
+        int? shown = !_memberPicked && party is { ChangedByScript: true, Selected: { } pick } && party.Members.IndexOf(pick) is >= 0 and var i
+            ? i : null;
+        Chrome.PartyList(f, font, party, 17, shown);
     }
 
     /// <summary>Two help lines in the text window, in the device used last (keys, pad buttons, or mouse gestures).</summary>

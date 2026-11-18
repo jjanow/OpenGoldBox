@@ -54,6 +54,15 @@ public static class PorTextCatalog
         ["Msg.CampPrompt"] = 0x1968C,
         ["Msg.QuitToDos"] = 0x19693,
         ["Msg.RiverBlocks"] = 0x16EBF,
+        // ENCMENU (s21): the two menus, the two messages, PARLEY's attitudes ('~' marks a hotkey).
+        ["Msg.EncounterMenuParley"] = 0x2BE1,
+        ["Msg.EncounterMenuAdvance"] = 0x2BFD,
+        ["Msg.BothSidesWait"] = 0x2C1A,
+        ["Msg.MonstersFlee"] = 0x2C2B,
+        ["Msg.ParleyAttitudes"] = 0x32EE,
+        // HMENU (0x1E17): a one-word menu equal to the first is shown as the second (s21).
+        ["Msg.HmenuButton"] = 0x1DCB,
+        ["Msg.HmenuEnter"] = 0x1DF0,
         ["Msg.NoMagicHere"] = 0x17B33,
         ["Msg.NoCondition"] = 0x17B53,
         ["Msg.CondCast"] = 0x17B6A,

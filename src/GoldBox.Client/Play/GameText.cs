@@ -17,6 +17,10 @@ public enum Msg
     MakesCamp, CampPrompt, QuitToDos,
     // Overland step (0x16EBF)
     RiverBlocks,
+    // HMENU (0x1E17)
+    HmenuButton, HmenuEnter,
+    // ENCMENU and PARLEY (0x2BE1–0x2C3D, 0x32EE)
+    EncounterMenuParley, EncounterMenuAdvance, BothSidesWait, MonstersFlee, ParleyAttitudes,
     // Camp spells (0x17B33–0x18376)
     NoMagicHere, NoCondition, CondCast, CondMemorise, CondScribe, NoSpellsMemorised, CanMemorise, ClericSpells,
     MageSpells, MemoriseThese, CannotMemorise, MemoriseTheseAgain, ScribeThese, NoCopyableScrolls, AlreadyKnow,
@@ -74,6 +78,13 @@ public sealed class GameText
         [Msg.TempleGoBack] = "GO BACK FOR IT?",
         [Msg.LostDuel] = "THE DUEL IS LOST.",
         [Msg.RiverBlocks] = "THE RIVER BLOCKS THE WAY.",
+        [Msg.HmenuButton] = "",
+        [Msg.HmenuEnter] = "",
+        [Msg.EncounterMenuParley] = "~FIGHT ~WAIT ~RUN ~TALK",
+        [Msg.EncounterMenuAdvance] = "~FIGHT ~WAIT ~RUN ~APPROACH",
+        [Msg.BothSidesWait] = "NOBODY MOVES.",
+        [Msg.MonstersFlee] = "THE ENEMY RUNS.",
+        [Msg.ParleyAttitudes] = "~PROUD ~CUNNING ~KIND ~HUMBLE ~RUDE",
         [Msg.WonDuel] = "THE DUEL IS WON.",
         [Msg.PartyWon] = "VICTORY.",
         [Msg.PartyFled] = "THE PARTY RAN.",
@@ -81,7 +92,7 @@ public sealed class GameText
         [Msg.DuelistReceives] = "THE DUELIST GETS",
         [Msg.EachReceives] = "EACH ONE GETS",
         [Msg.ExperiencePoints] = "XP.",
-        [Msg.PressEnter] = "PRESS ENTER",
+        [Msg.PressEnter] = "press enter", // lower case like the program's: no menu entries (KeyRequest.MenuEntries)
         [Msg.LootTitle] = "TREASURE",
         [Msg.ItemsHeader] = "ITEMS:",
         [Msg.TakePrompt] = "TAKE:",
@@ -240,6 +251,13 @@ public sealed class GameText
 
     /// <summary>How many of the texts came from the game files.</summary>
     public int FromGame => _texts.Count;
+
+    /// <summary>A menu line's words (spaces between, '~' before a hotkey dropped), upper case.</summary>
+    public IReadOnlyList<string> Words(Msg id) =>
+        [.. this[id].Split(' ', StringSplitOptions.RemoveEmptyEntries).Select(w => w.Replace("~", ""))];
+
+    /// <summary>The text as read from the game files (original case), or null when it was not read.</summary>
+    public string? FromFiles(Msg id) => _texts.TryGetValue(id, out var s) ? s : null;
 
     /// <summary>The text with its original case (menu lines whose capitals are the hotkeys).</summary>
     public string Original(Msg id) => _texts.TryGetValue(id, out var s) ? s : Table[id];

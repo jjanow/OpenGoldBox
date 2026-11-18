@@ -176,8 +176,10 @@ public static class PorEngineSave
     /// <summary>
     /// Checks that a save fits this engine and the content: the format's major version, the VM profile (refused when it
     /// is not <paramref name="profile"/>), the regions the profile saves (names, starts, sizes) and the module id
-    /// (refused when it differs). A different module version or content hash is not refused (the save holds its own
-    /// script; maps and records are read from the module) and is returned as a note [?].
+    /// (refused when it differs). A different module version is refused too when both sides name one (user decision,
+    /// s21); a save or content with no version (a game folder) is not compared. A different content hash with the same
+    /// version is not refused (a re-import by a newer importer changes it; the save holds its own script, maps and
+    /// records are read from the module) and is returned as a note [?].
     /// </summary>
     public static List<string> Check(EngineSaveDocument save, EclProfile profile, SaveModuleRef? module)
     {
@@ -201,8 +203,8 @@ public static class PorEngineSave
         {
             if (!string.Equals(save.Module.Id, module.Id, StringComparison.Ordinal))
                 throw new FormatException($"engine save is for module {save.Module.Id}, not {module.Id}");
-            if (save.Module.Version != module.Version)
-                notes.Add($"[?] save made with module version {save.Module.Version ?? "(none)"}, running {module.Version ?? "(none)"}");
+            if (save.Module.Version is { } sv && module.Version is { } mv && sv != mv)
+                throw new FormatException($"engine save is for module {save.Module.Id} version {sv}, not {mv}");
             if (save.Module.ContentHash is { } h && module.ContentHash is { } h2 && h != h2)
                 notes.Add("[?] save made with other module content (hash differs); the saved script is used, maps and records come from this module");
         }

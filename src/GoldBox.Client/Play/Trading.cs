@@ -24,6 +24,9 @@ public enum Venue
 public sealed class TradeContext
 {
     public required Dialog Dialog { get; init; }
+
+    /// <summary>Shows a full-screen window over the screen (null closes it).</summary>
+    public Action<IReadOnlyList<WindowLine>?> ShowWindow { get; init; } = _ => { };
     public required GameText Text { get; init; }
     public required EclParty Party { get; init; }
     /// <summary>The pool: seven dwords (copper … jewellery).</summary>

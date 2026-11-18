@@ -9,6 +9,7 @@
 #   ./play.sh --save B                    load SAVGAMB.DAT
 #   ./play.sh --area 20 --at 15,4,W       enter area script 20 at 15,4 facing west (no save)
 #   ./play.sh --scale 4                   bigger window (4 × 320×200)
+#   ./play.sh --seed 1234                 fixed random seed (repeatable test runs)
 #   ./play.sh --rebuild ...               force a build first
 set -euo pipefail
 
@@ -23,7 +24,7 @@ args=()
 for a in "$@"; do
   case "$a" in
     --rebuild) rebuild=1 ;;
-    -h|--help) sed -n '2,13p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help) sed -n '2,14p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) args+=("$a") ;;
   esac
 done

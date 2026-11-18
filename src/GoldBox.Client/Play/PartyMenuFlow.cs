@@ -82,7 +82,7 @@ public sealed class PartyMenuFlow(Func<PlayerRequest, object?> ask, PartyMenuTex
     /// open on it and a choice moves it; the main menu's hotkeys move it to their entry; the yes/no routine 0x2D9A0
     /// sets it to its second word (No) first (DOSBox-X s19: Keep and Is-this-icon-ok open on NO).
     /// </summary>
-    public MenuHighlight Highlight { get; } = new();
+    public MenuHighlight Highlight { get; init; } = new();
 
     /// <summary>The game's generator: creation draws from it, and a new game goes on with its seed.</summary>
     public TurboPascalRandom Random { get; set; } = new(seed);
@@ -411,7 +411,18 @@ public sealed class PartyMenuFlow(Func<PlayerRequest, object?> ask, PartyMenuTex
     {
         if (PickSlot() is not { } slot || LoadGame is null)
             return;
-        var g = LoadGame(slot, Random.Seed);
+        PorGame g;
+        try
+        {
+            g = LoadGame(slot, Random.Seed);
+        }
+        catch (Exception e) when (e is FormatException or IOException or System.Text.Json.JsonException)
+        {
+            // Not in the original (its saves always fit): a save this module refuses (another module or version).
+            Console.Error.WriteLine($"load {slot}: {e.Message}");
+            _notice = texts.CouldNotLoad(slot);
+            return;
+        }
         if (g.LoadedInterfaceState != 0)
         {
             Started = g;
@@ -426,7 +437,8 @@ public sealed class PartyMenuFlow(Func<PlayerRequest, object?> ask, PartyMenuTex
         Party.CurrentIndex = Party.Members.Count > 0 ? 0 : -1;
     }
 
-    /// <summary>Load's slot menu (the letters of the saves present, then Exit): the slot, or null (none, Exit).</summary>
+    /// <summary>Load's slot menu: the letters A–J of the saves present and no Exit word (0x1F5FF–0x1F6C3 builds the list
+    /// from the letters only; DOSBox-X s21); Escape gives up. The slot, or null (none, Escape).</summary>
     public char? PickSlot()
     {
         var slots = SaveSlots?.Invoke() ?? [];
@@ -436,8 +448,7 @@ public sealed class PartyMenuFlow(Func<PlayerRequest, object?> ask, PartyMenuTex
             return null;
         }
         var words = slots.Select(s => s.ToString()).ToList();
-        words.Add(texts.Exit);
-        if (ask(new ChoiceRequest(null, words, false, words.Count - 1) { MenuPrompt = texts.LoadWhich }) is not int k
+        if (ask(new ChoiceRequest(null, words, false, words.Count) { MenuPrompt = texts.LoadWhich }) is not int k
             || k < 0 || k >= slots.Count)
             return null;
         return slots[k];
@@ -531,6 +542,8 @@ public sealed class PartyMenuTexts(PorProgramData? program, ClientResources reso
     public string CantModify(string name) => name + (T("CantModify") ?? " HAS EXPERIENCE: NO CHANGES.");
     public string NotBuilt(string what) => what.ToUpperInvariant() + ": NOT IN THIS BUILD YET.";
     public string NoSaves => "NO SAVED GAMES FOUND.";
+    /// <summary>Client only: a save the module refuses (<see cref="GoldBox.Data.Module.Por.PorEngineSave.Check"/>).</summary>
+    public string CouldNotLoad(char slot) => $"SAVE {slot} COULD NOT BE LOADED.";
 
     public string Race(int code) => resources.Race(code) ?? $"RACE {code}";
     public string Gender(int g) => resources.Gender(g) ?? (g == 0 ? "MALE" : "FEMALE");

@@ -51,6 +51,11 @@ public sealed class Dialog(Func<PlayerRequest, object?> ask, TextWindow text)
 
     public void WaitKey(string? prompt = null) => ask(new KeyRequest(prompt));
 
+    /// <summary>A key wait whose prompt is a white menu of the menu routine (<see cref="KeyRequest.AsMenu"/>);
+    /// <paramref name="original"/> is the text in its original case, for the entry count.</summary>
+    public void MenuKey(string prompt, string original) =>
+        ask(new KeyRequest(prompt) { AsMenu = true, MenuEntries = KeyRequest.CountEntries(original) });
+
     /// <summary>A number typed on the bottom line (digits only); null when nothing was typed.</summary>
     public int? Number(string prompt)
     {

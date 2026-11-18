@@ -214,11 +214,12 @@ public static class VenueScreens
     }
 
     /// <summary>
-    /// The summary screen (0x5E94, program read s12): one result line, then the experience line, then a key. The
-    /// result: when a hostile creature that did not flee was in the list (DS:443A) or in a duel (DS:84D4): the duel
-    /// lost (no winner, DS:84DA = 0) or won, else the party won; otherwise the party fled (DS:443B) or found treasure
-    /// (no monsters). The experience line names the duelist in a duel, else each character.
-    /// [?] The rows and the box the program clears first (0x3F1:0x2E8) are not matched cell for cell.
+    /// The summary screen (0x5E94, program read s12, rows s21): a full-screen window (START 03F1:02E8 with 1, 1, 38, 22),
+    /// then in colour 10 at column 1: the result on row 3, the experience line (the text and the share) on row 5, the
+    /// "experience points" text on row 7; then the press-enter words as a white menu (0x6071). The result: when a
+    /// hostile creature that did not flee was in the list (DS:443A) or in a duel (DS:84D4): the duel lost (no winner,
+    /// DS:84DA = 0) or won, else the party won; otherwise the party fled (DS:443B) or found treasure (no monsters).
+    /// The experience line names the duelist in a duel, else each character. DOSBox-X s21: the slums' kobolds.
     /// </summary>
     public static void Summary(TradeContext t, AfterCombatOutcome outcome, bool duel)
     {
@@ -227,10 +228,16 @@ public static class VenueScreens
         Msg result = outcome.HostileFound || duel
             ? duel ? (outcome.Won ? Msg.WonDuel : Msg.LostDuel) : Msg.PartyWon
             : outcome.PartyFled ? Msg.PartyFled : Msg.FoundTreasure;
-        d.Show(t.Text[result], clear: false);
-        d.Text.NewLine();
-        d.Show(GameText.Cat(GameText.Cat(t.Text[duel ? Msg.DuelistReceives : Msg.EachReceives], outcome.ExperienceShare), t.Text[Msg.ExperiencePoints]), clear: false);
-        d.WaitKey(t.Text[Msg.PressEnter]);
+        t.ShowWindow(
+        [
+            new WindowLine(1, 3, t.Text[result]),
+            new WindowLine(1, 5, GameText.Cat(t.Text[duel ? Msg.DuelistReceives : Msg.EachReceives], outcome.ExperienceShare)),
+            new WindowLine(1, 7, t.Text[Msg.ExperiencePoints]),
+        ]);
+        d.MenuKey(t.Text[Msg.PressEnter], t.Text.Original(Msg.PressEnter));
+        t.ShowWindow(null);
+        // The loot menu then redraws the screen for DS:49F3 = 6 (START 0x3379): the text window starts empty.
+        d.Text.Clear();
     }
 
     /// <summary>
@@ -266,10 +273,13 @@ public static class VenueScreens
                 default:
                     if (money || items)
                     {
+                        // 0x664A–0x66B3 (s21): the first text in colour 10 with a clear, the second in 15 running on
+                        // after it (the text routine 0x709:0x768, no line break), then "Yes No" through the menu helper
+                        // 0x8B57, which opens on the shared highlight (not the yes/no routine; DOSBox-X: on Yes after
+                        // Exit). Answer 1 (Yes) goes back.
                         t.Dialog.Show(t.Text[Msg.TreasureLeft]);
-                        t.Dialog.Text.NewLine();
                         t.Dialog.Show(t.Text[Msg.ClaimTreasure], clear: false, colour: 15);
-                        if (t.Dialog.YesNo())
+                        if (t.Dialog.Menu(["YES", "NO"], cancel: 1) == 0)
                             break;
                     }
                     return;

@@ -49,7 +49,8 @@ public sealed class HallView
                 {
                     var e = m.Entries[i];
                     int row = MenuRow + i;
-                    if (i == _selected)
+                    // The original marks no entry (as the party menu); the pad and the mouse get a pointer.
+                    if (i == _selected && input.LastDevice != InputDevice.Keyboard)
                         Chrome.Text(f, font, MenuColumn - 1, row, ">", Chrome.Yellow);
                     Chrome.Text(f, font, MenuColumn, row, Fit(e.Text, 37), Chrome.Green);
                     if (e.Text.Length > 0)
@@ -92,24 +93,7 @@ public sealed class HallView
 
     private const byte PromptColour = 13;
 
-    private static void DrawRoster(IndexedFrame f, TextFont font, EclParty? party)
-    {
-        Chrome.Text(f, font, 1, 2, "NAME", Chrome.White);
-        Chrome.TextRight(f, font, 34, 2, "AC", Chrome.White);
-        Chrome.TextRight(f, font, 38, 2, "HP", Chrome.White);
-        if (party is null)
-            return;
-        for (int i = 0; i < party.Members.Count && i < 8; i++)
-        {
-            var m = party.Members[i];
-            var name = m.Name.Length > 15 ? m.Name[..15] : m.Name;
-            Chrome.Text(f, font, 1, 4 + i, name.ToUpperInvariant(), i == party.CurrentIndex ? Chrome.White : Chrome.Cyan);
-            Chrome.TextRight(f, font, 34, 4 + i, (60 - m[0x111]).ToString(CultureInfo.InvariantCulture), Chrome.Green);
-            // DOSBox-X: a member below its maximum shows the HP in yellow [?] (the rule seen, the routine START 0x1307 not read).
-            Chrome.TextRight(f, font, 38, 4 + i, m[0x11B].ToString(CultureInfo.InvariantCulture),
-                m[0x11B] < m[0x32] ? Chrome.Yellow : Chrome.Green);
-        }
-    }
+    private static void DrawRoster(IndexedFrame f, TextFont font, EclParty? party) => Chrome.PartyList(f, font, party, 1);
 
     /// <summary>The menu's answer this frame: a hotkey letter, Confirm on the highlighted entry, a member switch.</summary>
     public object? Answer(HallMenuRequest m, ActionInput input)

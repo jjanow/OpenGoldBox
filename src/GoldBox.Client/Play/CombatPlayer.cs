@@ -578,19 +578,21 @@ public sealed partial class CombatChooser(Func<PlayerRequest, object?> ask, Comb
     /// </summary>
     private void Frame() => Pause(0);
 
-    private int Choose(CombatMode mode, string? prompt, IReadOnlyList<string> items, int? cancel = null)
+    private int Choose(CombatMode mode, string? prompt, IReadOnlyList<string> items, int? cancel = null, int selected = 0)
     {
         View.Mode = mode;
-        var r = ask(new ChoiceRequest(null, items, false, cancel) { MenuPrompt = prompt });
+        var r = ask(new ChoiceRequest(null, items, false, cancel) { MenuPrompt = prompt, Selected = selected });
         return r is int i ? i : cancel ?? 0;
     }
 
+    /// <summary>The yes/no routine 0x2D9A0: the shared highlight goes to No first (0x2D9B9), so the menu opens on No
+    /// (DOSBox-X s21: "Continue battle", 0xA1A5).</summary>
     private bool YesNo(string prompt)
     {
         var words = Text.Words(CombatMsg.YesNo);
         if (words.Count < 2)
             words = ["YES", "NO"];
-        return Choose(CombatMode.Question, prompt.TrimEnd(), words, 1) == 0;
+        return Choose(CombatMode.Question, prompt.TrimEnd(), words, 1, selected: 1) == 0;
     }
 
     /// <summary>

@@ -505,6 +505,21 @@ public class EncounterHostTests
         Assert.Equal(["ShowPicture 7 -", "ShowPicture 8 3", "RestoreView"], rig.Ui.Calls);
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void Call_2C90_takes_the_picture_off_only_after_files_were_loaded(bool filesLoaded)
+    {
+        // 0x3A54 (s21): the redraw needs DS:4431 and a redraw flag (here the picture's, DS:84E0).
+        var rig = new Rig(new EclAsm()
+            .Op(EclOpcodes.Picture, Imm8(7))
+            .Op(EclOpcodes.Call, Mem(0x2C90))
+            .Op(EclOpcodes.Exit));
+        rig.Memory.FilesLoadedSinceSwitch = filesLoaded;
+        rig.Run();
+        Assert.Equal(filesLoaded ? ["ShowPicture 7 -", "RestoreView"] : ["ShowPicture 7 -"], rig.Ui.Calls);
+    }
+
     // ---- Real data ---------------------------------------------------------------------------------------------
 
     [PorFact]

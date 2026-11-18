@@ -100,7 +100,21 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
 
     // ---- Menus and input -----------------------------------------------------------------------------------------
     public ushort VerticalMenu(string prompt, IReadOnlyList<string> choices) => (ushort)Choose(prompt, Upper(choices), vertical: true);
-    public ushort HorizontalMenu(IReadOnlyList<string> choices) => (ushort)Choose(null, Upper(choices), animates: CloseUpAnimates);
+    public ushort HorizontalMenu(IReadOnlyList<string> choices) =>
+        (ushort)Choose(null, Upper(OneWordSwap(choices)), animates: CloseUpAnimates);
+
+    /// <summary>
+    /// HMENU (GAME.OVR 0x1E17, read s21): a menu of one word that equals the code string at 0x1DCB (exact compare,
+    /// 0x1E76) is shown with the string at 0x1DF0 instead (0x1E8B), when the count operand is 1. DOSBox-X (s21, the
+    /// harbor master in New Phlan) shows the second. Both are read from the player's program; without them nothing is
+    /// swapped.
+    /// </summary>
+    private IReadOnlyList<string> OneWordSwap(IReadOnlyList<string> choices) =>
+        choices.Count == 1 && Resources.Texts.FromFiles(Msg.HmenuButton) is { Length: > 0 } button
+            && Resources.Texts.FromFiles(Msg.HmenuEnter) is { Length: > 0 } enter
+            && string.Equals(choices[0], button, StringComparison.Ordinal)
+            ? [enter]
+            : choices;
 
     private static string[] Upper(IReadOnlyList<string> s) => [.. s.Select(c => c.ToUpperInvariant())];
 
@@ -299,20 +313,20 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
     {
         if (text is not null)
             Text.Print(text, clear: true);
-        string[] items = kind == EncounterMenuKind.CombatWaitFleeAdvance
-            ? ["COMBAT", "WAIT", "FLEE", "ADVANCE"]
-            : ["COMBAT", "WAIT", "FLEE", "PARLEY"];
+        // The program's two menu lines (GAME.OVR 0x2BE1 / 0x2BFD; v1.3 spells the fourth word differently from our old stand-in).
+        var items = Resources.Texts.Words(kind == EncounterMenuKind.CombatWaitFleeAdvance
+            ? Msg.EncounterMenuAdvance : Msg.EncounterMenuParley);
         return Choose(null, items, animates: CloseUpAnimates);
     }
 
     public void ShowEncounterMessage(EncounterMessage message)
     {
-        // Our wording; the program's two fixed lines (GAME.OVR unit offsets 0x1ED4 / 0x1EE5) are not reproduced.
-        Text.Print(message == EncounterMessage.BothSidesWait ? "BOTH SIDES WAIT." : "THE MONSTERS FLEE.", clear: true);
+        // The program's two fixed lines (GAME.OVR 0x2C1A / 0x2C2B).
+        Text.Print(Resources.Texts[message == EncounterMessage.BothSidesWait ? Msg.BothSidesWait : Msg.MonstersFlee], clear: true);
         runner.Ask(new DelayRequest(TimeSpan.FromMilliseconds(900)));
     }
 
-    public int ChooseParleyAttitude() => Choose(null, ["HAUGHTY", "SLY", "NICE", "MEEK", "ABUSIVE"]);
+    public int ChooseParleyAttitude() => Choose(null, Resources.Texts.Words(Msg.ParleyAttitudes)); // GAME.OVR 0x32EE
 
     /// <summary>LoadCombatIcon: the combat screen draws the monsters of icon slot <paramref name="slot"/> (record 0xBF) with this CPIC.</summary>
     public void LoadCombatIcon(byte picture, int slot) => FightView.IconPictures[slot] = picture;
@@ -369,6 +383,7 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
         finally
         {
             Interface = null;
+            Window = null;
             ViewOverlay = null; // [?] as after the shop: the area display is drawn again after the loot step
         }
     }
@@ -403,6 +418,9 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
         }
     }
 
+    /// <summary>A full-screen window over the screen (the fight summary, 0x5E94), or null.</summary>
+    public IReadOnlyList<WindowLine>? Window { get; set; }
+
     /// <summary>The interface state the screens are in (DS:49F3: 1 shop/temple, 2 camp, 6 loot), null while exploring.</summary>
     public Venue? Interface { get; private set; }
 
@@ -415,6 +433,7 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
         return new TradeContext
         {
             Dialog = Dialog,
+            ShowWindow = w => Window = w,
             Text = Resources.Texts,
             Party = party,
             Pool = state?.Money ?? new uint[7],

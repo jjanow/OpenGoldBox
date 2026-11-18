@@ -13,6 +13,7 @@ public class VenueTests
     {
         private readonly Queue<object?> _answers = new(answers);
         public List<PlayerRequest> Asked { get; } = [];
+        public List<IReadOnlyList<WindowLine>> Windows { get; } = [];
 
         public object? Ask(PlayerRequest r)
         {
@@ -57,6 +58,7 @@ public class VenueTests
             Treasure = treasure ?? [],
             Random = n => n - 1,
             Word = w => w == 7 ? "SWORD" : null,
+            ShowWindow = w => { if (w is not null) s.Windows.Add(w); },
         }, s);
 
     private static EclParty Party(params EclCharacter[] members)
@@ -219,7 +221,7 @@ public class VenueTests
         Assert.Single(c.Items);
         Assert.Equal(20, c.Word(Money.Weight));
         Assert.Equal(["VIEW", "TAKE", "POOL", "EXIT"], Assert.IsType<ChoiceRequest>(s.Asked[1]).Items);
-        Assert.Contains("90", string.Join(" ", t.Dialog.Text.Lines));
+        Assert.Contains("90", Assert.Single(s.Windows)[1].Text);
     }
 
     [Theory]
@@ -229,9 +231,15 @@ public class VenueTests
     [InlineData(false, false, true, Msg.LostDuel)]
     public void Summary_line_follows_the_programs_flags(bool hostile, bool fled, bool duel, Msg expected)
     {
-        var (t, _) = Context(new Script((object?)null), Party(Member("ANNA")));
+        var (t, s) = Context(new Script((object?)null), Party(Member("ANNA")));
         VenueScreens.Summary(t, new AfterCombatOutcome(false, fled, false, hostile, 0, 0), duel);
-        Assert.Equal(t.Text[expected], t.Dialog.Text.Lines[0]);
+        // 0x5E94: a full-screen window, the result at column 1 row 3, the experience lines at rows 5 and 7.
+        var w = Assert.Single(s.Windows);
+        Assert.Equal(new WindowLine(1, 3, t.Text[expected]), w[0]);
+        Assert.Equal([5, 7], w.Skip(1).Select(l => l.Row));
+        var key = Assert.IsType<KeyRequest>(s.Asked[0]);
+        Assert.True(key.AsMenu);
+        Assert.Equal(0, key.MenuEntries); // a lower-case text has no entries: the cell goes back to the first
     }
 
     [Theory]

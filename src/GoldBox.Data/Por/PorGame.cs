@@ -149,7 +149,7 @@ public sealed class PorGame
     /// <summary>
     /// Main menu → Load from an engine save: the save's memory and script, map $49C5 read again, then vector 4 (and any
     /// script switch). The save must be for the content's VM profile and module id
-    /// (<see cref="Module.Por.PorEngineSave.Check"/>); a different module version or content is noted in the diagnostics.
+    /// and version (<see cref="Module.Por.PorEngineSave.Check"/>); different module content is noted in the diagnostics.
     /// </summary>
     public static PorGame FromSave(IPorContent content, PorViewArt art, Module.EngineSaveDocument save, PorPlayer player, uint seed)
     {

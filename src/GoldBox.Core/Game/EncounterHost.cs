@@ -326,8 +326,18 @@ public sealed class EncounterHost : IEclHost
                 SetUpDuel(false);
                 break;
             case CallRedraw:
-                // 0x3A44: the event byte is read again from the map; the redraw itself is the inner host's.
+                // 0x3A44: the event byte is read again from the map. 0x3A54: with DS:4431 set (files loaded since the
+                // last NEWECL) and a redraw flag up, the view is redrawn and the flags cleared; of the flags, the
+                // picture (DS:84E0) and sprite (DS:84E3) ones take the picture off the view (DOSBox-X s21: the Tyr
+                // temple's "then you must leave" moves the party back with $C04B/$C04C and CALL $2C90, and the 3D view
+                // replaces the priest). The other flags (84E5/84E6/84E8) only redraw what the view shows anyway.
                 Memory.Position.EventByte = EventByteHere();
+                if (Memory.FilesLoadedSinceSwitch && (State.PictureShown || State.SpriteShown))
+                {
+                    Ui.RestoreView();
+                    State.PictureShown = false;
+                    State.SpriteShown = false;
+                }
                 Inner.Call(routine);
                 break;
             default:

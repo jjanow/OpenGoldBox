@@ -566,9 +566,10 @@ module; `a.json` … `j.json` in the Client's save folder).
   `rules/` of each module in the chain. Each file goes in as its lower-case relative path and its bytes, sorted. Art,
   text, saves and the manifest are left out, so the Amiga overlay or a re-import with the same game data keeps the hash (a second import of v1.3 gives the same hash and the same engine saves, tested).
 - **Load checks** (`PorEngineSave.Check`): the format's major version, the VM profile (must be the content's), the
-  saved regions, and the module id (must be the content's). The load refuses a mismatch. A different module version or
-  content hash is loaded with a `[?]` note in the VM diagnostics, since the save carries its own script and maps and
-  records come from the module. `[?]` Whether that should refuse, or offer a choice, is open.
+  saved regions, the module id (must be the content's) and the module version (must be the content's when both name one;
+  decided s21). The load refuses a mismatch; the party menu shows "SAVE X COULD NOT BE LOADED." (Client only). A
+  different content hash with the same version (a re-import by a newer importer) is loaded with a `[?]` note in the VM
+  diagnostics, since the save carries its own script and maps and records come from the module.
 - **Round trip**: `PorEngineSave.ToOriginalFiles` writes `SAVGAMx.DAT` and the `CHRDATxn.SAV/.ITM/.SPC` files back.
   Every one of the 36 shipped save files is rebuilt byte for byte (`PorRoundTrip` kind `ENGINE SAVE`, which also
   checks that no file the original names is left out). A slot letter other than the save's own renames the set: stems
@@ -626,7 +627,7 @@ With `--amiga` (Amiga v1.0, s17): 508 Amiga pictures over 16 files (every pictur
    take only an `IPorContent`.
 2. `GoldBox.Importer` (CLI `goldbox-import por GAMEDIR OUTDIR [--amiga AMIGADIR]`): scripts, maps, records, item
    types first. Then art (DOS, then Amiga), rules tables, text, saves. **Done (s16; the Amiga overlay s17; the
-   overland `rules/overland.json` s18, importer 0.6 after the s18 merges; `audio/dos/pcsound.json` and new `PartyMsg`, `CombatMsg`, `Hall`, `End`, river texts s19, importer 0.7; the icon editor's size and hair / face words `PartyMsg.Icon*` s20, importer 0.7.1).** The importer and the round
+   overland `rules/overland.json` s18, importer 0.6 after the s18 merges; `audio/dos/pcsound.json` and new `PartyMsg`, `CombatMsg`, `Hall`, `End`, river texts s19, importer 0.7; the icon editor's size and hair / face words `PartyMsg.Icon*` s20, importer 0.7.1; HMENU's one-word swap `Msg.HmenuButton` / `Msg.HmenuEnter` s21, importer 0.7.2; the encounter menus, messages and parley attitudes `Msg.Encounter*`, `Msg.BothSidesWait`, `Msg.MonstersFlee`, `Msg.ParleyAttitudes` s21, importer 0.7.3).** The importer and the round
    trip live in `GoldBox.Data/Module/Por/` (the Client imports with them); the CLI stays in `GoldBox.Importer`.
 3. **Round-trip test:** for every raw resource, module → original block must be byte-identical to the DAX block. All
    existing real-data tests also pass with the Client and Core reading the module instead of the game folder.
@@ -694,7 +695,8 @@ With `--amiga` (Amiga v1.0, s17): 508 Amiga pictures over 16 files (every pictur
   composes them (XOR with the first frame) but timed with the DOS rule (the Amiga times them by poll passes). The title painting is optional (disk A's `intro`).
 - Settled (s18): the PoR overland tile table and special locations are in `rules/overland.json`, placed by areas
   25–27 (section 6). Open: what the special-location VM cells mean, and the tile file the view draws from.
-- Saves (section 15): a save from another module version or content loads with a note, not refused; the shipped
+- Saves (section 15): a save from another module version is refused (s21), other content with the same version loads
+  with a note; the shipped
   original save files are kept in `saves/` next to the engine saves until nothing reads them.
 - Areas: computed LOADFILES operands are listed when the code before them fixes them (s18; PoR 3, 5, 24); block 5's
   $9AD8 is the one left `[?]` (section 6).

@@ -56,7 +56,29 @@ public sealed record ChoiceRequest(string? Prompt, IReadOnlyList<string> Items, 
 /// Wait for any key (the program's "press a key" stops): <paramref name="Prompt"/> on the bottom line in colour 13
 /// for the keyboard (the device prompt for pad and mouse); null = the text window's page prompt.
 /// </summary>
-public sealed record KeyRequest(string? Prompt = null) : PlayerRequest;
+public sealed record KeyRequest(string? Prompt = null) : PlayerRequest
+{
+    /// <summary>
+    /// The prompt is a menu of the menu routine 0x2CC8C with every colour 15 (the "press enter" text after the fight
+    /// summary, 0x6071): drawn white, and the shared highlight goes back to the first entry when it is past the menu's
+    /// last (0x2CCE7). See <see cref="MenuEntries"/>.
+    /// </summary>
+    public bool AsMenu { get; init; }
+
+    /// <summary>
+    /// The menu's entries as the routine counts them (0x2C99A, read s21): an entry starts at each digit or capital letter
+    /// of the text in its original case (the set at the unit's CS:00AB). The program's press-enter text is in lower
+    /// case: no entries, so the cell always goes back to the first (DOSBox-X s21: after the summary the loot menu opens
+    /// on View).
+    /// </summary>
+    public int MenuEntries { get; init; }
+
+    /// <summary>Entries of a menu text by the menu routine's rule (<see cref="MenuEntries"/>).</summary>
+    public static int CountEntries(string original) => original.Count(c => char.IsAsciiDigit(c) || char.IsAsciiLetterUpper(c));
+}
+
+/// <summary>A cell of a full-screen window (START 03F1:02E8 with 1, 1, 38, 22): text at a column and row, in a colour.</summary>
+public sealed record WindowLine(int Column, int Row, string Text, byte Colour = 10);
 
 /// <summary>A row of a full-screen list: its text and colour (selectable rows are drawn by the screen in its colours).</summary>
 public sealed record ListLine(string Text, byte Colour = 10, int Column = 1);

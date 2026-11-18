@@ -20,7 +20,7 @@ hall's class mask) is above 0 or the cheat flag is set, Load off; without one th
 Exit keep their data-segment defaults (on).
 
 Screen (DOSBox-X): outer frame; the party list across the top (header at column 1 row 2, members from row 4, AC / HP
-right-aligned at 34 / 38, current member white, a damaged member's HP yellow `[?]` rule from the screen only); the shown
+right-aligned at 34 / 38, current member white, the others in the name colour of START 0x23B6; HP 0x11B yellow below 0x32: the party list START 0x1307, read s21, also used by the party menu and the explore screen); the shown
 entries from row 12 at column 2, first letter white, rest green; the prompt on the bottom line in colour 13. The menu
 routine 0x2CC8C takes the item line DS:05F0 (the hotkeys, drawn invisibly) so every letter is a key; a key whose entry
 is hidden does nothing. Extended Home / End (set at 0x19A75) pick the member (0x23819). Keys: C 0x19EEB, D 0x1B8B6,

@@ -289,7 +289,14 @@ the key 0) with money or items left: a two-line message (treasure left, go back?
 result line: with DS:443A (a hostile that did not flee) or a duel (DS:84D4): in a duel the duel-lost text when
 DS:84DA = 0, else the duel-won text; outside a duel the party-won text. Otherwise the party-fled text when DS:443B is
 set, else the treasure-found text (a COMBAT with no monsters). Then the experience line (the duelist's or each character's share,
-DS:84D6) and a key prompt through the menu routine.
+DS:84D6) and a key prompt through the menu routine. **Rows (s21, read and DOSBox-X):** the screen is a full-screen window
+(START 03F1:02E8 with 1, 1, 38, 22, no title); colour 10 at column 1: the result on row 3, the experience text and the
+share on row 5, the "experience points" text on row 7; then the menu routine 0x2CC8C on the lower-case press-enter text
+with colours 15, 15, 15 (all white). The routine starts an entry at each digit or capital (set at its CS:00AB, 0x2C99A),
+so that text has none and the shared cell goes back to 1 (0x2CCE7): the loot menu opens on View. The loot menu (0x644B)
+first redraws the screen for DS:49F3 = 6 (START 0x3379 case 6): the explore frame, PIC block 1 (the treasure chest) in
+the view, the party list, no position line, an empty text window. The "continue battle" question (0xA1A5) is the
+yes/no routine 0x2D9A0 (opens on No).
 
 ## Shop (0x7212) — P
 
@@ -337,5 +344,5 @@ CALL $2C90 and the search vector. The `encmenu_flee` capture is replayed with no
   are read in `combat-map.md`; the menu, sweep and turn undead in `combat-menu.md`; the AI in its own spec.
 - Spells (0x14C0F, 0x27C38); the effect handlers (0x2B1E4
   triggers; terrain 0x2B9D1); the stat recalculation's effect on THAC0/AC during a fight.
-- Summary screen (0x5E94): exact rows; byte 0000:0013 in the no-fight case.
+- Summary screen (0x5E94): byte 0000:0013 in the no-fight case (rows settled s21).
 - Shop/temple: see `shop-format.md` "Open".
