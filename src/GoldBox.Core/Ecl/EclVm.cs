@@ -1,4 +1,5 @@
 using System.Globalization;
+using GoldBox.Core.Ecl.Profiles;
 
 namespace GoldBox.Core.Ecl;
 
@@ -38,7 +39,9 @@ public sealed class EclVmFault(string message) : Exception(message);
 /// decoded at run time from the live script area at the PC (scripts may write into it). Operand slots and string
 /// slots persist from one instruction to the next as in the program, so a type-0 operand used as an address keeps
 /// the previous high byte. Every effect taken from Lee only is marked <c>[?]</c> with its opcode row; the choices
-/// the spec leaves open live in <see cref="EclVmPolicy"/>.
+/// the spec leaves open live in <see cref="EclVmPolicy"/>. The dialect's data (script layout, opcode and IF-skip
+/// tables, PROGRAM ids that end the run) comes from the <see cref="Profile"/>; the handlers here are its
+/// <see cref="EclHandlerSet.Por13"/> code.
 /// </summary>
 public sealed class EclVm
 {
@@ -69,13 +72,15 @@ public sealed class EclVm
     public EclMemory Memory { get; }
     public IEclHost Host { get; }
     public EclVmPolicy Policy => Memory.Policy;
+    /// <summary>The VM profile (docs/module-format.md §5.1): the memory's, so the two never disagree.</summary>
+    public EclProfile Profile => Memory.Profile;
     public IEclScriptSource? Scripts { get; set; }
     public IEclTraceSink? Trace { get; set; }
 
     /// <summary>Program counter (DS:49ED).</summary>
     public ushort Pc { get; set; }
     /// <summary>The five entry vectors (DS:49E3..49EB), raw 16-bit fields.</summary>
-    public ushort[] Vectors { get; } = new ushort[EclLayout.VectorCount];
+    public ushort[] Vectors { get; }
     /// <summary>Compare flags = ≠ &lt; &gt; ≤ ≥ (DS:6F78..6F7D).</summary>
     public bool[] Flags { get; } = new bool[6];
     public int StackDepth => _gosub.Count;
@@ -126,10 +131,17 @@ public sealed class EclVm
     /// <summary>The effect handlers DAMAGE runs (<see cref="EclPartyRules.EffectTrigger"/>).</summary>
     public Game.EffectHandlers Effects { get; }
 
-    public EclVm(EclMemory memory, IEclHost host)
+    /// <param name="memory">The VM memory; it carries the profile (<see cref="EclMemory.Profile"/>).</param>
+    /// <param name="host">The game side.</param>
+    /// <param name="profile">The VM profile, when the caller names one: it must be the memory's.</param>
+    public EclVm(EclMemory memory, IEclHost host, EclProfile? profile = null)
     {
+        if (profile is not null && !ReferenceEquals(profile, memory.Profile))
+            throw new ArgumentException(
+                $"VM profile {profile.Name} differs from the memory's ({memory.Profile.Name})", nameof(profile));
         Memory = memory;
         Host = host;
+        Vectors = new ushort[Profile.VectorCount];
         PartyRules = new EclPartyRules(memory, range =>
         {
             ushort r = 0;
@@ -219,8 +231,8 @@ public sealed class EclVm
     /// </summary>
     public void ReadVectors()
     {
-        Pc = EclLayout.Base;
-        for (int k = 0; k < EclLayout.VectorCount; k++)
+        Pc = Profile.ScriptBase;
+        for (int k = 0; k < Profile.VectorCount; k++)
         {
             _textOperands = 0;
             LoadOperands(1, 1);
@@ -260,7 +272,7 @@ public sealed class EclVm
             ["disk"] = CurrentDisk.ToString(CultureInfo.InvariantCulture),
             ["vectors"] = string.Join(",", Vectors.Select(JsonlTraceWriter.Hex)),
         });
-        var r = RunVector(EclLayout.VectorInit, maxSteps);
+        var r = RunVector(Profile.InitVector, maxSteps);
         CommandRead();
         return r;
     }
@@ -369,7 +381,7 @@ public sealed class EclVm
             var saved = Memory.Party?.Current;
             Memory.PreviousViewMode = Memory.ViewMode; // DS:49F9 := DS:49FA (0x3F28)
             Memory.ViewMode = 1;
-            last = RunVector(EclLayout.VectorInit, maxStepsPerRun);
+            last = RunVector(Profile.InitVector, maxStepsPerRun);
             if (last.Reason is not (EclStopReason.Exit or EclStopReason.NewScript))
                 return last;
             LoadPending();
@@ -463,7 +475,7 @@ public sealed class EclVm
 
     private EclRunResult? Execute(byte op)
     {
-        var info = EclOpcodes.Get(op);
+        var info = Profile.Opcodes.Get(op);
         if (info is null)
         {
             // [?] ecl-format.md: 0x1F and >= 0x3E have no dispatcher case; the PC is not advanced (T item).
@@ -493,7 +505,8 @@ public sealed class EclVm
                 return null;
             }
             case EclOpcodes.Return:
-                // P: steps past the opcode (done by the loader); empty stack falls through.
+                // P: steps past the opcode (done by the loader); empty stack falls through
+                // (EclReturnOnEmptyStack.FallsThrough, the one rule the Por13 handlers have).
                 if (_gosub.Count > 0)
                     Pc = _gosub.Pop();
                 return null;
@@ -973,7 +986,7 @@ public sealed class EclVm
                 RestoreSelected(); // 0x3B5C, before the operand is loaded
                 var v = Value16(1); // ids P; effects [?]
                 HostCall("Program", [Num(v)], null, () => Host.Program(v));
-                if (v == 9)
+                if (Profile.ProgramIdsThatExit.Contains(v))
                     DoExit(); // P: camp (0x3B56), then EXIT (0x3BBC): the run ends
                 return null;
             }
@@ -1383,7 +1396,7 @@ public sealed class EclVm
     private void SkipNextInstruction()
     {
         byte next = FetchByte(Pc, "skipped opcode");
-        int n = EclOpcodes.SkipCount(next);
+        int n = Profile.Opcodes.SkipCount(next);
         int p = Pc + 1;
         for (int k = 0; k < n; k++)
         {
@@ -1395,9 +1408,9 @@ public sealed class EclVm
                 _ => 2,
             };
         }
-        var full = EclOpcodes.Get(next);
-        if (full is not null && full.SkipCount != full.FixedCount)
-            Diag($"IF skips {EclOpcodes.Name(next)} with a short operand count: resumes inside its operands");
+        var full = Profile.Opcodes.Get(next);
+        if (full is not null && n != full.FixedCount)
+            Diag($"IF skips {Profile.Opcodes.Name(next)} with a short operand count: resumes inside its operands");
         // DOSBox (load_saveA / load_saveB captures): after an IF skipped a GOTO, the next instruction's "previous
         // opcode" (DS:6F7E) was the skipped GOTO, not the IF: the skip leaves the skipped opcode in DS:6F7F.
         Opcode = next;

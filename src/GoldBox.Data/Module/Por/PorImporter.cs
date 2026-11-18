@@ -28,6 +28,8 @@ public sealed class PorImportReport
     public int CollisionsWithDifferentContent { get; set; }
     public List<string> Notes { get; } = [];
     public List<ModuleInput> Inputs { get; } = [];
+    /// <summary>The Amiga art overlay, when an Amiga folder was given.</summary>
+    public PorAmigaReport? Amiga { get; set; }
 }
 
 /// <summary>
@@ -37,7 +39,7 @@ public sealed class PorImportReport
 /// </summary>
 public static class PorImporter
 {
-    public const string ImporterName = "GoldBox.Importer 0.2";
+    public const string ImporterName = "GoldBox.Importer 0.3";
 
     /// <summary>Program rule (GAME.OVR 0x2EC5D): while script 0 or 10 runs, off-map squares read 0 instead of wrapping.</summary>
     private static readonly int[] NoWrapScripts = [0, 10];
@@ -54,9 +56,10 @@ public static class PorImporter
 
     /// <summary>
     /// Imports <paramref name="gameDir"/> into <paramref name="outDir"/>, which must not exist or be empty (nothing is
-    /// overwritten or deleted).
+    /// overwritten or deleted). <paramref name="amigaDir"/>, when given, holds the unpacked Amiga v1.0 disks
+    /// (<c>program</c> and the data files): their art becomes the <c>art/amiga</c> overlay (<see cref="PorAmigaArt"/>).
     /// </summary>
-    public static PorImportReport Import(string gameDir, string outDir)
+    public static PorImportReport Import(string gameDir, string outDir, string? amigaDir = null)
     {
         var game = new PorGameDirectory(gameDir);
         if (!game.EclFiles().Any())
@@ -243,6 +246,10 @@ public static class PorImporter
                     report.ArtData++;
         }
 
+        // ---- art (Amiga overlay) ----
+        if (amigaDir is not null)
+            report.Amiga = PorAmigaArt.Import(amigaDir, outDir);
+
         // ---- shipped saves (copied as they are [?]: conversion to an engine save is section 15's open point) ----
         foreach (var path in Directory.EnumerateFiles(gameDir).Order(StringComparer.Ordinal))
         {
@@ -259,6 +266,8 @@ public static class PorImporter
         // ---- manifest ----
         foreach (var name in read)
             report.Inputs.Add(new ModuleInput { File = name, Sha256 = Sha256(game.Find(name)!) });
+        if (report.Amiga is { } amiga)
+            report.Inputs.AddRange(amiga.Inputs);
         var manifest = new ModuleManifest
         {
             FormatVersion = ModuleManifest.CurrentFormatVersion,
@@ -268,6 +277,9 @@ public static class PorImporter
             // [?] the release is not detected: the engine's profiles are for v1.3, the only release it supports.
             Rules = "por-1.3",
             Vm = "ecl-por-1.3",
+            Art = report.Amiga is null
+                ? new ModuleArt { Variants = ["dos"] }
+                : new ModuleArt { Variants = ["dos", PorAmigaArt.Variant], Defaults = PorAmigaArt.BestDefaults() },
             Source = new ModuleSource
             {
                 Importer = ImporterName,
@@ -277,7 +289,9 @@ public static class PorImporter
             },
         };
         manifest.Save(outDir);
-        report.Notes.Add("not imported yet: the Amiga art overlay; manifest start [?]");
+        report.Notes.Add(report.Amiga is null
+            ? "no Amiga folder given: DOS art only; manifest start [?]"
+            : "manifest start [?]");
         return report;
     }
 

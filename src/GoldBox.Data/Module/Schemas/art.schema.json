@@ -50,6 +50,18 @@
         "null"
       ]
     },
+    "packedTiles": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "paletteTable": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
     "source": {
       "type": [
         "object",

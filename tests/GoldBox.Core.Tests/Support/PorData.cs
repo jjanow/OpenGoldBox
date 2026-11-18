@@ -49,3 +49,30 @@ public sealed class PorTheoryAttribute : TheoryAttribute
             Skip = PorData.SkipReason;
     }
 }
+
+/// <summary>
+/// The player's Amiga Pool of Radiance v1.0 disks, unpacked (<c>program</c> from disk A, the <c>.dax</c> files from
+/// disk B), from <c>GOLDBOX_POR_AMIGA_DIR</c>. The Amiga overlay tests also need <see cref="PorData"/>.
+/// </summary>
+public static class PorAmigaData
+{
+    public const string EnvVar = "GOLDBOX_POR_AMIGA_DIR";
+
+    public static string? Dir { get; } =
+        Environment.GetEnvironmentVariable(EnvVar) is { } d && !string.IsNullOrWhiteSpace(d) && Directory.Exists(d) ? d : null;
+
+    public static bool Present => Dir is not null && PorData.Present;
+
+    public const string SkipReason = "needs the player's Pool of Radiance DOS v1.3 and Amiga v1.0 files: set " +
+                                     PorData.EnvVar + " and " + EnvVar;
+}
+
+/// <summary>A fact that needs the DOS and Amiga PoR files; skipped without them.</summary>
+public sealed class PorAmigaFactAttribute : FactAttribute
+{
+    public PorAmigaFactAttribute()
+    {
+        if (!PorAmigaData.Present)
+            Skip = PorAmigaData.SkipReason;
+    }
+}

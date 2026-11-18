@@ -56,7 +56,7 @@ public sealed class PorGame
         Art = art;
         Rng = new TurboPascalRandom(seed);
         Camp = player.Camp ?? new CampState();
-        var memory = new EclMemory();
+        var memory = new EclMemory(profile: content.VmProfile);
         var kit = Kit = PorFight.Kit(content);
         OutsideEffects = new EffectHandlers(Rng.Next, kit?.Names)
         {

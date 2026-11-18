@@ -115,6 +115,26 @@ public static class IndexedPng
         return (width, height, px);
     }
 
+    /// <summary>The PNG's palette (PLTE chunk) as RGB triplets, or null when it has none.</summary>
+    public static byte[]? Palette(ReadOnlySpan<byte> png)
+    {
+        if (png.Length < 8 || !png[..8].SequenceEqual(Signature))
+            throw new FormatException("not a PNG file");
+        for (int p = 8; p + 8 <= png.Length;)
+        {
+            int len = BinaryPrimitives.ReadInt32BigEndian(png[p..]);
+            if (len < 0 || p + 12 + len > png.Length)
+                throw new FormatException("PNG chunk past the end");
+            var type = System.Text.Encoding.ASCII.GetString(png.Slice(p + 4, 4));
+            if (type == "PLTE")
+                return png.Slice(p + 8, len).ToArray();
+            if (type is "IDAT" or "IEND")
+                return null;
+            p += 12 + len;
+        }
+        return null;
+    }
+
     private static int Paeth(int a, int b, int c)
     {
         int p = a + b - c, pa = Math.Abs(p - a), pb = Math.Abs(p - b), pc = Math.Abs(p - c);

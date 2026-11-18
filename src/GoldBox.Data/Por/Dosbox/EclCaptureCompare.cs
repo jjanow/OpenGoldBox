@@ -192,7 +192,7 @@ public sealed class EclCaptureComparer(string fixturesDir, IPorContent game)
 
     private Attempt Run(CaptureScenario s, int hostDraws, IReadOnlyList<ushort>? rollPrefix, IEclTraceSink? extraSink = null)
     {
-        var memory = new EclMemory { Party = LoadParty(s.Party) };
+        var memory = new EclMemory(profile: Content.VmProfile) { Party = LoadParty(s.Party) };
         var host = new ScriptedEclHost { StopWhenInputMissing = true };
         // The encounter opcodes run in the game-side host (docs/re/ecl-format.md "Encounters"); its menu answers come
         // from the same queue as the other menus, in the order the player gave them.

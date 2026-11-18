@@ -1,3 +1,5 @@
+using GoldBox.Core.Ecl.Profiles;
+
 namespace GoldBox.Core.Ecl;
 
 /// <summary>A write done through the VM writer (for the trace). Region "char" = a record field set by a side effect.</summary>
@@ -105,7 +107,19 @@ public sealed class EclMemory
     /// <summary>A write of v &gt; 0x80 to $6E22/$6E24/$6E26 loads wall set (v AND 0x7F) into slot 1/2/3 (0x2F6FF).</summary>
     public event Action<int, int>? WallSetRequested;
 
-    public EclMemory(EclVmPolicy? policy = null) => Policy = policy ?? EclVmPolicy.Default;
+    /// <summary>
+    /// The VM profile (docs/module-format.md §5.1). This class is the memory map, reader, writer and character view of
+    /// the <see cref="EclHandlerSet.Por13"/> handler set: it takes only profiles of that set.
+    /// </summary>
+    public EclProfile Profile { get; }
+
+    public EclMemory(EclVmPolicy? policy = null, EclProfile? profile = null)
+    {
+        Policy = policy ?? EclVmPolicy.Default;
+        Profile = profile ?? EclProfiles.Default;
+        if (Profile.Handlers != EclHandlerSet.Por13)
+            throw new NotSupportedException($"VM profile {Profile.Name}: handler set {Profile.Handlers} is not implemented");
+    }
 
     public Span<byte> ScriptArea => _script;
     public Span<ushort> Cells4900 => _cells4900;
@@ -479,10 +493,11 @@ public sealed class EclMemory
     public void LoadScriptBlock(ReadOnlySpan<byte> block)
     {
         Array.Clear(_script);
-        var body = block.Length > EclLayout.Prefix ? block[EclLayout.Prefix..] : [];
+        int prefix = Profile.ScriptPrefix;
+        var body = block.Length > prefix ? block[prefix..] : [];
         if (body.Length > _script.Length)
         {
-            Diag($"script block of {block.Length} bytes truncated to the {EclLayout.AreaSize}-byte area");
+            Diag($"script block of {block.Length} bytes truncated to the {Profile.ScriptAreaSize}-byte area");
             body = body[.._script.Length];
         }
         body.CopyTo(_script);

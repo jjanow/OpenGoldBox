@@ -53,5 +53,6 @@ public sealed class CountingContent(IPorContent inner) : IPorContent
     public IReadOnlyList<GoldBox.Data.Dax.DaxPicture>? Picture(string file, int id) => Count(nameof(Picture), inner.Picture(file, id));
     public byte[]? ArtData(string file, int id) => Count(nameof(ArtData), inner.ArtData(file, id));
     public string? SaveFolder => Count(nameof(SaveFolder), inner.SaveFolder);
+    public GoldBox.Core.Ecl.Profiles.EclProfile VmProfile => inner.VmProfile;
     public bool NoWrapOffMap(int script) => Count(nameof(NoWrapOffMap), inner.NoWrapOffMap(script));
 }

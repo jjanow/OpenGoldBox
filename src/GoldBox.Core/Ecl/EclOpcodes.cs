@@ -1,3 +1,5 @@
+using GoldBox.Core.Ecl.Profiles;
+
 namespace GoldBox.Core.Ecl;
 
 /// <summary>Where an opcode's tail of extra operands comes from (docs/re/ecl-format.md "Instructions and control flow").</summary>
@@ -67,23 +69,34 @@ public static class EclOpcodes
         SpriteOff = 0x31, FindItem = 0x32, PrintRet = 0x33, Clock = 0x34, SaveTable = 0x35, AddNpc = 0x36,
         LoadPieces = 0x37, Program = 0x38, Who = 0x39, Delay = 0x3A, Spell = 0x3B, Protect = 0x3C, ClearBox = 0x3D;
 
-    private static readonly EclOpcodeInfo?[] Table = Build();
+    /// <summary>
+    /// The table as profile data (<see cref="EclProfiles.Por13"/>): the rows below, and the IF-skip counts of GAME.OVR
+    /// 0x9379. These differ from the handler's count for 0C, 36 (one short) and 15, 25, 26, 2B (0); 0x1F = 2; opcodes
+    /// ≥ 0x3E = 0.
+    /// </summary>
+    public static EclOpcodeTable Por13 { get; } = BuildTable();
 
     /// <summary>Handler info, or null for an opcode with no handler (0x1F, ≥ 0x3E).</summary>
-    public static EclOpcodeInfo? Get(byte op) => Table[op];
+    public static EclOpcodeInfo? Get(byte op) => Por13.Get(op);
 
-    public static bool IsHandled(byte op) => Table[op] is not null;
+    public static bool IsHandled(byte op) => Por13.IsHandled(op);
 
     public static bool IsIf(byte op) => op is >= IfEq and <= IfGe;
 
     /// <summary>Mnemonic, also for opcodes with no handler.</summary>
-    public static string Name(byte op) => Table[op]?.Mnemonic ?? (op == Undefined1F ? "UNDEF1F" : $"OP_{op:X2}");
+    public static string Name(byte op) => Por13.Name(op);
 
-    /// <summary>
-    /// Operand count used by the IF-skip routine (GAME.OVR 0x9379). Differs from the handler's count for 0C, 36
-    /// (one short) and 15, 25, 26, 2B (0); 0x1F = 2; opcodes ≥ 0x3E = 0.
-    /// </summary>
-    public static int SkipCount(byte op) => op == Undefined1F ? 2 : Table[op]?.SkipCount ?? 0;
+    /// <summary>Operand count used by the IF-skip routine (GAME.OVR 0x9379); see <see cref="Por13"/>.</summary>
+    public static int SkipCount(byte op) => Por13.SkipCount(op);
+
+    private static EclOpcodeTable BuildTable()
+    {
+        var rows = Build();
+        var skip = new int[256];
+        for (int op = 0; op < 256; op++)
+            skip[op] = op == Undefined1F ? 2 : rows[op]?.SkipCount ?? 0;
+        return new EclOpcodeTable(rows, skip, new Dictionary<byte, string> { [Undefined1F] = "UNDEF1F" });
+    }
 
     private static EclOpcodeInfo?[] Build()
     {

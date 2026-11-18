@@ -1,4 +1,5 @@
 using GoldBox.Core.Ecl;
+using GoldBox.Core.Ecl.Profiles;
 using GoldBox.Core.Explore;
 using GoldBox.Core.Game;
 using GoldBox.Data.Dax;
@@ -42,6 +43,14 @@ public interface IPorContent : IEclScriptSource, IAreaMapSource
     /// </summary>
     IReadOnlyList<DaxPicture>? Picture(string file, int id);
 
+    /// <summary>
+    /// Art block <paramref name="id"/> of <paramref name="file"/> in the variant <paramref name="choice"/> asks for, with
+    /// its palette; DOS art (EGA palette) when the variant has no such asset or the source has DOS art only (a game
+    /// folder). <see cref="Picture"/> is always the DOS art, which parity screens draw.
+    /// </summary>
+    PorArtImage? Art(string file, int id, PorArtChoice choice) =>
+        Picture(file, id) is { } f ? new PorArtImage("dos", f, Module.IndexedPng.EgaPalette) : null;
+
     /// <summary>A data block that is not a picture (the 8X8D1 font, WALLDEF records) as its bytes, or null.</summary>
     byte[]? ArtData(string file, int id);
 
@@ -53,4 +62,10 @@ public interface IPorContent : IEclScriptSource, IAreaMapSource
 
     /// <summary>The folder holding the shipped saves (<c>SAVGAM?.DAT</c>, <c>CHRDAT*</c>), or null.</summary>
     string? SaveFolder { get; }
+
+    /// <summary>
+    /// The VM profile the scripts run under (docs/module-format.md §5.1): the module's <c>vm</c>; a DOS folder is
+    /// v1.3 (<see cref="EclProfiles.Default"/>).
+    /// </summary>
+    EclProfile VmProfile => EclProfiles.Default;
 }

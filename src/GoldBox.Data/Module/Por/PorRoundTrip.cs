@@ -13,6 +13,14 @@ public sealed class RoundTripReport
     public int Total => Checked.Values.Sum();
 
     internal void Count(string kind) => Checked[kind] = Checked.GetValueOrDefault(kind) + 1;
+
+    /// <summary>Adds another report's counts and mismatches to this one.</summary>
+    public void Add(RoundTripReport other)
+    {
+        foreach (var (k, n) in other.Checked)
+            Checked[k] = Checked.GetValueOrDefault(k) + n;
+        Mismatches.AddRange(other.Mismatches);
+    }
 }
 
 /// <summary>

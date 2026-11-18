@@ -1,3 +1,4 @@
+using GoldBox.Core.Ecl.Profiles;
 using GoldBox.Core.Explore;
 using GoldBox.Core.Game;
 using GoldBox.Data.Dax;
@@ -29,7 +30,15 @@ public sealed class PorModule : IPorContent
     private byte[]? _itemsFile;
     private bool _itemTypesRead;
 
-    public PorModule(ModuleResolver modules) => Modules = modules;
+    /// <summary>The profile the main module's <c>vm</c> names (default when absent `[?]`, docs/module-format.md §18).</summary>
+    public EclProfile VmProfile { get; }
+
+    /// <exception cref="UnknownEclProfileException">The manifest names a VM profile the engine does not have.</exception>
+    public PorModule(ModuleResolver modules)
+    {
+        Modules = modules;
+        VmProfile = EclProfiles.ForVm(modules.Main.Manifest.Vm);
+    }
 
     public static PorModule Open(string moduleRoot, IEnumerable<string>? searchFolders = null) =>
         new(ModuleResolver.Open(moduleRoot, searchFolders));
@@ -168,7 +177,7 @@ public sealed class PorModule : IPorContent
         if (!_art.TryGetValue((file, id), out var a))
         {
             var (container, bank) = ArtDocument.SplitName(file);
-            // [?] Variants: only the DOS art is imported; the Amiga overlay (§10) is looked up first once it exists.
+            // Picture/ArtData are the DOS art (parity); the Amiga overlay is reached through Art(file, id, choice).
             a = Modules.File(ArtDocument.PathOf("dos", container, bank, id) + ".json") is { } p
                 ? (ModuleJson.Read<ArtDocument>(p), p) : null;
             _art[(file, id)] = a;
@@ -180,6 +189,48 @@ public sealed class PorModule : IPorContent
         Art(file, id) is { } a ? PorArtCodec.ReadFrames(a.Doc, a.Path) : null;
 
     public byte[]? ArtData(string file, int id) => Art(file, id) is { } a ? PorArtCodec.Block(a.Doc, a.Path) : null;
+
+    private readonly Dictionary<(string, int), PorArtImage?> _amiga = [];
+
+    /// <summary>
+    /// The asset in the variant <paramref name="choice"/> picks (Best: <c>module.json</c> <c>art.defaults</c> per
+    /// category), falling back to DOS. Amiga art has no disk digit: bank 0 serves every DOS bank (§10).
+    /// </summary>
+    public PorArtImage? Art(string file, int id, PorArtChoice choice)
+    {
+        file = file.ToUpperInvariant();
+        var (container, _) = ArtDocument.SplitName(file);
+        bool amiga = choice switch
+        {
+            PorArtChoice.Amiga => true,
+            PorArtChoice.Best => PorAmigaArt.Category(container) is { } c
+                && Modules.Main.Manifest.Art?.Defaults.GetValueOrDefault(c) == PorAmigaArt.Variant,
+            _ => false,
+        };
+        if (amiga && AmigaArt(container, id) is { } a)
+            return a;
+        return Picture(file, id) is { } f ? new PorArtImage("dos", f, IndexedPng.EgaPalette) : null;
+    }
+
+    private PorArtImage? AmigaArt(string container, int id)
+    {
+        if (!_amiga.TryGetValue((container, id), out var img))
+        {
+            img = null;
+            if (Modules.File(ArtDocument.PathOf(PorAmigaArt.Variant, container, 0, id) + ".json") is { } p
+                && ModuleJson.Read<ArtDocument>(p) is { Frames: { Count: > 0 } } doc
+                && PorArtCodec.ReadFrames(doc, p) is { } frames)
+            {
+                var rel = p[..^".json".Length];
+                int first = Enumerable.Range(0, doc.Frames.Count).FirstOrDefault(i => doc.Frames[i].Items > 0);
+                var png = PorArtCodec.FramePath(rel, doc.Animation, first);
+                var palette = File.Exists(png) ? IndexedPng.Palette(File.ReadAllBytes(png)) : null;
+                img = new PorArtImage(PorAmigaArt.Variant, frames, palette ?? IndexedPng.EgaPalette);
+            }
+            _amiga[(container, id)] = img;
+        }
+        return img;
+    }
 
     // ---- areas -----------------------------------------------------------------------------------------------------
 

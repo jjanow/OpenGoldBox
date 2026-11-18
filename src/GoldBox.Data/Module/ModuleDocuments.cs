@@ -147,6 +147,13 @@ public sealed record ArtDocument
     public bool Animation { get; init; }
     public List<ArtFrame>? Frames { get; init; }
     public byte[]? Raw { get; init; }
+    /// <summary>
+    /// Amiga art: the source stored this many tiles side by side in one item; the module holds them split into DOS's
+    /// item shape (8X8D: two 8×8 wall tiles per 16×8 item; the 24×24 combat tiles two per 48×24 item).
+    /// </summary>
+    public int? PackedTiles { get; init; }
+    /// <summary>Amiga art: which of the program's five 16-colour tables the PNG palette was taken from (§10).</summary>
+    public int? PaletteTable { get; init; }
     public SourceRef? Source { get; init; }
 
     /// <summary>The module-relative path of an art resource without extension (<c>art/dos/cpic/3/12</c>).</summary>

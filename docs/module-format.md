@@ -16,7 +16,7 @@ raw resource back out, so they can be compared against the source and against sa
 
 Status: draft, implemented for PoR DOS (s15–s16): `src/GoldBox.Data/Module/` reads modules, `goldbox-import por`
 writes everything the engine and the Client read (scripts, areas, maps, records, item types, the program's tables and
-texts, the DOS art, the shipped saves), and the Client plays PoR from a module with no game folder (`--module DIR`;
+texts, the DOS art, the shipped saves; with `--amiga`, the Amiga art overlay, s17), and the Client plays PoR from a module with no game folder (`--module DIR`;
 `--game DIR` imports into a cache first). `[?]` marks choices still open. See "Implementation order" for what is done.
 
 ## 1. Principles
@@ -99,7 +99,7 @@ A module is a directory, or the same tree in a zip. File names are lower case, a
   "vm": "ecl-por-1.3",
   "start": { "area": 0, "map": 0, "x": 0, "y": 0, "facing": 0 },
   "dependsOn": [],
-  "art": { "variants": ["dos", "amiga"], "defaults": { "portrait": "amiga", "picture": "amiga", "wall": "dos" } },
+  "art": { "variants": ["dos", "amiga"], "defaults": { "picture": "amiga", "portrait": "amiga", "wall": "amiga", … } },
   "source": {
     "importer": "GoldBox.Importer 0.1",
     "game": "por", "platform": "dos", "release": "1.3",
@@ -140,10 +140,37 @@ One per ECL dialect. All of these differ between PoR, PoD and DQK (surveys):
 | Script bytes saved with the game | yes | no (reload by id) | no |
 | Banked kinds | wallset, monster, itemList, treasureList, effectList (by disk); script and map ids checked against the disk (section 2) | none | none |
 
-The profile is C# (handlers) plus a table file in `src/GoldBox.Core/Ecl/Profiles/`. It is ours, written from the specs,
-and it holds no game data. Today's `EclVm`, `EclMemory` and `EclOpcodes` are the `ecl-por-1.3` profile with the
-choices hard-coded. Turning those choices into profile fields is engine work. The module format only names the
-profile.
+The profile is C# (handlers) plus data in `src/GoldBox.Core/Ecl/Profiles/`. It is ours, written from the specs, and it
+holds no game data. The module format only names the profile.
+
+Done (s17): `EclProfile` holds the table's rows as fields, and `EclProfiles` resolves the manifest's `vm` to one.
+`ecl-por-1.3` (`EclProfiles.Por13`) is the only profile. Its values are the constants the VM was written with, and a
+test checks that they match. The PoD and DQK columns above stay documentation until those VMs are built. Row by row:
+
+- Load address, prefix, size cap: `ScriptBase`, `ScriptPrefix`, `ScriptAreaSize` (plus `VectorCount`, `InitVector`).
+- Memory map: `Regions` (start, end, cell width, saved). The reader and writer that use them are code in `EclMemory`.
+- Operand width: `OperandWidth` (`FromAddressRegion`).
+- Unmapped read: `UnmappedRead` (`StackResidue`). The value used stays in `EclVmPolicy.UndefinedValue`.
+- Special cells: code in `EclMemory` (reader and writer); `DiskCell` names $6E12.
+- Opcode table: `Opcodes` (`EclOpcodeTable`: rows with operand counts and the variadic count position). The handlers
+  are code: `Handlers` names the set (`Por13` = `EclVm.Execute`).
+- IF-skip table: `Opcodes.SkipCount`; `Opcodes.MisSkips` lists PoR's six (0C, 15, 25, 26, 2B, 36).
+- RETURN on an empty stack: `ReturnOnEmptyStack` (`FallsThrough`).
+- CALL and PROGRAM ids: `CallIds`, `ProgramIds` (id → what it does) and `ProgramIdsThatExit` (9). The effects are
+  code in the hosts (`EncounterHost`, the Client's player).
+- Character view: `CharacterView` (`Por6B00Redirection`). The redirection list is code in `EclMemory`.
+- Script bytes saved: `ScriptBytesSaved`.
+- Banked kinds: `BankedKinds` and `DiskCheckedKinds` (kind names from section 2). `PorModule` still does the lookups
+  itself; the fields record the rule.
+
+The VM reads the layout, the opcode and IF-skip tables and the PROGRAM exit ids from the profile. The other fields
+describe what the `Por13` code does: `EclMemory` refuses a profile with another handler set. The profile hangs off
+`EclMemory` (`new EclMemory(policy, profile)`; `EclVm.Profile` is the memory's). Both default to `ecl-por-1.3`, so
+callers that name none run PoR. `IPorContent.VmProfile` gives the content's profile: a DOS folder is `ecl-por-1.3`, and a
+module is its manifest's `vm`. An unknown name fails when the module is opened (`UnknownEclProfileException`).
+
+`EclVmPolicy` stays separate. It holds the `[?]` switches, which a test or a DOSBox check may change for one VM.
+A profile is shared and fixed.
 
 ### 5.2 Rules profile
 
@@ -279,6 +306,19 @@ For FRUA designs, and later for hand-made modules that don't want bytecode.
 - **Variants**: `dos` is always complete. `amiga` holds only the assets the Amiga version has (section 4.3 of the
   PLAN). The engine looks in the variant the player chose, then in `dos`. `module.json` `art.defaults` gives the
   "Best" mix per category. A wrong or missing Amiga asset therefore never breaks a module.
+- **As built for the PoR Amiga overlay (s17):** `goldbox-import por GAMEDIR OUTDIR --amiga AMIGADIR` reads the
+  unpacked Amiga v1.0 disks (`program`, the `.dax` files of disk B) and writes `art/amiga/<container>/0/<id>`. The
+  Amiga files have no disk digit, so bank 0 serves every DOS bank of that container. Each PNG's palette is the
+  16-colour table the program sets for that file, read from the player's `program` (hunk #23); the sidecar's
+  `paletteTable` names it. Files that store two tiles per item (`8x8d`, `sqrpaci`, `bacpac`, `dungcom`, `randcom`,
+  `wildcom`) are split into DOS's item shape (`packedTiles: 2`). Every other shape stays as the Amiga stores it:
+  HEAD is 56 px wide with no position (it belongs at x = 16 `[?]`), SPRIT frames are tighter, and PIC animations
+  can have a different number of frames. Left out, so DOS draws them: the two placeholder blocks (SPRIT 1 and 9)
+  and SPRIT 120, whose far frames are 8×1 stubs where DOS has art (one asset is drawn with one palette, so frames
+  are not mixed across variants). Scripts, maps, records and WALLDEF come from DOS only. Engine side: `IPorContent.Art(file, id, choice)`
+  (`PorArtChoice` Dos / Best / Amiga) returns the frames and their palette, falling back to DOS. `Picture` and
+  `ArtData` always return the DOS art, which the parity screens draw. The manifest lists `"variants": ["dos",
+  "amiga"]` and sets Amiga as the default for every category (PLAN §4.3, decided s5).
 - `kind` names follow what the engine draws: `picture`, `portraitHead`, `portraitBody`, `sprite`, `icon`, `wallset`
   (symbol sheets, plus the WALLDEF layout in JSON), `backdrop`, `combatGround`, `tile`, `frame`, `font`, `title`.
 - The palette values themselves come from the player's files at import. The engine source holds none (see PLAN §9,
@@ -378,7 +418,7 @@ belong to phase 4 `[?]`.
 | `ITEM<d>.DAX` block k | `records/treasureLists/<d>/<k>.json` (placed treasure; the ids collide with `MON<d>ITM`, below) |
 | `ITEMS` | `records/itemTypes.json` |
 | every other DAX (`PIC`, `CPIC`, `HEAD`, `BODY`, `CHEAD`, `CBODY`, `SPRIT`, `COMSPR`, `DUNGCOM`, `WILDCOM`, `RANDCOM`, `BACPAC`, `SQRPACI`, `TITLE`, `ICON`, `FINAL5`) | `art/dos/<container>/<bank>/<id>.json` + `.png` |
-| Amiga `*.dax` | `art/amiga/…` where an asset maps to the same key |
+| Amiga `*.dax` (art files) | `art/amiga/<container>/0/<id>.json` + `.png`, palette from Amiga `program` (`--amiga`, §10) |
 | START.EXE / GAME.OVR tables | `rules/program.json`, `text/en.json` (the overland in `areas/`: not yet `[?]`) |
 | `SAVGAM?.DAT` + `CHRDAT*` | `saves/` (the original files; engine save conversion `[?]`) |
 
@@ -390,6 +430,7 @@ PoR v1.3 import (s16): 29 scripts and areas, 29 maps, 172 monsters, 105 monster 
 treasure lists, 128 item types, 822 art blocks (783 pictures, 39 raw: the WALLDEF records and the font), 266 program
 texts, 36 save files; every block (and the `ITEMS` file, the program data, the saves) rebuilds byte for byte, from the
 files and again through the engine's readers (2,489 comparisons). The module is about 12 MB.
+With `--amiga` (Amiga v1.0, s17): 508 Amiga pictures over 16 files (every picture block except the three left out), each rebuilding to its decoded Amiga block (`PorAmigaArt.Check`); 5 MB more.
 
 ## 17. Implementation order
 
@@ -400,8 +441,8 @@ files and again through the engine's readers (2,489 comparisons). The module is 
    (`PorProgramData`), art (`Picture`, `ArtData`: wall sets, symbols, font, combat art), saves and the no-wrap rule.
    `PorGame`, `PorArea`, `PorViewArt`, `PorFight`, `PorEncounterData`, the capture replays and the Client's screens
    take only an `IPorContent`.
-2. `GoldBox.Importer` (CLI `goldbox-import por GAMEDIR OUTDIR`): scripts, maps, records, item types first. Then art
-   (DOS, then Amiga), rules tables, text, saves. **Done (s16)** except the Amiga overlay. The importer and the round
+2. `GoldBox.Importer` (CLI `goldbox-import por GAMEDIR OUTDIR [--amiga AMIGADIR]`): scripts, maps, records, item
+   types first. Then art (DOS, then Amiga), rules tables, text, saves. **Done (s16; the Amiga overlay s17).** The importer and the round
    trip live in `GoldBox.Data/Module/Por/` (the Client imports with them); the CLI stays in `GoldBox.Importer`.
 3. **Round-trip test:** for every raw resource, module → original block must be byte-identical to the DAX block. All
    existing real-data tests also pass with the Client and Core reading the module instead of the game folder.
@@ -416,6 +457,9 @@ files and again through the engine's readers (2,489 comparisons). The module is 
    generated from the document types (`ModuleSchemas`, `goldbox-import schemas DIR`); a test checks the files match
    the types and that every imported JSON file reads strictly (no unknown members) into its type. [?] Instances are
    not validated against the schema files themselves (no validator in the BCL).
+6. The VM profile (§5.1). **Done (s17)** for PoR: `EclProfile` / `EclProfiles` in `src/GoldBox.Core/Ecl/Profiles/`,
+   resolved from the manifest's `vm`. The VM takes its layout, opcode and IF-skip tables from it. A pure refactor:
+   every test and every `ecl-compare` capture gives the same result as before.
 
 ## 18. Open `[?]`
 
@@ -425,9 +469,14 @@ files and again through the engine's readers (2,489 comparisons). The module is 
 - Settled (s15): PoR's `ITEM<d>` and `MON<d>ITM` ids collide (section 16); `treasureList` added.
 - The zip form of a module (section 3): only folders are read so far.
 - The importer does not detect the PoR release; it writes `por-1.3` / `ecl-por-1.3` (the engine supports v1.3 only).
+- A module with no `vm` runs under `ecl-por-1.3` (the default). §4 says event-only modules have no `vm`; when those
+  are supported, no `vm` should mean "no VM", not the default.
+- The VM profile records the banked kinds, but `PorModule` does not read them yet: it banks by its own code.
 - `source.inputs` hashes the files read (START.EXE and GAME.OVR included since s16); a test copy with a patched
   `GAME.OVR` hashes differently from a clean install.
-- The Amiga art overlay (`art/amiga/`) and art variants in `PorModule` (only `dos` is looked up).
+- The Amiga overlay (s17): the Client does not draw it yet, HEAD's x offset, and the palettes of HEAD/BODY/ICON
+  (table 2) and the combat icons and grounds (table 3) are inferred, not traced (docs/re/por-art-formats.md §4).
+  The Amiga title painting (in `intro`) is not imported.
 - The PoR overland tile table and special locations in `areas/` (section 6).
 - Saves: the original files are shipped as they are, not converted to an engine save (section 15).
 - Areas: maps loaded through computed LOADFILES operands are not listed (PoR 3, 5, 24).

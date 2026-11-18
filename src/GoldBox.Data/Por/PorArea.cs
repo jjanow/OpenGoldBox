@@ -130,7 +130,7 @@ public sealed class PorArea
     {
         var rec = new Recorder();
         var host = new ScriptedEclHost { StopWhenInputMissing = true };
-        var mem = new EclMemory();
+        var mem = new EclMemory(profile: dir.VmProfile);
         var vm = new EclVm(mem, host) { Scripts = dir };
         host.MapLoaded = m => rec.Map = m;
         host.WallSetLoaded = (slot, set) => art.LoadWallSet(mem.Disk == 0 ? disk : mem.Disk, slot, set);
