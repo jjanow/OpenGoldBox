@@ -177,7 +177,7 @@ public class CampScreenTests
     [Fact]
     public void Speed_and_pictures_change_the_option_cells()
     {
-        var m = new EclMemory();
+        var m = new EclMemory { GameSpeed = 0 };
         var (t, s) = Context(new Script(
             4, 2,                       // ALTER, SPEED (at 0: SLOWER EXIT)
             -10,                        // Up: slower

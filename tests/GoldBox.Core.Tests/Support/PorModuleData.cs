@@ -2,7 +2,6 @@ using GoldBox.Core.Explore;
 using GoldBox.Core.Game;
 using GoldBox.Data.Module.Por;
 using GoldBox.Data.Por;
-using GoldBox.Importer;
 
 namespace GoldBox.Core.Tests.Support;
 
@@ -50,4 +49,9 @@ public sealed class CountingContent(IPorContent inner) : IPorContent
     public MonsterData? Monster(int disk, int id) => Count(nameof(Monster), inner.Monster(disk, id));
     public IReadOnlyList<byte[]>? TreasureList(int disk, int id) => Count(nameof(TreasureList), inner.TreasureList(disk, id));
     public BaseItemTable? ItemTypes() => Count(nameof(ItemTypes), inner.ItemTypes());
+    public PorProgramData? Program() => Count(nameof(Program), inner.Program());
+    public IReadOnlyList<GoldBox.Data.Dax.DaxPicture>? Picture(string file, int id) => Count(nameof(Picture), inner.Picture(file, id));
+    public byte[]? ArtData(string file, int id) => Count(nameof(ArtData), inner.ArtData(file, id));
+    public string? SaveFolder => Count(nameof(SaveFolder), inner.SaveFolder);
+    public bool NoWrapOffMap(int script) => Count(nameof(NoWrapOffMap), inner.NoWrapOffMap(script));
 }

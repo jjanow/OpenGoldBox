@@ -3,6 +3,7 @@ using System.Globalization;
 using GoldBox.Client.Input;
 using GoldBox.Client.Play;
 using GoldBox.Core.Explore;
+using GoldBox.Core.Game;
 using GoldBox.Data.Por;
 
 namespace GoldBox.Client.Screens;
@@ -56,7 +57,7 @@ public sealed class ExploreScreen : IScreen
         _player = player;
         _runner = runner;
         _host = host;
-        _combat = new CombatScreen(player.FightView, new CombatArt(game.Directory), game.Art.Font, runner, player.Chooser.Text,
+        _combat = new CombatScreen(player.FightView, new CombatArt(game.Content), game.Art.Font, runner, player.Chooser.Text,
             player.Resources.ItemWord)
         {
             Report = Report,
@@ -75,7 +76,7 @@ public sealed class ExploreScreen : IScreen
 
     private void Run(AreaCommand command)
     {
-        if (_runner.Busy || _game.Loop.Defeated)
+        if (_runner.Busy || _game.Loop.Defeated || _player.Halted is not null)
             return;
         _player.Notice = null;
         _player.ViewBlanked = false; // [?] CLEARBOX's blank picture window lasts until the next command's redraw
@@ -100,10 +101,20 @@ public sealed class ExploreScreen : IScreen
     {
         if (_game.Loop.Ended)
             _player.Notice = "THE PARTY IS DESTROYED. RESTART THE GAME.";
+        else if (_player.Halted is { } halt)
+            _player.Notice = ClientPlayer.HaltNotice(halt);
     }
 
     private void Report(Exception e)
     {
+        if (e is ProgramHaltException halt)
+        {
+            // The original quits to DOS there (ClientPlayer.Halt showed it when the screen had the hook): the game is over.
+            _player.Halted ??= halt;
+            _player.Notice = ClientPlayer.HaltNotice(halt);
+            return;
+        }
+
         Console.Error.WriteLine("game logic: " + e);
         _player.Notice = "ERROR: " + e.Message.ToUpperInvariant();
     }

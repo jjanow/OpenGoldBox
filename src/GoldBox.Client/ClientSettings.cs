@@ -43,6 +43,23 @@ public sealed class ClientSettings
         }
     }
 
+    /// <summary>
+    /// Where <c>--game DIR</c> is imported before play (<see cref="Data.Module.Por.PorModuleCache"/>):
+    /// <c>$XDG_CACHE_HOME/goldbox/modules/</c> (default <c>~/.cache/goldbox/modules/</c>). The modules there hold the
+    /// player's game data, for the player's own use; they are rebuilt from the game folder when it or the importer changes.
+    /// </summary>
+    public static string ModuleCacheFolder
+    {
+        get
+        {
+            var xdg = Environment.GetEnvironmentVariable("XDG_CACHE_HOME");
+            var root = string.IsNullOrWhiteSpace(xdg)
+                ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".cache")
+                : xdg;
+            return Path.Combine(root, "goldbox", "modules");
+        }
+    }
+
     private static string SettingsPath => Path.Combine(Folder, "client.json");
     private static string BindingsPath => Path.Combine(Folder, "bindings.json");
 

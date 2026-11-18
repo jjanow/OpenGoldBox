@@ -196,8 +196,8 @@ Menu DS:055A (Order, Drop, Speed, Icon, Pics, Exit), prompt 0x19441; extended ke
   the message 0x190FC.
 - **Speed (0x192C8)**: the speed line (0x19261, the value, 0x1926F; row 18); the menu offers Faster while n > 0,
   Slower while n < 9, and Exit (0x19286–0x19296); Down / F speed up, Up / S slow down, until Exit or Escape. The game delay is DS:49E2
-  (`EclMemory.GameSpeed`): new game 1, the save copies it into $49FC, Load takes it back. The Client keeps it in $49FC
-  (its DELAY reads that cell), which matches as long as no script reads $49FC between saves.
+  (`EclMemory.GameSpeed`): new game 1, the save copies it into $49FC, Load takes it back. The Client's Alter Speed,
+  DELAY, the combat pauses and the Done menu's Speed all use `EclMemory.GameSpeed`.
 - **Icon**: the icon editor (character creation). `[?]` Not built: a notice.
 - **Pics**: monsters on/off, portraits on/off, Exit (0x19449–0x19485); M and P toggle the two flags (saved as $49FF bit 1 and bit 0).
 
@@ -216,8 +216,8 @@ give the same bytes, except the leftover memory after each stem; the member file
 The Client writes saves to its own folder (`$XDG_DATA_HOME/goldbox/por-saves/`), never into the game folder; `--save
 X` looks there first. `[?]` The roster-file deletion (its name-to-file rule) is not done. Location type: the
 program writes DS:49FA, the view mode (0x1FF9D; `save-format.md`); `PorSaveGame.Build(memory, n, letter, state)` takes
-it from `EclMemory.ViewMode` and $49FC from `EclMemory.GameSpeed` (s15). The Client still calls the older overload
-with 1 in a 3D area, 2 otherwise. The bytes after each stem and unused name
+it from `EclMemory.ViewMode` and $49FC from `EclMemory.GameSpeed` (s15); the Client's camp Save uses it. The bytes
+after each stem and unused name
 slots are written as zero (leftover memory in the program).
 
 ## Open `[?]`

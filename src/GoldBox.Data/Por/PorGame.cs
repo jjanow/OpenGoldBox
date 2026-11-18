@@ -27,9 +27,7 @@ public sealed record PorPlayer(IEclHost Host, IEncounterUi Encounter, ICombatRun
 /// </summary>
 public sealed class PorGame
 {
-    /// <summary>The player's folder: art, the program's tables, saves (until those are imported into modules too).</summary>
-    public PorGameDirectory Directory { get; }
-    /// <summary>Scripts, maps, monsters, treasure and item types: the folder itself, or an imported module.</summary>
+    /// <summary>Everything the game reads: the player's folder, or an imported module.</summary>
     public IPorContent Content { get; }
     public PorViewArt Art { get; }
     public EclVm Vm { get; }
@@ -47,18 +45,19 @@ public sealed class PorGame
     /// The effect engine outside a fight (DS:49F3 ≠ 5): the effect timeout's removals (0x2AF10) run their handlers here.
     /// </summary>
     public EffectHandlers OutsideEffects { get; }
+    /// <summary>The fight's tables (the program's and the item types), or null when one is not found.</summary>
+    public FightKit? Kit { get; }
     /// <summary>The run of the area entry (vector 4 after a load or an entry).</summary>
     public EclRunResult EntryRun { get; private set; } = new(EclStopReason.Exit, 0);
 
-    private PorGame(PorGameDirectory dir, IPorContent? content, PorViewArt art, PorPlayer player, uint seed)
+    private PorGame(IPorContent content, PorViewArt art, PorPlayer player, uint seed)
     {
-        Directory = dir;
-        Content = content ??= dir;
+        Content = content;
         Art = art;
         Rng = new TurboPascalRandom(seed);
         Camp = player.Camp ?? new CampState();
         var memory = new EclMemory();
-        var kit = PorFight.Kit(dir, content);
+        var kit = Kit = PorFight.Kit(content);
         OutsideEffects = new EffectHandlers(Rng.Next, kit?.Names)
         {
             List = () => memory.Party?.Members ?? [],
@@ -69,7 +68,7 @@ public sealed class PorGame
         // The VM is built on a forwarding host first: the chain needs the loop, the loop needs the VM.
         var front = new ForwardingHost();
         Vm = new EclVm(memory, front) { Scripts = content };
-        Loop = new AreaLoop(Vm, Rng, player.Area) { MapSource = content.LoadMap };
+        Loop = new AreaLoop(Vm, Rng, player.Area) { MapSource = content.LoadMap, NoWrapOffMap = content.NoWrapOffMap };
         // 0x241A1 → 0x23DCC outside camp (DS:49F3 = 3 or 4): every flag set, the whole list aged.
         Loop.EffectTimeout = (count, unit) => CampTime.TimeOutEffects(memory, Camp.EffectFlags, false, count, unit,
             (c, e) => OutsideEffects.RemoveEffect(c, e[0], e));
@@ -77,7 +76,7 @@ public sealed class PorGame
         {
             WallSetLoaded = (disk, slot, set) => art.LoadWallSet(disk == 0 ? Vm.CurrentDisk : disk, slot, set),
         };
-        Encounter = new EncounterHost(memory, AreaHost, player.Encounter, player.Combat, new PorEncounterData(content, dir))
+        Encounter = new EncounterHost(memory, AreaHost, player.Encounter, player.Combat, new PorEncounterData(content))
         {
             CurrentBlock = () => Vm.CurrentScript,
         };
@@ -85,26 +84,25 @@ public sealed class PorGame
         Encounter.Vm = Vm;
         if ((player.FightMenu is not null || player.QuickFight) && kit is not null)
             Encounter.FightBuilder = state => kit.Create(memory, state, Rng.Next,
-                PorFight.Area(memory, (Encounter.Map as MapPlanes)?.Planes, Vm.CurrentScript, state.Duel), player.FightMenu,
+                PorFight.Area(memory, (Encounter.Map as MapPlanes)?.Planes, Vm.CurrentScript, state.Duel, content.NoWrapOffMap), player.FightMenu,
                 time: Camp);
         Loop.MapLoaded += m => Encounter.Map = new MapPlanes(m.PlanesArray);
         front.Target = Encounter;
     }
 
     /// <summary>Main menu → Load: the save's memory and script, map $49C5 read again, then vector 4 (and any script switch).</summary>
-    /// <param name="content">Where scripts, maps and records come from (an imported module); null = <paramref name="dir"/>.</param>
-    public static PorGame FromSave(PorGameDirectory dir, PorViewArt art, string savePath, PorPlayer player, uint seed,
-        IPorContent? content = null) =>
-        FromSave(dir, art, File.ReadAllBytes(savePath), Path.GetDirectoryName(Path.GetFullPath(savePath))!, player, seed, content);
+    public static PorGame FromSave(IPorContent content, PorViewArt art, string savePath, PorPlayer player, uint seed) =>
+        FromSave(content, art, File.ReadAllBytes(savePath), Path.GetDirectoryName(Path.GetFullPath(savePath))!, player, seed);
 
-    public static PorGame FromSave(PorGameDirectory dir, PorViewArt art, byte[] save, string saveDir, PorPlayer player, uint seed,
-        IPorContent? content = null)
+    /// <summary>As above from the save's bytes; the party files are looked up in <paramref name="saveDir"/>, then in the
+    /// content's save folder.</summary>
+    public static PorGame FromSave(IPorContent content, PorViewArt art, byte[] save, string saveDir, PorPlayer player, uint seed)
     {
         var sg = new PorSaveGame(save);
-        var g = new PorGame(dir, content, art, player, seed);
+        var g = new PorGame(content, art, player, seed);
         try
         {
-            g.Memory.Party = PorParty.Load(sg, saveDir, dir.Root);
+            g.Memory.Party = PorParty.Load(sg, [saveDir, .. content.SaveFolder is { } f ? new[] { f } : []]);
         }
         catch (Exception e) when (e is IOException or FormatException)
         {
@@ -122,12 +120,10 @@ public sealed class PorGame
     }
 
     /// <summary>Enters area script <paramref name="script"/> with fresh VM memory at a square: script init, then vector 4.</summary>
-    public static PorGame Enter(PorGameDirectory dir, PorViewArt art, int script, int x, int y, int facing, PorPlayer player, uint seed,
-        IPorContent? content = null)
+    public static PorGame Enter(IPorContent content, PorViewArt art, int script, int x, int y, int facing, PorPlayer player, uint seed)
     {
-        content ??= dir;
         int disk = content.ScriptDisk(script) ?? throw new ArgumentException($"no ECL block {script} in {content.Origin}");
-        var g = new PorGame(dir, content, art, player, seed);
+        var g = new PorGame(content, art, player, seed);
         g.Memory.Disk = (byte)disk;
         g.Memory.Position.X = (byte)x;
         g.Memory.Position.Y = (byte)y;
@@ -143,10 +139,10 @@ public sealed class PorGame
     /// A session on a VM state set by <paramref name="setState"/> (e.g. a DOSBox capture's dump) with
     /// <paramref name="map"/> in memory; no script runs. For replays and tests.
     /// </summary>
-    public static PorGame Restore(PorGameDirectory dir, PorViewArt art, PorPlayer player, uint seed, Action<EclVm> setState,
-        AreaMap? map, EclParty? party = null, IPorContent? content = null)
+    public static PorGame Restore(IPorContent content, PorViewArt art, PorPlayer player, uint seed, Action<EclVm> setState,
+        AreaMap? map, EclParty? party = null)
     {
-        var g = new PorGame(dir, content, art, player, seed);
+        var g = new PorGame(content, art, player, seed);
         g.Memory.Party = party;
         setState(g.Vm);
         if (map is not null)
@@ -160,7 +156,7 @@ public sealed class PorGame
             EntryRun = Vm.FollowScriptChanges();
         if (Loop.Map is { } m)
         {
-            m.Bounded = Vm.CurrentScript is 0 or 10;
+            m.Bounded = Content.NoWrapOffMap(Vm.CurrentScript);
             var p = Memory.Position;
             p.WallAhead = (byte)m.Wall(p.X, p.Y, p.Facing);
         }

@@ -13,7 +13,10 @@ public static class PorSpellData
     /// The spell table: its DS offset is the immediate of START 0x3262's <c>mov cl,4 / shl di,cl / mov al,[di+imm] /
     /// cmp al,0 / jne</c> (the casting-level routine reads the class byte, field 0). Null when not found.
     /// </summary>
-    public static SpellTable? Spells(PorProgram p)
+    public static SpellTable? Spells(PorProgram p) => SpellTableBase(p) is { } b ? PorDsTables.Spells(p.Ds, b) : null;
+
+    /// <summary>DS offset of the spell table (see <see cref="Spells"/>), or null.</summary>
+    public static int? SpellTableBase(PorProgram p)
     {
         ReadOnlySpan<byte> pat = [0xB1, 0x04, 0xD3, 0xE7, 0x8A, 0x85];
         var img = p.Image.AsSpan();
@@ -21,13 +24,7 @@ public static class PorSpellData
         {
             int at = i + pat.Length;
             if (at + 5 <= img.Length && img[at + 2] == 0x3C && img[at + 3] == 0x00 && img[at + 4] == 0x75)
-            {
-                int ds = BinaryPrimitives.ReadUInt16LittleEndian(img[at..]);
-                int start = p.DataSegment + ds + SpellTable.EntrySize;
-                if (start + SpellTable.Count * SpellTable.EntrySize > img.Length)
-                    return null;
-                return SpellTable.FromBytes(img.Slice(start, SpellTable.Count * SpellTable.EntrySize));
-            }
+                return BinaryPrimitives.ReadUInt16LittleEndian(img[at..]);
             int next = img[(i + 1)..].IndexOf(pat);
             i = next < 0 ? -1 : i + 1 + next;
         }
@@ -40,7 +37,11 @@ public static class PorSpellData
     /// DS offset is the immediate of the instruction that reads the table, at its place in the v1.3 routine and its two
     /// helpers (0x2ACDC, 0x2ADB0); every opcode is checked. Null when not found.
     /// </summary>
-    public static LevelStatsTables? LevelTables(PorProgram p)
+    public static LevelStatsTables? LevelTables(PorProgram p) =>
+        LevelTableOffsets(p) is { } t && p.DataSegment < p.Image.Length ? t.Tables(p.Ds.ToArray()) : null;
+
+    /// <summary>The DS offsets of the level-stats routine's tables (see <see cref="LevelTables"/>), or null.</summary>
+    public static LevelStatsOffsets? LevelTableOffsets(PorProgram p)
     {
         if (p.Overlay is not { } o)
             return null;
@@ -59,11 +60,8 @@ public static class PorSpellData
             Imm(0x2BD, 0x8A, 0x95) is not { } saves || Imm(0x377, 0x8A, 0x85) is not { } thief ||
             Imm(0x396, 0x8A, 0x85) is not { } race || Imm(0x426, 0x8A, 0x85) is not { } dex)
             return null;
-        if (p.DataSegment >= p.Image.Length)
-            return null;
-        return new LevelStatsTables
+        return new LevelStatsOffsets
         {
-            Data = p.Image.AsSpan(p.DataSegment).ToArray(),
             Thac0 = thac0, ClericSlots = cleric, SpellTable = spells, MageSlots = mage, Saves = saves,
             ThiefBase = thief, ThiefRace = race, ThiefDex = dex,
         };
@@ -75,7 +73,11 @@ public static class PorSpellData
     /// <c>mov dx,0x38 / mul dx / mov di,ax / add di,cx / cmp word [di+imm],0</c> (Restoration and level drain). Entries
     /// for levels 0 and 1 are other data; the program reads them only for levels above 1. Null when not found.
     /// </summary>
-    public static int[]? ExperienceTable(PorProgram p)
+    public static int[]? ExperienceTable(PorProgram p) =>
+        ExperienceBase(p) is { } b ? PorDsTables.Experience(p.Ds, b) : null;
+
+    /// <summary>DS offset of the experience table (see <see cref="ExperienceTable"/>), or null.</summary>
+    public static int? ExperienceBase(PorProgram p)
     {
         if (p.Overlay is not { } o)
             return null;
@@ -83,15 +85,7 @@ public static class PorSpellData
         int i = o.AsSpan().IndexOf(pat);
         if (i < 0 || i + pat.Length + 3 > o.Length || o[i + pat.Length + 2] != 0)
             return null;
-        int ds = BinaryPrimitives.ReadUInt16LittleEndian(o.AsSpan(i + pat.Length)) - 2;
-        const int n = 8 * 14 + 1;
-        int start = p.DataSegment + ds;
-        if (start < 0 || start + n * 4 > p.Image.Length)
-            return null;
-        var t = new int[n];
-        for (int k = 0; k < n; k++)
-            t[k] = BinaryPrimitives.ReadInt32LittleEndian(p.Image.AsSpan(start + 4 * k));
-        return t;
+        return BinaryPrimitives.ReadUInt16LittleEndian(o.AsSpan(i + pat.Length)) - 2;
     }
 
     /// <summary>
@@ -99,7 +93,14 @@ public static class PorSpellData
     /// push ds / push di / lcall</c> (the name compare) in GAME.OVR, in handler order) and 48 (two strings in the code segment right before the handler).
     /// Each slot is read as the program compares it: 16 bytes, the first the length.
     /// </summary>
-    public static EffectNameTables? Names(PorProgram p)
+    public static EffectNameTables? Names(PorProgram p) =>
+        NameTableBases(p) is { } t ? PorDsTables.EffectNames(p.Ds, t, GnomeDefenseNames(p)) : null;
+
+    /// <summary>Handler 48's two name slots from GAME.OVR's code segment, or null.</summary>
+    public static List<byte[]>? GnomeDefenseNames(PorProgram p) => p.Overlay is { } o ? CodeNames(o) : null;
+
+    /// <summary>The DS bases of handlers 18, 26 and 47's name lists (see <see cref="Names"/>), or null.</summary>
+    public static int[]? NameTableBases(PorProgram p)
     {
         if (p.Overlay is not { } o)
             return null;
@@ -118,25 +119,7 @@ public static class PorSpellData
             int next = ov[(i + 1)..].IndexOf(pat);
             i = next < 0 ? -1 : i + 1 + next;
         }
-        if (tables.Count < 3)
-            return null;
-        List<byte[]> Slots(int ds, int n)
-        {
-            var l = new List<byte[]>();
-            for (int k = 1; k <= n; k++)
-            {
-                int off = p.DataSegment + ds + 16 * k;
-                l.Add(off + 16 <= p.Image.Length ? p.Image.AsSpan(off, 16).ToArray() : new byte[16]);
-            }
-            return l;
-        }
-        return new EffectNameTables
-        {
-            GnomeFoes = Slots(tables[0], 4),
-            DwarfFoes = Slots(tables[1], 8),
-            GiantFoes = Slots(tables[2], 8),
-            GnomeDefenseFoes = CodeNames(ov) ?? [],
-        };
+        return tables.Count < 3 ? null : [.. tables];
     }
 
     /// <summary>Handler 48's two names: the Pascal strings right before its code (current character's type byte test).</summary>
@@ -176,4 +159,25 @@ public static class PorSpellData
         b.Slice(at, n).CopyTo(s);
         return s;
     }
+}
+
+/// <summary>DS offsets of the level-stats routine's tables (<see cref="LevelStatsTables"/>).</summary>
+public sealed record LevelStatsOffsets
+{
+    public required int Thac0 { get; init; }
+    public required int ClericSlots { get; init; }
+    public required int SpellTable { get; init; }
+    public required int MageSlots { get; init; }
+    public required int Saves { get; init; }
+    public required int ThiefBase { get; init; }
+    public required int ThiefRace { get; init; }
+    public required int ThiefDex { get; init; }
+
+    /// <summary>The tables over the data segment <paramref name="ds"/>.</summary>
+    public LevelStatsTables Tables(byte[] ds) => new()
+    {
+        Data = ds,
+        Thac0 = Thac0, ClericSlots = ClericSlots, SpellTable = SpellTable, MageSlots = MageSlots, Saves = Saves,
+        ThiefBase = ThiefBase, ThiefRace = ThiefRace, ThiefDex = ThiefDex,
+    };
 }

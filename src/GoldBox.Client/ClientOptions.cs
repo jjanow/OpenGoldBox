@@ -9,9 +9,10 @@ namespace GoldBox.Client;
 ///   GoldBox.Client [--game DIR] [--module DIR] [--save A|FILE] [--area N --at X,Y,F] [--scale K]
 /// </code>
 /// <c>--game</c> is the player's Pool of Radiance (DOS) folder; it is remembered in the settings, so it is needed once
-/// (the environment variable <c>GOLDBOX_POR_DIR</c> also works). <c>--module DIR</c> reads the scripts, maps, monsters,
-/// treasure and item types from a module made by <c>goldbox-import por</c> (docs/module-format.md); art, the program's
-/// tables and the saves still come from the game folder until those are imported too. Without <c>--save</c> or <c>--area</c> the Client
+/// (the environment variable <c>GOLDBOX_POR_DIR</c> also works). The folder is imported into a module in the cache
+/// folder first (<see cref="ClientSettings.ModuleCacheFolder"/>, again only when the folder changes) and the game runs
+/// from that module. <c>--module DIR</c> plays a module made by <c>goldbox-import por</c> (docs/module-format.md)
+/// instead, with no game folder. Without <c>--save</c> or <c>--area</c> the Client
 /// loads save A (<c>SAVGAMA.DAT</c>). <c>--area N --at X,Y,F</c> enters area script N at square X,Y facing F (N, E, S,
 /// W) with no save. <c>--scale</c> sets the window size (default 3 × 320×200). <c>--stretch</c> switches on the QoL 4:3
 /// display (remembered; <c>--no-stretch</c> switches it off).

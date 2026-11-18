@@ -105,6 +105,7 @@ loses that much weight, and its seven words are zeroed. Other members (NPCs) kee
    remainder = pool mod n (longint, kept as words); else both 0. n = 0 with money in the pool (only NPCs other
    than 0xB3 in the party) reaches the longint division START 0xB9F6 with a zero divisor: run-time error 200
    (0xBA5D → RunError 0xB062), the program quits to DOS before anything changes (s15; `ProgramHaltException`).
+   The Client shows the halt (our wording), waits for a key and closes; the game takes no more commands.
 2. For each member with 0x84 < 0x80 (so 0xB3 members count in n but receive nothing here), kinds 6 down to 0:
    if the share fits (not overloaded), add it, then one coin of the remainder if the **whole remainder** would fit (0x25450 tests the remainder, then adds 1); else add `room` and
    put share − room back into the remainder.

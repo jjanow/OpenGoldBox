@@ -114,9 +114,14 @@ public sealed class CombatScreen
                     return GameAction.Cancel;
                 if (SquareAt(click.X, click.Y) is { } sq)
                 {
-                    if (_view.Cursor == sq && TargetOffered(cr, sq))
-                        Answer(((int, int))sq);
-                    _view.Cursor = sq;
+                    // A click on the cursor's square takes it (when offered); another square: the cursor walks there.
+                    if (sq == (cr.View.X, cr.View.Y))
+                    {
+                        if (cr.View.TargetOffered)
+                            Answer(ManualInput.Target);
+                    }
+                    else
+                        Answer(new CursorWalk(sq.X, sq.Y));
                     return null;
                 }
                 if (row == MenuRow && CursorItemAt(cr, col) is { } item)
@@ -159,9 +164,6 @@ public sealed class CombatScreen
                 break;
             case ChoiceRequest { Vertical: false } c when y / 8 == MenuRow && WordAt(c.Items, x / 8 - MenuStart(c)) is { } i:
                 _selected = i;
-                break;
-            case CombatCursorRequest when SquareAt(x, y) is { } sq:
-                _view.Cursor = sq;
                 break;
         }
     }
@@ -343,26 +345,11 @@ public sealed class CombatScreen
 
     // ---- Manual cursor (0x155F5) -------------------------------------------------------------------------------------
 
-    /// <summary>
-    /// The square accepts Target when a creature other than the aiming one stands on it within range (line distance).
-    /// [?] The program also tests reachability, path distance (0x2FF74), ground cost, the target check, downed bodies
-    /// and the ranged-weapon rule (combat-menu.md "Manual"); the Core aim makes those choices once the creature is picked.
-    /// </summary>
-    public bool TargetOffered(CombatCursorRequest cr, (int X, int Y) sq)
-    {
-        if (_view.Fight?.Map is not CombatMap m || _view.Current is not { } me || m.At(sq.X, sq.Y) is not { } c || (cr.Attack && ReferenceEquals(c, me)))
-            return false;
-        return Distance(sq) <= cr.Range;
-    }
-
-    private int Distance((int X, int Y) sq) =>
-        _view.Fight?.Map is CombatMap m && Position(_view.Current) is { } me ? m.Distance(me.X, me.Y, sq.X, sq.Y) : 0;
-
-    /// <summary>The entries after the prompt: Target (when offered), Center, Exit.</summary>
+    /// <summary>The entries after the prompt: Target (when Core offers it on the cursor's square), Center, Exit.</summary>
     private List<(string Word, int Item)> CursorItems(CombatCursorRequest cr)
     {
         var l = new List<(string, int)>();
-        if (_view.Cursor is { } sq && TargetOffered(cr, sq))
+        if (cr.View.TargetOffered)
             l.Add((_text[CombatMsg.Target].Trim(), 0));
         var ce = _text.Words(CombatMsg.AimCenterExit);
         l.Add((ce.ElementAtOrDefault(0) ?? "CENTER", 1));
@@ -377,63 +364,57 @@ public sealed class CombatScreen
         return WordAt(items.Select(i => i.Word).ToList(), col - start) is { } k ? items[k].Item : null;
     }
 
-    private void CursorItem(CombatCursorRequest cr, int item)
+    /// <summary>An entry of the cursor's menu: Target, Center (the view re-centres on the cursor, which stays), Exit.</summary>
+    private ManualInput CursorEntry(CombatCursorRequest cr, int item)
     {
         switch (item)
         {
-            case 0 when _view.Cursor is { } sq && TargetOffered(cr, sq):
-                Answer(((int, int))sq);
-                break;
-            case 1 when _view.Cursor is { } c:
-                _view.Center(c.X, c.Y);
-                break;
-            case 2:
-                Answer(null);
-                break;
+            case 0:
+                return ManualInput.Target;
+            case 1:
+                _view.Center(cr.View.X, cr.View.Y);
+                return ManualInput.Center;
+            default:
+                return ManualInput.Exit;
         }
     }
 
+    private void CursorItem(CombatCursorRequest cr, int item) => Answer(CursorEntry(cr, item));
+
+    /// <summary>
+    /// The keys 0x155F5 reads, each one pass of Core's cursor (<see cref="FightMenu.Manual"/>): a direction moves it one
+    /// square; Return (Confirm) and T are Target, which ends Manual even where Target is not offered; E and Escape
+    /// (Cancel) are Exit; C and the shoulders (Home / End) re-centre the view.
+    /// </summary>
     private bool DecideCursor(CombatCursorRequest cr, ActionInput input, out object? answer)
     {
         answer = null;
-        var cur = _view.Cursor ?? Position(_view.Current) ?? (_view.ViewX + 3, _view.ViewY + 3);
         if (Direction(input) is { } d)
         {
-            var (dx, dy) = FightMenu.Steps[d];
-            int x = Math.Clamp(cur.X + dx, 0, CombatArena.Width - 1), y = Math.Clamp(cur.Y + dy, 0, CombatArena.Height - 1);
-            _view.Cursor = (x, y);
-            _view.Follow(x, y);
-            return false;
+            answer = new ManualInput(d);
+            return true;
         }
         if (input.Pressed(GameAction.Confirm))
         {
-            if (TargetOffered(cr, cur))
-            {
-                answer = ((int, int))cur;
-                return true;
-            }
-            return false;
+            answer = ManualInput.Target;
+            return true;
         }
         if (input.Pressed(GameAction.Cancel))
+        {
+            answer = ManualInput.Exit;
             return true;
+        }
         if (input.Pressed(GameAction.NextMember) || input.Pressed(GameAction.PreviousMember))
         {
-            _view.Center(cur.X, cur.Y);
-            return false;
+            answer = CursorEntry(cr, 1);
+            return true;
         }
         if (input.NewInput is (InputDevice.Keyboard, { Length: 1 } key))
             foreach (var (word, item) in CursorItems(cr))
                 if (word.Length > 0 && word[0] == key[0])
                 {
-                    if (item == 0)
-                    {
-                        answer = ((int, int))cur;
-                        return true;
-                    }
-                    if (item == 2)
-                        return true;
-                    _view.Center(cur.X, cur.Y);
-                    return false;
+                    answer = CursorEntry(cr, item);
+                    return true;
                 }
         return false;
     }
@@ -793,12 +774,11 @@ public sealed class CombatScreen
     }
 
     /// <summary>
-    /// The creature the status panel shows: under the manual cursor the creature on its square (DOSBox-X: an empty
-    /// square leaves the panel blank), else the one the fight shows (the current creature, the aim candidate).
+    /// The creature the status panel shows: under the manual cursor the creature Core found on its square (DOSBox-X: an
+    /// empty square leaves the panel blank; [?] blank too where the line from the aimer does not reach, as the
+    /// program's creature variable is then empty), else the one the fight shows (the current creature, the aim candidate).
     /// </summary>
-    public EclCharacter? PanelCreature() => _runner.Pending is CombatCursorRequest
-        ? (_view.Cursor is { } cur && _view.Fight?.Map is { } map ? map.At(cur.X, cur.Y) : null)
-        : _view.Shown;
+    public EclCharacter? PanelCreature() => _runner.Pending is CombatCursorRequest cr ? cr.View.Creature : _view.Shown;
 
     private void DrawPanel(IndexedFrame f)
     {
@@ -829,7 +809,7 @@ public sealed class CombatScreen
                 break;
             case CombatCursorRequest cr:
             {
-                Text(f, 0, StatusRow, Fit(_text[CombatMsg.Range] + Distance(_view.Cursor ?? (0, 0)).ToString(CultureInfo.InvariantCulture), 40), Chrome.Green);
+                // Row 23's "Range = n" is the chooser's status line (attack mode, the line got through).
                 string prompt = _text[CombatMsg.UseCursorKeys];
                 Text(f, 0, MenuRow, prompt, PromptColour);
                 int col = prompt.Length;

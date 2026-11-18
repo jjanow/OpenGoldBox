@@ -39,17 +39,11 @@ public sealed class ClientResources
     private const int CampMenuDs = 0x508, MagicMenuDs = 0x531, AlterMenuDs = 0x55A, OrderMenuDs = 0x584,
         SpellNamesDs = 0x2912, LevelNamesDs = 0xA79;
 
-    /// <summary>Reads everything from the player's folder (missing pieces stay at their fallbacks).</summary>
-    public static ClientResources Load(PorGameDirectory dir)
+    /// <summary>Reads everything from the player's folder or a module (missing pieces stay at their fallbacks).</summary>
+    public static ClientResources Load(IPorContent dir)
     {
-        var program = PorProgram.Open(dir);
-        BaseItemTable? items = null;
-        if (dir.Find("ITEMS") is { } path)
-        {
-            var bytes = File.ReadAllBytes(path);
-            if (bytes.Length > 2)
-                items = BaseItemTable.FromItemsFile(bytes);
-        }
+        var program = dir.Program();
+        var items = dir.ItemTypes();
         string? camp = program?.CampMenu();
         bool v13 = camp is not null && program!.PascalString(CampMenuDs, 40) == camp;
         string? Ds(int off) => v13 ? program!.PascalString(off, 40) : null;
@@ -65,9 +59,9 @@ public sealed class ClientResources
             OrderMenus = v13 && Ds(OrderMenuDs) is { } o1 && Ds(OrderMenuDs + 41) is { } o2 ? [o1, o2] : null,
             SpellName = id => id is >= 1 and <= 56 ? Ds(SpellNamesDs + 41 * (id - 1)) : null,
             LevelName = l => l is >= 1 and <= 9 ? Ds(LevelNamesDs + 41 * l) : null,
-            Spells = program is null ? null : PorSpellData.Spells(program),
+            Spells = program?.Spells(),
             ItemSlot = items is null ? _ => -1 : it => items[it[0x2E], BaseItemTable.Slot],
-            PagePrompt = program?.PagePrompt(),
+            PagePrompt = program?.PagePrompt,
         };
     }
 }

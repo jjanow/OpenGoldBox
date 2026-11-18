@@ -4,7 +4,7 @@ using GoldBox.Data.Dax;
 namespace GoldBox.Data.Por;
 
 /// <summary>
-/// The 3D view's art from the player's PoR DOS folder (docs/re/view3d.md): the program tables from START.EXE, the
+/// The 3D view's art (docs/re/view3d.md) from the player's PoR DOS folder or a module: the program's view tables, the
 /// 8×8 symbol blocks from the 8X8D files, the wall slots from WALLDEF, and the text font. Art source: DOS EGA (the
 /// Amiga walls are the same drawings recoloured, PLAN.md 4.2; walls and UI stay DOS for now).
 /// </summary>
@@ -13,9 +13,9 @@ public sealed class PorViewArt
     /// <summary>Blocks of 8X8D1.DAX that hold the font, the area-map tiles and the common tiles (only in 8X8D1).</summary>
     public const int FontBlock = 201, AreaMapBlock = 202, CommonBlock = 203;
 
-    private readonly PorGameDirectory _dir;
+    private readonly IPorContent _dir;
 
-    public PorStartExe Program { get; }
+    public PorViewTables Program { get; }
     public SymbolSet Symbols { get; }
     public WallBuffer Walls { get; } = new();
     public TextFont Font { get; }
@@ -24,7 +24,7 @@ public sealed class PorViewArt
     /// <summary>Requests the loader could not follow (see <see cref="LoadWallSet"/>).</summary>
     public List<string> Diagnostics { get; } = [];
 
-    private PorViewArt(PorGameDirectory dir, PorStartExe program, SymbolSet symbols, TextFont font)
+    private PorViewArt(IPorContent dir, PorViewTables program, SymbolSet symbols, TextFont font)
     {
         _dir = dir;
         Program = program;
@@ -32,24 +32,24 @@ public sealed class PorViewArt
         Font = font;
     }
 
-    public static PorViewArt Load(PorGameDirectory dir)
+    public static PorViewArt Load(IPorContent dir)
     {
-        var exe = PorStartExe.Open(dir.Find("START.EXE") ?? throw new FileNotFoundException($"START.EXE not in {dir.Root}"));
-        var d1 = dir.Dax("8X8D1.DAX") ?? throw new FileNotFoundException($"8X8D1.DAX not in {dir.Root}");
-        var common = Tiles(d1, CommonBlock);
-        var map = Tiles(d1, AreaMapBlock);
+        var exe = (dir.Program() ?? throw new FileNotFoundException($"START.EXE not in {dir.Origin}")).View
+            ?? throw new FormatException("START.EXE: wall-piece table not found (not Pool of Radiance DOS?)");
+        var common = Tiles(dir, "8X8D1", CommonBlock);
+        var map = Tiles(dir, "8X8D1", AreaMapBlock);
         // A wall set's tile count fixes the size of each wall slot's symbol block (70 in PoR); 8X8D1 block 1 is the
         // first one-block wall set, present on every disk.
-        var firstWall = Tiles(d1, 1);
+        var firstWall = Tiles(dir, "8X8D1", 1);
         var symbols = SymbolSet.FromCounts(common.Length / SymbolSet.TilePixels, firstWall.Length / SymbolSet.TilePixels);
         symbols.SetBlock(0, common);
         symbols.SetBlock(4, map);
-        var font = new TextFont(d1.Block(FontBlock) ?? throw new FormatException("8X8D1.DAX has no font block 201"));
+        var font = new TextFont(dir.ArtData("8X8D1", FontBlock) ?? throw new FormatException($"8X8D1.DAX has no font block 201 in {dir.Origin}"));
         return new PorViewArt(dir, exe, symbols, font);
     }
 
-    private static byte[] Tiles(DaxFile f, int id) =>
-        DaxPicture.Decode(f.Block(id) ?? throw new FormatException($"{System.IO.Path.GetFileName(f.Path)} has no block {id}")).AsTiles();
+    private static byte[] Tiles(IPorContent dir, string file, int id) =>
+        (dir.Picture(file, id) is [var p] ? p : throw new FormatException($"{file}.DAX has no picture block {id} in {dir.Origin}")).AsTiles();
 
     /// <summary>
     /// LoadWallSet for <c>WALLDEF&lt;disk&gt;.DAX</c> record <paramref name="set"/> into <paramref name="slot"/>, with its
@@ -64,9 +64,7 @@ public sealed class PorViewArt
             Symbols.SetBlock(slot, null);
             return;
         }
-        var walldef = _dir.Dax($"WALLDEF{disk}.DAX") ?? throw new FileNotFoundException($"WALLDEF{disk}.DAX not in {_dir.Root}");
-        var tiles = _dir.Dax($"8X8D{disk}.DAX") ?? throw new FileNotFoundException($"8X8D{disk}.DAX not in {_dir.Root}");
-        if (walldef.Block(id) is not { } record)
+        if (_dir.ArtData($"WALLDEF{disk}", id) is not { } record)
         {
             // The program stops with a fatal error here, so in play the request never names a missing block: the
             // area expects the two-flag rule ($49E7/$49E8 set by earlier play) that skips slot 2 after a two-block
@@ -78,7 +76,7 @@ public sealed class PorViewArt
         for (int f = 1; f <= blocks; f++)
         {
             int tileId = blocks == 1 ? id : (id == 0 ? 10 : id) * 10 + f;
-            Symbols.SetBlock(slot + f - 1, Tiles(tiles, tileId));
+            Symbols.SetBlock(slot + f - 1, Tiles(_dir, $"8X8D{disk}", tileId));
         }
     }
 }

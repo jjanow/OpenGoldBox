@@ -372,10 +372,12 @@ and Speed menus, an AI attack at game speed 9). Code: `src/GoldBox.Client/Screen
   view inside the arena),
   the spell list 0x239D6 (the Client: a full-screen list; spell names from START.EXE's string array of the widest
   entries, taken to start at spell 1), the Guard message, monster icon recolouring (orc icons matched unchanged).
-- **Manual in the Client**: the cursor picks a creature; the chooser then answers Next until the aim reaches it and
-  Target. Side effect: every candidate stepped over runs the target check (triggers 1 and 0), which the program's
-  Manual runs only on the squares the cursor visits. Core now has the program's Manual (`AimKey.Manual`,
-  `ChooseManual`, s15); the Client still uses the stand-in and offers no bare square.
+- **Manual in the Client**: Aim's Manual answers `AimKey.Manual` and each cursor pass is Core's (`ChooseManual`):
+  arrows / pad move it one square, Return / T Target (ending Manual even where it is not offered), E / Escape Exit,
+  C / shoulders re-centre; the panel shows `ManualView.Creature`, row 23 the range to the square in attack mode when the line got
+  through (`ManualView.LineReached`). Bare squares work in a spell's square mode. A mouse click on another square
+  walks the cursor there one pass per square (our mapping; the target check runs on each square crossed, as with the
+  keys); a click on the cursor's square takes it when offered.
 
 - **Parity check** (s15): save K's fight start (Rhiannon's first menu) in the Client and in DOSBox-X: the map window
   and the status panel equal pixel for pixel; differences only in the braided frame (stand-in) and the menu's starting

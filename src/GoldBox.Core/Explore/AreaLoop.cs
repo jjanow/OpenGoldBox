@@ -139,10 +139,16 @@ public sealed class AreaLoop
         MapLoaded?.Invoke(map);
     }
 
+    /// <summary>
+    /// Whether off-map squares read 0 instead of wrapping while script <c>s</c> runs (<see cref="AreaMap.Bounded"/>).
+    /// Default: PoR's program rule (GAME.OVR 0x2EC5D, scripts 0 and 10); a module sets it from its areas' <c>noWrapOffMap</c>.
+    /// </summary>
+    public Func<int, bool> NoWrapOffMap { get; set; } = s => s is 0 or 10;
+
     private void UpdateBounded()
     {
         if (Map is not null)
-            Map.Bounded = Vm.CurrentScript is 0 or 10;
+            Map.Bounded = NoWrapOffMap(Vm.CurrentScript);
     }
 
     /// <summary>The event accessor 0x2EE71 for the party's square (0 with no map).</summary>

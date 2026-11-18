@@ -1,13 +1,15 @@
 using GoldBox.Core.Ecl;
 using GoldBox.Core.Explore;
 using GoldBox.Core.Game;
+using GoldBox.Data.Dax;
 
 namespace GoldBox.Data.Por;
 
 /// <summary>
-/// Pool of Radiance's content as the engine reads it: scripts, maps, monsters, placed treasure and the item types.
-/// Two sources implement it: the player's DOS folder (<see cref="PorGameDirectory"/>, the DAX files) and an imported
-/// module (<see cref="Module.Por.PorModule"/>). Lookups take the disk number (DS:5376, VM $6E12) as the program does;
+/// Pool of Radiance's content as the engine and the Client read it: scripts, maps, monsters, placed treasure, the item
+/// types, the program's tables and texts, the art and the shipped saves. Two sources implement it: the player's DOS
+/// folder (<see cref="PorGameDirectory"/>, the DAX files and the program) and an imported module
+/// (<see cref="Module.Por.PorModule"/>), which needs no game folder. Lookups take the disk number (DS:5376, VM $6E12) as the program does;
 /// both sources answer null where the program's file for that disk has no such block.
 /// </summary>
 public interface IPorContent : IEclScriptSource, IAreaMapSource
@@ -29,4 +31,26 @@ public interface IPorContent : IEclScriptSource, IAreaMapSource
 
     /// <summary>The base item table (<c>ITEMS</c>), or null when absent.</summary>
     BaseItemTable? ItemTypes();
+
+    /// <summary>The program's tables and texts (START.EXE / GAME.OVR, or the module's rules and text), or null.</summary>
+    PorProgramData? Program();
+
+    /// <summary>
+    /// Art block <paramref name="id"/> of DAX file <paramref name="file"/> (name without <c>.DAX</c>, e.g. <c>CPIC3</c>,
+    /// <c>8X8D1</c>, <c>DUNGCOM</c>) as a picture's frames (one frame unless the block is an animation), or null when
+    /// absent or not a picture.
+    /// </summary>
+    IReadOnlyList<DaxPicture>? Picture(string file, int id);
+
+    /// <summary>A data block that is not a picture (the 8X8D1 font, WALLDEF records) as its bytes, or null.</summary>
+    byte[]? ArtData(string file, int id);
+
+    /// <summary>
+    /// Whether off-map squares read 0 instead of wrapping while area script <paramref name="script"/> runs: the
+    /// program's rule for the folder (GAME.OVR 0x2EC5D: scripts 0 and 10), the area's <c>noWrapOffMap</c> in a module.
+    /// </summary>
+    bool NoWrapOffMap(int script);
+
+    /// <summary>The folder holding the shipped saves (<c>SAVGAM?.DAT</c>, <c>CHRDAT*</c>), or null.</summary>
+    string? SaveFolder { get; }
 }

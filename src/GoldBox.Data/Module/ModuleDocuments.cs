@@ -122,3 +122,72 @@ public sealed record AreaDocument
     /// <summary>Notes on how the fields were derived, with [?] where they are guesses.</summary>
     public string? Notes { get; init; }
 }
+
+/// <summary>One frame of a picture (§10): the PNG holds its items stacked top to bottom.</summary>
+public sealed record ArtFrame
+{
+    public int Width { get; init; }
+    public int Height { get; init; }
+    public int Items { get; init; }
+    public int X { get; init; }
+    public int Y { get; init; }
+    /// <summary>The animation wrapper's delay ([?] unit), when the block is an animation.</summary>
+    public uint? Delay { get; init; }
+    /// <summary>The DOS header's CGA colour map (8 bytes), kept for the round trip.</summary>
+    public byte[]? Cga { get; init; }
+}
+
+/// <summary>
+/// <c>art/&lt;variant&gt;/&lt;container&gt;/&lt;bank&gt;/&lt;id&gt;.json</c> (§10): a picture (<see cref="Frames"/>, pixels in
+/// <c>&lt;id&gt;.png</c>, or <c>&lt;id&gt;/&lt;frame&gt;.png</c> for an animation) or a data block that is not a picture
+/// (<see cref="Raw"/>: the font, WALLDEF wall-set records).
+/// </summary>
+public sealed record ArtDocument
+{
+    public bool Animation { get; init; }
+    public List<ArtFrame>? Frames { get; init; }
+    public byte[]? Raw { get; init; }
+    public SourceRef? Source { get; init; }
+
+    /// <summary>The module-relative path of an art resource without extension (<c>art/dos/cpic/3/12</c>).</summary>
+    public static string PathOf(string variant, string container, int bank, int id) =>
+        $"art/{variant}/{container.ToLowerInvariant()}/{bank.ToString(System.Globalization.CultureInfo.InvariantCulture)}/{id.ToString(System.Globalization.CultureInfo.InvariantCulture)}";
+
+    /// <summary>A DAX name without extension split into container and bank: a trailing digit is the bank (<c>CPIC3</c> → CPIC, 3).</summary>
+    public static (string Container, int Bank) SplitName(string name) =>
+        name.Length > 1 && char.IsAsciiDigit(name[^1]) ? (name[..^1], name[^1] - '0') : (name, 0);
+}
+
+/// <summary><c>rules/program.json</c> (§12): the program's data segment and the DS offsets of its tables.</summary>
+public sealed record ProgramRulesDocument
+{
+    public const string RelativePath = "rules/program.json";
+    public string Profile { get; init; } = "por-1.3";
+    /// <summary>The data segment, DS:0000 to the end of START.EXE's load image (raw: the tables are indexed in it).</summary>
+    public required byte[] DataSegment { get; init; }
+    public required GoldBox.Data.Por.PorProgramOffsets Offsets { get; init; }
+    /// <summary>Handler 48's two 16-byte name slots (from GAME.OVR's code segment).</summary>
+    public List<byte[]>? GnomeDefenseNames { get; init; }
+    public ViewTablesDocument? View { get; init; }
+    public SourceRef? Source { get; init; }
+}
+
+public sealed record ViewTablesDocument
+{
+    public required int[] Start { get; init; }
+    public required int[] Width { get; init; }
+    public required int[] Height { get; init; }
+    public required int[] Column { get; init; }
+    public required int[] Row { get; init; }
+    public required byte[] SkyColours { get; init; }
+    public List<string>? ExploreCommands { get; init; }
+}
+
+/// <summary><c>text/&lt;lang&gt;.json</c> (§13): program strings by key, the spell names and the page prompt.</summary>
+public sealed record TextDocument
+{
+    public const string RelativePath = "text/en.json";
+    public Dictionary<string, string> Strings { get; init; } = [];
+    public List<string>? SpellNames { get; init; }
+    public string? PagePrompt { get; init; }
+}

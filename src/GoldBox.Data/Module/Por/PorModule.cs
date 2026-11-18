@@ -1,5 +1,6 @@
 using GoldBox.Core.Explore;
 using GoldBox.Core.Game;
+using GoldBox.Data.Dax;
 using GoldBox.Data.Por;
 
 namespace GoldBox.Data.Module.Por;
@@ -124,4 +125,82 @@ public sealed class PorModule : IPorContent
         }
         return _itemsFile is { Length: > 2 } f ? BaseItemTable.FromItemsFile(f) : null;
     }
+
+    // ---- program tables and texts ------------------------------------------------------------------------------------
+
+    private PorProgramData? _program;
+    private bool _programRead;
+
+    /// <summary><c>rules/program.json</c> with <c>text/en.json</c>, or null when the module has no program rules.</summary>
+    public PorProgramData? Program()
+    {
+        if (!_programRead)
+        {
+            _programRead = true;
+            if (Modules.File(ProgramRulesDocument.RelativePath) is { } rp)
+            {
+                var r = ModuleJson.Read<ProgramRulesDocument>(rp);
+                var t = Modules.File(TextDocument.RelativePath) is { } tp ? ModuleJson.Read<TextDocument>(tp) : new TextDocument();
+                _program = new PorProgramData
+                {
+                    Ds = r.DataSegment,
+                    Offsets = r.Offsets,
+                    GnomeDefenseNames = r.GnomeDefenseNames,
+                    View = r.View is { } v
+                        ? new PorViewTables(new ViewLayout(v.Start, v.Width, v.Height, v.Column, v.Row), v.SkyColours, v.ExploreCommands)
+                        : null,
+                    Texts = t.Strings,
+                    SpellNames = t.SpellNames,
+                    PagePrompt = t.PagePrompt,
+                };
+            }
+        }
+        return _program;
+    }
+
+    // ---- art -------------------------------------------------------------------------------------------------------
+
+    private readonly Dictionary<(string, int), (ArtDocument Doc, string Path)?> _art = [];
+
+    private (ArtDocument Doc, string Path)? Art(string file, int id)
+    {
+        file = file.ToUpperInvariant();
+        if (!_art.TryGetValue((file, id), out var a))
+        {
+            var (container, bank) = ArtDocument.SplitName(file);
+            // [?] Variants: only the DOS art is imported; the Amiga overlay (§10) is looked up first once it exists.
+            a = Modules.File(ArtDocument.PathOf("dos", container, bank, id) + ".json") is { } p
+                ? (ModuleJson.Read<ArtDocument>(p), p) : null;
+            _art[(file, id)] = a;
+        }
+        return a;
+    }
+
+    public IReadOnlyList<DaxPicture>? Picture(string file, int id) =>
+        Art(file, id) is { } a ? PorArtCodec.ReadFrames(a.Doc, a.Path) : null;
+
+    public byte[]? ArtData(string file, int id) => Art(file, id) is { } a ? PorArtCodec.Block(a.Doc, a.Path) : null;
+
+    // ---- areas -----------------------------------------------------------------------------------------------------
+
+    private readonly Dictionary<int, AreaDocument?> _areas = [];
+
+    public AreaDocument? AreaDocument(int id)
+    {
+        if (!_areas.TryGetValue(id, out var a))
+        {
+            a = Modules.Find(ResourceKey.Area(id), ".json") is { } f ? ModuleJson.Read<AreaDocument>(f.Path) : null;
+            _areas[id] = a;
+        }
+        return a;
+    }
+
+    /// <summary>The area's <c>noWrapOffMap</c> (false for a script with no area document).</summary>
+    public bool NoWrapOffMap(int script) => AreaDocument(script)?.NoWrapOffMap ?? false;
+
+    // ---- saves -----------------------------------------------------------------------------------------------------
+
+    /// <summary>The module's <c>saves/</c> folder (the shipped saves, copied as they are [?]), or null.</summary>
+    public string? SaveFolder =>
+        Path.Combine(Modules.Main.Root, "saves") is var d && Directory.Exists(d) ? d : null;
 }

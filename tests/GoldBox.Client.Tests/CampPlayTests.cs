@@ -84,6 +84,8 @@ public class CampPlayTests
             Idle(r);
             Assert.Equal(t0 + 10, GameClock.TotalMinutes(r.Game.Memory));
             Assert.IsType<ChoiceRequest>(r.Runner.Pending);        // back at the camp menu
+            Assert.Same(r.Game.Camp, r.Player.CampState);          // the session's program variables are the game's
+            r.Game.Memory.GameSpeed = 5;                           // DS:49E2: the save copies it into $49FC
             Key(r, Keys.S);                                        // Save
             Key(r, Keys.C);                                        // slot C
             Key(r, Keys.N);                                        // Quit to DOS? No
@@ -97,13 +99,31 @@ public class CampPlayTests
             var back = Start(file, tmp.FullName);
             Assert.Equal(names, back.Game.Memory.Party!.Members.Select(m => m.Name));
             Assert.Equal(t0 + 10, GameClock.TotalMinutes(back.Game.Memory));
-            Assert.Equal(2, new PorSaveGame(File.ReadAllBytes(file)).InterfaceState);
+            var written = new PorSaveGame(File.ReadAllBytes(file));
+            Assert.Equal(2, written.InterfaceState);
+            Assert.Equal(r.Game.Memory.ViewMode, written.LocationType);   // DS:49FA
+            Assert.Equal(5, back.Game.Memory.GameSpeed);
             back.Runner.Dispose();
         }
         finally
         {
             tmp.Delete(recursive: true);
         }
+    }
+
+    [Fact]
+    public void The_camp_uses_the_games_state_and_the_level_seams()
+    {
+        if (Dir() is null)
+            return;
+        var r = Start();
+        Assert.Same(r.Game.Camp, r.Player.CampState);
+        var effects = r.Player.CampEffects(r.Game.Memory.Party!);
+        Assert.NotNull(effects.LevelStats);                        // FightKit.WireLevels with the program's tables
+        Assert.NotNull(effects.RaceLevelLimit);
+        Assert.NotNull(effects.ExperienceTable);
+        Assert.NotSame(r.Game.OutsideEffects, effects);            // its own engine: the camp's spells hook into it
+        r.Runner.Dispose();
     }
 
     /// <summary>One left click at cell (col, row) through the same path as the window (MapClick, Inject, Update).</summary>

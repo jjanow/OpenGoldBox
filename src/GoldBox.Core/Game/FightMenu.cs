@@ -37,7 +37,11 @@ public readonly record struct ManualInput(int Direction)
 /// distance from the aimer in squares (0x2FF74, half squares ÷ 2; "Range = n" is shown in attack mode when the line
 /// reaches the square), the aim's range, and whether Target is offered.
 /// </summary>
-public sealed record ManualView(int X, int Y, EclCharacter? Creature, int Distance, int Range, bool TargetOffered, bool Attack);
+public sealed record ManualView(int X, int Y, EclCharacter? Creature, int Distance, int Range, bool TargetOffered, bool Attack)
+{
+    /// <summary>The line 0x2FF74 from the aimer got through to the square (the "Range = n" line is shown then, in attack mode).</summary>
+    public bool LineReached { get; init; } = true;
+}
 
 /// <summary>Messages the fight shows (paraphrased names; the text is the Client's).</summary>
 public enum FightNotice
@@ -759,6 +763,7 @@ public sealed class FightMenu
             var (cx, cy) = map.Position(c);
             int tx = x, ty = y, dist = 0xFF;
             bool offered = map.WalkLine(cx, cy, ref tx, ref ty, ref dist);
+            bool reached = offered;
             dist >>= 1;
             EclCharacter? who = null;
             if (offered)
@@ -791,7 +796,7 @@ public sealed class FightMenu
             }
             else if (!squareMode)
                 offered = false;
-            var key = Chooser.ChooseManual(this, new ManualView(x, y, who, dist, range, offered, attack));
+            var key = Chooser.ChooseManual(this, new ManualView(x, y, who, dist, range, offered, attack) { LineReached = reached });
             if (key == ManualInput.Target)
             {
                 bool done = false;

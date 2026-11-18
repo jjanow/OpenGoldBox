@@ -18,15 +18,17 @@ public static class PorCombatTables
     /// <summary>Rows of the wilderness map (the data after row 35 is another table).</summary>
     public const int WildRows = 36;
 
-    public static CombatTables Load(PorProgram program)
+    public static CombatTables Load(PorProgram program) => Load(program.Ds);
+
+    /// <summary>The tables from the data segment (DS:0000 onwards).</summary>
+    public static CombatTables Load(ReadOnlySpan<byte> data)
     {
-        var img = program.Image;
-        int ds = program.DataSegment;
+        var img = data.ToArray();
         byte[] Bytes(int off, int n)
         {
-            if (ds + off + n > img.Length)
+            if (off + n > img.Length)
                 throw new FormatException($"START.EXE: DS:{off:X4} + {n} is past the image");
-            return img.AsSpan(ds + off, n).ToArray();
+            return img.AsSpan(off, n).ToArray();
         }
         var dirs = Bytes(DirDx, 18);
         for (int i = 0; i < 9; i++)
@@ -44,5 +46,5 @@ public static class PorCombatTables
             Bytes(WildMap, WildRows * CombatTables.WildMapStride));
     }
 
-    public static CombatTables? Open(PorGameDirectory game) => PorProgram.Open(game) is { } p ? Load(p) : null;
+    public static CombatTables? Open(IPorContent game) => game.Program()?.CombatTables();
 }

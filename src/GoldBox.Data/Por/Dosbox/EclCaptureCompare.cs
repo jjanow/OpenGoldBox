@@ -137,13 +137,12 @@ public sealed class CaptureReport
 /// the port-E9 trace (PC, opcode, flags before each instruction); their boot's RandSeed is unknown, so each roll is
 /// searched: the first value whose run stays on the trace.
 /// </summary>
-/// <param name="content">Scripts, maps and records (an imported module); null = <paramref name="game"/>. Saves and
-/// the program still come from <paramref name="game"/>.</param>
-public sealed class EclCaptureComparer(string fixturesDir, PorGameDirectory game, IPorContent? content = null)
+/// <param name="game">The game the captures replay on: the player's folder or an imported module (its program tables
+/// and shipped saves too).</param>
+public sealed class EclCaptureComparer(string fixturesDir, IPorContent game)
 {
     public string FixturesDir { get; } = fixturesDir;
-    public PorGameDirectory Game { get; } = game;
-    public IPorContent Content { get; } = content ?? game;
+    public IPorContent Content { get; } = game;
 
     /// <summary>Upper bound on replays for one roll search.</summary>
     public int MaxAttempts { get; set; } = 20_000;
@@ -181,12 +180,13 @@ public sealed class EclCaptureComparer(string fixturesDir, PorGameDirectory game
         var f = Path.Combine(FixturesDir, "saves", file);
         if (File.Exists(f))
             return f;
-        return Game.Find(file) ?? throw new FileNotFoundException($"save {file} not in the fixtures or the game folder");
+        var shipped = Content.SaveFolder is { } sf ? new PorGameDirectory(sf).Find(file) : null;
+        return shipped ?? throw new FileNotFoundException($"save {file} not in the fixtures or {Content.Origin}");
     }
 
     private EclParty LoadParty(CaptureParty p) => p switch
     {
-        CaptureParty.SaveA => PorParty.Load(PorSaveGame.Open(ResolveSave("SAVGAMA.DAT")), Game.Root),
+        CaptureParty.SaveA => PorParty.Load(PorSaveGame.Open(ResolveSave("SAVGAMA.DAT")), Content.SaveFolder ?? FixturesDir),
         _ => PorParty.Load(PorSaveGame.Open(ResolveSave("SAVGAMB.DAT")), Path.Combine(FixturesDir, "saves")),
     };
 
@@ -198,7 +198,7 @@ public sealed class EclCaptureComparer(string fixturesDir, PorGameDirectory game
         // from the same queue as the other menus, in the order the player gave them.
         var encounter = new EncounterHost(memory, host,
             new ScriptedEncounterUi(host.MenuChoices) { StopWhenInputMissing = true }, new RecordingCombatRunner(),
-            new PorEncounterData(Content, Game));
+            new PorEncounterData(Content));
         var sink = new ListTraceSink();
         var vm = new EclVm(memory, encounter) { Scripts = Content, Trace = extraSink is null ? sink : new TeeSink(sink, extraSink) };
         encounter.CurrentBlock = () => vm.CurrentScript;

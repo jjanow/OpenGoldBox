@@ -1,0 +1,223 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ProgramRulesDocument",
+  "type": "object",
+  "properties": {
+    "profile": {
+      "type": "string"
+    },
+    "dataSegment": {
+      "type": "string"
+    },
+    "offsets": {
+      "type": "object",
+      "properties": {
+        "spells": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "experience": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "effectNames": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "integer"
+          }
+        },
+        "aiSteps": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "randomItems": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "turnUndead": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "itemWords": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "templeNames": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "campMenu": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "levelStats": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "properties": {
+            "thac0": {
+              "type": "integer"
+            },
+            "clericSlots": {
+              "type": "integer"
+            },
+            "spellTable": {
+              "type": "integer"
+            },
+            "mageSlots": {
+              "type": "integer"
+            },
+            "saves": {
+              "type": "integer"
+            },
+            "thiefBase": {
+              "type": "integer"
+            },
+            "thiefRace": {
+              "type": "integer"
+            },
+            "thiefDex": {
+              "type": "integer"
+            }
+          },
+          "required": [
+            "thac0",
+            "clericSlots",
+            "spellTable",
+            "mageSlots",
+            "saves",
+            "thiefBase",
+            "thiefRace",
+            "thiefDex"
+          ]
+        },
+        "npcHead": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "npcBodies": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "integer"
+          }
+        }
+      }
+    },
+    "gnomeDefenseNames": {
+      "type": [
+        "array",
+        "null"
+      ],
+      "items": {
+        "type": "string"
+      }
+    },
+    "view": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "start": {
+          "type": "array",
+          "items": {
+            "type": "integer"
+          }
+        },
+        "width": {
+          "type": "array",
+          "items": {
+            "type": "integer"
+          }
+        },
+        "height": {
+          "type": "array",
+          "items": {
+            "type": "integer"
+          }
+        },
+        "column": {
+          "type": "array",
+          "items": {
+            "type": "integer"
+          }
+        },
+        "row": {
+          "type": "array",
+          "items": {
+            "type": "integer"
+          }
+        },
+        "skyColours": {
+          "type": "string"
+        },
+        "exploreCommands": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "start",
+        "width",
+        "height",
+        "column",
+        "row",
+        "skyColours"
+      ]
+    },
+    "source": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "container": {
+          "type": "string"
+        },
+        "block": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "container"
+      ]
+    }
+  },
+  "required": [
+    "dataSegment",
+    "offsets"
+  ]
+}

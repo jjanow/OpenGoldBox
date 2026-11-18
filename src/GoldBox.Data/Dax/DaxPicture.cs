@@ -19,6 +19,8 @@ public sealed class DaxPicture
     public IReadOnlyList<byte[]> Items { get; }
     /// <summary>The frame delay from the animation wrapper, when the block had one ([?] unit).</summary>
     public uint? Delay { get; init; }
+    /// <summary>The 8-byte CGA colour map of the header (kept so the block can be written back).</summary>
+    public byte[] Cga { get; init; } = new byte[8];
 
     private DaxPicture(int w, int h, int x, int y, List<byte[]> items)
     {
@@ -27,6 +29,50 @@ public sealed class DaxPicture
         X = x;
         Y = y;
         Items = items;
+    }
+
+    /// <summary>A picture from its parts (width a multiple of 8; each item Width × Height indices 0..15).</summary>
+    public static DaxPicture Create(int width, int height, int x, int y, IEnumerable<byte[]> items, byte[]? cga = null,
+        uint? delay = null)
+    {
+        if (width % 8 != 0 || width < 0 || height < 0)
+            throw new DaxFormatException($"picture size {width}×{height}: width must be a multiple of 8");
+        var list = items.ToList();
+        if (list.Any(i => i.Length != width * height))
+            throw new DaxFormatException("picture item of the wrong size");
+        return new DaxPicture(width, height, x, y, list) { Cga = cga ?? new byte[8], Delay = delay };
+    }
+
+    /// <summary>The DaxBlock bytes (inverse of <see cref="Decode(ReadOnlySpan{byte}, int, out int)"/>).</summary>
+    public byte[] Encode()
+    {
+        int w8 = Width / 8, row = w8 * 4, size = Height * row;
+        var o = new byte[HeaderSize + Items.Count * size];
+        BinaryPrimitives.WriteUInt16LittleEndian(o, (ushort)Height);
+        BinaryPrimitives.WriteUInt16LittleEndian(o.AsSpan(2), (ushort)w8);
+        BinaryPrimitives.WriteInt16LittleEndian(o.AsSpan(4), (short)X);
+        BinaryPrimitives.WriteInt16LittleEndian(o.AsSpan(6), (short)Y);
+        o[8] = (byte)Items.Count;
+        Cga.AsSpan(0, 8).CopyTo(o.AsSpan(9));
+        int p = HeaderSize;
+        foreach (var px in Items)
+            for (int j = 0; j < size; j++)
+                o[p++] = (byte)(px[2 * j] << 4 | px[2 * j + 1] & 15);
+        return o;
+    }
+
+    /// <summary>An animation block (frame count, then per frame the u32 delay and the DaxBlock).</summary>
+    public static byte[] EncodeAnimation(IReadOnlyList<DaxPicture> frames)
+    {
+        var o = new List<byte> { (byte)frames.Count };
+        foreach (var f in frames)
+        {
+            var d = new byte[4];
+            BinaryPrimitives.WriteUInt32LittleEndian(d, f.Delay ?? 0);
+            o.AddRange(d);
+            o.AddRange(f.Encode());
+        }
+        return [.. o];
     }
 
     /// <summary>Decodes one DaxBlock at <paramref name="offset"/>; <paramref name="end"/> is the byte after it.</summary>
@@ -39,10 +85,12 @@ public sealed class DaxPicture
         int x = BinaryPrimitives.ReadInt16LittleEndian(b[(offset + 4)..]);
         int y = BinaryPrimitives.ReadInt16LittleEndian(b[(offset + 6)..]);
         int n = b[offset + 8];
-        int row = w8 * 4, size = h * row;
+        int row = w8 * 4;
+        long size64 = (long)h * row;
         int p = offset + HeaderSize;
-        if (p + (long)n * size > b.Length)
+        if (p + n * size64 > b.Length || n > 0 && size64 * 2 > int.MaxValue)
             throw new DaxFormatException($"picture of {n} items {w8 * 8}×{h} past the end");
+        int size = (int)size64;
         var items = new List<byte[]>(n);
         for (int i = 0; i < n; i++, p += size)
         {
@@ -56,7 +104,7 @@ public sealed class DaxPicture
             items.Add(px);
         }
         end = p;
-        return new DaxPicture(w8 * 8, h, x, y, items);
+        return new DaxPicture(w8 * 8, h, x, y, items) { Cga = b.Slice(offset + 9, 8).ToArray() };
     }
 
     /// <summary>A whole block that is exactly one DaxBlock (8X8D, CPIC, …).</summary>
@@ -99,7 +147,7 @@ public sealed class DaxPicture
         {
             uint delay = BinaryPrimitives.ReadUInt32LittleEndian(b[p..]);
             var pic = Decode(b, p + 4, out p);
-            frames.Add(new DaxPicture(pic.Width, pic.Height, pic.X, pic.Y, [.. pic.Items]) { Delay = delay });
+            frames.Add(new DaxPicture(pic.Width, pic.Height, pic.X, pic.Y, [.. pic.Items]) { Delay = delay, Cga = pic.Cga });
         }
         return frames;
     }

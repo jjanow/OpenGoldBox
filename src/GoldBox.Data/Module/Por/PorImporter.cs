@@ -5,7 +5,7 @@ using GoldBox.Data.Module;
 using GoldBox.Data.Module.Por;
 using GoldBox.Data.Por;
 
-namespace GoldBox.Importer;
+namespace GoldBox.Data.Module.Por;
 
 /// <summary>What an import wrote and found.</summary>
 public sealed class PorImportReport
@@ -18,6 +18,10 @@ public sealed class PorImportReport
     public int EffectLists { get; set; }
     public int TreasureLists { get; set; }
     public int ItemTypes { get; set; }
+    public int Pictures { get; set; }
+    public int ArtData { get; set; }
+    public int Texts { get; set; }
+    public int Saves { get; set; }
     /// <summary>Per disk: ids that are both a <c>MON&lt;d&gt;ITM</c> block and an <c>ITEM&lt;d&gt;</c> block (§16).</summary>
     public SortedDictionary<int, List<int>> ItemIdCollisions { get; } = [];
     /// <summary>Colliding ids whose two blocks hold different bytes.</summary>
@@ -28,15 +32,22 @@ public sealed class PorImportReport
 
 /// <summary>
 /// Pool of Radiance (DOS) → module (docs/module-format.md §16): scripts, maps, areas, monsters with their item and
-/// effect lists, placed treasure and the item types. Art, rules tables, text and saves are not imported yet; the
-/// engine still reads those from the player's folder.
+/// effect lists, placed treasure, the item types, the program's tables (<c>rules/program.json</c>) and texts
+/// (<c>text/en.json</c>), the DOS art and the shipped saves. The engine and the Client then need no game folder.
 /// </summary>
 public static class PorImporter
 {
-    public const string ImporterName = "GoldBox.Importer 0.1";
+    public const string ImporterName = "GoldBox.Importer 0.2";
 
     /// <summary>Program rule (GAME.OVR 0x2EC5D): while script 0 or 10 runs, off-map squares read 0 instead of wrapping.</summary>
     private static readonly int[] NoWrapScripts = [0, 10];
+
+    /// <summary>DAX files that are not art (imported as scripts, maps and records above): name + disk digit.</summary>
+    private static readonly System.Text.RegularExpressions.Regex NotArt =
+        new(@"^(ECL[1-8]|GEO[1-8]|ITEM[1-8]|MON[1-8](CHA|ITM|SPC))$");
+
+    /// <summary>True for a DAX name (no extension) imported as scripts, maps or records rather than art.</summary>
+    public static bool IsNotArt(string name) => NotArt.IsMatch(name);
 
     /// <summary>Program rule (GAME.OVR 0x3F28–0x3F99): blocks 25–27 switch to the wilderness view when $49E6 = 0.</summary>
     private const int FirstWildernessScript = 25, LastWildernessScript = 27;
@@ -182,6 +193,69 @@ public static class PorImporter
         else
             report.Notes.Add("no ITEMS file: records/itemTypes.json not written");
 
+        // ---- program tables and texts ----
+        if (PorProgramData.Open(game) is { } program)
+        {
+            read.Add("START.EXE");
+            if (game.Find("GAME.OVR") is not null)
+                read.Add("GAME.OVR");
+            ModuleJson.Write(Out(ProgramRulesDocument.RelativePath), new ProgramRulesDocument
+            {
+                DataSegment = program.Ds,
+                Offsets = program.Offsets,
+                GnomeDefenseNames = program.GnomeDefenseNames?.ToList(),
+                View = program.View is { } v ? new ViewTablesDocument
+                {
+                    Start = [.. v.Layout.Start], Width = [.. v.Layout.Width], Height = [.. v.Layout.Height],
+                    Column = [.. v.Layout.Column], Row = [.. v.Layout.Row], SkyColours = [.. v.SkyColours],
+                    ExploreCommands = v.ExploreCommands?.ToList(),
+                } : null,
+                Source = new SourceRef { Container = "START.EXE" },
+            });
+            ModuleJson.Write(Out(TextDocument.RelativePath), new TextDocument
+            {
+                Strings = new Dictionary<string, string>(program.Texts.OrderBy(kv => kv.Key, StringComparer.Ordinal)),
+                SpellNames = program.SpellNames?.ToList(),
+                PagePrompt = program.PagePrompt,
+            });
+            report.Texts = program.Texts.Count;
+            if (program.Texts.Count == 0)
+                report.Notes.Add("GAME.OVR is not the v1.3 overlay: no program texts (the Client uses its own wording)");
+        }
+        else
+            report.Notes.Add("no START.EXE: rules/program.json and text/en.json not written (no fights, no program texts)");
+
+        // ---- art (DOS) ----
+        foreach (var path in Directory.EnumerateFiles(gameDir).Order(StringComparer.Ordinal))
+        {
+            var file = Path.GetFileName(path).ToUpperInvariant();
+            if (!file.EndsWith(".DAX", StringComparison.Ordinal))
+                continue;
+            var name = file[..^4];
+            if (IsNotArt(name))
+                continue;
+            var dax = Dax(file)!;
+            bool data = name.StartsWith("WALLDEF", StringComparison.Ordinal);
+            foreach (var e in dax.Entries)
+                if (PorArtCodec.Write(outDir, "dos", name, e.Id, dax.Decode(e), tryPicture: !data))
+                    report.Pictures++;
+                else
+                    report.ArtData++;
+        }
+
+        // ---- shipped saves (copied as they are [?]: conversion to an engine save is section 15's open point) ----
+        foreach (var path in Directory.EnumerateFiles(gameDir).Order(StringComparer.Ordinal))
+        {
+            var file = Path.GetFileName(path).ToUpperInvariant();
+            if (!(file.StartsWith("SAVGAM", StringComparison.Ordinal) && file.EndsWith(".DAT", StringComparison.Ordinal))
+                && !file.StartsWith("CHRDAT", StringComparison.Ordinal))
+                continue;
+            Directory.CreateDirectory(Out("saves"));
+            File.Copy(path, Out("saves/" + file));
+            read.Add(file);
+            report.Saves++;
+        }
+
         // ---- manifest ----
         foreach (var name in read)
             report.Inputs.Add(new ModuleInput { File = name, Sha256 = Sha256(game.Find(name)!) });
@@ -203,7 +277,7 @@ public static class PorImporter
             },
         };
         manifest.Save(outDir);
-        report.Notes.Add("not imported yet (read from the game folder): art, rules tables, text, saves; manifest start [?]");
+        report.Notes.Add("not imported yet: the Amiga art overlay; manifest start [?]");
         return report;
     }
 

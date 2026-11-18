@@ -38,6 +38,11 @@ public sealed class TradeContext
     public Func<byte, bool> IsScroll { get; init; } = _ => false;
     /// <summary>The temple's heal list names (program table), or null.</summary>
     public IReadOnlyList<string>? TempleNames { get; init; }
+    /// <summary>
+    /// Where the original program stops (a run-time error back to DOS): shows it and ends the game. Called on the logic
+    /// thread; the exception is thrown on afterwards, so the screen that hit it never goes on.
+    /// </summary>
+    public Action<ProgramHaltException>? Halt { get; init; }
 
     public EclCharacter? Current => Party.Current;
 
@@ -83,14 +88,21 @@ public static class MoneyScreens
     public static void Pool(TradeContext t) => ShopRules.PoolMoney(t.Party.Members, t.Pool);
 
     /// <summary>
-    /// Share (0x252C3). [?] With no member that counts (0x84 = 0 or 0xB3) the program divides by zero; we leave the
-    /// pool as it is.
+    /// Share (0x252C3). With money in the pool and no member that counts (0x84 = 0 or 0xB3) the program divides by
+    /// zero and quits to DOS with run-time error 200 (<see cref="ShopRules.Share"/>): the halt goes to
+    /// <see cref="TradeContext.Halt"/> (the Client ends the game there), then on up so the menu never resumes.
     /// </summary>
     public static void Share(TradeContext t)
     {
-        if (!t.Party.Members.Any(c => c[0x84] is 0 or 0xB3))
-            return;
-        ShopRules.Share(t.Party.Members, t.Pool, Carrying.StrengthAllowance);
+        try
+        {
+            ShopRules.Share(t.Party.Members, t.Pool, Carrying.StrengthAllowance);
+        }
+        catch (ProgramHaltException e)
+        {
+            t.Halt?.Invoke(e);
+            throw;
+        }
     }
 
     /// <summary>

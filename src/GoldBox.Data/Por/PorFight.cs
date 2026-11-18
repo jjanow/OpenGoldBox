@@ -10,44 +10,24 @@ namespace GoldBox.Data.Por;
 /// </summary>
 public static class PorFight
 {
-    /// <summary>The kit from the game directory; null when a table is not found.</summary>
-    public static FightKit? Kit(PorGameDirectory game) => Kit(game, game);
-
     /// <summary>
-    /// The kit from the program in <paramref name="programFolder"/> and the item types of <paramref name="content"/>
-    /// (the folder's <c>ITEMS</c> or a module's <c>records/itemTypes.json</c>); null when a table is not found.
+    /// The kit from the program's tables and the item types of <paramref name="content"/> (the folder's START.EXE,
+    /// GAME.OVR and <c>ITEMS</c>, or a module's <c>rules/program.json</c> and <c>records/itemTypes.json</c>); null when
+    /// a table is not found.
     /// </summary>
-    public static FightKit? Kit(PorGameDirectory programFolder, IPorContent content)
-    {
-        if (PorProgram.Open(programFolder) is not { } program || content.ItemTypes() is not { } items)
-            return null;
-        return Kit(program, items);
-    }
+    public static FightKit? Kit(IPorContent content) =>
+        content.Program() is { } program && content.ItemTypes() is { } items ? program.FightKit(items) : null;
 
     /// <summary>The kit from the program and the base item table; null when a table is not found.</summary>
-    public static FightKit? Kit(PorProgram program, BaseItemTable items)
-    {
-        if (PorSpellData.Spells(program) is not { } spells || program.AiStepOffsets() is not { } steps)
-            return null;
-        return new FightKit
-        {
-            Tables = PorCombatTables.Load(program),
-            Spells = spells,
-            Items = items,
-            AiSteps = steps,
-            Names = PorSpellData.Names(program),
-            Experience = PorSpellData.ExperienceTable(program),
-            TurnUndead = program.TurnUndeadTable(),
-            LevelTables = PorSpellData.LevelTables(program),
-        };
-    }
+    public static FightKit? Kit(PorProgram program, BaseItemTable items) =>
+        PorProgramData.FromProgram(program, null).FightKit(items);
 
     /// <summary>
     /// The fight start's inputs from VM memory: the view mode (DS:49FA), the party's square and facing, the current ECL
     /// block, and for a 3D area the map (a copy of <paramref name="planes"/>, with doors as they are now); in the
     /// wilderness the party's square on the wilderness map ($49C3 / $49C4) and $4AB3.
     /// </summary>
-    public static FightStartArea Area(EclMemory memory, byte[]? planes, int eclBlock, bool duel = false)
+    public static FightStartArea Area(EclMemory memory, byte[]? planes, int eclBlock, bool duel = false, Func<int, bool>? noWrapOffMap = null)
     {
         var p = memory.Position;
         return new FightStartArea
@@ -57,7 +37,7 @@ public static class PorFight
             PartyY = p.Y,
             PartyFacing = p.Facing,
             Map = planes is { Length: >= AreaMap.PlanesLength }
-                ? new AreaMap(planes.AsSpan(0, AreaMap.PlanesLength)) { Bounded = eclBlock is 0 or 10 } : null,
+                ? new AreaMap(planes.AsSpan(0, AreaMap.PlanesLength)) { Bounded = (noWrapOffMap ?? (s => s is 0 or 10))(eclBlock) } : null,
             EclBlock = eclBlock,
             Duel = duel,
             WildX = memory.Read(FightPlacement.WildXCell) & 0xFF,

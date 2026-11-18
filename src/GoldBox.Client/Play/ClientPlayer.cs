@@ -65,10 +65,10 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
     public void ClearBox() => ViewBlanked = true;
     public void TextHome() => Text.Home();
 
-    /// <summary>DELAY: game speed × 225 ms. [?] The speed is read from $49FC (saved from the options), not DS:49E2.</summary>
+    /// <summary>DELAY: game speed DS:49E2 (<see cref="EclMemory.GameSpeed"/>) × 225 ms; speed 0 does not wait.</summary>
     public void Delay()
     {
-        int speed = memory().Read(0x49FC) & 0xFF;
+        int speed = memory().GameSpeed;
         if (speed is > 0 and <= 9)
             runner.Ask(new DelayRequest(TimeSpan.FromMilliseconds(225 * speed)));
     }
@@ -213,11 +213,12 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
 
     /// <summary>
     /// The real fight (arena and placement done): shown on the combat screen while it runs; party members not on Quick
-    /// get the combat menu (<see cref="Chooser"/>). The game speed starts from the saved options' $49FC [?] (as DELAY).
+    /// get the combat menu (<see cref="Chooser"/>). The game speed is DS:49E2 (<see cref="EclMemory.GameSpeed"/>): the
+    /// Done menu's Speed changes it for the rest of the game, as the camp's Alter Speed does.
     /// </summary>
     public void Fight(EncounterState state, GoldBox.Core.Game.Fight fight)
     {
-        int speed = memory().Read(0x49FC) & 0xFF;
+        int speed = memory().GameSpeed;
         FightView.Speed = (byte)(speed <= 9 ? speed : 0);
         FightView.Dungeon = memory().ViewMode == 1; // [?] the tile set follows DS:49FA (combat-map.md 0xD815)
         Chooser.Attach(fight);
@@ -227,7 +228,8 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
         }
         finally
         {
-            Chooser.Detach(fight);
+            Chooser.Detach(fight);                 // copies the menu's speed into the view
+            memory().GameSpeed = FightView.Speed;
         }
     }
 
@@ -298,8 +300,31 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
             Word = Resources.ItemWord,
             IsScroll = Resources.IsScroll,
             TempleNames = Resources.TempleNames,
+            Halt = Halt,
         };
     }
+
+    /// <summary>The run-time error the original program would have quit to DOS with; the game is over (null = running).</summary>
+    public ProgramHaltException? Halted { get; set; }
+
+    /// <summary>
+    /// The original quits to DOS here (a Turbo Pascal run-time error, e.g. 200 in Share with no member to take a share):
+    /// the game ends. Our message in the text window and a key, then the Client closes (<see cref="Quit"/>); the caller
+    /// throws the halt on, so the logic stops where the program did.
+    /// </summary>
+    public void Halt(ProgramHaltException e)
+    {
+        Halted = e;
+        Log.Add($"program halt: run-time error {e.Code} ({e.Message})");
+        Console.Error.WriteLine($"game logic: the original program halts here with run-time error {e.Code}: {e.Message}");
+        Text.Print(HaltNotice(e), clear: true, colour: 14);
+        runner.Ask(new KeyRequest());
+        Quit?.Invoke();
+    }
+
+    /// <summary>The line shown when the original program would quit to DOS (our wording).</summary>
+    public static string HaltNotice(ProgramHaltException e) =>
+        $"RUN-TIME ERROR {e.Code.ToString(CultureInfo.InvariantCulture)}: THE ORIGINAL GAME QUITS TO DOS HERE. THE GAME IS OVER.";
 
     /// <summary>[?] The item maker (GAME.OVR 0x25C99) is not read: a blank item record of the type, as the headless runner.</summary>
     public byte[] MakeRandomItem(byte type)
@@ -326,8 +351,33 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
             Notice = "NO AREA MAP HERE.";
     }
 
-    /// <summary>The program's camp and rest variables (DS:6DC2, DS:6DD8, DS:49FB, DS:471E, DS:6DD0), kept for the session.</summary>
-    public CampState CampState { get; } = new();
+    /// <summary>
+    /// The program's camp and rest variables (DS:6DC2, DS:6DD8, DS:49FB, DS:471E, DS:6DD0): the game's
+    /// (<see cref="GoldBox.Data.Por.PorGame.Camp"/>, shared with the clock of exploration and the fights' end of round);
+    /// a set of the Client's own only while no game is built.
+    /// </summary>
+    public CampState CampState => Game()?.Camp ?? _noGameCamp;
+    private readonly CampState _noGameCamp = new();
+
+    /// <summary>
+    /// The camp's effect engine, set up as the game's outside a fight (<see cref="GoldBox.Data.Por.PorGame.OutsideEffects"/>):
+    /// the race-name tables, the experience table and the level seams (<see cref="FightKit.WireLevels"/>: the race level
+    /// limit, the level stats 0x2AA87). A fresh one per camp: the camp's spells hook their own caster into it.
+    /// </summary>
+    public EffectHandlers CampEffects(EclParty party)
+    {
+        var game = Game();
+        Func<ushort, ushort> random = n => game is null ? (ushort)0 : game.Rng.Next(n);
+        var kit = game?.Kit;
+        var effects = new EffectHandlers(random, kit?.Names)
+        {
+            List = () => party.Members,
+            CurrentCharacter = () => party.Current,
+            ExperienceTable = kit?.Experience,
+        };
+        FightKit.WireLevels(effects, kit?.LevelTables);
+        return effects;
+    }
 
     /// <summary>Where the camp's Save writes (the player's save folder; the game folder is never written).</summary>
     public string? SaveFolder { get; set; }
@@ -363,13 +413,14 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
         Func<ushort, ushort> random = n => game is null ? (ushort)0 : game.Rng.Next(n);
         var table = Resources.Spells ?? new SpellTable(new Dictionary<int, SpellInfo>());
         var spells = new CampSpells(table, it => Resources.ItemSlot(it) is > 10 and < 14);
-        var effects = new EffectHandlers(random) { List = () => t.Party.Members, CurrentCharacter = () => t.Party.Current };
-        var rest = new CampRest(mem, CampState, spells, random, (c, e) => effects.RemoveEffect(c, e[0], e),
+        var effects = CampEffects(t.Party);
+        var state = CampState;
+        var rest = new CampRest(mem, state, spells, random, (c, e) => effects.RemoveEffect(c, e[0], e),
             c => effects.RestoreHitPoints(c, 1, false));
         return new CampContext
         {
             Trade = t,
-            State = CampState,
+            State = state,
             Spells = spells,
             Rest = rest,
             Memory = mem,
@@ -381,13 +432,14 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
     }
 
     /// <summary>
-    /// The camp's Save (0x1FD3E): the options and wall sets into $49FC/$49FF (already the cells here) and
-    /// $4AFA–$4AFF, then <c>SAVGAMx.DAT</c> (interface state 2, camp) and the member files into <see cref="SaveFolder"/>.
-    /// [?] The location type is 1 (3D area) in a 3D view, else 2 (the wilderness is not built).
+    /// The camp's Save (0x1FD3E): the wall sets into $4AFA–$4AFF (the picture flags $49FF are already the cell here),
+    /// then <c>SAVGAMx.DAT</c> (interface state 2, camp) and the member files into <see cref="SaveFolder"/>. The save
+    /// takes the location type from DS:49FA (<see cref="EclMemory.ViewMode"/>) and writes the game speed DS:49E2
+    /// (<see cref="EclMemory.GameSpeed"/>) into $49FC, as the program does.
     /// </summary>
     public string? SaveGame(char letter)
     {
-        if (SaveFolder is null || memory().Party is not { } party || Game() is not { } game)
+        if (SaveFolder is null || memory().Party is not { } party || Game() is null)
             return "NO SAVE FOLDER.";
         var mem = memory();
         for (int k = 0; k < 3; k++)
@@ -398,8 +450,7 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
             }
         try
         {
-            var bytes = GoldBox.Data.Por.PorSaveGame.Build(mem, party.Members.Count, letter,
-                (byte)(game.Loop.InView3D ? 1 : 2), 2);
+            var bytes = GoldBox.Data.Por.PorSaveGame.Build(mem, party.Members.Count, letter, 2);
             Directory.CreateDirectory(SaveFolder);
             File.WriteAllBytes(Path.Combine(SaveFolder, GoldBox.Data.Por.PorSaveGame.FileName(letter)), bytes);
             GoldBox.Data.Por.PorParty.Save(party, SaveFolder, letter);

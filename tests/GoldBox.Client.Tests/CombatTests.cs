@@ -199,8 +199,7 @@ public class CombatScreenGameTests
         var runner = new ScriptRunner();
         PorGame? game = null;
         var player = new ClientPlayer(runner, () => game!.Memory);
-        var program = PorProgram.Open(dir);
-        player.Chooser.Text = new CombatText(program);
+        player.Chooser.Text = new CombatText(dir.Program());
         player.Chooser.Pauses = false;
         game = PorGame.FromSave(dir, art, dir.Find("SAVGAMA.DAT")!,
             new PorPlayer(player, player, player, player, FightMenu: player.Chooser, QuickFight: true), seed);
@@ -315,17 +314,43 @@ public class CombatScreenGameTests
         var first = v.Shown;
         Key(r, Keys.N);
         Assert.NotSame(first, v.Shown);
-        // Manual: a cursor; the panel shows the creature under it, nothing on an empty square; Exit returns to Aim.
+        // Manual (Core's 0x155F5, one pass per key): the cursor starts on the shown candidate's square; the panel shows
+        // the creature under it, nothing on an empty square; Exit returns to Aim.
+        var shown = v.Shown!;
+        var hp0 = v.Fight!.List.Select(x => x[FightRules.Hp]).ToArray();
         Key(r, Keys.M);
-        Assert.IsType<CombatCursorRequest>(r.Runner.Pending);
+        var cur = Assert.IsType<CombatCursorRequest>(r.Runner.Pending);
+        Assert.Equal(map.Position(shown), (cur.View.X, cur.View.Y));
+        Assert.Equal(v.Cursor, (cur.View.X, cur.View.Y));
         var cs = r.Screen.Combat;
-        Assert.Same(map.At(v.Cursor!.Value.X, v.Cursor.Value.Y), cs.PanelCreature());
+        Assert.Same(shown, cs.PanelCreature());
         for (int k = 0; k < 6 && map.At(v.Cursor!.Value.X, v.Cursor.Value.Y) is not null; k++)
             Key(r, Keys.Down);
-        Assert.Null(map.At(v.Cursor!.Value.X, v.Cursor.Value.Y));
+        cur = Assert.IsType<CombatCursorRequest>(r.Runner.Pending);
+        Assert.Null(map.At(cur.View.X, cur.View.Y));
         Assert.Null(cs.PanelCreature());
+        Assert.False(cur.View.TargetOffered);          // a bare square: only a spell's square mode takes one
         Press(r, GameAction.Cancel);
         Assert.Equal(CombatMode.Aim, v.Mode);
+        Assert.IsType<ChoiceRequest>(r.Runner.Pending);
+
+        // Return on a square where Target is not offered still ends Manual (the program sets CS:0x2DA7): back to Aim,
+        // no attack. A click on another square walks the cursor there one pass at a time.
+        Key(r, Keys.M);
+        var at = Assert.IsType<CombatCursorRequest>(r.Runner.Pending).View;
+        var goal = (X: Math.Clamp(at.X + 2, 0, CombatArena.Width - 1), Y: at.Y);
+        Click(r, CombatScreen.MapX + (goal.X - v.ViewX) * 24 + 12, CombatScreen.MapY + (goal.Y - v.ViewY) * 24 + 12);
+        var walked = Assert.IsType<CombatCursorRequest>(r.Runner.Pending).View;
+        Assert.Equal(goal, (walked.X, walked.Y));
+        if (!walked.TargetOffered)
+        {
+            Press(r, GameAction.Confirm);
+            Assert.Equal(CombatMode.Aim, v.Mode);
+            Assert.IsType<ChoiceRequest>(r.Runner.Pending);
+        }
+        else
+            Press(r, GameAction.Cancel);
+        Assert.Equal(hp0, v.Fight.List.Select(x => x[FightRules.Hp]).ToArray());
 
         // A click on another creature shows it (no attack); a second click on it targets it and leaves Aim.
         var hp = v.Fight!.List.Select(x => x[FightRules.Hp]).ToArray();
@@ -456,14 +481,14 @@ public class CombatScreenGameTests
     {
         if (Dir() is null)
             return;
-        var program = PorProgram.Open(new PorGameDirectory(Dir()!))!;
+        var program = new PorGameDirectory(Dir()!).Program()!;
         var t = new CombatText(program);
         Assert.Equal(Enum.GetValues<CombatMsg>().Length, t.FromGame);
         Assert.Equal(["MOVE", "VIEW", "AIM", "USE", "CAST", "TURN", "QUICK", "DONE"],
             [.. t.Words(CombatMsg.MenuMove), .. t.Words(CombatMsg.MenuViewAim), .. t.Words(CombatMsg.MenuUse),
              .. t.Words(CombatMsg.MenuCast), .. t.Words(CombatMsg.MenuTurn), .. t.Words(CombatMsg.MenuQuickDone)]);
-        var spells = new SpellNames(program.Image);
-        Assert.True(spells.Count >= SpellNames.MinRun);
+        var spells = new SpellNames(program.SpellNames);
+        Assert.True(spells.Count >= PorSpellNames.MinRun);
         Assert.All(Enumerable.Range(1, spells.Count), i => Assert.False(string.IsNullOrWhiteSpace(spells[i])));
     }
 

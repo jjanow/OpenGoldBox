@@ -102,4 +102,38 @@ public sealed class PorGameDirectory : IPorContent
 
     public BaseItemTable? ItemTypes() =>
         Find("ITEMS") is { } path && File.ReadAllBytes(path) is { Length: > 2 } bytes ? BaseItemTable.FromItemsFile(bytes) : null;
+
+    private PorProgramData? _program;
+    private bool _programRead;
+
+    public PorProgramData? Program()
+    {
+        if (!_programRead)
+        {
+            _programRead = true;
+            _program = PorProgramData.Open(this);
+        }
+        return _program;
+    }
+
+    public IReadOnlyList<DaxPicture>? Picture(string file, int id)
+    {
+        if (Dax(file + ".DAX")?.Block(id) is not { } b)
+            return null;
+        try
+        {
+            return DaxPicture.DecodeFrames(b);
+        }
+        catch (DaxFormatException)
+        {
+            return null;
+        }
+    }
+
+    public byte[]? ArtData(string file, int id) => Dax(file + ".DAX")?.Block(id);
+
+    public string? SaveFolder => Root;
+
+    /// <summary>The program's rule (GAME.OVR 0x2EC5D).</summary>
+    public bool NoWrapOffMap(int script) => script is 0 or 10;
 }

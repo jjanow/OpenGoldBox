@@ -75,13 +75,14 @@ public static class CampParty
 /// <summary>
 /// The camp's game settings (Alter: Speed 0x192C8, Pics 0x1948A). The game speed DS:49E2 (0 fastest … 9 slowest)
 /// and the picture flags are program variables; the save writes them into $49FC and $49FF (bit 1 monsters, bit 0
-/// portraits). Here they are the VM cells themselves, the value the save would write.
+/// portraits). The speed is <see cref="EclMemory.GameSpeed"/> (the save builder copies it into $49FC); the picture
+/// flags are kept in the VM cell itself, the value the save would write.
 /// </summary>
 public static class CampSettings
 {
-    public const ushort SpeedCell = 0x49FC, PicturesCell = 0x49FF;
+    public const ushort PicturesCell = 0x49FF;
 
-    public static int Speed(EclMemory m) => m.Read(SpeedCell);
+    public static int Speed(EclMemory m) => m.GameSpeed;
 
     /// <summary>
     /// 0x192C8: F (offered while the speed is above 0) and Down lower it, S (offered below 9) and Up raise it. The
@@ -89,14 +90,14 @@ public static class CampSettings
     /// </summary>
     public static void Faster(EclMemory m)
     {
-        if (Speed(m) > 0)
-            m.Write(SpeedCell, (ushort)(Speed(m) - 1));
+        if (m.GameSpeed > 0)
+            m.GameSpeed--;
     }
 
     public static void Slower(EclMemory m)
     {
-        if (Speed(m) < 9)
-            m.Write(SpeedCell, (ushort)(Speed(m) + 1));
+        if (m.GameSpeed < 9)
+            m.GameSpeed++;
     }
 
     public static bool MonsterPictures(EclMemory m) => (m.Read(PicturesCell) & 2) != 0;

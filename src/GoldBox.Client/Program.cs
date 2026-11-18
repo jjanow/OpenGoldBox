@@ -32,29 +32,32 @@ var runner = new ScriptRunner();
 PorGame? game = null;
 ClientPlayer? player = null;
 string? problem = null;
-if (string.IsNullOrWhiteSpace(gameDir) || !Directory.Exists(gameDir))
-    problem = "Pool of Radiance folder not set: start with --game DIR";
+if (options.ModuleDirectory is null && (string.IsNullOrWhiteSpace(gameDir) || !Directory.Exists(gameDir)))
+    problem = "Pool of Radiance folder not set: start with --game DIR or --module DIR";
 else
 {
     try
     {
-        var dir = new PorGameDirectory(gameDir);
-        // --module: scripts, maps and records from the module; art, program tables and saves from the game folder.
-        IPorContent? content = options.ModuleDirectory is { } moduleDir ? PorModule.Open(moduleDir) : null;
-        if (content is not null)
-            Console.Error.WriteLine($"module: {content.Origin}");
-        var art = PorViewArt.Load(dir);
+        // --module: an imported module (no game folder needed); otherwise the player's folder, imported into the cache
+        // first, so every run plays through a module.
+        var moduleDir = options.ModuleDirectory ?? PorModuleCache.Ensure(gameDir!, ClientSettings.ModuleCacheFolder);
+        IPorContent content = PorModule.Open(moduleDir);
+        Console.Error.WriteLine($"content: {content.Origin}");
+        var art = PorViewArt.Load(content);
         player = new ClientPlayer(runner, () => game!.Memory)
         {
-            Resources = ClientResources.Load(dir),
+            Resources = ClientResources.Load(content),
             Game = () => game,
         };
         player.InstallPaging();
         player.SaveFolder = ClientSettings.SavesFolder;
-        var program = PorProgram.Open(dir);
+        var program = content.Program();
         player.Chooser.Text = new CombatText(program);
-        if (program is not null && new SpellNames(program.Image) is { Count: > 0 } spells)
+        if (program?.SpellNames is { Count: > 0 } names)
+        {
+            var spells = new SpellNames(names);
             player.Chooser.SpellName = id => spells[id];
+        }
         var who = new PorPlayer(player, player, player, player, FightMenu: player.Chooser, QuickFight: true);
         // The game seeds its generator from the DOS clock at start-up.
         uint seed = (uint)Environment.TickCount64;
@@ -62,17 +65,18 @@ else
         if (options.Area is null)
         {
             var name = ClientOptions.SaveFileName(options.Save ?? "A");
-            // The player's own saves (written by the camp) come first, then the game folder's.
+            // The player's own saves (written by the camp) come first, then the game's shipped saves.
             var own = Path.Combine(ClientSettings.SavesFolder, name);
-            savePath = (File.Exists(own) ? own : null) ?? dir.Find(name) ?? (File.Exists(name) ? name : null)
-                ?? throw new FileNotFoundException($"save {name} not found in {gameDir}");
+            var shipped = content.SaveFolder is { } sf && new PorGameDirectory(sf).Find(name) is { } found ? found : null;
+            savePath = (File.Exists(own) ? own : null) ?? shipped ?? (File.Exists(name) ? name : null)
+                ?? throw new FileNotFoundException($"save {name} not found in {content.Origin}");
         }
         // The entry runs on the logic thread, so its menus or text (if any) wait for the window.
         runner.Start(() =>
         {
             game = options.Area is { } script && options.At is var (x, y, f)
-                ? PorGame.Enter(dir, art, script, x, y, f, who, seed, content)
-                : PorGame.FromSave(dir, art, savePath!, who, seed, content);
+                ? PorGame.Enter(content, art, script, x, y, f, who, seed)
+                : PorGame.FromSave(content, art, savePath!, who, seed);
         });
         if (runner.Fault is { } fault)
             throw fault;

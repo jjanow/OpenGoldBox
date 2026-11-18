@@ -113,6 +113,50 @@ public class VenueTests
     }
 
     [Fact]
+    public void Share_with_no_member_to_take_a_share_halts_the_program()
+    {
+        // The loot's pool with money and only an NPC in the party (0x84 = 0x81: not counted, 0x84 = 0 or 0xB3).
+        var npc = Member("SKULLCRUSHER");
+        npc[0x84] = 0x81;
+        ProgramHaltException? seen = null;
+        var s = new Script();
+        var t = new TradeContext
+        {
+            Dialog = new Dialog(s.Ask, new TextWindow()),
+            Text = new GameText(),
+            Party = Party(npc),
+            Pool = [0, 0, 0, 40, 0, 0, 0],
+            Treasure = [],
+            Random = n => n - 1,
+            Halt = e => seen = e,
+        };
+        // Run-time error 200 (pool div 0): the original quits to DOS, so the menu never resumes.
+        var e = Assert.Throws<ProgramHaltException>(() => MoneyScreens.Share(t));
+        Assert.Same(e, seen);
+        Assert.Equal(200, e.Code);
+        Assert.Equal(40u, t.Pool[3]);                    // nothing has changed by then
+        Assert.Equal(0, npc.Word(Money.Gold));
+    }
+
+    [Fact]
+    public void The_client_shows_a_halt_then_quits()
+    {
+        using var runner = new ScriptRunner();
+        var memory = new EclMemory();
+        bool quit = false;
+        var player = new ClientPlayer(runner, () => memory) { Quit = () => quit = true };
+        var halt = new ProgramHaltException(200, "test");
+        runner.Start(() => player.Halt(halt));
+        Assert.IsType<KeyRequest>(runner.Pending);       // the message waits for a key
+        Assert.Same(halt, player.Halted);
+        Assert.False(quit);
+        runner.Answer(null);
+        Assert.True(quit);
+        Assert.False(runner.Busy);
+        Assert.Null(runner.Fault);
+    }
+
+    [Fact]
     public void The_shop_starts_with_an_empty_pool_and_switches_members()
     {
         var a = Member("ANNA");

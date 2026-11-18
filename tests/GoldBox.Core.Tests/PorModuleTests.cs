@@ -5,7 +5,7 @@ using GoldBox.Core.Tests.Support;
 using GoldBox.Data.Module;
 using GoldBox.Data.Por;
 using GoldBox.Data.Por.Dosbox;
-using GoldBox.Importer;
+using GoldBox.Data.Module.Por;
 using Xunit.Abstractions;
 
 namespace GoldBox.Core.Tests;
@@ -32,6 +32,57 @@ public class PorModuleTests(ITestOutputHelper output)
         Assert.Equal(1, r.Checked["ITEMS"]);
         foreach (var engine in new[] { "ECL", "GEO", "MONCHA", "MONITM", "MONSPC", "ITEM" })
             Assert.Equal(r.Checked[engine], r.Checked[engine + " (engine)"]);
+        // Art (every block of every art DAX; the pictures as the engine decodes them), the program's tables and
+        // texts, and the shipped saves.
+        Assert.Equal(822, r.Checked["ART"]);
+        Assert.Equal(783, r.Checked["ART (engine)"]);
+        Assert.Equal(1, r.Checked["PROGRAM"]);
+        Assert.Equal(36, r.Checked["SAVE"]);
+    }
+
+    [PorFact]
+    public void The_module_holds_the_program_tables_texts_art_and_saves()
+    {
+        var rep = PorModuleData.Report;
+        Assert.Equal((783, 39, 36), (rep.Pictures, rep.ArtData, rep.Saves));
+        Assert.Equal(PorTextCatalog.Overlay.Count + PorTextCatalog.Image.Count, rep.Texts);
+        var m = PorModuleData.Open();
+        var dir = PorData.Open();
+        Assert.Equal(PorRoundTrip.Describe(dir.Program()!), PorRoundTrip.Describe(m.Program()!));
+        // The tables the engine builds from them.
+        var a = dir.Program()!;
+        var b = m.Program()!;
+        Assert.Equal(a.RandomItemTable(), b.RandomItemTable());
+        Assert.Equal(a.ExperienceTable(), b.ExperienceTable());
+        Assert.Equal(a.AiSteps(), b.AiSteps());
+        Assert.Equal(a.TempleNames(), b.TempleNames());
+        Assert.Equal(Enumerable.Range(1, 255).Select(a.ItemWord), Enumerable.Range(1, 255).Select(b.ItemWord));
+        Assert.Equal(a.CampMenu(), b.CampMenu());
+        Assert.Equal(Enumerable.Range(0, 0x1000).Select(a.NpcPortraitByte), Enumerable.Range(0, 0x1000).Select(b.NpcPortraitByte));
+        // The 3D view's art: symbols, font and every wall set the same from the module.
+        var va = PorViewArt.Load(dir);
+        var vb = PorViewArt.Load(m);
+        Assert.Equal(va.Layout.Start, vb.Layout.Start);
+        Assert.Equal(va.Program.SkyColours, vb.Program.SkyColours);
+        Assert.Equal(va.Program.ExploreCommands, vb.Program.ExploreCommands);
+        byte[] Symbols(PorViewArt v) => [.. Enumerable.Range(0, 256).SelectMany(i => v.Symbols.Tile(i).ToArray())];
+        for (int disk = 1; disk <= 8; disk++)
+            for (int set = 0; set < 64; set++)
+            {
+                va.LoadWallSet(disk, 1, set);
+                vb.LoadWallSet(disk, 1, set);
+                Assert.Equal(va.Walls.Data.ToArray(), vb.Walls.Data.ToArray());
+                Assert.Equal(Symbols(va), Symbols(vb));
+            }
+        Assert.Equal(va.Diagnostics, vb.Diagnostics);
+        IndexedFrame Text(PorViewArt v)
+        {
+            var f = new IndexedFrame(320, 16);
+            v.Font.Draw(f, 0, 0, new string([.. Enumerable.Range(32, 40).Select(c => (char)c)]), 15, 1);
+            v.Font.Draw(f, 0, 8, new string([.. Enumerable.Range(72, 40).Select(c => (char)c)]), 15, 1);
+            return f;
+        }
+        Assert.Equal(Text(va).Pixels.ToArray(), Text(vb).Pixels.ToArray());
     }
 
     [PorFact]
@@ -64,6 +115,9 @@ public class PorModuleTests(ITestOutputHelper output)
         Assert.True(Area(10).NoWrapOffMap);
         Assert.False(Area(24).NoWrapOffMap);
         Assert.Contains("[?]", Area(5).Notes);                    // the hedge maze loads computed maps only
+        // The engine reads the flag from the area: the same squares wrap as under the program's rule.
+        var dir = PorData.Open();
+        Assert.All(Enumerable.Range(0, 30), id => Assert.Equal(dir.NoWrapOffMap(id), m.NoWrapOffMap(id)));
     }
 
     [PorFact]
@@ -124,10 +178,9 @@ public class PorModuleTests(ITestOutputHelper output)
     {
         var dir = PorData.Open();
         var module = PorModuleData.Open();
-        var art = PorViewArt.Load(dir);
         string Run(IPorContent? content)
         {
-            var (g, host, ui) = NewGame(p => PorGame.Enter(dir, art, script, 8, 8, Facing.North, p, 1234, content));
+            var (g, host, ui) = NewGame(p => PorGame.Enter(content ?? dir, PorViewArt.Load(content ?? dir), script, 8, 8, Facing.North, p, 1234));
             return Snapshot(g.Vm, g.Loop.Map, host.Calls.Concat(ui.Calls), g.EntryRun);
         }
         var fromDax = Run(null);
@@ -144,7 +197,7 @@ public class PorModuleTests(ITestOutputHelper output)
             // PorArea (the view check path) also runs from the module.
             var a = PorArea.Enter(dir, PorViewArt.Load(dir), script, 8, 8, Facing.North);
             var areaCounting = new CountingContent(module);
-            var b = PorArea.Enter(dir, PorViewArt.Load(dir), script, 8, 8, Facing.North, areaCounting);
+            var b = PorArea.Enter(areaCounting, PorViewArt.Load(module), script, 8, 8, Facing.North);
             Assert.True(areaCounting[nameof(IPorContent.LoadBlock)] > 0 && areaCounting[nameof(IPorContent.LoadMap)] > 0);
             Assert.Equal((a.Map.Id, a.SkyIndex, a.SkyAltIndex, a.EntryRun), (b.Map.Id, b.SkyIndex, b.SkyAltIndex, b.EntryRun));
             Assert.Equal(a.Map.PlanesArray, b.Map.PlanesArray);
@@ -167,7 +220,9 @@ public class PorModuleTests(ITestOutputHelper output)
         ];
         List<string> Run(IPorContent? content)
         {
-            var (g, host, ui) = NewGame(p => PorGame.FromSave(dir, PorViewArt.Load(dir), dir.Find(save)!, p, 99, content));
+            // The module run reads the save from the module's saves/ folder: nothing from the game folder.
+            var path = content is null ? dir.Find(save)! : Path.Combine(content.SaveFolder!, save);
+            var (g, host, ui) = NewGame(p => PorGame.FromSave(content ?? dir, PorViewArt.Load(content ?? dir), path, p, 99));
             var states = new List<string> { Snapshot(g.Vm, g.Loop.Map, host.Calls.Concat(ui.Calls), g.EntryRun) };
             foreach (var c in commands)
             {
@@ -210,7 +265,7 @@ public class PorModuleTests(ITestOutputHelper output)
     {
         var s = PorGoldenCaptures.Find(name)!;
         var a = new EclCaptureComparer(Captures.Dir!, PorData.Open()).Compare(s);
-        var b = new EclCaptureComparer(Captures.Dir!, PorData.Open(), PorModuleData.Open()).Compare(s);
+        var b = new EclCaptureComparer(Captures.Dir!, PorModuleData.Open()).Compare(s);
         Assert.Equal(a.ToString(), b.ToString());
         Assert.Equal(a.Outcome, b.Outcome);
         Assert.Equal(a.Divergences, b.Divergences);
@@ -223,7 +278,7 @@ public class PorModuleTests(ITestOutputHelper output)
     public void Golden_captures_read_scripts_maps_and_monsters_from_the_module()
     {
         var counting = new CountingContent(PorModuleData.Open());
-        var cmp = new EclCaptureComparer(Captures.Dir!, PorData.Open(), counting);
+        var cmp = new EclCaptureComparer(Captures.Dir!, counting);
         foreach (var s in PorGoldenCaptures.All)
             cmp.Compare(s);
         output.WriteLine(string.Join(", ", counting.Calls.Select(kv => $"{kv.Key} {kv.Value}")));

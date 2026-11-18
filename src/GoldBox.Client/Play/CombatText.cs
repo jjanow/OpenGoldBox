@@ -44,112 +44,112 @@ public enum CombatMsg
 /// </summary>
 public sealed class CombatText
 {
-    private static readonly Dictionary<CombatMsg, (int Offset, string Ours)> Table = new()
+    private static readonly Dictionary<CombatMsg, string> Table = new()
     {
-        [CombatMsg.MenuMove] = (0x9E00, "MOVE "),
-        [CombatMsg.MenuViewAim] = (0x9E06, "VIEW AIM "),
-        [CombatMsg.MenuUse] = (0x9E10, "USE "),
-        [CombatMsg.MenuCast] = (0x9E15, "CAST "),
-        [CombatMsg.MenuTurn] = (0x9E1B, "TURN "),
-        [CombatMsg.MenuQuickDone] = (0x9E21, "QUICK DONE"),
-        [CombatMsg.MagicOn] = (0x9AFC, "AUTO MAGIC ON"),
-        [CombatMsg.MagicOff] = (0x9B05, "AUTO MAGIC OFF"),
-        [CombatMsg.DoesNotWork] = (0x9B0F, "NOT ALLOWED"),
-        [CombatMsg.TeammateDying] = (0xA05F, "A PARTY MEMBER IS DYING"),
-        [CombatMsg.ContinueBattle] = (0xA076, "FIGHT ON:"),
-        [CombatMsg.MoveLeft] = (0xA1BB, "MOVE, MOVES LEFT: "),
-        [CombatMsg.Flee] = (0xA1D8, "RUN AWAY:"),
-        [CombatMsg.Blocked] = (0xA1DE, "CAN'T GO THERE"),
-        [CombatMsg.NotWithThatWeapon] = (0xA537, "NOT WITH THIS WEAPON"),
-        [CombatMsg.DoneGuard] = (0xA605, "GUARD "),
-        [CombatMsg.DoneDelayQuit] = (0xA60C, "DELAY QUIT "),
-        [CombatMsg.DoneBandage] = (0xA618, "BANDAGE "),
-        [CombatMsg.DoneSpeedExit] = (0xA621, "SPEED EXIT"),
-        [CombatMsg.IsBandaged] = (0xA7FA, "IS BANDAGED"),
-        [CombatMsg.GameSpeed] = (0xA8D6, "SPEED ("),
-        [CombatMsg.Slower] = (0xA8E8, "SLOWER "),
-        [CombatMsg.Faster] = (0xA8F0, "FASTER "),
-        [CombatMsg.SpeedExit] = (0xA8F8, "EXIT"),
-        [CombatMsg.Backstabs] = (0x12A2D, "-BACKSTAB-"),
-        [CombatMsg.SlaysHelpless] = (0x12A39, "KILLS THE HELPLESS"),
-        [CombatMsg.Attacks] = (0x12A48, "ATTACKS"),
-        [CombatMsg.FromBehind] = (0x12A50, "(BEHIND) "),
-        [CombatMsg.HittingFor] = (0x12A73, "HITS FOR "),
-        [CombatMsg.Point] = (0x12A80, " HP "),
-        [CombatMsg.Points] = (0x12A88, " HP "),
-        [CombatMsg.OfDamage] = (0x12A91, "DAMAGE"),
-        [CombatMsg.AndMisses] = (0x12A9B, "MISSES"),
-        [CombatMsg.LostSpell] = (0x12AA6, "SPELL LOST"),
-        [CombatMsg.GoesDown] = (0x12AB3, "FALLS"),
-        [CombatMsg.AndIsDying] = (0x12ABD, "FALLS, DYING"),
-        [CombatMsg.IsKilled] = (0x12AEA, "IS DEAD"),
-        [CombatMsg.GotAway] = (0x1344A, "ESCAPED"),
-        [CombatMsg.EscapeBlocked] = (0x13453, "CAN'T ESCAPE"),
-        [CombatMsg.Sweeps] = (0x13676, "SWEEPS"),
-        [CombatMsg.TurnsUndead] = (0x1392B, "TURNS UNDEAD"),
-        [CombatMsg.IsTurned] = (0x1393B, "IS TURNED"),
-        [CombatMsg.IsDestroyed] = (0x13945, "IS DESTROYED"),
-        [CombatMsg.NothingHappens] = (0x13952, "NO EFFECT"),
-        [CombatMsg.CampOnlySpell] = (0x14BF0, "NOT IN A FIGHT"),
-        [CombatMsg.BeginsCasting] = (0x14C00, "STARTS A SPELL"),
-        [CombatMsg.AttackAlly] = (0x15185, "HIT A FRIEND: "),
-        [CombatMsg.Range] = (0x15264, "DISTANCE "),
-        [CombatMsg.Target] = (0x15270, "TARGET "),
-        [CombatMsg.AimNextPrevManual] = (0x15278, "NEXT PREV MANUAL "),
-        [CombatMsg.AimCenterExit] = (0x1528A, "CENTER EXIT"),
-        [CombatMsg.AimPrompt] = (0x15296, "AIMING:"),
-        [CombatMsg.UseCursorKeys] = (0x155E2, "(MOVE THE CURSOR) "),
-        [CombatMsg.Casts] = (0x27C16, "CASTS"),
-        [CombatMsg.YesNo] = (0x2D979, "YES NO"),
-        [CombatMsg.AlreadyTargeted] = (0x148A8, "PICKED ALREADY"),
-        [CombatMsg.AbortSpell] = (0x27C1C, "GIVE UP THE SPELL? "),
-        [CombatMsg.SpellAborted] = (0x27C2A, "SPELL GIVEN UP"),
-        [CombatMsg.ViewItems] = (0x21AA6, "ITEMS "),
-        [CombatMsg.ViewSpells] = (0x21AAD, "SPELLS "),
-        [CombatMsg.ViewTrade] = (0x21AB5, "TRADE "),
-        [CombatMsg.ViewDrop] = (0x21ABC, "DROP "),
-        [CombatMsg.ViewExit] = (0x21AC2, "EXIT"),
-        [CombatMsg.ViewPrompt] = (0x21AC7, "VIEW:"),
-        [CombatMsg.ItemsReady] = (0x21EBD, "READY"),
-        [CombatMsg.ItemsUse] = (0x21EC3, " USE"),
-        [CombatMsg.ItemsTrade] = (0x21EC8, " TRADE"),
-        [CombatMsg.ItemsDrop] = (0x21ECF, " DROP"),
-        [CombatMsg.ItemsHalve] = (0x21ED5, " HALVE"),
-        [CombatMsg.ItemsJoin] = (0x21EDC, " JOIN"),
-        [CombatMsg.ItemsSell] = (0x21EE2, " SELL"),
-        [CombatMsg.ItemsId] = (0x21EE8, " ID"),
-        [CombatMsg.ItemsTitle] = (0x21EEC, "ITEMS"),
-        [CombatMsg.ItemsHeading] = (0x21EF2, "READY ITEM"),
-        [CombatMsg.MustBeReadied] = (0x21EFD, "READY IT FIRST"),
-        [CombatMsg.Your] = (0x21F0D, "THE "),
-        [CombatMsg.GoneForever] = (0x21F13, "WILL BE LOST"),
-        [CombatMsg.DropIt] = (0x21F28, "DROP: "),
-        [CombatMsg.MustBeUnreadied] = (0x21D5A, "UNREADY IT FIRST"),
-        [CombatMsg.ScribeWarning] = (0x21D6C, " WANTED TO COPY THIS SCROLL"),
-        [CombatMsg.OkayToLose] = (0x21D92, "LOSE IT? "),
-        [CombatMsg.Cursed] = (0x224CE, "CURSED"),
-        [CombatMsg.WrongClass] = (0x224DA, "NOT FOR THIS CLASS"),
-        [CombatMsg.AlreadyUsing] = (0x224E6, "IN USE: "),
-        [CombatMsg.HandsFull] = (0x224F5, "NO FREE HAND"),
-        [CombatMsg.CannotHalve] = (0x22816, "CAN'T SPLIT"),
-        [CombatMsg.UsesAnItem] = (0x22AB1, "USES AN ITEM"),
-        [CombatMsg.ItemLabel] = (0x22ABE, "ITEM:"),
-        [CombatMsg.SelectCoin] = (0x234B2, "WHICH COINS"),
-        [CombatMsg.HowMuch] = (0x234C7, "HOW MANY "),
-        [CombatMsg.WillYouDrop] = (0x234D1, "TO DROP? "),
-        [CombatMsg.FleesInPanic] = (0xABC0, "RUNS IN FEAR"),
-        [CombatMsg.AiMagicOn] = (0xBB6E, "MAGIC ON"),
-        [CombatMsg.AiMagicOff] = (0xBB77, "MAGIC OFF"),
-        [CombatMsg.ForcedToFlee] = (0xBC7A, "MUST RUN"),
-        [CombatMsg.Surrenders] = (0xBC8C, "GIVES UP"),
+        [CombatMsg.MenuMove] = "MOVE ",
+        [CombatMsg.MenuViewAim] = "VIEW AIM ",
+        [CombatMsg.MenuUse] = "USE ",
+        [CombatMsg.MenuCast] = "CAST ",
+        [CombatMsg.MenuTurn] = "TURN ",
+        [CombatMsg.MenuQuickDone] = "QUICK DONE",
+        [CombatMsg.MagicOn] = "AUTO MAGIC ON",
+        [CombatMsg.MagicOff] = "AUTO MAGIC OFF",
+        [CombatMsg.DoesNotWork] = "NOT ALLOWED",
+        [CombatMsg.TeammateDying] = "A PARTY MEMBER IS DYING",
+        [CombatMsg.ContinueBattle] = "FIGHT ON:",
+        [CombatMsg.MoveLeft] = "MOVE, MOVES LEFT: ",
+        [CombatMsg.Flee] = "RUN AWAY:",
+        [CombatMsg.Blocked] = "CAN'T GO THERE",
+        [CombatMsg.NotWithThatWeapon] = "NOT WITH THIS WEAPON",
+        [CombatMsg.DoneGuard] = "GUARD ",
+        [CombatMsg.DoneDelayQuit] = "DELAY QUIT ",
+        [CombatMsg.DoneBandage] = "BANDAGE ",
+        [CombatMsg.DoneSpeedExit] = "SPEED EXIT",
+        [CombatMsg.IsBandaged] = "IS BANDAGED",
+        [CombatMsg.GameSpeed] = "SPEED (",
+        [CombatMsg.Slower] = "SLOWER ",
+        [CombatMsg.Faster] = "FASTER ",
+        [CombatMsg.SpeedExit] = "EXIT",
+        [CombatMsg.Backstabs] = "-BACKSTAB-",
+        [CombatMsg.SlaysHelpless] = "KILLS THE HELPLESS",
+        [CombatMsg.Attacks] = "ATTACKS",
+        [CombatMsg.FromBehind] = "(BEHIND) ",
+        [CombatMsg.HittingFor] = "HITS FOR ",
+        [CombatMsg.Point] = " HP ",
+        [CombatMsg.Points] = " HP ",
+        [CombatMsg.OfDamage] = "DAMAGE",
+        [CombatMsg.AndMisses] = "MISSES",
+        [CombatMsg.LostSpell] = "SPELL LOST",
+        [CombatMsg.GoesDown] = "FALLS",
+        [CombatMsg.AndIsDying] = "FALLS, DYING",
+        [CombatMsg.IsKilled] = "IS DEAD",
+        [CombatMsg.GotAway] = "ESCAPED",
+        [CombatMsg.EscapeBlocked] = "CAN'T ESCAPE",
+        [CombatMsg.Sweeps] = "SWEEPS",
+        [CombatMsg.TurnsUndead] = "TURNS UNDEAD",
+        [CombatMsg.IsTurned] = "IS TURNED",
+        [CombatMsg.IsDestroyed] = "IS DESTROYED",
+        [CombatMsg.NothingHappens] = "NO EFFECT",
+        [CombatMsg.CampOnlySpell] = "NOT IN A FIGHT",
+        [CombatMsg.BeginsCasting] = "STARTS A SPELL",
+        [CombatMsg.AttackAlly] = "HIT A FRIEND: ",
+        [CombatMsg.Range] = "DISTANCE ",
+        [CombatMsg.Target] = "TARGET ",
+        [CombatMsg.AimNextPrevManual] = "NEXT PREV MANUAL ",
+        [CombatMsg.AimCenterExit] = "CENTER EXIT",
+        [CombatMsg.AimPrompt] = "AIMING:",
+        [CombatMsg.UseCursorKeys] = "(MOVE THE CURSOR) ",
+        [CombatMsg.Casts] = "CASTS",
+        [CombatMsg.YesNo] = "YES NO",
+        [CombatMsg.AlreadyTargeted] = "PICKED ALREADY",
+        [CombatMsg.AbortSpell] = "GIVE UP THE SPELL? ",
+        [CombatMsg.SpellAborted] = "SPELL GIVEN UP",
+        [CombatMsg.ViewItems] = "ITEMS ",
+        [CombatMsg.ViewSpells] = "SPELLS ",
+        [CombatMsg.ViewTrade] = "TRADE ",
+        [CombatMsg.ViewDrop] = "DROP ",
+        [CombatMsg.ViewExit] = "EXIT",
+        [CombatMsg.ViewPrompt] = "VIEW:",
+        [CombatMsg.ItemsReady] = "READY",
+        [CombatMsg.ItemsUse] = " USE",
+        [CombatMsg.ItemsTrade] = " TRADE",
+        [CombatMsg.ItemsDrop] = " DROP",
+        [CombatMsg.ItemsHalve] = " HALVE",
+        [CombatMsg.ItemsJoin] = " JOIN",
+        [CombatMsg.ItemsSell] = " SELL",
+        [CombatMsg.ItemsId] = " ID",
+        [CombatMsg.ItemsTitle] = "ITEMS",
+        [CombatMsg.ItemsHeading] = "READY ITEM",
+        [CombatMsg.MustBeReadied] = "READY IT FIRST",
+        [CombatMsg.Your] = "THE ",
+        [CombatMsg.GoneForever] = "WILL BE LOST",
+        [CombatMsg.DropIt] = "DROP: ",
+        [CombatMsg.MustBeUnreadied] = "UNREADY IT FIRST",
+        [CombatMsg.ScribeWarning] = " WANTED TO COPY THIS SCROLL",
+        [CombatMsg.OkayToLose] = "LOSE IT? ",
+        [CombatMsg.Cursed] = "CURSED",
+        [CombatMsg.WrongClass] = "NOT FOR THIS CLASS",
+        [CombatMsg.AlreadyUsing] = "IN USE: ",
+        [CombatMsg.HandsFull] = "NO FREE HAND",
+        [CombatMsg.CannotHalve] = "CAN'T SPLIT",
+        [CombatMsg.UsesAnItem] = "USES AN ITEM",
+        [CombatMsg.ItemLabel] = "ITEM:",
+        [CombatMsg.SelectCoin] = "WHICH COINS",
+        [CombatMsg.HowMuch] = "HOW MANY ",
+        [CombatMsg.WillYouDrop] = "TO DROP? ",
+        [CombatMsg.FleesInPanic] = "RUNS IN FEAR",
+        [CombatMsg.AiMagicOn] = "MAGIC ON",
+        [CombatMsg.AiMagicOff] = "MAGIC OFF",
+        [CombatMsg.ForcedToFlee] = "MUST RUN",
+        [CombatMsg.Surrenders] = "GIVES UP",
     };
 
     /// <summary>START.EXE strings (offsets in the unpacked image, PorProgram.Image), read before the status panel 0x1583.</summary>
-    private static readonly Dictionary<CombatMsg, (int Offset, string Ours)> StartTable = new()
+    private static readonly Dictionary<CombatMsg, string> StartTable = new()
     {
-        [CombatMsg.PanelHitpoints] = (0x156B, "HP"),
-        [CombatMsg.PanelAc] = (0x1575, "AC"),
-        [CombatMsg.PanelHelpless] = (0x1578, "(HELPLESS)"),
+        [CombatMsg.PanelHitpoints] = "HP",
+        [CombatMsg.PanelAc] = "AC",
+        [CombatMsg.PanelHelpless] = "(HELPLESS)",
     };
 
     private readonly Dictionary<CombatMsg, string> _texts = [];
@@ -159,28 +159,13 @@ public sealed class CombatText
     {
     }
 
-    public CombatText(PorProgram? program)
+    public CombatText(PorProgramData? program)
     {
-        if (program?.Overlay is not { Length: GameText.V13OverlaySize })
+        if (program is null)
             return;
-        foreach (var (id, (offset, _)) in Table)
-            if (program.OverlayString(offset) is { } s)
+        foreach (var id in Table.Keys.Concat(StartTable.Keys))
+            if (program.Text("CombatMsg." + id) is { } s)
                 _texts[id] = s;
-        foreach (var (id, (offset, _)) in StartTable)
-            if (ImageString(program.Image, offset) is { } s)
-                _texts[id] = s;
-    }
-
-    /// <summary>A Pascal string of printable characters at an offset of the unpacked START.EXE image, or null.</summary>
-    private static string? ImageString(byte[] image, int offset)
-    {
-        if (offset < 0 || offset >= image.Length)
-            return null;
-        int n = image[offset];
-        if (n == 0 || offset + 1 + n > image.Length)
-            return null;
-        var b = image.AsSpan(offset + 1, n);
-        return b.IndexOfAnyExceptInRange((byte)0x20, (byte)0x7E) >= 0 ? null : System.Text.Encoding.Latin1.GetString(b);
     }
 
     /// <summary>How many of the texts came from the game files.</summary>
@@ -188,23 +173,16 @@ public sealed class CombatText
 
     /// <summary>The text, upper case as the font draws it (spaces kept: the program's strings carry their own).</summary>
     public string this[CombatMsg id] =>
-        (_texts.TryGetValue(id, out var s) ? s : Table.TryGetValue(id, out var t) ? t.Ours : StartTable[id].Ours).ToUpperInvariant();
+        (_texts.TryGetValue(id, out var s) ? s : Table.TryGetValue(id, out var t) ? t : StartTable[id]).ToUpperInvariant();
 
     /// <summary>The words of a menu text ("VIEW AIM " → VIEW, AIM): the program builds its menu lines from these.</summary>
     public IReadOnlyList<string> Words(CombatMsg id) => this[id].Split(' ', StringSplitOptions.RemoveEmptyEntries);
 }
 
-/// <summary>
-/// The spell names from the player's START.EXE: an array of fixed-size Pascal strings found by its shape (the first
-/// run of at least <see cref="MinRun"/> consecutive names with one stride in the unpacked image). [?] The table's
-/// address is not read from the code: the run with the widest entries is taken, starting at spell 1 (Lee's spell numbering; spell 21 is the
-/// one FightSpellsTests casts as Sleep).
-/// </summary>
+/// <summary>The spell names from the player's START.EXE (<see cref="PorSpellNames"/>), 1-based.</summary>
 public sealed class SpellNames
 {
-    public const int MinRun = 50;
-
-    private readonly List<string> _names = [];
+    private readonly IReadOnlyList<string> _names = [];
 
     public int Count => _names.Count;
 
@@ -215,40 +193,8 @@ public sealed class SpellNames
     {
     }
 
-    public SpellNames(byte[] image)
-    {
-        // The run with the widest entries (the item-name words and the item kinds form runs with narrower ones).
-        int best = 0, bestO = 0, bestS = 0;
-        for (int stride = 12; stride <= 48; stride++)
-            for (int o = 0; o + stride * MinRun < image.Length; o++)
-            {
-                int n = Run(image, o, stride);
-                if (n >= MinRun && stride >= bestS)
-                    (best, bestO, bestS) = (n, o, stride);
-                if (n >= MinRun)
-                    o += (n - 1) * stride;
-            }
-        if (best < MinRun)
-            return;
-        for (int k = 0; k < best; k++)
-            _names.Add(System.Text.Encoding.Latin1.GetString(image, bestO + k * bestS + 1, image[bestO + k * bestS]));
-    }
+    public SpellNames(IReadOnlyList<string>? names) => _names = names ?? [];
 
-    private static int Run(byte[] b, int o, int stride)
-    {
-        int n = 0;
-        for (int p = o; p + stride <= b.Length; p += stride, n++)
-        {
-            int len = b[p];
-            if (len < 3 || len >= stride || !char.IsAsciiLetterUpper((char)b[p + 1]))
-                return n;
-            for (int i = 1; i <= len; i++)
-            {
-                byte c = b[p + i];
-                if (!(char.IsAsciiLetter((char)c) || c is (byte)' ' or (byte)'\'' or (byte)',' or (byte)'-' || char.IsAsciiDigit((char)c)))
-                    return n;
-            }
-        }
-        return n;
-    }
+    /// <summary>Scans the unpacked START.EXE image.</summary>
+    public SpellNames(byte[] image) => _names = PorSpellNames.Scan(image);
 }

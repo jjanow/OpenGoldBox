@@ -34,8 +34,11 @@ public sealed class PorProgram
         return new PorProgram(File.ReadAllBytes(exe), ovr is null ? null : File.ReadAllBytes(ovr));
     }
 
+    /// <summary>The data segment from DS:0000 to the end of the load image.</summary>
+    public ReadOnlySpan<byte> Ds => Image.AsSpan(DataSegment);
+
     /// <summary>A little-endian word at data-segment offset <paramref name="ds"/>.</summary>
-    public ushort Word(int ds) => BinaryPrimitives.ReadUInt16LittleEndian(Image.AsSpan(DataSegment + ds));
+    public ushort Word(int ds) => PorDsTables.Word(Ds, ds);
 
     /// <summary>
     /// DS offset of the random item array base (v1.3: 0x0970): the immediate of the generator's
@@ -77,17 +80,12 @@ public sealed class PorProgram
     /// <summary>The AI's step pattern table: <paramref name="count"/> bytes from <see cref="AiStepOffsetsBase"/>
     /// (index 5 × row + attempt, rows 1–6, attempts 1–5; the program can also read attempt 6), or null.</summary>
     public byte[]? AiStepOffsets(int count = 40) =>
-        AiStepOffsetsBase() is { } b ? Image.AsSpan(DataSegment + b, count).ToArray() : null;
+        AiStepOffsetsBase() is { } b ? PorDsTables.Bytes(Ds, b, count) : null;
 
     /// <summary>The words of the random item array from its base, as the item maker indexes them, or null.</summary>
     public ushort[]? RandomItemTable(int words = Core.Game.TreasureMaker.TableWords)
     {
-        if (RandomItemBase() is not { } b)
-            return null;
-        var t = new ushort[words];
-        for (int k = 0; k < words; k++)
-            t[k] = Word(b + 2 * k);
-        return t;
+        return RandomItemBase() is { } b ? PorDsTables.Words(Ds, b, words) : null;
     }
 
     /// <summary>
@@ -110,9 +108,7 @@ public sealed class PorProgram
     /// <summary>The turn-undead table's bytes from its base (<see cref="TurnUndeadBase"/>), or null.</summary>
     public Core.Game.TurnUndeadTable? TurnUndeadTable()
     {
-        if (TurnUndeadBase() is not { } b || DataSegment + b + Core.Game.TurnUndeadTable.Length > Image.Length)
-            return null;
-        return new Core.Game.TurnUndeadTable(Image.AsSpan(DataSegment + b, Core.Game.TurnUndeadTable.Length).ToArray());
+        return TurnUndeadBase() is { } b ? PorDsTables.TurnUndead(Ds, b) : null;
     }
 
     /// <summary>
@@ -153,29 +149,15 @@ public sealed class PorProgram
     /// </summary>
     public byte? NpcPortraitByte(int ds)
     {
-        if (NpcPortraitBases() is not { } t || t.Head != 0x08C7 ||
-            !t.Bodies.Order().SequenceEqual([0x08D7, 0x08E1, 0x08EB, 0x08F5]))
+        if (NpcPortraitBases() is not { } t || !PorDsTables.IsV13NpcPortraits(t.Head, t.Bodies))
             return null;
-        return ds >= 0 && DataSegment + ds < Image.Length ? Image[DataSegment + ds] : null;
+        return PorDsTables.Byte(Ds, ds);
     }
 
     // ---- Text tables (found through the code that indexes them; nothing is stored in our code) --------------------
 
     /// <summary>A Pascal string of at most <paramref name="max"/> printable characters at DS:<paramref name="ds"/>, or null.</summary>
-    public string? PascalString(int ds, int max = 255)
-    {
-        int o = DataSegment + ds;
-        if (o < 0 || o >= Image.Length)
-            return null;
-        int n = Image[o];
-        if (n > max || o + 1 + n > Image.Length)
-            return null;
-        var b = Image.AsSpan(o + 1, n);
-        foreach (var c in b)
-            if (c < 0x20 || c > 0x7E)
-                return null;
-        return System.Text.Encoding.Latin1.GetString(b);
-    }
+    public string? PascalString(int ds, int max = 255) => PorDsTables.PascalString(Ds, ds, max);
 
     /// <summary>
     /// A Pascal string of at least one printable character at GAME.OVR file offset <paramref name="offset"/> (the
@@ -225,7 +207,11 @@ public sealed class PorProgram
     /// Item name word <paramref name="w"/> (1..255) from the program's word array (string[20], indexed DS:base + 21·w;
     /// docs/re/item-format.md), or null (word 0, or the table not found).
     /// </summary>
-    public string? ItemWord(int w)
+    public string? ItemWord(int w) => ItemWordsBase() is { } wb ? PorDsTables.ItemWord(Ds, wb, w) : null;
+
+    /// <summary>DS base of the item name word array (the string[20] array, stride 21, with at least 250 of its 255
+    /// words readable), or null.</summary>
+    public int? ItemWordsBase()
     {
         if (!_wordsRead)
         {
@@ -243,28 +229,21 @@ public sealed class PorProgram
                 }
             }
         }
-        if (w is < 1 or > 255 || _wordsBase is not { } wb)
-            return null;
-        return PascalString(wb + 21 * w, 20);
+        return _wordsBase;
     }
 
     /// <summary>
     /// The temple's heal list (GAME.OVR 0x4F4E: names DS:base + 41·k, k = 1..10, the 10th leaves): the string[40]
     /// array indexed with stride 41 that holds exactly ten names. Null when not found.
     /// </summary>
-    public IReadOnlyList<string>? TempleNames()
+    public IReadOnlyList<string>? TempleNames() => TempleNamesBase() is { } b ? PorDsTables.TempleNames(Ds, b) : null;
+
+    /// <summary>DS base of the temple's heal list (the first stride-41 string array holding exactly ten names), or null.</summary>
+    public int? TempleNamesBase()
     {
         foreach (var b in StringArrayBases(41))
-        {
-            var names = new List<string>();
-            for (int k = 1; k <= 11; k++)
-                if (PascalString(b + 41 * k, 40) is { Length: > 0 } s)
-                    names.Add(s);
-                else
-                    break;
-            if (names.Count == 10)
-                return names;
-        }
+            if (PorDsTables.TempleNames(Ds, b) is not null)
+                return b;
         return null;
     }
 
@@ -273,7 +252,10 @@ public sealed class PorProgram
     /// (<c>mov di,imm / push ds / push di</c> followed by the menu colours 13, 10, 15) after setting DS:49F3 = 2. Null
     /// when not found.
     /// </summary>
-    public string? CampMenu()
+    public string? CampMenu() => CampMenuDs() is { } ds ? PascalString(ds) : null;
+
+    /// <summary>DS offset of the camp menu line (see <see cref="CampMenu"/>), or null.</summary>
+    public int? CampMenuDs()
     {
         if (Overlay is null)
             return null;
@@ -285,7 +267,7 @@ public sealed class PorProgram
             var window = o.Slice(i, Math.Min(0xC0, o.Length - i));
             int t = window.IndexOf(tail);
             if (t >= 3 && window[t - 3] == 0xBF)
-                return PascalString(BinaryPrimitives.ReadUInt16LittleEndian(window[(t - 2)..]));
+                return BinaryPrimitives.ReadUInt16LittleEndian(window[(t - 2)..]);
             int next = o[(i + 1)..].IndexOf(camp);
             i = next < 0 ? -1 : i + 1 + next;
         }

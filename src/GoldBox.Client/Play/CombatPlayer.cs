@@ -8,14 +8,14 @@ namespace GoldBox.Client.Play;
 public sealed record CombatMoveRequest(int MovementLeft) : PlayerRequest;
 
 /// <summary>
-/// The manual aim cursor (0x155F5): the player moves a cursor over the squares and picks one. The answer is the square
-/// as (int X, int Y), or null (Exit / Escape).
+/// One pass of the manual aim cursor (0x155F5, <see cref="FightMenu.Manual"/>): the cursor square as Core computed it
+/// (<see cref="ManualView"/>). The answer is a <see cref="ManualInput"/> (a direction, Center, Target or Exit), or a
+/// <see cref="CursorWalk"/> (a click on another square).
 /// </summary>
-public sealed record CombatCursorRequest(int Range) : PlayerRequest
-{
-    /// <summary>Attack mode (the menu's Aim); false for a spell's aim, where the caster itself may be picked.</summary>
-    public bool Attack { get; init; } = true;
-}
+public sealed record CombatCursorRequest(ManualView View) : PlayerRequest;
+
+/// <summary>A click on a square while the manual cursor is up: the cursor walks there one square per pass.</summary>
+public sealed record CursorWalk(int X, int Y);
 
 /// <summary>A creature picked with the mouse on the map while the aim menu is up (answers that menu's request).</summary>
 public sealed record AimPick(int X, int Y);
@@ -127,11 +127,12 @@ public sealed partial class CombatChooser(Func<PlayerRequest, object?> ask, Comb
     /// <summary>Pauses (the attack messages, a step, a turn change); false in tests.</summary>
     public bool Pauses { get; set; } = true;
 
-    /// <summary>The creature the manual cursor picked: the aim menu steps to it (Next) and targets it.</summary>
+    /// <summary>The creature a click on the map picked while the aim menu is up: the aim menu steps to it (Next).</summary>
     private EclCharacter? _goal;
     private int _goalSteps;
-    /// <summary>Target the goal once reached (the manual cursor's Target); false: only show it (a mouse click on it).</summary>
-    private bool _goalTarget;
+    /// <summary>The square a click sent the manual cursor to (it walks there one square per pass).</summary>
+    private (int X, int Y)? _cursorGoal;
+    private int _cursorSteps;
 
     // ---- Wiring --------------------------------------------------------------------------------------------------
 
@@ -176,6 +177,8 @@ public sealed partial class CombatChooser(Func<PlayerRequest, object?> ask, Comb
             ai.Message = null;
         _menu = null;
         _announced = null;
+        _goal = null;
+        _cursorGoal = null;
         View.Clear();
     }
 
@@ -423,16 +426,11 @@ public sealed partial class CombatChooser(Func<PlayerRequest, object?> ask, Comb
     public AimKey ChooseAim(FightMenu menu, AimView aim)
     {
         var c = aim.Candidate;
-        // A creature the manual cursor or a click picked: step through the candidates to it, then (the cursor's
-        // Target) Target when offered, or (a click) show it.
+        // A creature a click picked: step through the candidates to it, then show it.
         if (_goal is { } goal)
         {
             if (ReferenceEquals(c, goal))
-            {
                 _goal = null;
-                if (_goalTarget && aim.TargetOffered)
-                    return AimKey.Target;
-            }
             else if (++_goalSteps <= 256)
                 return AimKey.Next;
             else
@@ -452,7 +450,7 @@ public sealed partial class CombatChooser(Func<PlayerRequest, object?> ask, Comb
             var words = new List<string>(Text.Words(CombatMsg.AimNextPrevManual));
             if (words.Count < 3)
                 words = ["NEXT", "PREV", "MANUAL"];
-            var keys = new List<object> { AimKey.Next, AimKey.Prev, "manual" };
+            var keys = new List<object> { AimKey.Next, AimKey.Prev, AimKey.Manual };
             if (aim.TargetOffered)
             {
                 words.Add(Text[CombatMsg.Target].Trim());
@@ -479,27 +477,12 @@ public sealed partial class CombatChooser(Func<PlayerRequest, object?> ask, Comb
                     if (Square(c) is { } sq)
                         View.Center(sq.X, sq.Y);
                     continue;
-                case "manual":
-                    if (Manual(menu, aim.Range, aim.Attack) is { } goal2)
-                    {
-                        if (ReferenceEquals(goal2, c))
-                        {
-                            if (aim.TargetOffered)
-                                return AimKey.Target;
-                        }
-                        else
-                            return StepTo(goal2, true);
-                    }
-                    View.Shown = c;
-                    View.Cursor = Square(c);
-                    View.StatusLine = Text[CombatMsg.Range] + aim.Distance.ToString(CultureInfo.InvariantCulture);
-                    continue;
                 case AimPick ap:
                     // A click on the creature shown targets it (when offered); on another creature, shows that one.
                     if (View.Fight?.Map?.At(ap.X, ap.Y) is { } picked)
                     {
                         if (!ReferenceEquals(picked, c))
-                            return StepTo(picked, false);
+                            return StepTo(picked);
                         if (aim.TargetOffered)
                             return AimKey.Target;
                     }
@@ -508,29 +491,67 @@ public sealed partial class CombatChooser(Func<PlayerRequest, object?> ask, Comb
         }
     }
 
-    private AimKey StepTo(EclCharacter goal, bool target)
+    private AimKey StepTo(EclCharacter goal)
     {
         _goal = goal;
         _goalSteps = 0;
-        _goalTarget = target;
         return AimKey.Next;
     }
 
     /// <summary>
-    /// Manual (0x155F5): the cursor starts on the aiming creature; the answer is the creature on the square picked.
-    /// [?] The Core model aims only at its candidate list (combat-menu.md): a square with no creature, or one the list
-    /// lacks, gives nothing, and the chosen creature is reached by stepping the list (each step runs the target check,
-    /// which the program's Manual runs only on the chosen square).
+    /// Manual (0x155F5), one pass per cursor square (<see cref="FightMenu.Manual"/>): Core moves the cursor, finds the
+    /// creature under it and whether Target is offered; the screen shows it (the panel: the creature under the cursor,
+    /// row 23: "Range = n" in attack mode when the line got through) and answers with a key. Return / T, E / Escape
+    /// end Manual whether or not Target is offered, as in the program. A click on another square (our input mapping
+    /// for the mouse) walks the cursor there one square per pass, each pass answered here as the arrow key would be,
+    /// so the program's per-square work (the target check) runs on the squares a keyboard player would cross [?].
     /// </summary>
-    private EclCharacter? Manual(FightMenu menu, int range, bool attack)
+    public ManualInput ChooseManual(FightMenu menu, ManualView view)
     {
         View.Mode = CombatMode.Manual;
-        var start = Square(menu.Creature) ?? (View.ViewX + 3, View.ViewY + 3);
-        View.Cursor = start;
-        var r = ask(new CombatCursorRequest(range) { Attack = attack });
-        View.Mode = CombatMode.Aim;
-        if (r is ValueTuple<int, int> sq && View.Fight?.Map?.At(sq.Item1, sq.Item2) is { } c && (!attack || !ReferenceEquals(c, menu.Creature)))
-            return c;
+        View.Current = menu.Creature;
+        View.Shown = view.Creature;
+        View.Messages.Clear();
+        View.Cursor = (view.X, view.Y);
+        View.Follow(view.X, view.Y);
+        View.StatusLine = view.Attack && view.LineReached
+            ? Text[CombatMsg.Range] + view.Distance.ToString(CultureInfo.InvariantCulture)
+            : null;
+        if (_cursorGoal is { } g)
+        {
+            if (++_cursorSteps <= CombatArena.Width && StepToward((view.X, view.Y), g) is { } d)
+                return new ManualInput(d);
+            _cursorGoal = null;
+        }
+        while (true)
+        {
+            var r = ask(new CombatCursorRequest(view));
+            switch (r)
+            {
+                case ManualInput key:
+                    if (key == ManualInput.Target || key == ManualInput.Exit)
+                        View.Mode = CombatMode.Aim;
+                    return key;
+                case CursorWalk w when StepToward((view.X, view.Y), (w.X, w.Y)) is { } d:
+                    _cursorGoal = (w.X, w.Y);
+                    _cursorSteps = 1;
+                    return new ManualInput(d);
+                case CursorWalk:
+                    continue;
+                default:
+                    View.Mode = CombatMode.Aim;
+                    return ManualInput.Exit;
+            }
+        }
+    }
+
+    /// <summary>The direction 0–7 (0 N, clockwise) of one square from <paramref name="from"/> toward <paramref name="to"/>; null when there.</summary>
+    public static int? StepToward((int X, int Y) from, (int X, int Y) to)
+    {
+        int dx = Math.Sign(to.X - from.X), dy = Math.Sign(to.Y - from.Y);
+        for (int d = 0; d < 8; d++)
+            if (CombatTables.DirDx[d] == dx && CombatTables.DirDy[d] == dy)
+                return d;
         return null;
     }
 

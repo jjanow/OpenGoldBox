@@ -1,14 +1,20 @@
 using GoldBox.Data.Module.Por;
 using GoldBox.Data.Por;
-using GoldBox.Importer;
 
 const string usage = """
     usage: goldbox-import por GAMEDIR OUTDIR [--no-verify]
+           goldbox-import schemas DIR   (writes the module JSON schemas, src/GoldBox.Data/Module/Schemas/)
       por    Pool of Radiance (DOS): GAMEDIR is the player's game folder (ECL1.DAX …); OUTDIR must not exist or be
              empty. Writes the module (docs/module-format.md), then checks that every imported block rebuilds
              byte for byte from the module (skipped with --no-verify).
     """;
 
+if (args is ["schemas", var schemaDir])
+{
+    GoldBox.Data.Module.ModuleSchemas.WriteAll(schemaDir);
+    Console.WriteLine($"schemas written to {Path.GetFullPath(schemaDir)}");
+    return 0;
+}
 if (args.Length < 3 || args[0] != "por" || args.Skip(3).Any(a => a != "--no-verify"))
 {
     Console.Error.WriteLine(usage);
@@ -32,6 +38,7 @@ Console.WriteLine($"module written to {Path.GetFullPath(outDir)}");
 Console.WriteLine($"  scripts {report.Scripts}, areas {report.Areas}, maps {report.Maps}, monsters {report.Monsters}, " +
                   $"item lists {report.ItemLists}, effect lists {report.EffectLists}, treasure lists {report.TreasureLists}, " +
                   $"item types {report.ItemTypes}");
+Console.WriteLine($"  art: {report.Pictures} pictures, {report.ArtData} data blocks; program texts {report.Texts}; saves {report.Saves} files");
 Console.WriteLine($"  inputs: {report.Inputs.Count} files");
 if (report.ItemIdCollisions.Count > 0)
 {

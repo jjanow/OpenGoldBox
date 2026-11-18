@@ -3,7 +3,7 @@ using GoldBox.Data.Module;
 using GoldBox.Data.Module.Por;
 using GoldBox.Data.Por;
 
-namespace GoldBox.Importer;
+namespace GoldBox.Data.Module.Por;
 
 /// <summary>The result of <see cref="PorRoundTrip.Check"/>: blocks compared per container kind, and every mismatch.</summary>
 public sealed class RoundTripReport
@@ -117,7 +117,76 @@ public static class PorRoundTrip
             foreach (var t in doc?.Types ?? [])
                 Fields($"ITEMS type {t.Type}", PorRecordFields.ItemType, t.Fields, t.Raw);
         }
+        // ---- art: every block of every art DAX file, as bytes and as the engine's pictures ----
+        foreach (var path in Directory.EnumerateFiles(game.Root).Order(StringComparer.Ordinal))
+        {
+            var file = Path.GetFileName(path).ToUpperInvariant();
+            if (!file.EndsWith(".DAX", StringComparison.Ordinal) || PorImporter.IsNotArt(file[..^4]))
+                continue;
+            var name = file[..^4];
+            var f = game.Dax(file)!;
+            foreach (var e in f.Entries)
+            {
+                var b = f.Decode(e);
+                Compare($"{name} block {e.Id}", module.ArtData(name, e.Id), b, "ART");
+                if (game.Picture(name, e.Id) is { } frames)
+                {
+                    r.Count("ART (engine)");
+                    var mf = module.Picture(name, e.Id);
+                    if (!name.StartsWith("WALLDEF", StringComparison.Ordinal) && (mf is null || !SamePictures(frames, mf)))
+                        r.Mismatches.Add($"{name} block {e.Id} via PorModule: pictures differ");
+                }
+            }
+        }
+
+        // ---- program tables and texts: the module's give the same as the folder's ----
+        if (game.Program() is { } gp)
+        {
+            r.Count("PROGRAM");
+            var mp = module.Program();
+            if (mp is null)
+                r.Mismatches.Add("program: rules/program.json missing");
+            else if (Describe(gp) != Describe(mp))
+                r.Mismatches.Add("program: the module's tables or texts differ from the program's");
+        }
+
+        // ---- shipped saves ----
+        foreach (var path in Directory.EnumerateFiles(game.Root).Order(StringComparer.Ordinal))
+        {
+            var file = Path.GetFileName(path).ToUpperInvariant();
+            if (!(file.StartsWith("SAVGAM", StringComparison.Ordinal) && file.EndsWith(".DAT", StringComparison.Ordinal))
+                && !file.StartsWith("CHRDAT", StringComparison.Ordinal))
+                continue;
+            var copy = module.SaveFolder is { } sf ? Path.Combine(sf, file) : null;
+            Compare($"save {file}", copy is not null && File.Exists(copy) ? File.ReadAllBytes(copy) : null, File.ReadAllBytes(path), "SAVE");
+        }
         return r;
+    }
+
+    private static bool SamePictures(IReadOnlyList<DaxPicture> a, IReadOnlyList<DaxPicture> b) =>
+        a.Count == b.Count && a.Zip(b).All(p =>
+            p.First.Width == p.Second.Width && p.First.Height == p.Second.Height && p.First.X == p.Second.X &&
+            p.First.Y == p.Second.Y && p.First.Delay == p.Second.Delay && p.First.Cga.AsSpan().SequenceEqual(p.Second.Cga) &&
+            p.First.Items.Count == p.Second.Items.Count &&
+            p.First.Items.Zip(p.Second.Items).All(i => i.First.AsSpan().SequenceEqual(i.Second)));
+
+    /// <summary>Everything the engine reads from <see cref="PorProgramData"/>, as text (for an exact comparison).</summary>
+    public static string Describe(PorProgramData p)
+    {
+        var sb = new System.Text.StringBuilder();
+        string Bytes(IEnumerable<byte>? b) => b is null ? "null" : Convert.ToHexString([.. b]);
+        sb.AppendLine(Bytes(p.Ds));
+        sb.AppendLine(System.Text.Json.JsonSerializer.Serialize(p.Offsets));
+        foreach (var g in p.GnomeDefenseNames ?? [])
+            sb.AppendLine(Bytes(g));
+        if (p.View is { } v)
+            sb.AppendLine(string.Join(",", [.. v.Layout.Start, .. v.Layout.Width, .. v.Layout.Height, .. v.Layout.Column, .. v.Layout.Row])
+                          + "|" + Bytes(v.SkyColours) + "|" + string.Join(" ", v.ExploreCommands ?? []));
+        foreach (var (k, t) in p.Texts.OrderBy(kv => kv.Key, StringComparer.Ordinal))
+            sb.Append(k).Append('=').AppendLine(t);
+        sb.AppendLine(string.Join("|", p.SpellNames ?? []));
+        sb.AppendLine(p.PagePrompt);
+        return sb.ToString();
     }
 
     private static int FirstDiff(byte[] a, byte[] b)

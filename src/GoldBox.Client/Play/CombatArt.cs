@@ -20,7 +20,7 @@ public sealed class CombatArt
     /// [?] block 11 is that picture, which of 11 / 139 the program draws when is not read).</summary>
     public const int HitMarker = 11;
 
-    private readonly PorGameDirectory? _dir;
+    private readonly IPorContent? _dir;
     private readonly Dictionary<int, CombatPicture?> _cpic = [];
     private readonly Dictionary<int, CombatPicture?> _head = [], _body = [], _sprites = [];
 
@@ -33,48 +33,27 @@ public sealed class CombatArt
     {
     }
 
-    public CombatArt(PorGameDirectory dir)
+    public CombatArt(IPorContent dir)
     {
         _dir = dir;
-        Dungeon = Items(dir.Dax("DUNGCOM.DAX"), 1);
-        Wilderness = Items(dir.Dax("WILDCOM.DAX"), 1);
-        Rare = Items(dir.Dax("RANDCOM.DAX"), 1);
+        Dungeon = Items(dir, "DUNGCOM", 1);
+        Wilderness = Items(dir, "WILDCOM", 1);
+        Rare = Items(dir, "RANDCOM", 1);
     }
 
-    private static List<CombatPicture> Items(DaxFile? f, int id)
-    {
-        if (f?.Block(id) is not { } b)
-            return [];
-        try
-        {
-            var p = DaxPicture.Decode(b);
-            return [.. p.Items.Select(px => new CombatPicture(p.Width, p.Height, px))];
-        }
-        catch (DaxFormatException)
-        {
-            return [];
-        }
-    }
+    /// <summary>A one-picture block (not an animation), or null.</summary>
+    private static DaxPicture? Single(IPorContent? dir, string file, int id) => dir?.Picture(file, id) is [var p] && p.Delay is null ? p : null;
 
-    private static CombatPicture? One(DaxFile? f, int id)
-    {
-        if (f?.Block(id) is not { } b)
-            return null;
-        try
-        {
-            var p = DaxPicture.Decode(b);
-            return p.Items.Count > 0 ? new CombatPicture(p.Width, p.Height, p.Items[0]) : null;
-        }
-        catch (DaxFormatException)
-        {
-            return null;
-        }
-    }
+    private static List<CombatPicture> Items(IPorContent dir, string file, int id) =>
+        Single(dir, file, id) is { } p ? [.. p.Items.Select(px => new CombatPicture(p.Width, p.Height, px))] : [];
+
+    private static CombatPicture? One(IPorContent? dir, string file, int id) =>
+        Single(dir, file, id) is { Items.Count: > 0 } p ? new CombatPicture(p.Width, p.Height, p.Items[0]) : null;
 
     private CombatPicture? Cached(Dictionary<int, CombatPicture?> cache, string file, int id)
     {
         if (!cache.TryGetValue(id, out var p))
-            cache[id] = p = One(_dir?.Dax(file), id);
+            cache[id] = p = One(_dir, file, id);
         return p;
     }
 
@@ -102,14 +81,14 @@ public sealed class CombatArt
         {
             p = null;
             for (int d = 1; d <= 8 && p is null; d++)
-                p = One(_dir?.Dax($"CPIC{d}.DAX"), id);
+                p = One(_dir, $"CPIC{d}", id);
             _cpic[id] = p;
         }
         return p;
     }
 
     /// <summary>A COMSPR picture (missiles, the hit marker).</summary>
-    public CombatPicture? Sprite(int id) => Cached(_sprites, "COMSPR.DAX", id);
+    public CombatPicture? Sprite(int id) => Cached(_sprites, "COMSPR", id);
 
     /// <summary>Record bytes of the party icon (character-format.md): head 0xBD, body 0xBE, size 0xC0, colours 0xC1–0xC6.</summary>
     public const int IconHead = 0xBD, IconBody = 0xBE, IconSize = 0xC0, IconColours = 0xC1;
@@ -126,8 +105,8 @@ public sealed class CombatArt
     public CombatPicture? Party(EclCharacter c, bool attack)
     {
         int extra = (c[IconSize] == 2 ? 64 : 0) + (attack ? 128 : 0);
-        var body = Cached(_body, "CBODY.DAX", (c[IconBody] & 0x3F) + extra) ?? Cached(_body, "CBODY.DAX", c[IconBody] & 0x3F);
-        var head = Cached(_head, "CHEAD.DAX", (c[IconHead] & 0x3F) + extra) ?? Cached(_head, "CHEAD.DAX", c[IconHead] & 0x3F);
+        var body = Cached(_body, "CBODY", (c[IconBody] & 0x3F) + extra) ?? Cached(_body, "CBODY", c[IconBody] & 0x3F);
+        var head = Cached(_head, "CHEAD", (c[IconHead] & 0x3F) + extra) ?? Cached(_head, "CHEAD", c[IconHead] & 0x3F);
         if (body is null && head is null)
             return null;
         int w = 24, h = 24;
