@@ -54,6 +54,7 @@ public sealed class ActionInput(InputBindings bindings)
     public void Inject(GameAction a)
     {
         _pressed.Add(a);
+        _injected = true;
         LastDevice = InputDevice.Mouse;
     }
 
@@ -63,6 +64,7 @@ public sealed class ActionInput(InputBindings bindings)
         _pressed.Clear();
         _clicks.Clear();
         _newInput = null;
+        _injected = false;
 
         foreach (var k in keys.GetPressedKeys())
             if (_prevKeys.IsKeyUp(k))
@@ -133,4 +135,84 @@ public sealed class ActionInput(InputBindings bindings)
         _pressed.Clear();
         _clicks.Clear();
     }
+
+    // ---------------------------------------------------------------------------------------------------------------
+    // The key buffer (docs/re/view3d.md "Keys while the program is busy")
+    // ---------------------------------------------------------------------------------------------------------------
+
+    /// <summary>
+    /// QoL (<see cref="ClientSettings.SkipPauses"/>), off = original: Confirm or a click ends a pause early and keys
+    /// pressed during a pause are dropped. Off, a pause cannot be cut short and its keys wait for the next key read.
+    /// </summary>
+    public bool SkipPauses { get; set; }
+
+    private HashSet<GameAction>? _buffered;
+    private (InputDevice Device, string Name)? _bufferedNew;
+    private bool _injected;
+
+    /// <summary>A key or pad button pressed while the program was not reading keys, waiting for the next read.</summary>
+    public bool HasBuffered => _buffered is not null;
+
+    /// <summary>
+    /// Called once a frame by a screen, after its own Controls check: whether the game logic reads keys now. The
+    /// program reads keys through GetKey (START 0x89E9), which takes every key waiting in the BIOS buffer and keeps
+    /// the last one; while it does not read (a pause, the text typing out), keys wait in the buffer. So: not reading,
+    /// this frame's key or button press is kept as the waiting key (the newest replaces an older one) and the frame acts
+    /// on nothing; reading, a frame with no new press gets the waiting key as its press. Mouse clicks are not keys:
+    /// during a pause they are dropped. With <see cref="SkipPauses"/> nothing is kept and the frame's input stays (the
+    /// screen ends the pause on Confirm).
+    /// </summary>
+    public void ReadingKeys(bool reading)
+    {
+        if (reading)
+        {
+            if (_buffered is null)
+                return;
+            if (_pressed.Count == 0 && _newInput is null)
+            {
+                _pressed.UnionWith(_buffered);
+                _newInput = _bufferedNew;
+                if (_bufferedNew is { } bn)
+                    LastDevice = bn.Device;
+            }
+            Discard();
+            return;
+        }
+        if (SkipPauses)
+            return;
+        if (!_injected && (_pressed.Count > 0 || _newInput is not null))
+        {
+            _buffered = [.. _pressed];
+            _bufferedNew = _newInput;
+        }
+        _pressed.Clear();
+        _clicks.Clear();
+        _newInput = null;
+    }
+
+    /// <summary>
+    /// Empties the key buffer: the program's reads that take a waiting key and act on none (START 0x8AB2, called by
+    /// the fight start 0xE402 and the setup loop 0xDFC6).
+    /// </summary>
+    public void Discard()
+    {
+        _buffered = null;
+        _bufferedNew = null;
+    }
+
+    /// <summary>
+    /// The AI's key check (GAME.OVR 0xBB81) on the logic thread while the screen waits: a waiting key is read (the
+    /// buffer empties) and its code returned: <see cref="GameAction.FightManual"/> (space, the pad's right-stick press)
+    /// 0x20; 0 for any other key (taken, no effect) or none. [?] The check's Alt-M (scan 0x32) and Alt-X (0x2D) are not
+    /// mapped (the Client has no Alt keys); a click during a pause is dropped, so the mouse has no way to it.
+    /// </summary>
+    public byte TakeAiKey()
+    {
+        bool manual = _buffered?.Contains(GameAction.FightManual) == true;
+        Discard();
+        return manual ? (byte)0x20 : (byte)0;
+    }
+
+    /// <summary>A pause may end early this frame (QoL <see cref="SkipPauses"/> on and Confirm pressed or a click made).</summary>
+    public bool SkipsPause => SkipPauses && (Pressed(GameAction.Confirm) || _clicks.Count > 0);
 }

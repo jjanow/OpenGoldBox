@@ -10,7 +10,10 @@ public enum Msg
     NotBlind, NotDiseased, NotDead, NotPoisoned, NotCursed, NotStoned, TempleMoneyLeft, TempleGoBack,
     // After combat (0x5DBB–0x6A8B)
     LostDuel, WonDuel, PartyWon, PartyFled, FoundTreasure, DuelistReceives, EachReceives, ExperiencePoints, PressEnter,
-    LootTitle, ItemsHeader, TakePrompt, TreasureLeft, ClaimTreasure, TakesShare, MonstersRejoice,
+    LootTitle, ItemsHeader, TakePrompt, TreasureLeft, ClaimTreasure, TakesShare, ShareContinue, EndTitle, MonstersRejoice,
+    PressAnyKey,
+    // ECL DAMAGE (0x2729–0x2752 of unit 0xD46; 0x959F of unit 0x74D3)
+    PartyKilled, DamageContinue, DamageDies, DamageHitFor, DamagePoints, DamageHitContinue,
     // Shop (0x6CF3–0x71E7)
     ShopTitle, ShopOverloaded, ShopNoMoney, ShopMoneyLeft, ShopGoBack,
     // Camp (0x19654)
@@ -100,6 +103,15 @@ public sealed class GameText
         [Msg.ClaimTreasure] = "GO BACK FOR IT?",
         [Msg.TakesShare] = " TAKES A SHARE.",
         [Msg.MonstersRejoice] = "THE PARTY IS LOST.",
+        [Msg.ShareContinue] = "press enter",
+        [Msg.EndTitle] = "THE END",
+        [Msg.PressAnyKey] = "PRESS A KEY",
+        [Msg.PartyKilled] = "NOBODY IN THE PARTY LIVES.",
+        [Msg.DamageContinue] = "press enter",
+        [Msg.DamageDies] = " IS SLAIN. ",
+        [Msg.DamageHitFor] = " TAKES ",
+        [Msg.DamagePoints] = " DAMAGE.",
+        [Msg.DamageHitContinue] = "press enter",
         [Msg.ShopTitle] = "STORE",
         [Msg.ShopOverloaded] = "TOO HEAVY",
         [Msg.ShopNoMoney] = "NOT ENOUGH MONEY.",

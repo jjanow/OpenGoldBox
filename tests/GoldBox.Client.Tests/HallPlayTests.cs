@@ -145,6 +145,7 @@ public class HallPlayTests
             return;
         var r = Start();
         r.Game.Memory.GameSpeed = 9;   // 2 loops per animation
+        r.Input.SkipPauses = true;     // QoL: Enter ends a pause early (the original's cannot be cut short)
         r.Runner.Start(() => r.Player.EndGameSequence());
         bool sawScene = false, sawSpirit = false;
         int frames = 0;
@@ -159,13 +160,113 @@ public class HallPlayTests
             if (r.Runner.Pending is DelayRequest)
             {
                 frames++;
-                Press(r, GameAction.Confirm);   // Enter ends a Client delay early
+                Press(r, GameAction.Confirm);   // Enter ends the pause (QoL SkipPauses)
             }
         }
         Assert.False(r.Runner.Busy);
         Assert.True(sawScene && sawSpirit);
         Assert.Equal(2 * 4 + 2 * 6 + 6 + 3, frames);   // dragon 2 × 4 frames, spirit 2 × 6, block 8 once, three pauses
         Assert.Null(r.Player.Scene);
+    }
+
+    /// <summary>The program's word for the hall's J, read from the player's files (never written in the tests).</summary>
+    private static string Word(Rig r) => r.Player.Resources.HallTexts.Program!.Text("Hall.Password")!;
+
+    private static int Entries(Rig r) => Assert.IsType<HallMenuRequest>(r.Runner.Pending).Entries.Count;
+
+    /// <summary>
+    /// J (0x19E2C) with the program's first command-line word equal to the word in the files: the cheat flag shows
+    /// Train in a hall that teaches nothing ($6DA8 = 0), after the message with its pause. Keyboard, pad and mouse.
+    /// </summary>
+    [Theory]
+    [InlineData(InputDevice.Keyboard)]
+    [InlineData(InputDevice.Gamepad)]
+    [InlineData(InputDevice.Mouse)]
+    public void Hall_J_with_the_programs_word_turns_the_cheat_on(InputDevice device)
+    {
+        if (Dir() is null)
+            return;
+        var r = Start();
+        r.Player.ProgramWord = Word(r) + " MORE";       // ParamStr(1): the first word of the command tail
+        r.Game.Memory.Write(TrainingHall.HallMaskCell, 0);
+        r.Runner.Start(() => r.Player.TrainingHall());
+        Settle(r);
+        Assert.Equal(9, Entries(r));                     // no Train, no Load
+        var menu = (HallMenuRequest)r.Runner.Pending!;
+        switch (device)
+        {
+            case InputDevice.Keyboard:
+                Key(r, Keys.J);
+                break;
+            case InputDevice.Gamepad:
+                Press(r, GameAction.HallJ);
+                break;
+            default:
+                Assert.Null(r.Screen.MapClick(new ScreenClick(4, HallView.BottomRow * 8 + 4, false)));   // the prompt
+                Frame(r);
+                break;
+        }
+        Assert.IsType<DelayRequest>(r.Runner.Pending);
+        Assert.Equal((r.Player.Resources.HallTexts["Hall.Understood"].ToUpperInvariant(), (byte)10), r.Player.Hall!.Message);
+        Settle(r);
+        Assert.Equal(10, Entries(r));                    // Train is offered
+        Assert.Contains(((HallMenuRequest)r.Runner.Pending!).Entries, e => e.Key == 'T');
+        Assert.NotSame(menu, r.Runner.Pending);
+        Key(r, Keys.B);
+        Settle(r);
+        Assert.False(r.Runner.Busy);
+    }
+
+    /// <summary>J with no word, another word, the word in another case or as the second word: nothing happens (no
+    /// message, no line read, no Train).</summary>
+    [Fact]
+    public void Hall_J_with_another_word_does_nothing()
+    {
+        if (Dir() is null)
+            return;
+        var r = Start();
+        r.Game.Memory.Write(TrainingHall.HallMaskCell, 0);
+        foreach (var word in new[] { null, "", Word(r).ToLowerInvariant(), Word(r) + "X", "X " + Word(r) })
+        {
+            r.Player.ProgramWord = word;
+            r.Runner.Start(() => r.Player.TrainingHall());
+            Settle(r);
+            Key(r, Keys.J);
+            Assert.IsType<HallMenuRequest>(r.Runner.Pending);
+            Assert.Null(r.Player.Hall!.Message);
+            Assert.Equal(9, Entries(r));
+            Key(r, Keys.B);
+            Settle(r);
+            Assert.False(r.Runner.Busy);
+        }
+    }
+
+    /// <summary>
+    /// The key buffer (GetKey START 0x89E9 keeps the last waiting key): keys pressed during the refusal message's pause
+    /// do not act then; the last one is read by the menu afterwards (B: Begin leaves the hall).
+    /// </summary>
+    [Fact]
+    public void Keys_pressed_during_a_hall_message_act_after_it()
+    {
+        if (Dir() is null)
+            return;
+        var r = Start();
+        r.Game.Memory.GameSpeed = 2;
+        r.Game.Memory.Write(TrainingHall.HallMaskCell, 116);  // thieves only: the dwarf fighter is refused
+        r.Runner.Start(() => r.Player.TrainingHall());
+        Settle(r);
+        Key(r, Keys.T);
+        Assert.IsType<DelayRequest>(r.Runner.Pending);
+        Key(r, Keys.V);                                  // View … then Begin: the last key wins
+        Key(r, Keys.B);
+        Assert.IsType<DelayRequest>(r.Runner.Pending);   // the pause goes on (Enter would not end it either)
+        Assert.True(r.Input.HasBuffered);
+        Settle(r);
+        Assert.IsType<HallMenuRequest>(r.Runner.Pending);
+        Frame(r);                                        // the menu reads the waiting key
+        Settle(r);
+        Assert.False(r.Runner.Busy);                     // B was read by the menu: Begin
+        Assert.Null(r.Player.Hall);
     }
 
     private sealed class Stack : IScreenHost

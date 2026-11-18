@@ -220,6 +220,22 @@ public sealed class PorModule : IPorContent
 
     // ---- art -------------------------------------------------------------------------------------------------------
 
+    private byte[]? _iconPairs;
+    private bool _iconPairsRead;
+
+    /// <summary><c>art/amiga/icon-colours.json</c>'s six pair bytes, or null (no Amiga overlay, or not six bytes).</summary>
+    public byte[]? AmigaIconPairs()
+    {
+        if (!_iconPairsRead)
+        {
+            _iconPairsRead = true;
+            if (Modules.File(AmigaIconColoursDocument.RelativePath) is { } p
+                && ModuleJson.Read<AmigaIconColoursDocument>(p).Pairs is { Length: 6 } pairs && pairs.All(b => b is >= 0 and <= 255))
+                _iconPairs = [.. pairs.Select(b => (byte)b)];
+        }
+        return _iconPairs;
+    }
+
     private readonly Dictionary<(string, int), (ArtDocument Doc, string Path)?> _art = [];
 
     private (ArtDocument Doc, string Path)? Art(string file, int id)

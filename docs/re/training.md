@@ -25,9 +25,28 @@ entries from row 12 at column 2, first letter white, rest green; the prompt on t
 routine 0x2CC8C takes the item line DS:05F0 (the hotkeys, drawn invisibly) so every letter is a key; a key whose entry
 is hidden does nothing. Extended Home / End (set at 0x19A75) pick the member (0x23819). Keys: C 0x19EEB, D 0x1B8B6,
 M 0x1BA1E, T 0x1C32D, V View 0x21AED, A 0x1C9EC, R 0x1E684 + 0x1CC10, L 0x1F5E8 (sets DS:49F8), S the save 0x1FD3E,
-B DS:49F3 := 4 and return, E the quit question then the save loop and halt. **J** reads a line and, when it equals the
-password string at 0x19AC2, sets DS:470C (the cheat: Train without status, money, hall or experience checks) and shows
-a message. `[?]` The Client does not offer J (no hidden text entry yet); Core takes the flag.
+B DS:49F3 := 4 and return, E the quit question then the save loop and halt.
+
+**J** (0x19E2C, read s22) reads **no line**: it takes the program's first command-line word, ParamStr(1) (Turbo
+Pascal System 0AF8:16BC = START 0xC63C: the first word of the DOS command tail after `START`), and compares it with the
+string at 0x19AC2 (the unit's CS:0x143; 0AF8:0C10, exact, case counts). Equal: DS:470C := 1 (the cheat: Train without
+status, money, hall or experience checks, and Train shown, 0x19B59) and the message at 0x19AC8 through START 0x2233
+(row 24, green, the game-speed pause, row 24 cleared). Not equal: nothing (no prompt, no echo, no message). Either
+way the menu is drawn again; the flag stays until the menu routine is entered again (0x19AF4 clears it). The same
+word (byte-identical copies) is compared with ParamStr(1) by GetKey (START 0x89E3: Ctrl-D toggles DS:49F7, Ctrl-C
+quits; view3d.md "Keys while the program is busy"), by Alt-X in a fight (combat-menu.md; its copy at GAME.OVR 0x16374 is inferred from the bytes and its place just
+before the routine 0x1638E, the unit's CS:0x3B79 was not resolved) and at
+start-up (START 0x10C, string at the main unit's CS:0: equal skips the two overlay calls 0019:0025 and 001C:0025 `[?]`
+what they are). No game text: the Client reads the word by offset (`PorTextCatalog` `Hall.Password`).
+
+Client (s22): the word after `START` is the Client's start word: `--param WORD` (remembered in client.json as
+`ProgramWord`; `--no-param` drops it) or the controls screen's START WORD row (typed, or picked on the character grid
+with the pad or the mouse); its first word is used, as ParamStr(1). J in the hall (`HallScreens.Password`) compares it with
+the files' word, sets the cheat and shows the message as above; without the game files J does nothing. J has no entry
+on screen in the original; the Client binds it as the action `HallJ` (key J, the pad's left-stick press, rebindable on
+the controls screen) and a click on the hall's prompt (bottom line) is J for the mouse. `[?]` The start-up party menu
+(the same routine) does not take J in the Client yet (its Train would need the hall's Train on the menu's party), and
+Alt-X does not read the word yet (Core's `FightMenu.CheatEnabled` stays off).
 
 Engine (s20): the Client's hall (`HallScreens.Run`) runs Train, View, Save, Begin and Exit itself; Create, Drop, Modify,
 Add and Remove are the party menu's (`PartyMenuFlow` through `HallHooks`, on the game's party and generator; the
@@ -36,6 +55,17 @@ creation and roster pages open as a `PartyMenuScreen` overlay over the explore s
 bottom line. Load ends the game and the screen loads the save (`HallLoadException`; the program leaves the menu after a
 successful load, 0x19D91). `[?]` A save with interface state 0 loaded here would keep the program's menu up with the
 save's party (start-up's Load does, start-menu.md §5a); the engine starts the loaded game instead.
+
+**After the hall (PROGRAM 0 returns), P + D (s22).** Begin leaves DS:49F3 = 4 and the handler calls START 0x3379, whose
+case 4 draws every window again through 0x32CA (03F1:02E8 with 1, 1, 38, 22; 1, 17, 38, 22; 1, 1, 15, 15; 3, 3, 13,
+13: each clears its inside), then the 3D view, the party list (0x1307) and the position line (0x34AB). So the text box
+is **cleared**, but the text cursor DS:5E24/5E25 is not touched. DOSBox-X, a test save whose step runs PRINT, PROGRAM 0,
+PRINT, a one-word HMENU: after Begin the first text is gone and the second starts on row 17 where the first ended (column
+28), the HMENU's word all white (the shared cell, Begin's entry, is past the one-word menu). Before that, the hall
+screen and, after the step, the command line opening on its first word (the cell past its 6 entries) were seen in
+another run (DAMAGE, then PROGRAM 0). Client: `ClientPlayer.TrainingHall` blanks the box and keeps the cursor; the
+hall's hotkeys set the shared cell (`ExploreScreen`, as the party menu's do); the hall and the screen after it equal
+DOSBox-X pixel for pixel apart from the Client's help lines.
 
 ## Train Character (0x1C32D) — P, E, D
 
@@ -91,5 +121,11 @@ prints its epilogue and NEWECLs to civilised Phlan: **no return to the menu**, t
 
 **D**: DOSBox-X with a scratch copy whose PROGRAM 0 call was redirected to 0x20941 (and FINAL5 copied to FINAL3):
 texts, pictures, positions (changed-pixel boxes of the animations) and order as above; durations consistent with
-speed 1 (dragon ~5 s, spirit ~13 s). `[?]`: exact frame timing not measured; the Amiga program's end sequence (it has
+speed 1 (dragon ~5 s, spirit ~13 s). **D** (s22, a test save whose step runs PROGRAM 8 on disk 2 with FINAL5 copied to
+FINAL2, 3000 cycles): every distinct DOSBox-X frame of the dragon, the spirit and the last picture has a Client frame
+equal to it pixel for pixel (after two fixes: later frames of a FINAL block are XOR deltas against the first, as PIC's,
+which the Client had drawn raw (speckled colours, a black box); the command line stays on row 24 during the sequence).
+A text line of 39 characters (the last group's second line) draws its last character on column 39, over the frame,
+on a black cell (the glyph routine draws up to column 39); the Client keeps such an overhang cell
+(`TextWindow`). `[?]`: exact frame timing not measured; the Amiga program's end sequence (it has
 blocks 2, 7, 8 of a repainted dragon) is not read, so the Client draws the DOS blocks under every art setting.

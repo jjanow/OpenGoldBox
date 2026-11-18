@@ -226,6 +226,8 @@ public sealed class CombatScreen
         Sync();
         if (_runner.Pending is not { } request)
             return;
+        // Keys pressed during a pause wait for the next key read (ActionInput.ReadingKeys).
+        input.ReadingKeys(request is not DelayRequest { ReportInput: false });
         object? answer;
         bool answered;
         if (_hasClickAnswer)
@@ -275,7 +277,7 @@ public sealed class CombatScreen
         switch (request)
         {
             case DelayRequest:
-                return (_drawn && _clock.Elapsed >= _delayEnd) || input.Pressed(GameAction.Confirm);
+                return (_drawn && _clock.Elapsed >= _delayEnd) || input.SkipsPause;
             case KeyRequest:
                 return input.NewInput is not null || input.Pressed(GameAction.Confirm) || input.Pressed(GameAction.Cancel);
             case ListRequest l:

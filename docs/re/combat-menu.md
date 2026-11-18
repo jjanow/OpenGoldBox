@@ -77,7 +77,7 @@ Alt-M (0x32); other extended keys become 0 and are ignored (0x9FF3–0xA057, Pas
 | space | — | every creature in the list with 0x84 < 0x80 (not an NPC) gets 0x10F = 0; not done |
 | Alt-Q | 0xAA32 for all | this creature's initiative = 20; every creature in the list becomes computer-controlled as by Q; done. The creature is picked again at once (initiative 20), the turn makes it 19 and the AI acts |
 | Alt-R | — | accepted, does nothing |
-| Alt-X | 0x1638E | a debugging switch: only when the program was started with a particular command-line word, every hostile creature (0x10E = 1) gets in play 0 and status 6 and every creature's actions end; done. Otherwise a refusal message, not done |
+| Alt-X | 0x1638E | a debugging switch: only when the program was started with a particular command-line word (ParamStr(1) compared with the word at the unit's CS:0x3B79, a copy of the hall's J word, training.md), every hostile creature (0x10E = 1) gets in play 0 and status 6 and every creature's actions end; done. Otherwise a refusal message, not done |
 
 **Done menu** (0xA64C), loop until Exit / Escape or done:
 

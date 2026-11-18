@@ -14,7 +14,7 @@ No game text is quoted here: strings are named by their catalogue keys (`PartyMs
 ## 1. Start-up sequence
 
 START's main program (image 0x00F6): start-up 0xE600; unless the first argument is the debug word, the introduction
-(0x06FB) and the code wheel (0x0AA9); then the party menu 0x19AE0; the view colours (0x2EA4C); the game loop 0x403E.
+(0x06FB, §1a) and the code wheel (0x0AA9); then the party menu 0x19AE0; the view colours (0x2EA4C); the game loop 0x403E.
 
 - **Start-up 0xE600** allocates and zeroes the VM zones, sets the party square DS:6AAD/6AAE/6AAF := 15, 1, 6 (west),
   the disk byte DS:5376 := 1, the game speed DS:49E2 := 1, the location type DS:49F9/49FA := 1, the party lists
@@ -33,6 +33,69 @@ START's main program (image 0x00F6): start-up 0xE600; unless the first argument 
   (0x1FB99), DS:49F8 still 0: Begin then runs `ECL<disk>` block $49F2 from the loaded memory as on a new game (section
   5a). Engine: `PorGame.LoadAtPartyMenu` (`LoadedInterfaceState`); Begin → `RunNewGameEntry(party)`.
 - **After the game loop** the main program quits to DOS (START 0x142 → 0899:0000): section 8 (the party destroyed).
+
+## 1a. The introduction (0x06FB)
+
+**P** (s22, read with capstone from the unpacked START image and GAME.OVR); the flash burst **E** (unicorn,
+`por_emu.py`: the loop run with the palette and delay routines trapped, 12 generator seeds, bursts of Random(3) + 2
+flashes as read). **D** (s22, DOSBox-X `svga_s3`, window grabs about 175 a second): the three pages, the flash colours
+and order, the key and the lightning's rate; the Client's logo, title and credits pages equal DOSBox-X's pixel for
+pixel. s19's sound capture already found the intro and title silent (sound.md §2.4), and the routine calls no sound
+routine.
+
+- **Where:** the main program calls 0019:0025 (START 0x11D) and 001C:0025 (0x122) unless ParamStr(1) is the debug word
+  (START 0x116). Those are overlay stubs: unit GAME.OVR 0xD4 (size 0x80E, stub segment 0x19) entry 0x627 = **0x6FB**
+  (the introduction) and unit 0x9AC entry 0xFD = 0xAA9 (the code wheel). Code-segment offsets below are the unit's,
+  so CS:n is GAME.OVR 0xD4 + n.
+- **The waits** use GetTime (START 0x7CCF: h·360000 + m·6000 + s·100 + hundredths, from INT 21h 2Ch; the m·6000
+  product keeps only its low word, so the clock steps back where it passes a multiple of 65536, at minutes 11, 22, 33,
+  44, 55: a wait that spans one runs until a key `[?]` not modelled). Near routine **0xD4**(n): end := GetTime +
+  100·n, loop until GetTime ≥ end or KeyPressed (START 0xA6FD), then the "flush" START 0x8A94, which **does
+  nothing**: its first instruction jumps to its own end (0x8A9A → 0x8AAE), past the ReadKey loop at 0x8A9C. So the
+  key stays in the buffer, every later wait (the title's loop, the credits' 0xD4(10)) ends at once and the code wheel's
+  input reads the key. **D:** one key (space or Return) on the logo: the title and the credits page show only while
+  they load and draw (about 0.4 s and 0.35 s at 3000 cycles), then the code wheel with the key typed in.
+- **Sequence (0x6FB):**
+  1. The data path DS:547C (POOL.CFG's third line) is saved and emptied, the file name CS:0x621 (0x6F5: TITLE)
+     loaded, and TITLE block 1 read (START 0x4751) and drawn at screen (0, 0) (START 0x5F91; the block's own x / y are
+     not used: TITLE's header says x = 1). Wait 0xD4(**5**).
+  2. **DS:49D1 = 0**: DS:547C is restored and the routine returns (logo only). DS:49D1 is 1 when POOL.CFG's fifth
+     line starts with `F` (START 0x461F; the test copy's does); what the installer's `F` means is `[?]`.
+  3. Otherwise TITLE block 2 is read (still from the emptied path), DS:547C restored, the block drawn at (0, 0) and
+     freed (START 0x6BD5). end := GetTime + 500. **Loop 0x7E2:** in EGA (DS:4A1E = 1) the 32-bit counter [bp-8] +=
+     Random(4) (START 0xC140, the game's generator); when it is above 50000 (0x808): counter := 0, n := Random(3) + 1
+     and the flash runs for i = 0 … n (**n + 1 = 2 … 4 flashes**): palette register 1 (START 0x704D: INT 10h
+     AX=1000h; a colour c ≥ 8 is written as c + 8, the 200-line intensity bit) := 9, Delay 150 ms (START 0xA69C), 11,
+     100 ms, 15, 50 ms, 11, 100 ms, 9, 150 ms, then 1 (550 ms a flash). Then KeyPressed → leave; GetTime < end → loop.
+     Keys and the clock are only read after a burst, so a burst can hold the title past its 5 seconds. Then the key
+     buffer "flush" (0x8D0 calls the same no-op 0x8A94). **D** (3000 cycles, no key): the logo drawn 9.1–9.45 s
+     after the emulator started, the title 16.4–16.7 s (5 s of wait plus about 1.9 s loading TITLE block 2), the
+     credits 21.7–22.1 s, the code wheel at 32.0 s (10 s).
+  4. The **credits page** (near 0x2DA): two windows (START 03F1:02E8 with left, top, right, bottom = 1, 1, 38, 3 and 1,
+     5, 38, 23, style 0, colour 0, empty title CS:0x4A: the inside cleared, the frame one cell around it, so rows 0–24
+     are all frame or window), then 33 text calls START 0x76B6 (column, row, colour, string: 29 distinct strings
+     CS:0x4B–0x1E2, colours 10, 14, 11; catalogue `Intro.0`–`Intro.28`), then 0xD4(**10**). Return; the code wheel
+     follows.
+- **The lightning's rate** is the machine's: a pass of the loop is about 144 instructions (counted under unicorn: 288 for
+  two passes) plus INT 16h and INT 21h. **D:** the first burst came 0.83 s into the title at 20000 cycles and 0.33 s
+  at 50000, i.e. about 2 passes per 1000 cycles (the interrupts cost most of a pass): about **6 passes/ms** at DOSBox-X's
+  3000 cycles, a first burst after 5.6 s on average, and indeed none in the title's 5 seconds at 3000 cycles; at
+  `cycles=max` bursts every few tenths of a second. Flashes as read: register 1 (the blue band) 9, 11, 15, 11, 9, then
+  the next flash at once (the closing "1" at 0x89D has no delay, so it is not seen between flashes) and 1 after the
+  burst. The Delay lengths were about 0.65 × nominal at 20000 cycles (the CRT Delay's loop calibration under DOSBox);
+  at 3000 cycles Delay(3000) measured 3.0 s.
+- Tandy and CGA (DS:4A1E ≠ 1) skip the counter: no lightning. The generator draws (a timing-dependent number) come
+  before the party menu's.
+- **Engine:** Core `Intro` (pages, waits, a key ends the whole intro, the counter and burst at `PassesPerMillisecond`
+  = 6, DOSBox-X at 3000 cycles), Client
+  `IntroScreen`, shown at start-up over the party menu (not with `--save` / `--area`, which stand for the debug start
+  that skips the intro and the code wheel). Pictures DOS TITLE 1 and 2 from the module (`art/dos/title`); register 1
+  is drawn by recolouring index 1. Under Best / Amiga the title page shows the Amiga intro painting
+  (`art/amiga/intro/0/1`, s18) when the module has it, without the lightning (an EGA register trick; index 1 is
+  another colour there); the logo stays DOS, the credits keep the DOS layout and texts with the frame drawn as the
+  setting draws every frame (the Amiga intro's own logo sheet and sequence are not imported `[?]`). Departures: the intro draws from a generator of its own (so `--seed` stays repeatable); every page
+  is shown (as with POOL.CFG's `F`); the GetTime step-back is not copied; the DOS clock's 55 ms steps are not
+  modelled. A page whose picture or texts are missing is left out. The code wheel is still skipped.
 
 ## 2. The party menu (0x19AE0)
 
@@ -275,17 +338,16 @@ before it uses them (`PorProgramData.CreationTables`). `[?]` Not decoded into a 
 - Modify's page against a DOSBox-X screen (the highlight colour and positions are read from 0x2193B / START 0x973,
   not seen in DOSBox-X); how long the refusal message stays (START 0x7DF8: game speed × 225 ms; the engine shows it as
   the menu's notice until the next key).
-- The icon editor's frame boxes (icon slot 25) and its palette are drawn as seen, not decoded; the camp's Alter Icon
-  (the same routine, Core `IconEditor`) is not wired yet.
+- The icon editor's frame boxes (icon slot 25) and its palette are drawn as seen, not decoded. The camp's Alter Icon
+  runs the same routine (camp.md "Alter").
 - File names of roster characters (8.3 clean-up); the save's deletion of the members' roster files (camp.md).
 - Load at the party menu of a state-0 save: what the program's re-read of map $49C5 = 0 and wall set 0 gives.
-- The party-destroyed paths (section 8) are read, not run in DOSBox-X.
 - Load in the training hall of a state-0 save: the program's menu would stay up with the save's party; the engine
   ends the hall and starts the loaded game.
 
-## 8. After the game loop: the party destroyed (0x403E, START 0x013D)
+## 8. After the game loop: the party destroyed (0x403E, START 0x013D) — P, D
 
-v1.3 does **not** go back to the party menu: the program ends.
+v1.3 does **not** go back to the party menu: the program ends (D, s22: both paths end at the DOS prompt).
 
 - The main program (START image 0x00F6) calls the party menu 0x19AE0 once (START 0x127), the view colours 0x2EA4C and
   the game loop 0x403E (START 0x13D); when the loop returns, START 0x142 calls 0899:0000, the same quit as the menu's
@@ -302,9 +364,23 @@ v1.3 does **not** go back to the party menu: the program ends.
     $6DC7 := 0x80, a window (03F1:02E8 with 1, 1, 38, 22), a title line (unit 0x557E CS 0x14CE), a message (CS 0x14D7,
     0709:0768), a press-a-key line and wait (CS 0x150D, 0709:0BF5); then DS:4A00 := 1 and $6E70–$6E72, $6DE3, $6DE6
     := 0 as after every fight. The treasure list DS:6810 is not freed.
+    **D** (s22, a 1-HP party against eight goblin guards, all Quick): the window's title centred on row 1 in white
+    (column (1 + 38 − length) div 2 = 15), the message through the text routine in the box (2, 5)–(37, 22), colour
+    10, cleared first, so it starts at column 2, row 5 and wraps at column 37 (two rows); the key line on row 24 in
+    colour 13 (0709:0BF5 = START 0x7C85: row 24 cleared, the text at column 0, then a key). The Client's screen
+    equals it pixel for pixel (`ClientPlayer.PartyDestroyed`).
   - **ECL DAMAGE** (0x3728–0x3740: set to 1, cleared when any member has in play 0x10D ≠ 0): 0x375A–0x37BB the same
     kind of window and two lines (unit 0xD46 CS 0x272D, 0x2736), a Delay(3000) (0A40:029C), then the handler's usual
     end from 0x37C0 (DS:5D92 restored, a press-a-key line CS 0x2752 and wait).
-- So after either screen and its key the ECL run stops, 0x403E returns and the program exits to DOS. Starting again
+    **D** (s22, a test save whose step runs DAMAGE 0xE0, 1, 1, 200 on the whole party): the message call blanks the
+    whole window (its box is (1, 1)–(38, 22) with clear = 1), so the title is drawn and erased at once: only the
+    message shows, at column 1, row 1, colour 10. Row 24 keeps what was there (here the text routine's page prompt,
+    colour 13, from the sixth "dies" line) for the pause, measured 3.0 s at 3000 cycles (Turbo Pascal's Delay is
+    calibrated by a loop: at `cycles=max` it took about 0.3 s); then the white line (colour 15) and a key. The line
+    messages before it and the closing key line of every DAMAGE: ecl-format.md "DAMAGE". With a single line (five members already
+    dead: they get no line) there is no page prompt and row 24 keeps the command line through the pause. Client:
+    `DamageEnd`, equal pixel for pixel in both cases.
+- So after either screen and its key the ECL run stops, 0x403E returns and the program exits to DOS (D). Starting again
   means running the program again; the party is gone with the program's memory, the roster and save files on disk are
-  as they were. A return to the party menu would be an engine option (off = quit, as the original).
+  as they were. A return to the party menu is an engine option (off = quit, as the original): Client
+  `ClientSettings.AfterDefeatMenu`, the controls screen's AFTER DEFEAT row (QUIT / PARTY MENU).

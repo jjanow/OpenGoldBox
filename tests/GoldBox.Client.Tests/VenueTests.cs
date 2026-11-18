@@ -224,6 +224,24 @@ public class VenueTests
         Assert.Contains("90", Assert.Single(s.Windows)[1].Text);
     }
 
+    [Fact]
+    public void Npc_share_is_a_full_screen_window_with_a_white_press_enter_menu()
+    {
+        // 0x695E (DOSBox-X s22, a gnoll that joined by ADDNPC): column 5, rows 5, 7, …, wrapped at column 34; then the
+        // press-enter text through the menu routine (white, cell back to the first), before the summary's window.
+        var (t, s) = Context(new Script(null, null, 2), Party(Member("ANNA")));
+        var outcome = new AfterCombatOutcome(false, false, false, false, 0, 0);
+        VenueScreens.Loot(t, outcome, duel: false, [Member("GNOLL"), Member("A VERY LONG NAMED HIRELING")]);
+        var share = s.Windows[0];
+        Assert.Equal(5, share[0].Column);
+        Assert.Equal(5, share[0].Row);
+        Assert.Equal(7, share.First(l => l.Text.StartsWith("A VERY", StringComparison.Ordinal)).Row);
+        Assert.All(share, l => Assert.True(l.Column + l.Text.Length - 1 <= 34));
+        var key = Assert.IsType<KeyRequest>(s.Asked[0]);
+        Assert.True(key.AsMenu);
+        Assert.Equal(2, s.Windows.Count); // the share window, then the summary's
+    }
+
     [Theory]
     [InlineData(true, false, false, Msg.PartyWon)]
     [InlineData(false, false, false, Msg.FoundTreasure)]   // COMBAT with no monsters: treasure only

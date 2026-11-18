@@ -6,6 +6,21 @@ namespace GoldBox.Data.Module;
 // Raw bytes are authoritative in format 0.x: the engine builds records from `raw`; `fields` is a decoded, read-only
 // view for tools and people (§1.2, §11).
 
+/// <summary>
+/// <c>art/amiga/icon-colours.json</c> (docs/module-format.md §10, docs/re/por-art-formats.md §4 "Party icons"): the six
+/// bytes the Amiga program's party-icon recolouring reads (hunk 31 +0x210F..+0x2114; byte k: its low nibble is the art
+/// index the low nibble of colour byte k paints, its high nibble the index the high nibble paints), read from the
+/// player's <c>program</c> at import. Written only when they pair the same art indices as the DOS colour pairs moved to
+/// the Amiga pens (<see cref="Por.PorAmigaArt.IconPairsAgree"/>).
+/// </summary>
+public sealed record AmigaIconColoursDocument
+{
+    public const string RelativePath = "art/amiga/icon-colours.json";
+
+    public required int[] Pairs { get; init; }
+    public SourceRef? Source { get; init; }
+}
+
 /// <summary>Where an imported resource came from (container file and block id).</summary>
 public sealed record SourceRef
 {

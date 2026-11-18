@@ -1,6 +1,7 @@
 using GoldBox.Core.Ecl;
 using GoldBox.Core.Explore;
 using GoldBox.Data.Dax;
+using GoldBox.Data.Module.Por;
 using GoldBox.Data.Por;
 
 namespace GoldBox.Client.Play;
@@ -22,10 +23,10 @@ public sealed record CombatPicture(int Width, int Height, byte[] Pixels);
 /// plus one (only DOS's count is used, so the rare-feature numbering after it stays DOS's); WILDCOM matches tile for
 /// tile. RANDCOM (read s19): both programs load it at tile 0x22 (DOS GAME.OVR 0xD867, after DUNGCOM 0–0x18 and WILDCOM
 /// 0–0x21; Amiga hunk 13 +0x1706) and share the terrain table, so the Amiga set (8 tiles; its 2 and 3 are DOS's 3 and
-/// 2, its 6 and 7 never drawn) is used as it is, as the Amiga shows it. [?] Party icons stay DOS: the Amiga record
-/// keeps the icon bytes 2 further on, its recolouring (hunk 16 +0x3B6) maps other index pairs (9/1, 10/2, 11/3, 6/7,
-/// 5/8, 15/14) to colour nibbles that are Amiga pens, and it ORs the head into the body; turning a DOS character's
-/// EGA colour bytes into those pens is not settled for EGA 2–5.
+/// 2, its 6 and 7 never drawn) is used as it is, as the Amiga shows it. Party icons (<see cref="Party"/>) are built
+/// the Amiga way from the Amiga CHEAD/CBODY when the module has the program's colour pairs
+/// (<see cref="IPorContent.AmigaIconPairs"/>) and every colour nibble of the character has a pen
+/// (<see cref="PorAmigaArt.IconPen"/>); otherwise DOS.
 /// </para>
 /// </summary>
 public sealed class CombatArt
@@ -37,6 +38,7 @@ public sealed class CombatArt
     private readonly IPorContent? _dir;
     private readonly Dictionary<int, CombatPicture?> _cpic = [];
     private readonly Dictionary<int, CombatPicture?> _head = [], _body = [], _sprites = [];
+    private readonly Dictionary<int, (DaxPicture P, int Base)?> _amigaHead = [], _amigaBody = [];
     private PorArtChoice _choice = PorArtChoice.Dos;
     private Func<byte[], int>? _paletteBase;
 
@@ -68,6 +70,8 @@ public sealed class CombatArt
         _paletteBase = paletteBase;
         _cpic.Clear();
         _sprites.Clear();
+        _amigaHead.Clear();
+        _amigaBody.Clear();
         if (_dir is null)
             return;
         var dosDungeon = Items(Single(_dir, "DUNGCOM", 1, PorArtChoice.Dos, null), opaque: true);
@@ -191,6 +195,8 @@ public sealed class CombatArt
     /// </summary>
     public CombatPicture? Party(EclCharacter c, bool attack)
     {
+        if (AmigaParty(c, attack) is { } amiga)
+            return amiga;
         int extra = (c[IconSize] == 2 ? 64 : 0) + (attack ? 128 : 0);
         var body = Cached(_body, "CBODY", (c[IconBody] & 0x3F) + extra) ?? Cached(_body, "CBODY", c[IconBody] & 0x3F);
         var head = Cached(_head, "CHEAD", (c[IconHead] & 0x3F) + extra) ?? Cached(_head, "CHEAD", c[IconHead] & 0x3F);
@@ -206,6 +212,44 @@ public sealed class CombatArt
         for (int i = 0; i < px.Length; i++)
             px[i] = map[px[i]];
         return new CombatPicture(w, h, px);
+    }
+
+    /// <summary>
+    /// A party icon from the Amiga art (docs/re/por-art-formats.md §4 "Party icons", read in the Amiga program): the
+    /// loader (hunk 22 +0x193A) takes CHEAD / CBODY block id + 0x40 for icon size 2 (the size letter T); the action
+    /// picture is CBODY id + 0x80 but the same CHEAD id. The builder (hunk 16 +0x2D0) ORs the head's planes into the
+    /// body's top rows (hunk 16 +0x210: indices ORed, not replaced as on DOS), then recolours both pictures through
+    /// <see cref="PorAmigaArt.IconColourMap"/> with the character's colour bytes moved to pens
+    /// (<see cref="PorAmigaArt.AmigaIconColours"/>). Null (the DOS icon) under Original DOS, without the pairs or the
+    /// Amiga blocks, or when a colour nibble has no pen.
+    /// </summary>
+    private CombatPicture? AmigaParty(EclCharacter c, bool attack)
+    {
+        if (_choice == PorArtChoice.Dos || _paletteBase is null || _dir?.AmigaIconPairs() is not { } pairs
+            || PorAmigaArt.AmigaIconColours(c.Record.AsSpan(IconColours, 6), pairs) is not { } colours)
+            return null;
+        int size = c[IconSize] == 2 ? 0x40 : 0;
+        var body = Amiga(_amigaBody, "CBODY", (c[IconBody] & 0x3F) + size + (attack ? 0x80 : 0));
+        var head = Amiga(_amigaHead, "CHEAD", (c[IconHead] & 0x3F) + size);
+        if (body is not ({ Items.Count: > 0 } bp, var bb) || head is not ({ Items.Count: > 0 } hp, var hb) || bb != hb
+            || bp.Width != hp.Width)
+            return null;
+        var px = (byte[])bp.Items[0].Clone();
+        var hpx = hp.Items[0];
+        for (int i = 0; i < hpx.Length && i < px.Length; i++)
+            px[i] |= hpx[i];
+        var map = PorAmigaArt.IconColourMap(colours, pairs);
+        for (int i = 0; i < px.Length; i++)
+            px[i] = map[px[i] & 15];
+        return new CombatPicture(bp.Width, bp.Height, Rebase(px, bb, opaque: false));
+    }
+
+    /// <summary>A block of the chosen variant when it is not DOS (its pixels unmoved, with its palette run), else null.</summary>
+    private (DaxPicture P, int Base)? Amiga(Dictionary<int, (DaxPicture P, int Base)?> cache, string file, int id)
+    {
+        if (!cache.TryGetValue(id, out var p))
+            cache[id] = p = Single(_dir, file, id, _choice, _paletteBase) is (var pic, var b and > 0) ? (pic, b) : null;
+        return p;
     }
 
     private static void Copy(CombatPicture src, byte[] dst, int w, int h, int top)

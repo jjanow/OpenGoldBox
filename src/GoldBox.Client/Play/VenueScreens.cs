@@ -201,13 +201,19 @@ public static class VenueScreens
         var d = t.Dialog;
         if (npcsTakingShare.Count > 0)
         {
-            d.Text.Clear();
+            // 0x695E (DOSBox-X s22): a full-screen window (START 03F1:02E8 with 1, 1, 38, 22, empty title); each NPC
+            // through the text routine in the box (5, 5 + 2k)–(34, 22), colour 10, cleared first; then the press-enter
+            // text as a white menu of the menu routine (as after the summary).
+            var box = new TextWindow(1, 1, 38, 22);
+            int k = 0;
             foreach (var npc in npcsTakingShare)
             {
-                d.Show(npc.Name.ToUpperInvariant() + t.Text[Msg.TakesShare], clear: false);
-                d.Text.NewLine();
+                box.PrintIn(5, 5 + k, 34, 22, npc.Name.ToUpperInvariant() + t.Text[Msg.TakesShare], clear: true, colour: 10);
+                k += 2;
             }
-            d.WaitKey(t.Text[Msg.PressEnter]);
+            t.ShowWindow(box.WindowLines());
+            d.MenuKey(t.Text[Msg.ShareContinue], t.Text.Original(Msg.ShareContinue));
+            t.ShowWindow(null);
         }
         Summary(t, outcome, duel);
         LootMenu(t);

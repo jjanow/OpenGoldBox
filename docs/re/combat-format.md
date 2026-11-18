@@ -277,6 +277,14 @@ With NPC shares > 0, each of the seven pool dwords (DS:67F4) that is above 0 (si
 cut = **low byte** of (pool div total) (signed long division, START 0xB9F6) and the product is 16 bits, sign-extended.
 So a pile whose per-share cut is ≥ 256 loses only the low byte of it per share. When any coin was taken a window lists
 each okay NPC with 0x85 ≠ 0 as taking its share, and waits for a key.
+**The window (0x695E), P + D (s22):** a full-screen window (START 03F1:02E8 with 1, 1, 38, 22, empty title CS 0x12A8);
+for the k-th such NPC (k from 0) the name and the share text through the text routine in the box (5, 5 + 2k)–(34, 22),
+colour 10, cleared first (so each starts at column 5 on rows 5, 7, 9, … and wraps at column 34); then the press-enter
+text through the menu routine (03C5:002A) with colours 15, 15, 15, as after the summary (white, the shared cell back
+to the first). DOSBox-X: a test save whose step runs ADDNPC 73 (a gnoll, share 7), TREASURE 100 copper and COMBAT
+with no monsters; the gnoll's line wraps after the fifth word. Then the summary (found treasure), then the loot
+screen with the gnoll in the party list (cyan). The Client's three screens equal DOSBox-X pixel for pixel apart from
+its help lines (`VenueScreens.Loot`; before s22 it printed into the text window over the loot screen).
 
 **Loot menu** (0x644B), P structure: View (0x21AED), Take (0x62B6), Pool (0x25191), Share (0x252C3), D (0x27C38),
 Exit, G / O previous / next character (0x23819); the item list comes from 0x25C07.
@@ -299,6 +307,15 @@ the view, the party list, no position line, an empty text window. The "continue 
 yes/no routine 0x2D9A0 (opens on No).
 
 ## Shop (0x7212) — P
+
+**Screen (D, s22):** the shop and the temple run in interface state 1; their redraw (START 0x3379 case 1: 0x32CA(1),
+the frames and the inner view box, then 03D0:003E with DS:49FD / 49FE and 03D0:0039 (3, 3, 1)) leaves the **view box
+empty** and draws **no position line**; the party list is there, the text box empty, the menu on row 24. A PICTURE
+before CLRMON (as the New Phlan shop's script, ECL3 block 0 $A248) is not shown. Leaving with Exit: the 3D view and
+the position line come back with the step, and the command line opens on the shared cell left by the shop menu
+(Exit, entry 4: Search). Client: the view box blank and no position line while `Venue.Shop`; pixel-equal apart
+from its help lines. `[?]` What 03D0:0039 draws when a picture is still armed (no v1.3 script enters a shop or temple
+without CLRMON).
 
 DS:49F3 = 1, the 28 bytes of the money pool DS:67F4 are zeroed, DS:6DC0 (a byte, not the VM cell) = 0, and every item
 of the treasure list DS:6810 is named (START 0xFE2): **the shop's stock is the treasure list**, filled by TREASURE

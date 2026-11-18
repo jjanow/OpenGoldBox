@@ -910,8 +910,10 @@ public sealed class EclVm
                 var v = Values(1, 5);
                 if (Memory.Party is not null)
                 {
-                    if (PartyRules.Damage(v[0] & 0xFF, v[1] & 0xFF, v[2] & 0xFF, v[3] & 0xFF, v[4] & 0xFF))
+                    bool killed = PartyRules.Damage(v[0] & 0xFF, v[1] & 0xFF, v[2] & 0xFF, v[3] & 0xFF, v[4] & 0xFF);
+                    if (killed)
                         ExternalStop = true; // DS:49FF: no list member left in play
+                    HostCall("DamageEnd", [killed ? "killed" : "alive"], null, () => Host.DamageEnd(killed));
                 }
                 else
                 {

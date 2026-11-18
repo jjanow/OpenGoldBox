@@ -98,6 +98,25 @@ reads them:
   class to raise". Note: in this DOSBox-X build, loading a state (F12+L) after the probe was loaded crashed the
   emulator twice (malloc error); the runs were redone from the boot instead.
 
+## Screen checks with test saves (s22)
+
+For screens that only show at the end of a long play (the party destroyed, the end game, a shop), build a save whose
+first step runs the code: `python3 -I tools/scripts/por_test_saves.py GAMEDIR` writes slots B–I into a scratch game
+copy (the list is in the script). The same folder serves both sides: DOSBox-X loads the slot from the party menu (L,
+letter), the Client gets `--game GAMEDIR --save X` (its module is imported from that folder), so both run the same
+step. Compare screens as EGA indices: reduce the DOSBox-X shot (640×400 under the menu bar) and the Client's (3 ×
+320×200) to 320×200 colour indices and count differing pixels per text row; the Client's help lines and, with these
+saves, the 3D view (vector 4 loads no wall sets, see the script) are the expected differences.
+
+- **Timing.** Use the script's default 3000 cycles for anything timed: Turbo Pascal's Delay is calibrated by a loop
+  at start-up, and at `cycles=max` Delay(3000) took about 0.3 s; at 3000 cycles it measured 3.0 s. The intro's
+  lightning rate also scales with the cycles (start-menu.md §1a).
+- **Fast sampling.** A window grab through python-xlib (`get_image` on the DOSBox-X window, about 175 a second) with
+  a colour histogram per grab gives page and palette changes with their times; `xwd` + ffmpeg manages about 6 a second.
+- **States.** In s22 a state loaded into a freshly started emulator (F12+L after a restart, `forceloadstate=true`)
+  crashed DOSBox-X right after "Loaded" both times; booting and loading the slot from the party menu (about 15 s at
+  3000 cycles: three Returns for the intro and the code wheel, L, the letter) was used instead.
+
 ## Comparing a headless VM against a capture
 
 `goldbox-tools ecl-compare GAMEDIR [FIXTURES] [--capture NAME] [--trace-out DIR]` (code:

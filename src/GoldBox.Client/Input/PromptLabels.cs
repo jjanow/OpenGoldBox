@@ -66,6 +66,7 @@ public static class PromptLabels
         GameAction.Encamp => "CLICK ENCAMP",
         GameAction.PreviousMember or GameAction.NextMember => "CLICK A NAME",
         GameAction.StepUpLeft or GameAction.StepUpRight or GameAction.StepDownLeft or GameAction.StepDownRight => "CLICK A SQUARE",
+        GameAction.HallJ => "CLICK THE PROMPT",
         _ => "",
     };
 

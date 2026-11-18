@@ -255,7 +255,8 @@ EXIT: (1, 17), no clear).
    that ended it); each scan stops at the string's last character.
 3. If column + (word length − 1) > x1: column := x0, row + 1, and spaces at p are skipped (0x77A4). If the row is then
    below y1 and text is left, the cursor goes to (x0, y0), a page prompt (a fixed string just before the routine) is
-   drawn on row 24 in colour 13, the program waits for a key, blanks the box and prints the word; otherwise the next
+   drawn on row 24 in colour 13, the program waits for a key (GetKey 0x7CC1: a key already waiting answers it at
+   once, below), blanks the box and prints the word; otherwise the next
    pass prints it on the new row. (A test at 0x79A9 for a word ending exactly on x1 can never be true.)
 4. Else the word is drawn (0x7737), one cell per character; while DS:4A00 is set (PRINT sets it) each character is
    followed by Delay(DS:49E2 × 10) (START 0x7782 → the Crt-style Delay START 0xA69C, calibrated milliseconds; s15)
@@ -265,6 +266,47 @@ The window never scrolls. Code: `GoldBox.Client.Play.TextWindow`.
 
 CLEARBOX (0x385A) blanks the picture window (1, 1)–(15, 15), not this box; `[?]` when the 3D view is drawn there
 again is not read (the Client keeps it blank until the next command).
+
+## Keys while the program is busy (START 0x89E9; program read s22) — P
+
+The program reads the keyboard only through the Crt unit (KeyPressed START 0xA6FD, ReadKey 0xA70F: BIOS INT 16h, so
+keys pressed meanwhile wait in the BIOS type-ahead buffer) and through these START routines (unit 0899):
+- **GetKey 0x89E9** (0899:0059; the menu routine 0x2CC8C polls KeyPressed then calls it, the page prompt 0x7C85 calls
+  it directly): ReadKey; Ctrl-S (0x13) switches the sound off / back on (DS:5372 / 5373); when ParamStr(1) equals the
+  word at START 0x89E3 (the debugging word, training.md "J"), Ctrl-D (4) toggles DS:49F7 and Ctrl-C (3) quits
+  (0x8990). Then, **unless the key is 0** (an extended key's first byte), `while KeyPressed: key := ReadKey`: every
+  key waiting is read and **only the last one is returned**. A waiting extended key read in that loop comes back as
+  its bare scan code (Up 0x48 'H', Home 0x47 'G', End 0x4F 'O', …) `[?]` not modelled.
+- **0x8A94** (0899:0104), called at 17 places (2 in START, 15 in GAME.OVR: START 0x48DA, the page prompt 0x7A29, the picture loader 0x2E170, the
+  icon and tile loaders 0x31A8E / 0x31C34, LoadChar 0x1EAD2, the monster loader 0x1EEAA, Load 0x1F5E8, Alt-Q 0x9C74,
+  the title waits 0xD4 / 0x6FB, …): **does nothing in v1.3** — right after its prologue a jump skips its
+  `while KeyPressed: GetKey` loop to the return.
+- **0x8AB2** (0899:0122): when a key waits, GetKey, result dropped: so the whole buffer is emptied. Called only by the
+  fight start 0xE402 (three times, between its setup calls) and its setup loop 0xDFC6. The AI's key check 0xBB81
+  (combat-ai.md) reads a waiting key the same way (GetKey: the last key; a 0 reads the scan code) and acts on Alt-M (0x32),
+  space (0x20) and Alt-X (0x2D) only.
+- No other reader found: no INT 21h function 0Ch (`mov ah, 0Ch` or `mov ax, 0Cxxh` before an `int 21h`) and no
+  write to the BIOS buffer pointers (0040:001A / 001C) in START.EXE or GAME.OVR.
+
+So nothing clears the buffer while text types: the typing (0x7737: glyph, then Delay(DS:49E2 × 10) per character),
+PauseOnly and DELAY (Delay START 0xA69C: a busy loop on the BIOS tick byte) read no keys, and every key pressed
+meanwhile waits; the **next key read takes the last of them** (a waiting key answers the page prompt at once, then the
+next GetKey takes the rest). The s21 note "DOS clears its key buffer while text types" was the drain seen from the
+outside: of several keys pressed during a text only the last acted. `[?]` Not re-checked in DOSBox-X (the BIOS buffer
+holds 15 keys; with more, the oldest are lost anyway).
+
+**Client** (`ActionInput.ReadingKeys`): while the game logic waits on a plain pause (`DelayRequest` without
+`ReportInput`) it reads no keys: a key or pad button pressed then is kept (the newest replaces an older one) and that
+frame acts on nothing; the first frame of a key read (a menu, a key wait, the rest loop's poll, the command line) with
+no new press of its own gets the kept key. Pad buttons count as keys; mouse clicks during a pause are dropped. A
+fight's build reads the buffer once and drops the key (0xE402's reads), and the AI's key check reads it at every AI
+turn (Core `FightKit.AiKey` → `MonsterAi.ReadKey`, `ActionInput.TakeAiKey`): the action `FightManual` (space, the
+pad's right-stick press) puts the party back under the player's control, any other key is taken with no effect.
+`[?]` Alt-M / Alt-X (scan codes 0x32 / 0x2D after a 0) are not mapped (no Alt keys in the Client); the mouse has no
+way to it (clicks during a pause are dropped). Enter does not end a pause. The Client shows script text at once (no typing
+time), so pauses are the only busy time it has. QoL
+`SkipPauses` (settings, off = original): Enter or a click ends a pause, and keys pressed during it are dropped (the
+Client's behaviour before s22).
 
 ## Verification (2026-11-17, s10)
 
@@ -295,7 +337,9 @@ to two digits), then " camping" (DS:49F3 = 2) or " search" ($6DCA bit 0). In Kob
 command line highlights the item whose hotkey is the last letter key read (after loading slot C: CAST).
 **When it is drawn (s21):** only at fixed points: a turn or a member pick in the command routine (GAME.OVR 0x17266,
 0x173D9), after the step or its bump (0x17707, 0x17734), the camp (0x197F5, rest 0x1804A), the full redraw of
-interface states 2–4 (START 0x3379; state 1 and 6 do not draw it) and ECL CALL (0x3A15). A command whose script
+interface states 2–4 (START 0x3379; state 1 and 6 do not draw it) and ECL CALL (0x3A15). Each DAMAGE line blanks
+cells (17, 1)–(38, 15) before the party list is drawn again (GAME.OVR 0x96D0), which takes the position line off
+until the next of those points (DOSBox-X s22; ecl-format.md "DAMAGE"). A command whose script
 switches skips the step, so the line keeps the old square until the next command (DOSBox-X: slums → New Phlan shows
 "15,4 E", New Phlan → slums "0,4 W"; the overland entry the same). The party list (START 0x1307) is likewise drawn only
 at such points: LOADCHAR's current member does not show until a redraw (Client: the player's pick stays marked).

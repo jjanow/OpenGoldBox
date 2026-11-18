@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "AmigaIconColoursDocument",
+  "type": "object",
+  "properties": {
+    "pairs": {
+      "type": "array",
+      "items": {
+        "type": "integer"
+      }
+    },
+    "source": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "container": {
+          "type": "string"
+        },
+        "block": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "container"
+      ]
+    }
+  },
+  "required": [
+    "pairs"
+  ]
+}

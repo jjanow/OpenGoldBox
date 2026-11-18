@@ -59,13 +59,26 @@ public sealed class ClientArt
     }
 
     /// <summary>
-    /// The title painting to show at start-up under this setting, or null: only a variant's own title (the Amiga intro
-    /// painting, module path <c>art/amiga/intro/0/1</c>); Original DOS shows none, as before.
+    /// The Amiga title painting under this setting, or null: only a variant's own title (the Amiga intro painting, module
+    /// path <c>art/amiga/intro/0/1</c>); Original DOS has none. The introduction (<see cref="IntroTitle"/>) shows it in
+    /// place of DOS TITLE block 2; a start from a save shows it alone.
     /// </summary>
     public PorArtImage? Title() =>
         Choice != PorArtChoice.Dos
         && _content?.Art(PorAmigaArt.IntroContainer.ToUpperInvariant(), PorAmigaArt.TitleId, Choice) is { Variant: not "dos", Frames: [{ Items.Count: > 0 }, ..] } t
             ? t : null;
+
+    /// <summary>The introduction's logo page: DOS TITLE block 1 (the Amiga has no such screen), or null.</summary>
+    public PorArtImage? IntroLogo() => _content?.Art(IntroContainer, 1, PorArtChoice.Dos);
+
+    /// <summary>
+    /// The introduction's title page: the Amiga painting under Best / Amiga when the module has it (<see cref="Title"/>),
+    /// else DOS TITLE block 2, or null.
+    /// </summary>
+    public PorArtImage? IntroTitle() => Title() ?? _content?.Art(IntroContainer, 2, PorArtChoice.Dos);
+
+    /// <summary>The DOS pictures of the introduction (TITLE.DAX, GAME.OVR 0x6F5 names the file).</summary>
+    public const string IntroContainer = "TITLE";
 
     /// <summary>The setting after <paramref name="c"/> in the settings row's cycle.</summary>
     public static PorArtChoice Next(PorArtChoice c) => c switch

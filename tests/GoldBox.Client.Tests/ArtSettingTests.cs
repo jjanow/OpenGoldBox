@@ -24,6 +24,8 @@ public class ArtSettingTests
     {
         public readonly Dictionary<(string, int), IReadOnlyList<DaxPicture>> Dos = [];
         public readonly Dictionary<(string, int), IReadOnlyList<DaxPicture>> Amiga = [];
+        public byte[]? Pairs;
+        public byte[]? AmigaIconPairs() => Pairs;
 
         public string Origin => "fake";
         public int? ScriptDisk(int script) => null;
@@ -184,10 +186,58 @@ public class ArtSettingTests
         byte[] defaults = [0x91, 0xA2, 0xB3, 0xC4, 0xE6, 0xF7];  // the creation's colour bytes: the art's own colours
         for (int k = 0; k < 6; k++)
             member[CombatArt.IconColours + k] = defaults[k];
-        Assert.Equal(1, art.Party(member, false)!.Pixels[300]);  // [?] party icons stay DOS
+        Assert.Equal(1, art.Party(member, false)!.Pixels[300]);  // no colour pairs in the module: party icons stay DOS
 
         art.UseArt(PorArtChoice.Dos, palette.Base);
         Assert.Equal(1, art.Monster(5, false)!.Pixels[1]);       // the cache follows the change
+    }
+
+    /// <summary>Pair bytes as the Amiga program's (the pens of each DOS pair; the light one in the high nibble here).</summary>
+    private static byte[] AgreeingPairs() =>
+        [.. PorAmigaArt.DosIconPairs.Select(c => (byte)(PorAmigaArt.IconPen(c + 8)!.Value << 4 | PorAmigaArt.IconPen(c)!.Value))];
+
+    [Fact]
+    public void Amiga_party_icons_or_the_head_into_the_body_and_recolour_through_the_pairs()
+    {
+        var c = new FakeContent { Pairs = AgreeingPairs() };
+        c.Dos[("CBODY", 1)] = [Pic(24, 24, Fill(576, _ => 1))];
+        c.Dos[("CHEAD", 0)] = [Pic(24, 10, Fill(240, _ => 0))];
+        // Amiga body: index 1 at the top left, the pen of DOS 4 (6) at pixel 300; the head (10 rows) has 8 at the top left.
+        c.Amiga[("CBODY", 1)] = [Pic(24, 24, Fill(576, i => i == 0 ? (byte)1 : i == 300 ? (byte)6 : (byte)0))];
+        c.Amiga[("CBODY", 1 + 0x80)] = [Pic(24, 24, Fill(576, _ => 9))];
+        c.Amiga[("CHEAD", 0)] = [Pic(24, 10, Fill(240, i => i == 0 ? (byte)8 : (byte)0))];
+        c.Amiga[("CBODY", 1 + 0x40)] = [Pic(24, 24, Fill(576, _ => 3))];
+        c.Amiga[("CHEAD", 0 + 0x40)] = [Pic(24, 8, Fill(192, _ => 0))];
+        var palette = new ScreenPalette();
+        var art = new CombatArt(c, PorArtChoice.Amiga, palette.Base);
+        int b = palette.Base(AmigaPalette);
+        var member = new Core.Ecl.EclCharacter();
+        member[CombatArt.IconBody] = 1;
+        member[CombatArt.IconSize] = 1;
+        byte[] defaults = [0x91, 0xA2, 0xB3, 0xC4, 0xE6, 0xF7];  // the creation's colour bytes: the art's own colours
+        for (int k = 0; k < 6; k++)
+            member[CombatArt.IconColours + k] = defaults[k];
+
+        var icon = art.Party(member, false)!;
+        Assert.Equal(b + (1 | 8), icon.Pixels[0]);               // the head's 8 ORed into the body's 1 (hunk 16 +0x210)
+        Assert.Equal(b + 6, icon.Pixels[300]);                   // the defaults leave the art's colours
+        Assert.Equal(0, icon.Pixels[1]);                         // 0 stays see-through
+        Assert.Equal(b + 9, art.Party(member, true)!.Pixels[5]); // the action picture: CBODY id + 0x80, same head
+        member[CombatArt.IconColours + 3] = 0xC2;                // pair 4 / 12: the dark part EGA green
+        art.UseArt(PorArtChoice.Amiga, palette.Base);
+        Assert.Equal(b + PorAmigaArt.IconPen(2)!.Value, art.Party(member, false)!.Pixels[300]);
+        member[CombatArt.IconSize] = 2;                          // size 2: CBODY / CHEAD id + 0x40 (the letter T)
+        Assert.Equal(b + 3, art.Party(member, false)!.Pixels[0]);
+
+        member[CombatArt.IconSize] = 1;
+        member[CombatArt.IconColours + 3] = 0xC5;                // EGA 5 has no pen [?]: the DOS icon
+        Assert.Equal(1, art.Party(member, false)!.Pixels[300]);
+        member[CombatArt.IconColours + 3] = 0xC4;
+        art.UseArt(PorArtChoice.Dos, palette.Base);              // Original DOS: the DOS icon
+        Assert.Equal(1, art.Party(member, false)!.Pixels[300]);
+        c.Amiga.Remove(("CHEAD", 0));                            // no Amiga head: the DOS icon
+        art.UseArt(PorArtChoice.Best, palette.Base);
+        Assert.Equal(1, art.Party(member, false)!.Pixels[300]);
     }
 
     [Fact]

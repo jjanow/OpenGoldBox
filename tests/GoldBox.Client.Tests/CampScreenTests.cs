@@ -175,6 +175,28 @@ public class CampScreenTests
     }
 
     [Fact]
+    public void Alter_icon_runs_the_icon_editor_on_the_current_member()
+    {
+        var a = Member("ANNA");
+        var b = Member("BORN");
+        var (t, s) = Context(new Script(
+            4,                          // ALTER
+            ChoiceRequest.NextMember,   // End: BORN current
+            3,                          // ICON
+            5, 5), a, b);               // EXIT alter, EXIT camp
+        var edited = new List<EclCharacter>();
+        var c = Camp(t);
+        c = new CampContext
+        {
+            Trade = c.Trade, State = c.State, Spells = c.Spells, Rest = c.Rest, Memory = c.Memory,
+            EditIcon = edited.Add,
+        };
+        VenueScreens.Camp(c, null);
+        Assert.Same(b, Assert.Single(edited));
+        Assert.Equal(0, s.Left);
+    }
+
+    [Fact]
     public void Speed_and_pictures_change_the_option_cells()
     {
         var m = new EclMemory { GameSpeed = 0 };

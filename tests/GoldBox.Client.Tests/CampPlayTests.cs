@@ -2,6 +2,7 @@ using GoldBox.Client.Input;
 using GoldBox.Client.Play;
 using GoldBox.Client.Screens;
 using GoldBox.Core.Explore;
+using GoldBox.Core.Game;
 using GoldBox.Data.Por;
 using Microsoft.Xna.Framework.Input;
 
@@ -282,5 +283,103 @@ public class CampPlayTests
         Press(r, GameAction.Cancel);                               // leave the camp
         Assert.Null(r.Runner.Pending);
         r.Runner.Dispose();
+    }
+
+    private sealed class Stack : IScreenHost
+    {
+        public List<IScreen> Pushed { get; } = [];
+        public int Pops { get; private set; }
+        public void Push(IScreen screen) => Pushed.Add(screen);
+        public void Pop() => Pops++;
+        public void Quit() { }
+        public void SaveBindings() { }
+    }
+
+    private static void To(IScreen s, ActionInput input, Keys k)
+    {
+        input.Update(new KeyboardState(k), default, default, TimeSpan.Zero, _ => null);
+        s.Update(input);
+        input.Update(default, default, default, TimeSpan.Zero, _ => null);
+    }
+
+    private static void To(IScreen s, ActionInput input, GameAction a)
+    {
+        input.Update(default, default, default, TimeSpan.Zero, _ => null);
+        input.Inject(a);
+        s.Update(input);
+    }
+
+    /// <summary>
+    /// Alter Icon (0x1951F) runs the icon editor 0x1D1AC on the current member: the explore screen puts the party menu's
+    /// icon page over the camp, which takes keys, the pad and the mouse, and closes when the Alter menu asks again.
+    /// </summary>
+    [Fact]
+    public void Alter_icon_edits_the_current_members_icon_over_the_camp()
+    {
+        if (Dir() is null)
+            return;
+        var dir = new PorGameDirectory(Dir()!);
+        var art = PorViewArt.Load(dir);
+        var runner = new ScriptRunner();
+        PorGame? game = null;
+        var player = new ClientPlayer(runner, () => game!.Memory) { Resources = ClientResources.Load(dir), Game = () => game };
+        game = PorGame.FromSave(dir, art, dir.Find("SAVGAMA.DAT")!, new PorPlayer(player, player, player, player), 7);
+        var program = dir.Program()!;
+        var folder = Directory.CreateTempSubdirectory("camp-icon-");
+        try
+        {
+            var flow = new PartyMenuFlow(runner.Ask, new PartyMenuTexts(program, player.Resources), program.CreationTables()!,
+                PorFight.Kit(dir)!.Items, new PorRoster(folder.FullName), 1);
+            player.IconEditor = flow.EditIcon;
+            var host = new Stack();
+            var input = new ActionInput(InputBindings.Defaults());
+            var screen = new ExploreScreen(game, player, runner, host)
+            {
+                PartyPages = () => new PartyMenuScreen(flow, runner, host, game.Art.Font, player.Resources,
+                    new ClientArt(dir, art, new ScreenPalette(), PorArtChoice.Dos), _ => null!) { Program = program, Overlay = true },
+            };
+            var r = new Rig(screen, game, runner, input, player);
+            var who = game.Memory.Party!.Current!;
+            byte colours = who[IconEditor.Colours];
+            Press(r, GameAction.Encamp);
+            Key(r, Keys.A);                                        // Alter
+            Key(r, Keys.I);                                        // Icon
+            var main = Assert.IsType<IconRequest>(runner.Pending);
+            Assert.Same(who, main.Character);
+            Assert.Equal("P12SE", main.Hotkeys);                   // the editor's main menu (DS:07E8)
+            input.Update(default, default, default, TimeSpan.Zero, _ => null);
+            screen.Update(input);                                  // a frame: the icon page goes over the camp
+            var page = Assert.IsType<PartyMenuScreen>(Assert.Single(host.Pushed));
+            To(page, input, Keys.D1);                              // keys: color-1, Body, Next, Keep
+            To(page, input, Keys.B);
+            To(page, input, Keys.N);
+            Assert.Equal((colours & 0xF0) | ((colours + 1) & 0x0F), who[IconEditor.Colours]);
+            To(page, input, Keys.K);
+            To(page, input, GameAction.Cancel);                    // the pad's B: Escape, back to the main menu
+            Assert.Equal("P12SE", Assert.IsType<IconRequest>(runner.Pending).Hotkeys);
+            // The mouse: a click on the main menu's last word (Exit) on the bottom line.
+            var words = Assert.IsType<IconRequest>(runner.Pending).Actions;
+            int col = words.Take(words.Count - 1).Sum(w => w.Length + 1);
+            input.Update(default, default, default, TimeSpan.Zero, _ => null);
+            if (page.MapClick(new ScreenClick(col * 8 + 2, 24 * 8 + 4, false)) is { } click)
+                input.Inject(click);
+            page.Update(input);
+            var ok = Assert.IsType<IconRequest>(runner.Pending);   // the IconOk question, opening on No
+            Assert.Equal(2, ok.Actions.Count);
+            To(page, input, GameAction.MenuLeft);                  // the pad: to Yes, A
+            To(page, input, GameAction.Confirm);
+            Assert.IsType<ChoiceRequest>(runner.Pending);          // the Alter menu again
+            page.Update(input);
+            Assert.Equal(1, host.Pops);                            // the page closes over the camp's menu
+            Assert.Equal((colours & 0xF0) | ((colours + 1) & 0x0F), who[IconEditor.Colours]);
+            Key(r, Keys.E);                                        // Exit Alter
+            Press(r, GameAction.Cancel);                           // leave the camp
+            Assert.Null(runner.Pending);
+        }
+        finally
+        {
+            runner.Dispose();
+            folder.Delete(recursive: true);
+        }
     }
 }

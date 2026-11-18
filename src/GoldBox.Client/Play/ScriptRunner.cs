@@ -73,6 +73,9 @@ public sealed record KeyRequest(string? Prompt = null) : PlayerRequest
     /// </summary>
     public int MenuEntries { get; init; }
 
+    /// <summary>The prompt's colour when it is not 13 (START 0x7C85 takes it as an argument: DAMAGE's line is 15).</summary>
+    public byte? Colour { get; init; }
+
     /// <summary>Entries of a menu text by the menu routine's rule (<see cref="MenuEntries"/>).</summary>
     public static int CountEntries(string original) => original.Count(c => char.IsAsciiDigit(c) || char.IsAsciiLetterUpper(c));
 }
@@ -128,6 +131,9 @@ public sealed record DelayRequest(TimeSpan Duration) : PlayerRequest
     /// loop's key check 0x24B1D, polled by the camp); off = the plain DELAY (answered null either way).
     /// </summary>
     public bool ReportInput { get; init; }
+
+    /// <summary>A bottom line left on the screen during the pause (text, colour), or null.</summary>
+    public (string Text, byte Colour)? BottomLine { get; init; }
 }
 
 /// <summary>Thrown inside the worker when the runner is shut down while it waits.</summary>

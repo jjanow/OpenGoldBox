@@ -50,8 +50,23 @@ public sealed class ClientSettings
     /// <summary>
     /// QoL, off = original: after the party is destroyed, open the party menu again (a new menu, empty party, as at
     /// start-up). The original's game loop then returns and the program quits to DOS (docs/re/start-menu.md §8).
+    /// Changed on the controls screen's AFTER DEFEAT row (QUIT / PARTY MENU, <see cref="SettingToggle.AfterDefeat"/>).
     /// </summary>
     public bool AfterDefeatMenu { get; set; }
+
+    /// <summary>
+    /// QoL, off = original: Confirm (or a click) ends a pause early, and keys pressed during a pause are dropped. The
+    /// original's pauses cannot be cut short and a key pressed meanwhile waits for the next key read, which keeps only
+    /// the last one (docs/re/view3d.md "Keys while the program is busy").
+    /// </summary>
+    public bool SkipPauses { get; set; }
+
+    /// <summary>
+    /// The word after <c>START</c> on the DOS command line (the program's ParamStr(1)), key <c>"ProgramWord"</c>; null =
+    /// none, as the game is normally started. The training hall's J compares it with a word in the player's files
+    /// (docs/re/training.md). Changed with <c>--param WORD</c> / <c>--no-param</c>.
+    /// </summary>
+    public string? ProgramWord { get; set; }
 
     public static string Folder
     {

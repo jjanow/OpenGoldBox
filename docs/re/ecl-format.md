@@ -466,6 +466,21 @@ door) writes to $007D / $007E, so $6E7D keeps its value (0 from the script init 
   HP 11 → 10) with exactly two draws (1d1, then the target 1d6 that the current-character form ignores).
 - Afterwards DS:49FF = 1 unless some list member has in play ≠ 0 (that ends the run and the area loop): then the
   party-killed end screen and a 3-second pause. The current character is restored.
+- **The lines and the end, P + D (s22).** The line routine 0x959F (unit 0x74D3) builds two spaces, the name and the
+  death text, or the hit text, the damage and the points text. Before printing: when the cursor row is above 22 it
+  goes to row 17, the box is cleared by the print and a white press-enter line (row 24, colour 15) waits first; then
+  the column is set to 38, so each line starts on a new row (the wrap skips the two spaces: the name at column 1),
+  and the line goes through the text routine in the script box (1, 17)–(38, 22) in **colour 15** (white). So the
+  first line of a step lands on row 18, and a sixth line needs a new page: the text routine's own page prompt
+  (colour 13) waits, then the box is blanked and the line printed on row 17. After the line the damage is applied,
+  cells (17, 1)–(38, 15) are blanked (0709:0DD3) and the party list drawn again (00BA:0767): the HP and name colours
+  change line by line, and the **position line on row 15 is gone** until the next redraw point (the step after the
+  vector, a command). **Every DAMAGE** then ends (0x37C0) with DS:5D92 restored and the white press-enter line (colour
+  15, row 24) and a key, wipe or not; with the party killed the window, the message and the 3-second pause come first
+  (start-menu.md §8). DOSBox-X: test saves whose step runs `DAMAGE 0xE0, 1, 1, 0, 0` (1 point to all six: lines of
+  two, one and two rows fill rows 18–22, the page prompt, the other three from row 17, the white line) and `DAMAGE 0xE0, 1, 1, 200, 0` (six death lines, the
+  wipe). Client: `ClientPlayer.DamageReport` / `DamageEnd` (host call `DamageEnd` after the opcode), pixel-equal on
+  every screen of both runs.
 - `[?]` The effect handlers of the two trigger classes (not read; they live with the combat code).
 
 **ROB v1, v2, v3** (0x2AF7). v1 = 0: the current character; else every list member. Money: each of the seven

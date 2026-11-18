@@ -579,4 +579,63 @@ public class ControlsScreenTests
         screen.Update(input);
         Assert.True(host.Quitted);
     }
+    private static void Frame(ControlsScreen s, ActionInput i, Keys k = Keys.None, GameAction? a = null)
+    {
+        i.Update(k == Keys.None ? default : new KeyboardState(k), default, default, TimeSpan.Zero, _ => null);
+        if (a is { } act)
+            i.Inject(act);
+        s.Update(i);
+        i.Update(default, default, default, TimeSpan.Zero, _ => null);
+        s.Update(i);
+    }
+
+    /// <summary>The start word row (the hall's J word): keyboard typing, the pad's grid and the mouse each set it.</summary>
+    [Fact]
+    public void The_start_word_is_set_with_keys_pad_or_mouse()
+    {
+        string? stored = null;
+        var word = new WordSetting(() => stored, w => stored = w);
+        var font = new TextFont(new byte[177 * 8]);
+        var input = new ActionInput(InputBindings.Defaults());
+        // Rows: the actions (with TAKE CONTROL and HALL J), then the word row (no art row), reset, back, quit.
+        var screen = new ControlsScreen(font, new Host(), null, word);
+        bool there = false;
+        void ToWordRow()
+        {
+            if (!there)
+                for (int i = 0; i < 4; i++)
+                    Frame(screen, input, a: GameAction.MenuUp);  // up from the first action wraps: quit, back, reset, word
+            there = true;                                        // the row stays selected after an edit
+            Frame(screen, input, a: GameAction.Confirm);
+        }
+        // Keyboard: type A, B, Backspace, C, Enter.
+        ToWordRow();
+        Frame(screen, input, Keys.A);
+        Frame(screen, input, Keys.B);
+        Frame(screen, input, Keys.Back);
+        Frame(screen, input, Keys.C);
+        Frame(screen, input, Keys.Enter);
+        Assert.Equal("AC", stored);
+        // Pad: Cancel deletes, the grid starts on A; right and Confirm types B; down three times reaches OK.
+        ToWordRow();
+        Frame(screen, input, a: GameAction.Cancel);      // deletes C
+        Frame(screen, input, a: GameAction.Cancel);      // deletes A
+        Frame(screen, input, a: GameAction.MenuRight);
+        Frame(screen, input, a: GameAction.Confirm);     // B
+        for (int i = 0; i < 3; i++)
+            Frame(screen, input, a: GameAction.MenuDown);
+        Frame(screen, input, a: GameAction.Confirm);     // OK
+        Assert.Equal("B", stored);
+        // Mouse: click Z then OK (row 6 + 1 for N–Z; OK on the last row at column 8).
+        ToWordRow();
+        Assert.Null(screen.MapClick(new ScreenClick((2 + 2 * 12) * 8 + 2, 7 * 8 + 4, false)));
+        Assert.Null(screen.MapClick(new ScreenClick(8 * 8 + 4, 9 * 8 + 4, false)));
+        Assert.Equal("BZ", stored);
+        // Cancel with nothing typed gives up and leaves it as it was.
+        ToWordRow();
+        Frame(screen, input, a: GameAction.Cancel);
+        Frame(screen, input, a: GameAction.Cancel);
+        Frame(screen, input, a: GameAction.Cancel);      // nothing left: gives up
+        Assert.Equal("BZ", stored);
+    }
 }

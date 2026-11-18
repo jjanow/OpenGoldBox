@@ -8,10 +8,16 @@ namespace GoldBox.Client.Screens;
 /// Shows every action with its key and pad button and lets the player rebind them: choose a row, then press the new
 /// key or pad button (a click or Escape/Start leaves it as it was). Also: the art setting (ART: ORIGINAL DOS / BEST /
 /// AMIGA, when the screen is given a <see cref="ClientArt"/>; Confirm or a click steps to the next, left/right step both
-/// ways), reset to defaults, back, quit. Fully usable with keyboard, mouse or pad alone.
+/// ways), the start word (the word after START on the DOS command line, typed or picked on a <see cref="CharGrid"/>,
+/// when the screen is given a <see cref="WordSetting"/>), the on/off settings it is given (<see cref="SettingToggle"/>,
+/// e.g. AFTER DEFEAT: QUIT / PARTY MENU; Confirm, a click or left/right flip them), reset to defaults, back, quit. Fully
+/// usable with keyboard, mouse or pad alone.
 /// </summary>
-public sealed class ControlsScreen(TextFont font, IScreenHost host, ClientArt? art = null) : IScreen
+public sealed class ControlsScreen(TextFont font, IScreenHost host, ClientArt? art = null, WordSetting? word = null,
+    IReadOnlyList<SettingToggle>? toggles = null) : IScreen
 {
+    private readonly IReadOnlyList<SettingToggle> _toggles = toggles ?? [];
+
     private const int FirstRow = 3;
 
     private static readonly (GameAction Action, string Label)[] Rows =
@@ -37,15 +43,39 @@ public sealed class ControlsScreen(TextFont font, IScreenHost host, ClientArt? a
         (GameAction.StepUpRight, "FIGHT: UP-RIGHT"),
         (GameAction.StepDownLeft, "FIGHT: DOWN-LEFT"),
         (GameAction.StepDownRight, "FIGHT: DOWN-RIGHT"),
+        (GameAction.FightManual, "FIGHT: MANUAL"),
+        (GameAction.HallJ, "HALL: J"),
     ];
 
-    /// <summary>The rows under the actions: the art setting (when the screen has one), reset, back, quit.</summary>
-    private string[] Extra => art is null
-        ? ["RESET TO DEFAULTS", "BACK TO THE GAME", "QUIT"]
-        : ["ART: " + ClientArt.Label(art.Choice), "RESET TO DEFAULTS", "BACK TO THE GAME", "QUIT"];
+    /// <summary>The rows under the actions: the art setting and the start word (when the screen has them), the toggles,
+    /// reset, back, quit.</summary>
+    private string[] Extra =>
+    [
+        .. art is null ? Array.Empty<string>() : ["ART: " + ClientArt.Label(art.Choice)],
+        .. word is null ? Array.Empty<string>() : [WordLabel],
+        .. _toggles.Select(t => t.Row),
+        "RESET TO DEFAULTS", "BACK TO THE GAME", "QUIT",
+    ];
 
-    /// <summary>Index in <see cref="Extra"/> of RESET TO DEFAULTS (the art row comes first when shown).</summary>
-    private int FirstFixedExtra => art is null ? 0 : 1;
+    private string WordLabel => "START WORD: " + (word?.Value is { Length: > 0 } w ? w : "NONE");
+
+    /// <summary>Index in <see cref="Extra"/> of the start word row, or -1.</summary>
+    private int WordExtra => word is null ? -1 : art is null ? 0 : 1;
+
+    /// <summary>Index in <see cref="Extra"/> of the first toggle (after the art and word rows when shown).</summary>
+    private int FirstToggle => (art is null ? 0 : 1) + (word is null ? 0 : 1);
+
+    /// <summary>Index in <see cref="Extra"/> of RESET TO DEFAULTS (after the art row, the word row and the toggles).</summary>
+    private int FirstFixedExtra => FirstToggle + _toggles.Count;
+
+    /// <summary>The toggle on the selected row, or null.</summary>
+    private SettingToggle? SelectedToggle =>
+        _selected - Rows.Length - FirstToggle is var k && k >= 0 && k < _toggles.Count ? _toggles[k] : null;
+
+    /// <summary>The start word being typed (null: not editing).</summary>
+    private CharGrid? _grid;
+
+    private const int GridRow = 6;
 
     private int _selected;
     private bool _waiting;
@@ -54,10 +84,11 @@ public sealed class ControlsScreen(TextFont font, IScreenHost host, ClientArt? a
     private int Count => Rows.Length + Extra.Length;
 
     /// <summary>
-    /// The actions scroll in rows 3–17 (3–16 with the art row; keyboard and pad move the window with the selection; the
-    /// mouse clicks the MORE line below them to page). The extras stay on rows 19–21 (18–21), so every device reaches them.
+    /// The actions scroll in rows 3–17 (one row fewer for the art row and for each toggle; keyboard and pad move the
+    /// window with the selection; the mouse clicks the MORE line below them to page). The extras stay on the rows down to
+    /// 21 (19–21 without art and toggles), so every device reaches them.
     /// </summary>
-    private int VisibleRows => art is null ? 15 : 14;
+    private int VisibleRows => 15 - FirstFixedExtra;
     private int MoreRow => FirstRow + VisibleRows;
     private int ExtraRow => MoreRow + 1;
 
@@ -98,6 +129,12 @@ public sealed class ControlsScreen(TextFont font, IScreenHost host, ClientArt? a
 
     public GameAction? MapClick(ScreenClick click)
     {
+        if (_grid is { } g)
+        {
+            if (g.Click(click) == true)
+                EndWord(true);
+            return null;
+        }
         if (_waiting)
         {
             _waiting = false;
@@ -121,12 +158,23 @@ public sealed class ControlsScreen(TextFont font, IScreenHost host, ClientArt? a
 
     public void Hover(int x, int y)
     {
+        if (_grid is { } g)
+        {
+            g.Hover(x, y);
+            return;
+        }
         if (!_waiting && ItemAt(y) is { } i)
             _selected = i;
     }
 
     public void Update(ActionInput input)
     {
+        if (_grid is { } g)
+        {
+            if (g.Edit(input) is { } done)
+                EndWord(done);
+            return;
+        }
         if (_waiting)
         {
             if (input.NewInput is not { } n)
@@ -161,6 +209,13 @@ public sealed class ControlsScreen(TextFont font, IScreenHost host, ClientArt? a
             SetArt(input.Pressed(GameAction.MenuLeft) ? ClientArt.Previous(art!.Choice) : ClientArt.Next(art!.Choice));
             return;
         }
+        if (SelectedToggle is { } toggle && (input.Pressed(GameAction.MenuLeft) || input.Pressed(GameAction.MenuRight)
+                                              || input.Pressed(GameAction.Confirm)))
+        {
+            toggle.Flip();
+            _note = toggle.Row + ".";
+            return;
+        }
         if (!input.Pressed(GameAction.Confirm))
             return;
         if (_selected < Rows.Length)
@@ -172,6 +227,14 @@ public sealed class ControlsScreen(TextFont font, IScreenHost host, ClientArt? a
         if (onArt)
         {
             SetArt(ClientArt.Next(art!.Choice));
+            return;
+        }
+        if (_selected - Rows.Length == WordExtra)
+        {
+            // Letters and digits: the word is compared exactly (docs/re/training.md, the hall's J).
+            _grid = new CharGrid("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789", GridRow, 20) { Typed = word!.Value ?? "" };
+            _note = "";
+            input.Swallow();
             return;
         }
         switch (_selected - Rows.Length - FirstFixedExtra)
@@ -190,6 +253,19 @@ public sealed class ControlsScreen(TextFont font, IScreenHost host, ClientArt? a
         }
     }
 
+    /// <summary>The start word typed (OK / Enter: kept, empty = none) or given up (Cancel with nothing typed).</summary>
+    private void EndWord(bool keep)
+    {
+        if (keep)
+        {
+            word!.Value = _grid!.Typed.Length > 0 ? _grid.Typed : null;
+            _note = WordLabel + ".";
+        }
+        else
+            _note = "NOT CHANGED.";
+        _grid = null;
+    }
+
     private void SetArt(Data.Por.PorArtChoice choice)
     {
         art!.Set(choice);
@@ -200,6 +276,15 @@ public sealed class ControlsScreen(TextFont font, IScreenHost host, ClientArt? a
     {
         f.Clear(0);
         Chrome.Box(f, 0, 0, 39, 24);
+        if (_grid is { } g)
+        {
+            Chrome.Text(f, font, 2, 1, "START WORD", Chrome.White);
+            Chrome.Text(f, font, 2, 3, "THE WORD AFTER START ON THE DOS", Chrome.Grey);
+            Chrome.Text(f, font, 2, 4, "COMMAND LINE: " + g.Typed + "_", Chrome.Green);
+            g.Draw(f, font);
+            Chrome.Text(f, font, 2, 22, "TYPE, OR PICK; OK KEEPS IT", Chrome.Grey);
+            return;
+        }
         Chrome.Text(f, font, 2, 1, "CONTROLS", Chrome.White);
         Chrome.Text(f, font, 2, 2, "ACTION", Chrome.Grey);
         Chrome.Text(f, font, 16, 2, "KEY", Chrome.Grey);
@@ -236,4 +321,14 @@ public sealed class ControlsScreen(TextFont font, IScreenHost host, ClientArt? a
     }
 
     private static string Fit(string s, int n) => s.Length > n ? s[..n] : s;
+}
+
+/// <summary>A remembered text setting the controls screen edits (the start word, <see cref="ClientSettings.ProgramWord"/>).</summary>
+public sealed class WordSetting(Func<string?> get, Action<string?> set)
+{
+    public string? Value
+    {
+        get => get();
+        set => set(value);
+    }
 }

@@ -511,6 +511,7 @@ public sealed class EncounterHost : IEclHost
     public int? PickCharacter(string prompt) => Inner.PickCharacter(prompt);
     public void DrawGlyphs(ushort address, IReadOnlyList<byte> glyphs) => Inner.DrawGlyphs(address, glyphs);
     public void DamageReport(EclDamageReport report) => Inner.DamageReport(report);
+    public void DamageEnd(bool partyKilled) => Inner.DamageEnd(partyKilled);
     public void TextHome() => Inner.TextHome();
 
     /// <summary>

@@ -8,6 +8,8 @@ public sealed class PorAmigaReport
     public int Pictures { get; set; }
     /// <summary>The title painting was imported (disk A's <c>intro</c> was found; it is optional).</summary>
     public bool Title { get; set; }
+    /// <summary>The party icons' colour pairs were read from <c>program</c> (<see cref="AmigaIconColoursDocument"/>).</summary>
+    public bool IconColours { get; set; }
     /// <summary>Blocks left out on purpose (placeholders, incomplete sprites), as "file id".</summary>
     public List<string> Skipped { get; } = [];
     /// <summary>Blocks that are not pictures in a picture file, as "file id" (kept out of the overlay).</summary>
@@ -89,6 +91,110 @@ public static class PorAmigaArt
         0 => 4, 15 => 15, 12 => 6, 11 => 11, 13 => 7, 10 => 10, 9 => 9, 14 => 8, 8 => 12, 7 => 14, 6 => 5, 1 => 1,
         _ => null,
     };
+
+    // ---- party icons (docs/re/por-art-formats.md §4 "Party icons") ----
+
+    /// <summary>The hunk and offset of the Amiga program's six colour-pair bytes (byte k at +k, k = 1..6).</summary>
+    public const int IconPairsHunk = 31, IconPairsAt = 0x210E;
+
+    /// <summary>
+    /// The code that reads them, checked before they are taken (hunks numbered from 0 in file order; <c>lea
+    /// $210E.l, a0</c>, relocated to hunk 31): the recolouring (hunk 16 +0x3D6), Create's default colours (hunk 10
+    /// +0xAA8) and the icon editor's recolouring (hunk 10 +0x3A16).
+    /// </summary>
+    private static readonly (int Hunk, int At)[] IconPairReaders = [(16, 0x3D6), (10, 0xAA8), (10, 0x3A16)];
+
+    /// <summary>The DOS art's colour pairs: colour byte k (0xC1 + k) paints index <c>DosIconPairs[k]</c> with its low
+    /// nibble and that index + 8 with its high nibble (DS:3CF5[1..6] in v1.3; docs/re/start-menu.md §3).</summary>
+    public static readonly int[] DosIconPairs = [1, 2, 3, 4, 6, 7];
+
+    /// <summary>
+    /// The six pair bytes from the player's <c>program</c> (hunk 31 +0x210F..+0x2114), after checking the code that
+    /// reads them; null when the program is not laid out so.
+    /// </summary>
+    public static byte[]? IconPairs(byte[] program)
+    {
+        var hunks = AmigaHunks.Parse(program);
+        if (hunks.Count <= IconPairsHunk || hunks[IconPairsHunk] is not { Type: AmigaHunks.Data, DataOffset: { } at } h
+            || h.Size < IconPairsAt + 7)
+            return null;
+        Span<byte> lea = [0x41, 0xF9, 0, 0, IconPairsAt >> 8, IconPairsAt & 0xFF];
+        foreach (var (hunk, off) in IconPairReaders)
+            if (hunks.Count <= hunk || hunks[hunk] is not { Type: AmigaHunks.Code, DataOffset: { } code } ch
+                || off + lea.Length > ch.Size || !program.AsSpan(code + off, lea.Length).SequenceEqual(lea))
+                return null;
+        return program.AsSpan(at + IconPairsAt + 1, 6).ToArray();
+    }
+
+    /// <summary>
+    /// [?] The table-3 pen the Amiga party-icon art uses where the DOS art has EGA colour <paramref name="ega"/>, or
+    /// null. Not in the program (the Amiga never reads a DOS character): the Client's move, from the art itself (DOS CHEAD/CBODY against the Amiga ones, same id, pixel by pixel; the most common
+    /// Amiga index per DOS index: 0 → 0, 1 → 1, 2 → 2, 3 → 3, 4 → 6, 7 → 14, 8 → 4, 9 → 9, 10 → 10, 11 → 11,
+    /// 12 → 7, 15 → 15; 6 → 5 and 14 → 8 are rare in the art and taken from the backdrop's move, <see cref="BackdropPen"/>,
+    /// which they match). The default colours confirm it: DOS Create's bytes paint each pair with its own colours, the
+    /// Amiga's (the pair bytes themselves, hunk 10 +0xA98) do the same, and the pens of each DOS pair are the two
+    /// indices of the Amiga pair byte (<see cref="IconPairsAgree"/>). EGA 5 and 13 appear too rarely in the icons to
+    /// say (24 and 21 pixels), so a character whose colour bytes use them keeps its DOS icon.
+    /// </summary>
+    public static byte? IconPen(int ega) => ega switch
+    {
+        0 => 0, 1 => 1, 2 => 2, 3 => 3, 4 => 6, 6 => 5, 7 => 14, 8 => 4, 9 => 9, 10 => 10, 11 => 11, 12 => 7, 14 => 8, 15 => 15,
+        _ => null,
+    };
+
+    /// <summary>Whether pair byte k holds the pens of DOS pair k (its two nibbles, in either order) for every k.</summary>
+    public static bool IconPairsAgree(ReadOnlySpan<byte> pairs)
+    {
+        if (pairs.Length != DosIconPairs.Length)
+            return false;
+        for (int k = 0; k < pairs.Length; k++)
+        {
+            int lo = pairs[k] & 15, hi = pairs[k] >> 4;
+            byte? a = IconPen(DosIconPairs[k]), b = IconPen(DosIconPairs[k] + 8);
+            if (!(a == lo && b == hi || a == hi && b == lo))
+                return false;
+        }
+        return true;
+    }
+
+    /// <summary>
+    /// A DOS character's six colour bytes (0xC1..0xC6, EGA nibbles) as the Amiga record's (0xC3..0xC8, pens): for pair
+    /// byte k, the nibble whose index is the pen of DOS index <c>DosIconPairs[k]</c> takes the pen of the DOS low
+    /// nibble, the other the pen of the DOS high nibble. Null when a nibble's EGA colour has no pen (5, 13 [?]) or the
+    /// pairs do not agree.
+    /// </summary>
+    public static byte[]? AmigaIconColours(ReadOnlySpan<byte> dosColours, ReadOnlySpan<byte> pairs)
+    {
+        if (dosColours.Length < DosIconPairs.Length || !IconPairsAgree(pairs))
+            return null;
+        var o = new byte[pairs.Length];
+        for (int k = 0; k < pairs.Length; k++)
+        {
+            byte? dark = IconPen(dosColours[k] & 15), light = IconPen(dosColours[k] >> 4);
+            if (dark is null || light is null)
+                return null;
+            bool lowIsDark = (pairs[k] & 15) == IconPen(DosIconPairs[k]);
+            o[k] = lowIsDark ? (byte)(light.Value << 4 | dark.Value) : (byte)(dark.Value << 4 | light.Value);
+        }
+        return o;
+    }
+
+    /// <summary>
+    /// The Amiga recolouring (hunk 16 +0x3B6; the icon editor's copy at hunk 10 +0x39F6): the identity, then for
+    /// k = 1..6 index (pair k low nibble) := colour byte k's low nibble, index (pair k high nibble) := its high nibble.
+    /// </summary>
+    public static byte[] IconColourMap(ReadOnlySpan<byte> amigaColours, ReadOnlySpan<byte> pairs)
+    {
+        var map = new byte[16];
+        for (int i = 0; i < 16; i++)
+            map[i] = (byte)i;
+        for (int k = 0; k < pairs.Length && k < amigaColours.Length; k++)
+        {
+            map[pairs[k] & 15] = (byte)(amigaColours[k] & 15);
+            map[pairs[k] >> 4] = (byte)(amigaColours[k] >> 4);
+        }
+        return map;
+    }
 
     public const string IntroContainer = "intro";
     public const int TitleId = 1;
@@ -206,6 +312,16 @@ public static class PorAmigaArt
                 report.Pictures++;
             }
         }
+        if (IconPairs(programBytes) is { } pairs && IconPairsAgree(pairs))
+        {
+            ModuleJson.Write(Path.Combine(moduleRoot, AmigaIconColoursDocument.RelativePath.Replace('/', Path.DirectorySeparatorChar)),
+                new AmigaIconColoursDocument
+                {
+                    Pairs = [.. pairs.Select(b => (int)b)],
+                    Source = new SourceRef { Container = "program", Block = IconPairsHunk },
+                });
+            report.IconColours = true;
+        }
         if (LocateIntro(amigaDir) is { } introPath)
         {
             var intro = File.ReadAllBytes(introPath);
@@ -308,6 +424,13 @@ public static class PorAmigaArt
                 if (!rebuilt.AsSpan().SequenceEqual(block))
                     r.Mismatches.Add($"amiga {container} block {e.Id}: {rebuilt.Length} bytes rebuilt, {block.Length} original");
             }
+        }
+        var (programPath, _) = Locate(amigaDir);
+        if (IconPairs(File.ReadAllBytes(programPath)) is { } pairs && IconPairsAgree(pairs))
+        {
+            r.Count("AMIGA ICON COLOURS");
+            if (module.AmigaIconPairs() is not { } got || !got.AsSpan().SequenceEqual(pairs))
+                r.Mismatches.Add("amiga icon colours: missing in the module or not the program's bytes");
         }
         if (LocateIntro(amigaDir) is { } introPath)
         {

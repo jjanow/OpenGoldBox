@@ -55,6 +55,13 @@ public interface IPorContent : IEclScriptSource, IAreaMapSource
     byte[]? ArtData(string file, int id);
 
     /// <summary>
+    /// The Amiga party icons' colour pairs (the six index-pair bytes the Amiga program's recolouring reads, taken from
+    /// the player's <c>program</c> at import; <see cref="Module.AmigaIconColoursDocument"/>), or null without the Amiga
+    /// overlay: then the party icons stay DOS under every art setting.
+    /// </summary>
+    byte[]? AmigaIconPairs() => null;
+
+    /// <summary>
     /// Whether off-map squares read 0 instead of wrapping while area script <paramref name="script"/> runs: the
     /// program's rule for the folder (GAME.OVR 0x2EC5D: scripts 0 and 10), the area's <c>noWrapOffMap</c> in a module.
     /// </summary>

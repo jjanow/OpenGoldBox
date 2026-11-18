@@ -51,6 +51,11 @@ public enum GameAction
     StepDownLeft,
     /// <summary>Combat: down-right (keypad PgDn / 3).</summary>
     StepDownRight,
+    /// <summary>The training hall's hidden J key (the program's debugging word, docs/re/training.md).</summary>
+    HallJ,
+    /// <summary>Combat: during a monster's turn, the party back under the player's control (the original's space, read
+    /// by the AI's key check 0xBB81).</summary>
+    FightManual,
 }
 
 /// <summary>The input device a binding or an input event belongs to.</summary>
@@ -107,6 +112,9 @@ public sealed class InputBindings
         b.Set(GameAction.StepUpRight, ["PageUp", "NumPad9"], ["RightThumbstickUp"]);
         b.Set(GameAction.StepDownLeft, ["End", "NumPad1"], ["RightThumbstickDown"]);
         b.Set(GameAction.StepDownRight, ["PageDown", "NumPad3"], ["RightThumbstickRight"]);
+        // The hall's J has no entry on screen: the pad presses the left stick (the mouse clicks the prompt).
+        b.Set(GameAction.HallJ, ["J"], ["LeftStick"]);
+        b.Set(GameAction.FightManual, ["Space"], ["RightStick"]);
         return b;
     }
 

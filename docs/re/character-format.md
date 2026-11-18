@@ -142,7 +142,8 @@ NPCs with real races, classes and levels.
 
 Spell ids 1..56 index the spell table. The tool reports each id with its caster class and spell level, using the id
 ranges from Lee 12.2.2.1: 1-8 cleric 1, 9-21 magic-user 1, 22-28 cleric 2, 29-35 magic-user 2, 36-44 cleric 3,
-45-55 magic-user 3, 56 cleric 7 (only castable as a temple service). Spell names and rules belong in a future
+45-55 magic-user 3, 56 cleric 7 (in v1.3 only from scrolls: cleric slots stop at spell level 3 and the temple has no Restoration entry,
+`shop-format.md` "Temple"; `spells-effects.md` "Restoration at the race limit"). Spell names and rules belong in a future
 spell spec, not here.
 
 ## Saving-throw order

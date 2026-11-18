@@ -45,6 +45,7 @@ public sealed class TextWindow
         (_left, _top, _right, _bottom) = (left, top, right, bottom);
         _chars = new char[bottom - top + 1, right - left + 1];
         _colours = new byte[bottom - top + 1, right - left + 1];
+        _overhang = new (char, byte)[bottom - top + 1];
         Column = left;
         Row = top;
     }
@@ -67,10 +68,22 @@ public sealed class TextWindow
         }
     }
 
-    /// <summary>The character and colour of a box cell (row and column in screen cells); '\0' = blank.</summary>
-    public (char Char, byte Colour) Cell(int row, int col) => _chars[row - _top, col - _left] is var c && c != '\0'
-        ? (c, _colours[row - _top, col - _left])
-        : ('\0', (byte)0);
+    /// <summary>
+    /// The character and colour of a box cell (row and column in screen cells); '\0' = blank. Column right + 1 is the
+    /// overhang cell <see cref="Put"/> can draw on the frame.
+    /// </summary>
+    public (char Char, byte Colour) Cell(int row, int col) => col == _right + 1
+        ? _overhang[row - _top]
+        : _chars[row - _top, col - _left] is var c && c != '\0'
+            ? (c, _colours[row - _top, col - _left])
+            : ('\0', (byte)0);
+
+    /// <summary>
+    /// Characters <see cref="Put"/> drew one column right of the box, over the frame (the glyph routine draws up to
+    /// column 39; DOSBox-X s22: the end game's 39-character line). The box clear leaves them; <see cref="Clear"/>
+    /// removes them.
+    /// </summary>
+    private readonly (char, byte)[] _overhang;
 
     /// <summary>The box rows as strings (blanks as spaces, trailing blanks cut): for tests and logs.</summary>
     public IReadOnlyList<string> Lines
@@ -94,6 +107,7 @@ public sealed class TextWindow
     {
         Array.Clear(_chars);
         Array.Clear(_colours);
+        Array.Clear(_overhang);
         Home();
     }
 
@@ -115,11 +129,48 @@ public sealed class TextWindow
         for (int i = 0; i < text.Length; i++)
         {
             int c = col + i;
+            if (c == _right + 1 && c <= 39)
+                _overhang[row - _top] = (char.ToUpperInvariant(text[i]), colour);
             if (c < _left || c > _right)
                 continue;
             _chars[row - _top, c - _left] = text[i];
             _colours[row - _top, c - _left] = colour;
         }
+    }
+
+    /// <summary>Sets the text cursor (DS:5E24 column, DS:5E25 row) without drawing.</summary>
+    public void MoveTo(int column, int row)
+    {
+        Column = column;
+        Row = row;
+    }
+
+    /// <summary>The box's cells as window lines (runs of one colour per row), for a full-screen window.</summary>
+    public IReadOnlyList<WindowLine> WindowLines()
+    {
+        var lines = new List<WindowLine>();
+        for (int r = _top; r <= _bottom; r++)
+        {
+            int c = _left;
+            while (c <= _right)
+            {
+                var (ch, colour) = Cell(r, c);
+                if (ch == '\0')
+                {
+                    c++;
+                    continue;
+                }
+                int start = c;
+                var sb = new System.Text.StringBuilder();
+                while (c <= _right && Cell(r, c) is var (ch2, col2) && (ch2 == '\0' || col2 == colour))
+                {
+                    sb.Append(ch2 == '\0' ? ' ' : ch2);
+                    c++;
+                }
+                lines.Add(new WindowLine(start, r, sb.ToString().TrimEnd(), colour));
+            }
+        }
+        return lines;
     }
 
     /// <summary>Blanks one row of the box.</summary>

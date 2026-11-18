@@ -419,6 +419,7 @@ public sealed class PorGame
         public void DrawGlyphs(ushort address, IReadOnlyList<byte> glyphs) => Target.DrawGlyphs(address, glyphs);
         public EclCharacter? CreateNpc(ushort monster) => Target.CreateNpc(monster);
         public void DamageReport(EclDamageReport report) => Target.DamageReport(report);
+        public void DamageEnd(bool partyKilled) => Target.DamageEnd(partyKilled);
         public void TextHome() => Target.TextHome();
     }
 }

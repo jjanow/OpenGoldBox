@@ -21,7 +21,8 @@ namespace GoldBox.Client;
 /// the environment variable <c>GOLDBOX_POR_AMIGA_DIR</c> also works): their art is imported with the game folder as the
 /// module's Amiga overlay (the cache key covers the Amiga files). <c>--art dos|best|amiga</c> sets the art (remembered;
 /// also on the controls screen): Original DOS, Best (default: the module's mix, PoR: Amiga with DOS filling the gaps) or
-/// Amiga wherever the module has it.
+/// Amiga wherever the module has it. <c>--param WORD</c> gives the program the word the DOS game takes after
+/// <c>START</c> on its command line (remembered; <c>--no-param</c> drops it; docs/re/training.md, the hall's J).
 /// </summary>
 public sealed record ClientOptions
 {
@@ -43,8 +44,10 @@ public sealed record ClientOptions
     public Data.Por.PorArtChoice? Art { get; init; }
     /// <summary>--sound speaker|tandy|off (remembered).</summary>
     public string? Sound { get; init; }
+    /// <summary>--param WORD: the word after START on the DOS command line (remembered; --no-param clears it, as "").</summary>
+    public string? ProgramWord { get; init; }
 
-    public const string Usage = "usage: GoldBox.Client [--game DIR] [--amiga DIR] [--module DIR] [--art dos|best|amiga] [--save A|FILE] [--area N --at X,Y,F] [--scale K] [--stretch|--no-stretch] [--sound speaker|tandy|off] [--seed N]";
+    public const string Usage = "usage: GoldBox.Client [--game DIR] [--amiga DIR] [--module DIR] [--art dos|best|amiga] [--save A|FILE] [--area N --at X,Y,F] [--scale K] [--stretch|--no-stretch] [--sound speaker|tandy|off] [--param WORD|--no-param] [--seed N]";
 
     public static ClientOptions Parse(IReadOnlyList<string> args)
     {
@@ -64,6 +67,8 @@ public sealed record ClientOptions
                 "--stretch" => o with { Stretch43 = true },
                 "--no-stretch" => o with { Stretch43 = false },
                 "--amiga" => o with { AmigaDirectory = Next() },
+                "--param" => o with { ProgramWord = Next() },
+                "--no-param" => o with { ProgramWord = "" },
                 "--sound" => Next() is var sw && (Audio.ClientAudio.Parse(sw) is not null || sw.Equals("off", StringComparison.OrdinalIgnoreCase))
                     ? o with { Sound = sw.ToLowerInvariant() }
                     : throw new ArgumentException($"--sound {sw}: use speaker, tandy or off"),

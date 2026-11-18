@@ -257,7 +257,7 @@ public sealed class PartyMenuFlow(Func<PlayerRequest, object?> ask, PartyMenuTex
         while (name.Length == 0);
         cc.SetName(name.ToUpperInvariant());
         Portrait(c);
-        Icon(c);
+        EditIcon(c);
         roster.Save(c, Party);
     }
 
@@ -285,9 +285,11 @@ public sealed class PartyMenuFlow(Func<PlayerRequest, object?> ask, PartyMenuTex
     /// The icon editor (0x1D1AC) with the program's menus (Core's <see cref="IconEditor"/>): Parts (head 0..13, weapon
     /// 0..31: Next, Prev, Keep, Exit), color-1 / color-2 (the low / high nibble of a part's colour byte 0xC1..0xC6), Size,
     /// Exit; then the IconOk question (PartyMsg.IconOk). No starts again from the icon as it is (0x1D1DE), which becomes
-    /// the old icon. The new icon is drawn from the record, so it shows each step at once.
+    /// the old icon. The new icon is drawn from the record, so it shows each step at once. Create's last step and the
+    /// camp's Alter Icon (0x1951F, <see cref="CampContext.EditIcon"/>) run the same routine; it asks only
+    /// <see cref="IconRequest"/>s.
     /// </summary>
-    private void Icon(EclCharacter c)
+    public void EditIcon(EclCharacter c)
     {
         var ed = new IconEditor(c);
         var old = (byte[])c.Record.Clone();

@@ -37,6 +37,7 @@ public static class ModuleSchemas
         ("rules-combat-map.schema.json", typeof(CombatMapDocument)),
         ("overland.schema.json", typeof(OverlandDocument)),
         ("pcsound.schema.json", typeof(PcSoundDocument)),
+        ("amiga-icon-colours.schema.json", typeof(AmigaIconColoursDocument)),
     ];
 
     /// <summary>The options of <see cref="ModuleJson"/> that reject members the types do not have.</summary>

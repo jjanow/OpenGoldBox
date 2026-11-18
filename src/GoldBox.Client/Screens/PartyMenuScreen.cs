@@ -38,13 +38,20 @@ public sealed class PartyMenuScreen(PartyMenuFlow flow, ScriptRunner runner, ISc
     public PorProgramData? Program { get; init; }
 
     /// <summary>
-    /// Over the training hall (the explore screen pushes it when the hall's Create or Add asks for a creation page): it
-    /// answers the pages of <see cref="PartyMenuFlow"/> and closes itself when the hall's menu (or anything else) asks.
+    /// Over the training hall or the camp (the explore screen pushes it when the hall's Create or Add asks for a creation
+    /// page, or the camp's Alter Icon for the icon editor): it answers the pages of <see cref="PartyMenuFlow"/> and closes
+    /// itself when the hall's menu (or anything else) asks.
     /// </summary>
     public bool Overlay { get; init; }
 
+    /// <summary>The on/off settings the controls screen shows (<see cref="SettingToggle"/>).</summary>
+    public IReadOnlyList<SettingToggle>? Toggles { get; init; }
+
     /// <summary>The requests the overlay answers: the creation and roster pages, and the questions asked over them.</summary>
     public static bool IsPage(PlayerRequest? r) => r is PickRequest or SheetRequest or IconRequest or ModifyRequest;
+
+    /// <summary>The start word the controls screen edits (the hall's J, <see cref="ClientSettings.ProgramWord"/>), or null.</summary>
+    public WordSetting? StartWord { get; init; }
 
     /// <summary>A message for the bottom line (a fault of the game logic).</summary>
     public string? Problem { get; private set; }
@@ -57,7 +64,7 @@ public sealed class PartyMenuScreen(PartyMenuFlow flow, ScriptRunner runner, ISc
     {
         if (input.Pressed(GameAction.Controls))
         {
-            host.Push(new ControlsScreen(font, host, art));
+            host.Push(new ControlsScreen(font, host, art, StartWord, Toggles));
             return;
         }
         if (HandOver())
@@ -65,6 +72,8 @@ public sealed class PartyMenuScreen(PartyMenuFlow flow, ScriptRunner runner, ISc
         Sync();
         if (runner.Pending is not { } request)
             return;
+        // A key kept from a pause is read here (ActionInput.ReadingKeys).
+        input.ReadingKeys(request is not DelayRequest { ReportInput: false });
         if (Answer(request, input) is { } reply)
         {
             runner.Answer(reply.Value);
@@ -85,7 +94,8 @@ public sealed class PartyMenuScreen(PartyMenuFlow flow, ScriptRunner runner, ISc
         if (Overlay)
         {
             var r = runner.Pending;
-            if (IsPage(r) || (r is TextRequest or ChoiceRequest or KeyRequest && _background is not null))
+            // The icon editor asks only icon pages: after it (the camp's Alter Icon) the next question is the caller's.
+            if (IsPage(r) || (r is TextRequest or ChoiceRequest or KeyRequest && _background is not null and not IconRequest))
                 return false;
             _switched = true;
             host.Pop();
@@ -283,40 +293,16 @@ public sealed class PartyMenuScreen(PartyMenuFlow flow, ScriptRunner runner, ISc
     }
 
     // Name entry: typing on the keyboard, or a character grid for pad and mouse (as the explore screen's).
-    private const string Letters = "ABCDEFGHIJKLM" + "NOPQRSTUVWXYZ" + "0123456789 -.";
-    private const int GridCols = 13, GridRow = 14;
+    private const string Letters = CharGrid.Letters;
+    private const int GridCols = CharGrid.Columns, GridRow = 14;
 
-    private static (int Col, int Row, string Label) Cell(int k)
-    {
-        if (k < Letters.Length)
-            return (2 + 2 * (k % GridCols), GridRow + k / GridCols, Letters[k] == ' ' ? "_" : Letters[k].ToString());
-        int last = GridRow + (Letters.Length + GridCols - 1) / GridCols;
-        return k == Letters.Length ? (2, last, "DEL") : (8, last, "OK");
-    }
+    private static (int Col, int Row, string Label) Cell(int k) => CharGrid.Cell(Letters, GridRow, k);
 
-    private const int Cells = 39 + 2;
+    private static readonly int Cells = CharGrid.CellCount(Letters);
 
-    private static int? CellAt(int col, int row)
-    {
-        for (int k = 0; k < Cells; k++)
-        {
-            var (c, r, label) = Cell(k);
-            if (row == r && col >= c && col < c + label.Length)
-                return k;
-        }
-        return null;
-    }
+    private static int? CellAt(int col, int row) => CharGrid.CellAt(Letters, GridRow, col, row);
 
-    private static char? KeyChar(string name) => name switch
-    {
-        { Length: 1 } when char.IsAsciiLetterUpper(name[0]) => name[0],
-        { Length: 2 } when name[0] == 'D' && char.IsAsciiDigit(name[1]) => name[1],
-        _ when name.StartsWith("NumPad", StringComparison.Ordinal) && name.Length == 7 => name[6],
-        "Space" => ' ',
-        "OemMinus" or "Subtract" => '-',
-        "OemPeriod" or "Decimal" => '.',
-        _ => null,
-    };
+    private static char? KeyChar(string name) => CharGrid.KeyChar(name);
 
     private void Type(TextRequest t, char ch)
     {

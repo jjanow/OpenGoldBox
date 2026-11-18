@@ -87,6 +87,7 @@ public sealed class ExploreScreen : IScreen
         _highlight = highlight ?? new MenuHighlight { Index = LoadMenuIndex(game.Content.SaveFolder, char.ToUpperInvariant(lastLetter)) };
         _game = game;
         _player = player;
+        game.Loop.Redrawn += () => player.PositionLineErased = false; // the step redraws the position line (0x17707)
         _runner = runner;
         _host = host;
         _art = art ?? new ClientArt(game.Content, null, new ScreenPalette(), Data.Por.PorArtChoice.Dos);
@@ -96,6 +97,10 @@ public sealed class ExploreScreen : IScreen
             Report = Report,
             Highlight = _highlight,
         };
+        // The AI's key check (0xBB81) takes a key waiting from the AI turn's pauses (the logic thread runs only while
+        // this screen's Update waits for it).
+        if (game.Kit is { } kit)
+            kit.AiKey = () => _keys?.TakeAiKey() ?? 0;
         _commands = game.Art.Program.ExploreCommands is { Count: > 0 } c
             ? [.. c.Select(w => w.ToUpperInvariant())]
             : ["AREA", "CAST", "VIEW", "ENCAMP", "SEARCH", "LOOK"];
@@ -103,7 +108,8 @@ public sealed class ExploreScreen : IScreen
 
     public PorGame Game => _game;
 
-    /// <summary>The creation and roster pages over the training hall (a <see cref="PartyMenuScreen"/> overlay), or null.</summary>
+    /// <summary>The creation and roster pages over the training hall and the camp's icon editor (a <see cref="PartyMenuScreen"/>
+    /// overlay), or null.</summary>
     public Func<IScreen>? PartyPages { get; init; }
 
     /// <summary>A save loaded in the training hall: the new game's screen (its entry run), or null when it failed.</summary>
@@ -115,8 +121,14 @@ public sealed class ExploreScreen : IScreen
     /// </summary>
     public Func<IScreen?>? PartyMenu { get; init; }
 
+    /// <summary>The on/off settings the controls screen shows (<see cref="SettingToggle"/>).</summary>
+    public IReadOnlyList<SettingToggle>? Toggles { get; init; }
+
     /// <summary>This screen handed over to another game or the menu.</summary>
     private bool _left;
+
+    /// <summary>The action layer of the last update (the AI's key check reads its key buffer).</summary>
+    private ActionInput? _keys;
 
     /// <summary>The shared menu highlight cell (0-based, DS:6B2B − 1).</summary>
     public int MenuHighlight => _highlight.Index;
@@ -156,6 +168,8 @@ public sealed class ExploreScreen : IScreen
         // command redraws it (a turn, the step 0x17438, the camp) unless its script switches (see StaleStatusLine).
         if (command != AreaCommand.AreaMap)
         {
+            _player.PositionLineErased = false;
+            _player.ForgetPagePrompt(); // the command line is drawn again over the bottom row
             _staleLine = null;
             _lineAtCommand = StatusLine(_game, _player.Camping);
             _scriptAtCommand = _game.Vm.CurrentScript;
@@ -321,6 +335,8 @@ public sealed class ExploreScreen : IScreen
                 if (!click.Right && _hall.Click(hm, click.X / 8, click.Y / 8, _game.Memory.Party?.Members.Count ?? 0) is { } ha)
                 {
                     _clickAnswer = ha;
+                    if (ha is char hk && HallScreens.EntryOf(hk) is { } he)
+                        _highlight.Chosen((int)he);
                     _hasClickAnswer = true;
                 }
                 return null;
@@ -398,34 +414,17 @@ public sealed class ExploreScreen : IScreen
     // Text entry: typing on the keyboard, or a character grid for pad and mouse
     // ---------------------------------------------------------------------------------------------------------------
 
-    private const string Letters = "ABCDEFGHIJKLM" + "NOPQRSTUVWXYZ" + "0123456789 -.";
     private const string Digits = "0123456789";
-    private const int GridCols = 13, GridFirstRow = TextRow + 1;
+    private const int GridCols = CharGrid.Columns, GridFirstRow = TextRow + 1;
 
-    private static string Charset(TextRequest t) => t.Numeric ? Digits : Letters;
+    private static string Charset(TextRequest t) => t.Numeric ? Digits : CharGrid.Letters;
 
-    /// <summary>Grid cells: the characters, then DEL and OK. Cell k is at (column, row).</summary>
-    private static (int Col, int Row, string Label) Cell(TextRequest t, int k)
-    {
-        var cs = Charset(t);
-        if (k < cs.Length)
-            return (2 + 2 * (k % GridCols), GridFirstRow + k / GridCols, cs[k] == ' ' ? "_" : cs[k].ToString());
-        int lastRow = GridFirstRow + (cs.Length + GridCols - 1) / GridCols;
-        return k == cs.Length ? (2, lastRow, "DEL") : (8, lastRow, "OK");
-    }
+    /// <summary>Grid cells (<see cref="CharGrid"/>'s layout): the characters, then DEL and OK.</summary>
+    private static (int Col, int Row, string Label) Cell(TextRequest t, int k) => CharGrid.Cell(Charset(t), GridFirstRow, k);
 
-    private static int CellCount(TextRequest t) => Charset(t).Length + 2;
+    private static int CellCount(TextRequest t) => CharGrid.CellCount(Charset(t));
 
-    private static int? CellAt(TextRequest t, int col, int row)
-    {
-        for (int k = 0; k < CellCount(t); k++)
-        {
-            var (c, r, label) = Cell(t, k);
-            if (row == r && col >= c && col < c + label.Length)
-                return k;
-        }
-        return null;
-    }
+    private static int? CellAt(TextRequest t, int col, int row) => CharGrid.CellAt(Charset(t), GridFirstRow, col, row);
 
     private void Backspace()
     {
@@ -439,16 +438,7 @@ public sealed class ExploreScreen : IScreen
             _typed += ch;
     }
 
-    private static char? KeyChar(string name) => name switch
-    {
-        { Length: 1 } when char.IsAsciiLetterUpper(name[0]) => name[0],
-        { Length: 2 } when name[0] == 'D' && char.IsAsciiDigit(name[1]) => name[1],
-        _ when name.StartsWith("NumPad", StringComparison.Ordinal) && name.Length == 7 => name[6],
-        "Space" => ' ',
-        "OemMinus" or "Subtract" => '-',
-        "OemPeriod" or "Decimal" => '.',
-        _ => null,
-    };
+    private static char? KeyChar(string name) => CharGrid.KeyChar(name);
 
     // ---------------------------------------------------------------------------------------------------------------
     // Update
@@ -456,9 +446,10 @@ public sealed class ExploreScreen : IScreen
 
     public void Update(ActionInput input)
     {
+        _keys = input;
         if (input.Pressed(GameAction.Controls))
         {
-            _host.Push(new ControlsScreen(_game.Art.Font, _host, _art));
+            _host.Push(new ControlsScreen(_game.Art.Font, _host, _art, _player.ProgramWordSetting, Toggles));
             return;
         }
         if (_combat.Active)
@@ -480,6 +471,8 @@ public sealed class ExploreScreen : IScreen
             _host.Push(pages());
             return;
         }
+        // Keys pressed during a pause wait for the next key read (ActionInput.ReadingKeys); a party page reads them there.
+        input.ReadingKeys(_runner.Pending is not DelayRequest { ReportInput: false });
         if (_runner.Pending is { } request)
         {
             var reply = Answer(request, input);
@@ -599,7 +592,13 @@ public sealed class ExploreScreen : IScreen
                     : null;
 
             case HallMenuRequest hm:
-                return _hall.Answer(hm, input) is { } ha ? new Reply(ha) : null;
+                if (_hall.Answer(hm, input) is not { } ha)
+                    return null;
+                // The hall's menu runs through the shared menu routine: its hotkey sets the cell (DOSBox-X s22: after
+                // Begin the area menu opens on its first word, the cell being past its last).
+                if (ha is char hk && HallScreens.EntryOf(hk) is { } he)
+                    _highlight.Chosen((int)he);
+                return new Reply(ha);
 
             case ListRequest l:
                 return _list.Update(l, input) is { } a ? new Reply(a) : null;
@@ -610,7 +609,7 @@ public sealed class ExploreScreen : IScreen
                 return _clock.Elapsed >= _delayEnd ? new Reply(false) : null;
 
             case DelayRequest:
-                return _clock.Elapsed >= _delayEnd || input.Pressed(GameAction.Confirm) ? new Reply(null) : null;
+                return _clock.Elapsed >= _delayEnd || input.SkipsPause ? new Reply(null) : null;
 
             case ChoiceRequest c:
             {
@@ -725,7 +724,11 @@ public sealed class ExploreScreen : IScreen
             foreach (var line in window)
                 Chrome.Text(f, font, line.Column, line.Row, Fit(line.Text, 39 - line.Column), line.Colour);
             if (pending is KeyRequest wk)
-                Chrome.Text(f, font, 0, MenuRow, Fit(KeyPrompt(wk, input), 40), wk.AsMenu ? Chrome.White : MenuPromptColour);
+                Chrome.Text(f, font, 0, MenuRow, Fit(KeyPrompt(wk, input), 40), KeyColour(wk));
+            else if (pending is DelayRequest { BottomLine: { } bline })
+                Chrome.Text(f, font, 0, MenuRow, Fit(bline.Text, 40), bline.Colour);
+            else if (pending is DelayRequest)
+                DrawLine(f, font, Commands, _highlight.Start(Commands.Length), 0); // the DAMAGE wipe's pause: row 24 kept (DOSBox-X s22)
             return;
         }
         // Frame cells as on the original screen: outer box, the divider under the view and party list, the divider
@@ -742,7 +745,7 @@ public sealed class ExploreScreen : IScreen
         DrawView(f, font);
         DrawRoster(f, font);
 
-        if (_player.Interface != Venue.Loot)
+        if (_player.Interface is not (Venue.Loot or Venue.Shop) && !_player.PositionLineErased) // START 0x3379 cases 1 and 6 draw no position line
             Chrome.Text(f, font, 17, StatusRow, ShownStatusLine(), Chrome.Green);
         if (pending is ChoiceRequest choice)
         {
@@ -780,15 +783,20 @@ public sealed class ExploreScreen : IScreen
                 Chrome.Text(f, font, 0, MenuRow, mp, MenuPromptColour);
             DrawLine(f, font, h.Items, _selected, start, h.HotkeyOf);
         }
-        else if (pending is null)
+        else if (pending is null || (pending is DelayRequest { BottomLine: null } && _player.Scene is not null))
         {
+            // The end game (PROGRAM 8) does not draw on row 24: the command line stays (DOSBox-X s22).
             DrawLine(f, font, Commands, _highlight.Start(Commands.Length), 0);
         }
         else if (pending is TextRequest tr)
             Chrome.Text(f, font, 0, MenuRow, Fit(tr.Prompt + (tr.Prompt.Length > 0 ? " " : "") + _typed + "_", 40), Chrome.White);
         else if (pending is KeyRequest k)
-            Chrome.Text(f, font, 0, MenuRow, Fit(KeyPrompt(k, input), 40), k.AsMenu ? Chrome.White : MenuPromptColour);
+            Chrome.Text(f, font, 0, MenuRow, Fit(KeyPrompt(k, input), 40), KeyColour(k));
+        else if (pending is DelayRequest { BottomLine: { } bline })
+            Chrome.Text(f, font, 0, MenuRow, Fit(bline.Text, 40), bline.Colour);
     }
+
+    private static byte KeyColour(KeyRequest k) => k.Colour ?? (k.AsMenu ? Chrome.White : MenuPromptColour);
 
     /// <summary>The menu routine's prompt colour and the page prompt's (0x2CC8C / START 0x7C85: 13).</summary>
     private const byte MenuPromptColour = 13;
@@ -798,11 +806,14 @@ public sealed class ExploreScreen : IScreen
     {
         var t = _player.Text;
         for (int r = TextWindow.Top; r <= TextWindow.Bottom; r++)
-            for (int c = TextWindow.Left; c <= TextWindow.Right; c++)
+            for (int c = TextWindow.Left; c <= TextWindow.Right + 1; c++)
             {
                 var (ch, colour) = t.Cell(r, c);
-                if (ch != default)
-                    Chrome.Text(f, font, c, r, ch.ToString(), colour);
+                if (ch == default)
+                    continue;
+                if (c > TextWindow.Right)
+                    Chrome.Clear(f, c, r, 1); // a glyph cell is drawn whole: over the frame its background is black
+                Chrome.Text(f, font, c, r, ch.ToString(), colour);
             }
     }
 
@@ -899,7 +910,9 @@ public sealed class ExploreScreen : IScreen
         {
             // CLEARBOX blanked cells 1–15 (OverlandUi.Blank above)
         }
-        else if (_player.ViewBlanked)
+        // Shop/temple (START 0x3379 case 1): an empty view box, also after a PICTURE before CLRMON (DOSBox-X s22). [?] A
+        // shop entered without CLRMON (no v1.3 script does that) is not checked.
+        else if (_player.ViewBlanked || _player.Interface == Venue.Shop)
         {
             for (int y = 0; y < 88; y++)
                 for (int x = 0; x < 88; x++)

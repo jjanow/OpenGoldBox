@@ -327,7 +327,7 @@ Draw order per target: save 1d20, attack 1d20, duration dice; and inside: handle
 | 48 Haste, 55 Slow | 0x298AA / 0x29C21 → 0x2977C | side = caster's (Haste) / other (Slow); DS:6820 = 1, budget = level; a target of the side while budget lasts uses one and leaves when it loses the opposite effect (Slow 0x2A / Haste 0x27, message); others leave; resolution; class 0x12 on each left |
 | 51 Lightning Bolt | 0x29BCF | damage (level)d6 (0x2BCCD, 681C untouched); 0x298D4 on the aimed square; the bolt 0x29973 (8, damage, 4, rebound bonus) |
 | 60 | 0x29F65 | 0x298D4 with 1d6 + 20 on the aimed square; then 0x29973 (3, 20, 4, no bonus) |
-| 56 Restoration | 0x29C5B | first target with 0x74 > 0: g = 0x75 ÷ 0x74; 0x32, HP, 0xB1 + g, 0x75 − g, 0x74 − 1; class (0..7) with 0 < level ≤ best (13), 0 < XP[level + 1] < lowest (10,000,000), not stopped by START 0x3AF7 → + 1 level; XP 0xAC raised to that threshold when below (also with no class found: the routine then adds 1 at its uninitialised index [bp−0xC], **8** in DOSBox-X, i.e. record 0x9E gender + 1; see below); 0x2AA87; message |
+| 56 Restoration | 0x29C5B | the first target only (no search); nothing when its 0x74 is 0. g = 0x75 ÷ 0x74; 0x32, HP, 0xB1 + g, 0x75 − g, 0x74 − 1; class (0..7) with 0 < level ≤ best (13), 0 < XP[level + 1] < lowest (10,000,000), not stopped by START 0x3AF7 → + 1 level; XP 0xAC raised to that threshold when below (also with no class found: the routine then adds 1 at its uninitialised index [bp−0xC], **8** in DOSBox-X, i.e. record 0x9E gender + 1; see below); 0x2AA87 (always, also with no class); no START 0x1758 recalculation; message. At and past the race limit: below |
 | 57 | 0x29E1A | first target losing Slow 0x2A (message) → done; else plain |
 | 58 | 0x29E65 | first target losing poison 0x37 → under the lock its 0x16 goes; else 0x292A2; nothing cured → heal 1d4 + 8 (no bypass), message |
 | 59 | 0x29EFD | raise to Str 21 / 0 (message); effect 0x26, duration 1d4 × 10 + 40, removal on |
@@ -373,8 +373,8 @@ The class index of 0x29C5B ([bp−0xC], signed) is written only when a class qua
 (0x74 > 0) and no qualifying class takes the residue. That is the case for every monster: no class levels and drain
 bytes 255/255 (so g = 1, 0x74 and 0x75 become 254). In v1.3 the spell comes only from the clerical scrolls in
 `ITEM2`–`ITEM4` (no monster memorises it; random scrolls never hold spell 56). A drained party member normally
-has a class to raise; one who has since reached the race limit again, or is above level 13, has none and would take
-the residue too (not sampled).
+has a class to raise; one at its race limit or its class's top level has none and takes the residue too (E, s22,
+below).
 
 DOSBox-X, residue probe (`dosbox-trace-method.md`), fixture `fight_restoration`: a scroll used by a level-1 cleric
 in a fight on a drained party member (a class was found), then on a goblin guard, and outside a fight on another
@@ -385,6 +385,46 @@ changed exactly as the routine reads with index 8: 0x74/0x75 255 → 254, max HP
 byte for byte after a stat recalculation: THAC0 0x110 had been recomputed by the time of `after`, consistent with
 the turn-start recalculation 0x9A8A, but its trigger was not pinned; the routine itself does not recalculate). What writes the 8 was not traced; a cast from a memorised Restoration (impossible in v1.3) might
 see another value.
+
+## Restoration at the race limit — P, E (s22)
+
+The race limit is START 0x3AF7, called inside the class loop with the class's **current** level L (before the raise)
+and the current Strength byte 0x10; it answers "stopped" only on the exact (race, class, L, Strength) rows below, so
+it is an equality, not a ceiling. The experience table stops a class too: XP[L + 1] must be a positive dword below
+10,000,000, and PoR's rows hold −1 past each class's top level (cleric 6, fighter 8, magic-user 6; the thief's top 9
+reads 0 past its row; classes 1, 3, 4 and 7 hold −1 from level 2 up). For a drained target (0x74 > 0), by case:
+
+- **One level below the limit** (L = limit − 1, the usual drained character): not stopped; the level comes back,
+  experience rises to XP[L + 1] when below it (never lowered), then 0x2AA87 (base THAC0 0x2D, saves 0x6D–0x71, cleric
+  and magic-user slots and newly known cleric spells, the fighter's 0xA1, thief skills).
+- **At the limit** (single class, or every class stopped or at its top): no class qualifies. The hit points still come
+  back (0x32, 0x11B, 0xB1 + g; 0x75 − g; 0x74 − 1), the level does not, the uninitialised index takes the + 1
+  (DOSBox-X: 8 → gender 0x9E + 1, so a male becomes female), and experience below 10,000,000 becomes 10,000,000.
+  0x2AA87 still runs (nothing changes for the unchanged levels unless those bytes were stale). The same happens at a
+  class's top level for any race (a human cleric 6, fighter 8, magic-user 6, thief 9).
+- **Multi-class with one class at its limit**: that class is skipped and another gains the level (the scan in class
+  order takes a class whose level is not above the pick's and whose next threshold is strictly lower), e.g. a half-elf cleric 5 / fighter 6 with Strength 17 or 18 → fighter 7 (with
+  Strength 16 the fighter's 6 is a limit row too and the residue path runs).
+- **Past the limit** (L above the row, e.g. a gnome or halfling fighter 7 with any Strength, an elf fighter 6 with
+  Strength 16): not stopped; the level rises like any other, up to the class's top level. The limit also moves with Strength: a
+  Strength 18 dwarf fighter is never stopped by the race.
+- **Levels 9..13 past the decoded rows**: XP[L + 1] reads the neighbouring tables (the cleric's and magic-user's
+  slot rows); for a cleric or magic-user of level 12 that is a positive value below 10,000,000 (131,843 and
+  131,588), so those rise to 13; the other levels and classes read 0, −1 or 10,000,000 and more. L ≥ 14 or negative (255): no class.
+- No maximum-HP roll, Constitution bonus or stat recalculation (0x110 THAC0, AC) in the routine.
+
+`[?]` Whether a drained character at its limit is reachable in normal play. Level drain (− 1 level, 0x74 + 1),
+training (`training.md`: + 1 level, 0x74 − 1, and a class the race stops is refused) and a Restoration that finds a
+class all keep level + 0x74 constant, so a single-class character meets its limit row with drain left only when the
+row moves (0x10 is the Strength byte as it is now) or, for a multi-class, when drain and raise land on different
+classes. `[?]` What writes the 8 (residue, sampled on three paths).
+
+**E**: `tools/scripts/por_restore_oracle.py` runs 0x29C5B with the real START 0x3AF7 and 0x2AA87 (only the message
+trapped; the residue slot seeded with DOSBox-X's 8 after the prologue) on a grid of 691 records: every limit row at,
+below and above its level with Strength 16/17/18, eighteen multi-classes with one class at its limit, levels 6..14 and
+255 for clerics, fighters, magic-users and thieves of five races, drain 1/2/3/255, experience below, at and above the
+threshold (fixture `program-v1.3/restoration.json`). `RestorationProgramTests` matches every byte with the seams wired
+as `FightKit.WireLevels` wires them; Core needed no change.
 
 ## Level stats (0x2AA87) and the race level limit (START 0x3AF7) — P, E (s15)
 
@@ -412,7 +452,8 @@ class's level 9 + 1 is the next class's level 0). The thief level rows run 1..9;
 **START 0x3AF7** (00BA:2F57; creature, class) → stopped: level L ≤ 0 → no. Dwarf (race 1), fighter: L = 8 with
 Strength (0x10) 17, or L = 7 with Strength below 17. Elf (2), fighter: L = 7; 6 with 17; 5 below 17. Gnome (3),
 fighter: L = 6; 5 below 18. Half-elf (4): cleric L = 5; fighter L = 8; 7 with 17; 6 below 17. Halfling (5), fighter:
-L = 6; 5 with 17; 4 below 17. Anything else: no. Core: `LevelStats.RaceLimitStops`.
+L = 6; 5 with 17; 4 below 17. Anything else: no. Core: `LevelStats.RaceLimitStops`. Every test is an equality on the level (and Strength), so a
+level above the row, or a Strength the row does not name (18 for a dwarf), is not stopped (s22, Restoration above).
 
 **E**: `tools/scripts/por_level_oracle.py` runs both routines on 400 made-up creatures (fixture
 `program-v1.3/level_stats.json`); `LevelStatsProgramTests` matches every byte and every answer. Since s18 the fixture
@@ -430,7 +471,8 @@ square takes it. Core: `EffectHandlers.PutBackOnSquare` (`CanRevive` only overri
 lists, items, RandSeed (so the draws), and on a combat map the arena cells and the aim. Covered: spells 34 (twice,
 then handler 40 through the removal of 0x28), 35, 36, 37, 39, 41, 42, 43, 44, 46, 47, 48, 51, 55, 56, 57, 58, 59, 60,
 62, 64, 65, 67; handlers 81, 82, 83, 85, 86. Outside a fight (DS:49F3 = 0); text and drawing trapped; 0x2AA87 and
-START 0x1758 skipped, START 0x3AF7 answers "no limit" (the seams do the same). Handlers 73–77, 84, 121 need the
+START 0x1758 skipped, START 0x3AF7 answers "no limit" (the seams do the same). Restoration with the real limit and level stats:
+`por_restore_oracle.py` ("Restoration at the race limit"). Handlers 73–77, 84, 121 need the
 fight's slots and attack: hand tests (`EffectHandlersHoldsTests`). Magic Missile: levels 0–12 and the item path.
 
 ## DOSBox — D

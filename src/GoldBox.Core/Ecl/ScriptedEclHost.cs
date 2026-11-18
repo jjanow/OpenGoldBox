@@ -194,4 +194,5 @@ public sealed class ScriptedEclHost : IEclHost
         return NpcFactory?.Invoke(monster);
     }
     public void DamageReport(EclDamageReport report) => Log($"Damage {report.Target.Name} {report.Damage}{(report.Dies ? " dies" : "")}");
+    public void DamageEnd(bool partyKilled) => Log(partyKilled ? "DamageEnd killed" : "DamageEnd");
 }

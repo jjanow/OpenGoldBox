@@ -75,7 +75,20 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
     }
 
     /// <summary>The text window waits for a key when a page is full (START.EXE 0x7A12).</summary>
-    public void InstallPaging() => Text.Pause = () => runner.Ask(new KeyRequest());
+    public void InstallPaging() => Text.Pause = () =>
+    {
+        _pagePrompted = true;
+        runner.Ask(new KeyRequest());
+    };
+
+    /// <summary>Something else was drawn on the bottom row since the last page prompt.</summary>
+    public void ForgetPagePrompt() => _pagePrompted = false;
+
+    /// <summary>The position line was blanked by a DAMAGE line and not drawn again yet.</summary>
+    public bool PositionLineErased { get; set; }
+
+    /// <summary>The text window's page prompt was shown (it stays on the bottom line until something else is drawn there).</summary>
+    private bool _pagePrompted;
 
     // ---- Text ----------------------------------------------------------------------------------------------------
     /// <summary>PRINT / PRINTCLR (GAME.OVR 0x174F): PRINTCLR starts at column 1, row 17 and blanks the box; colour 10.</summary>
@@ -248,6 +261,7 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
             {
                 Trade = camp.Trade, State = camp.State, Spells = camp.Spells, Rest = camp.Rest, Memory = camp.Memory,
                 Cast = camp.Cast, Resources = camp.Resources, Save = l => SaveGame(l, 0), Quit = camp.Quit,
+                EditIcon = camp.EditIcon,
             },
             State = hall,
             Text = Resources.HallTexts,
@@ -256,17 +270,36 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
             Random = n => game is null ? (ushort)0 : game.Rng.Next(n),
             Defaults = Resources.HallDefaults,
             Hooks = HallHooks,
+            ProgramWord = () => ProgramWord,
         };
         Hall = hall;
         try
         {
             HallScreens.Run(context);
+            // Begin returns with DS:49F3 = 4 and the redraw START 0x3379 draws every window again, which blanks the
+            // text box; the cursor DS:5E24/5E25 stays (DOSBox-X s22: a PRINT after PROGRAM 0 runs on after the
+            // earlier text, on the empty row).
+            Text.ClearRect(TextWindow.Left, TextWindow.Top, TextWindow.Right, TextWindow.Bottom);
+            PositionLineErased = false;
         }
         finally
         {
             Hall = null;
         }
     }
+
+    /// <summary>The word after START on the DOS command line (ParamStr(1); the hall's J), or null.</summary>
+    public string? ProgramWord { get; set; }
+
+    /// <summary>The start word as a setting the controls screen edits (remembered through <see cref="ProgramWordChanged"/>).</summary>
+    public Screens.WordSetting ProgramWordSetting => new(() => ProgramWord, w =>
+    {
+        ProgramWord = w;
+        ProgramWordChanged?.Invoke(w);
+    });
+
+    /// <summary>Called when the controls screen changes the start word (the settings file keeps it).</summary>
+    public Action<string?>? ProgramWordChanged { get; set; }
 
     /// <summary>The hall entries other screens provide (character creation, the roster); empty ones show a notice.</summary>
     public HallHooks HallHooks { get; } = new();
@@ -388,11 +421,87 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
         }
     }
 
-    /// <summary>The "party destroyed" screen (0x6B37–0x6BAA): the program's message and a key.</summary>
+    /// <summary>
+    /// The "party destroyed" screen after a fight (0x6B37–0x6BAA, DOSBox-X s22): a full-screen window (START 03F1:02E8
+    /// with 1, 1, 38, 22) with its title centred on row 1 in white, the message through the text routine in the box
+    /// (2, 5)–(37, 22), colour 10, cleared first (so it starts at column 2, row 5 and wraps at column 37), then the key
+    /// line of START 0x7C85 in colour 13 and a key. Then the program quits (ExploreScreen).
+    /// </summary>
     public void PartyDestroyed(EncounterState state)
     {
-        Text.Print(Resources.Texts[Msg.MonstersRejoice], clear: true);
-        runner.Ask(new KeyRequest());
+        var t = Resources.Texts;
+        var box = new TextWindow(1, 1, 38, 22);
+        string title = t[Msg.EndTitle];
+        box.Put(1, Math.Max(1, (1 + 38 - title.Length) / 2), title, 15);
+        box.PrintIn(2, 5, 37, 22, t[Msg.MonstersRejoice], clear: true, colour: 10);
+        Window = box.WindowLines();
+        try
+        {
+            runner.Ask(new KeyRequest(t[Msg.PressAnyKey]));
+        }
+        finally
+        {
+            Window = null;
+        }
+    }
+
+    // ---- ECL DAMAGE (GAME.OVR 0x34BB, the line routine 0x959F; DOSBox-X s22) ----------------------------------------
+
+    /// <summary>
+    /// One DAMAGE line (0x959F, before the hit is applied): two spaces, the name and the dies text (HP + 10 below the
+    /// damage) or the hit text, the damage and the points text. When the cursor row is already below 22 it goes to
+    /// row 17 and the white press-enter line waits first (the box is then cleared by the print). The column is set to
+    /// 38 so the line starts on a new row; it is printed in the text box (1, 17)–(38, 22) in colour 15, so a full box
+    /// shows the text routine's page prompt. The party list is drawn again after each hit (00BA:0767; the Client draws
+    /// it from memory every frame).
+    /// </summary>
+    public void DamageReport(EclDamageReport report)
+    {
+        var t = Resources.Texts;
+        string line = "  " + report.Target.Name + (report.Dies
+            ? t[Msg.DamageDies]
+            : t[Msg.DamageHitFor] + report.Damage.ToString(System.Globalization.CultureInfo.InvariantCulture) + t[Msg.DamagePoints]);
+        bool clear = false;
+        if (Text.Row > TextWindow.Bottom)
+        {
+            Text.MoveTo(Text.Column, TextWindow.Top);
+            clear = true;
+            runner.Ask(new KeyRequest(t[Msg.DamageHitContinue]) { Colour = 15 });
+        }
+        Text.MoveTo(TextWindow.Right, Text.Row);
+        Text.Print(line, clear, colour: 15);
+        // 0x96D0: cells (17, 1)–(38, 15) are blanked before the party list is drawn again, so the position line on
+        // row 15 is gone until the next redraw point (DOSBox-X s22).
+        PositionLineErased = true;
+    }
+
+    /// <summary>
+    /// The end of DAMAGE (0x375A–0x37E4). Party killed: a full-screen window whose title the message's clear erases at
+    /// once, the message at column 1, row 1 in colour 10, Delay(3000) (a fixed 3 s; the bottom line keeps what was
+    /// there, e.g. the page prompt), then the program's end. Every DAMAGE then shows the white press-enter line on the
+    /// bottom row (START 0x7C85, colour 15) and waits for a key; after a wipe the program exits to DOS.
+    /// </summary>
+    public void DamageEnd(bool partyKilled)
+    {
+        var t = Resources.Texts;
+        if (partyKilled)
+        {
+            var box = new TextWindow(1, 1, 38, 22);
+            box.PrintIn(1, 1, 38, 22, t[Msg.PartyKilled], clear: true, colour: 10);
+            Window = box.WindowLines();
+            // Row 24 keeps what was there: the page prompt, or else the command line (DOSBox-X s22, a one-line wipe).
+            (string, byte)? stale = _pagePrompted ? ((Resources.PagePrompt ?? "PRESS A KEY").ToUpperInvariant(), (byte)13) : null;
+            runner.Ask(new DelayRequest(TimeSpan.FromMilliseconds(3000)) { BottomLine = stale });
+        }
+        try
+        {
+            runner.Ask(new KeyRequest(t[Msg.DamageContinue]) { Colour = 15 });
+        }
+        finally
+        {
+            Window = null;
+            _pagePrompted = false;
+        }
     }
 
     public void Shop(EncounterState state) => InVenue(state, VenueScreens.Shop);
@@ -532,6 +641,12 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
     public Action? Quit { get; set; }
 
     /// <summary>
+    /// The icon editor 0x1D1AC on a character (the party menu's, <see cref="PartyMenuFlow.EditIcon"/>), run by the camp's
+    /// Alter Icon on the logic thread; null: the camp says it is missing.
+    /// </summary>
+    public Action<EclCharacter>? IconEditor { get; set; }
+
+    /// <summary>
     /// The camp menu (0x196A0, <see cref="VenueScreens.Camp"/>) after vector 2; true when a rest was interrupted (the
     /// area loop then runs vector 3).
     /// </summary>
@@ -574,6 +689,7 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
             Resources = Resources,
             Save = SaveGame,
             Quit = Quit,
+            EditIcon = IconEditor,
         };
     }
 

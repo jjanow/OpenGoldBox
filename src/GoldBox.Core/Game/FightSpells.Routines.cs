@@ -517,7 +517,9 @@ public sealed partial class FightSpells
     /// Level stats (0x2AA87) and a message. With no class chosen (a monster: all levels 0, drain bytes 255) the routine
     /// adds 1 at its uninitialised index [bp−0xC] (and experience below 10,000,000 still rises to it). DOSBox-X showed
     /// that index as 8 in all three samples (a scroll used in a fight on a party member and on a goblin guard, and
-    /// outside a fight), so record 0x9E (gender) + 1: <see cref="RestorationResidueIndex"/>.
+    /// outside a fight), so record 0x9E (gender) + 1: <see cref="RestorationResidueIndex"/>. A party member at its race
+    /// limit (START 0x3AF7 is an equality on the current level) or its class's top level takes the same path; checked
+    /// with the real limit and level stats by RestorationProgramTests (spells-effects.md "Restoration at the race limit").
     /// </summary>
     /// <summary>
     /// The class index Restoration raises when no class qualifies: residue in the program ([bp−0xC] of 0x29C5B), 8 in

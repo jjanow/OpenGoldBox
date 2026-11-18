@@ -106,6 +106,12 @@ public static class HallScreens
             }
             if (answer is not char key)
                 continue;
+            if (char.ToUpperInvariant(key) == PasswordKey)
+            {
+                if (Password(h))
+                    cheat = true;
+                continue;
+            }
             var e = EntryOf(key);
             if (e is not { } entry || !flags[(int)entry])
                 continue;
@@ -147,7 +153,38 @@ public static class HallScreens
         }
     }
 
-    private static TrainingHall.Entry? EntryOf(char key) => char.ToUpperInvariant(key) switch
+    /// <summary>The hidden key (0x19E2C): not an entry, never shown.</summary>
+    public const char PasswordKey = 'J';
+
+    /// <summary>
+    /// J (0x19E2C): the program's first command-line word (ParamStr(1), Turbo Pascal System 0AF8:16BC) compared, exactly
+    /// and with case, with the word at 0x19AC2 (0AF8:0C10). Equal: the cheat flag DS:470C := 1 and the message at
+    /// 0x19AC8 on the bottom line in green with its pause (START 0x2233). Not equal: nothing. No line is read. The word
+    /// comes from the player's files only; without them J does nothing.
+    /// </summary>
+    public static bool Password(HallContext h)
+    {
+        if (h.Text.Program?.Text("Hall.Password") is not { Length: > 0 } word || ParamStr1(h.ProgramWord()) != word)
+            return false;
+        Message(h, h.Text["Hall.Understood"], 10);
+        return true;
+    }
+
+    /// <summary>ParamStr(1) of a DOS command tail: its first word (words end at a space or a control character).</summary>
+    public static string ParamStr1(string? tail)
+    {
+        if (tail is null)
+            return "";
+        int i = 0;
+        while (i < tail.Length && tail[i] <= ' ')
+            i++;
+        int start = i;
+        while (i < tail.Length && tail[i] > ' ')
+            i++;
+        return tail[start..i];
+    }
+
+    internal static TrainingHall.Entry? EntryOf(char key) => char.ToUpperInvariant(key) switch
     {
         'C' => TrainingHall.Entry.Create,
         'D' => TrainingHall.Entry.Drop,
@@ -366,6 +403,8 @@ public sealed class HallContext
     /// <summary>The DS flags of the Create, Add and Exit entries (null: all shown).</summary>
     public bool[]? Defaults { get; init; }
     public HallHooks Hooks { get; init; } = new();
+    /// <summary>The word after START on the DOS command line (ParamStr(1)), or null (the hall's J).</summary>
+    public Func<string?> ProgramWord { get; init; } = () => null;
 }
 
 /// <summary>

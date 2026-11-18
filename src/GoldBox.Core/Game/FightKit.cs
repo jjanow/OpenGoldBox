@@ -29,6 +29,13 @@ public sealed class FightKit
     public LevelStatsTables? LevelTables { get; init; }
 
     /// <summary>
+    /// The AI's key check (0xBB81, <see cref="MonsterAi.ReadKey"/>) in the fights this kit builds: a waiting key (the
+    /// last one, as GetKey takes it), 0 for none or one the check ignores; reading it empties the key buffer. Also read
+    /// once, result dropped, when a fight is built (the fight start's START 0x8AB2 reads). Null = no keyboard (headless).
+    /// </summary>
+    public Func<byte>? AiKey { get; set; }
+
+    /// <summary>
     /// The level seams of an effect engine: the race level limit (START 0x3AF7, <see cref="LevelStats.RaceLimitStops"/>)
     /// and, with <paramref name="tables"/>, the level stats 0x2AA87 (<see cref="LevelStats.Apply"/>).
     /// </summary>
@@ -55,7 +62,9 @@ public sealed class FightKit
         var effects = new EffectHandlers(random, Names);
         effects.ExperienceTable = Experience;
         WireLevels(effects, LevelTables);
-        var ai = new MonsterAi(AiSteps, null, TurnUndead);
+        // The fight start's key reads (START 0x8AB2 from 0xE402 and 0xDFC6): a waiting key is taken and dropped.
+        _ = AiKey?.Invoke();
+        var ai = new MonsterAi(AiSteps, null, TurnUndead) { ReadKey = AiKey };
         // The View / Use screens (0x21AED / 0x21F32) when the chooser also answers them.
         screens ??= chooser is IItemScreenChooser itemChooser ? new FightItemScreens(itemChooser) : null;
         IFightController controller = chooser is null

@@ -18,8 +18,10 @@ catch (Exception e) when (e is ArgumentException or FormatException)
 
 var settings = ClientSettings.Load();
 if (options.GameDirectory is not null || options.Stretch43 is not null || options.AmigaDirectory is not null
-    || options.Art is not null || options.Sound is not null)
+    || options.Art is not null || options.Sound is not null || options.ProgramWord is not null)
 {
+    if (options.ProgramWord is not null)
+        settings.ProgramWord = options.ProgramWord.Length > 0 ? options.ProgramWord : null;
     if (options.Sound is not null)
         settings.Sound = options.Sound;
     if (options.GameDirectory is not null)
@@ -122,6 +124,12 @@ else
         if (audio is not null)
             player.Sound = audio;
         player.SaveFolder = ClientSettings.SavesFolder;
+        player.ProgramWord = settings.ProgramWord;
+        player.ProgramWordChanged = w =>
+        {
+            settings.ProgramWord = w;
+            settings.Save();
+        };
         var program = content.Program();
         menuProgram = program;
         player.Chooser.Text = new CombatText(program);
@@ -182,6 +190,8 @@ else
                     throw new HallLoadException(slot);
             };
             player.HallHooks.Notice = hf.TakeNotice;
+            // The camp's Alter Icon runs the same icon editor 0x1D1AC on the current character.
+            player.IconEditor = hf.EditIcon;
             loadSlot = slot => game = WithSound(PorGame.FromSave(content, art, SlotPath(slot), who, seed));
         }
         if (startAtMenu)
@@ -229,11 +239,15 @@ if (problem is not null)
 
 // The screens a game hands over to: the explore screen (with the hall's creation pages, a hall Load and the party menu
 // after a destroyed party), and the party menu (a new menu on an empty party, as after the program's game loop ends).
+// The controls screen's on/off settings (QoL, off = original), saved on each change.
+IReadOnlyList<SettingToggle> toggles = [SettingToggle.AfterDefeat(settings)];
 IScreen MenuScreen(PartyMenuFlow flow, IScreenHost host) =>
     new PartyMenuScreen(flow, runner, host, menuContent!.Font, player!.Resources, clientArt!, g => ExploreFor(g, 'A', host))
     {
         Program = menuProgram,
         Items = menuItems,
+        Toggles = toggles,
+        StartWord = player.ProgramWordSetting,
     };
 IScreen? NewMenu(IScreenHost host)
 {
@@ -271,10 +285,14 @@ ExploreScreen ExploreFor(PorGame g, char letter, IScreenHost host) => new(g, pla
             Program = menuProgram,
             Items = menuItems,
             Overlay = true,
+            Toggles = toggles,
+            StartWord = player!.ProgramWordSetting,
         }
         : null,
     LoadSave = slot => LoadInto(slot, host),
-    PartyMenu = settings.AfterDefeatMenu ? () => NewMenu(host) : null,
+    // Read when the party is destroyed, so a change on the controls screen applies at once (null: quit, the original).
+    PartyMenu = () => settings.AfterDefeatMenu ? NewMenu(host) : null,
+    Toggles = toggles,
 };
 
 using var window = new GoldBoxGame(
@@ -283,10 +301,19 @@ using var window = new GoldBoxGame(
         if (partyMenu is not null && player is not null && menuContent is not null)
         {
             var menu = MenuScreen(partyMenu, host);
-            if (clientArt?.Title() is not { } menuTitle)
+            // The introduction first (GAME.OVR 0x6FB: logo, title, credits), as the program runs it before the code
+            // wheel and the party menu. A start from a save or an area skips it, as the program's debug start does.
+            if (clientArt is null)
+                return menu;
+            var logo = clientArt.IntroLogo();
+            var titlePage = clientArt.IntroTitle();
+            var intro = new IntroScreen(logo, logo is null ? 0 : palette.Base(logo.PaletteRgb),
+                titlePage, titlePage is null ? 0 : palette.Base(titlePage.PaletteRgb), menuContent.Font,
+                i => menuProgram?.Texts.GetValueOrDefault("Intro." + i.ToString(System.Globalization.CultureInfo.InvariantCulture)), host);
+            if (intro.Empty)
                 return menu;
             host.Push(menu);
-            return new TitleScreen(menuTitle, palette.Base(menuTitle.PaletteRgb), host);
+            return intro;
         }
         if (game is null || player is null)
             return null;
@@ -304,6 +331,7 @@ using var window = new GoldBoxGame(
     Stretch43 = settings.Stretch43,
     Palette = palette,
 };
+window.Input.SkipPauses = settings.SkipPauses;
 if (player is not null)
     player.Quit = window.Exit;
 window.Run();

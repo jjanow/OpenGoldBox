@@ -387,8 +387,13 @@ For FRUA designs, and later for hand-made modules that don't want bytecode.
   program's pens of that palette), the combat grounds DUNGCOM/WILDCOM (cut to DOS's count) and RANDCOM (s19, from
   tile 0x22), the CPIC monster icons and COMSPR, the encounter pictures (PIC, HEAD + BODY with the Amiga head at
   x = 16 `[?]`, SPRIT over the view; s19: PIC animations and the camp's PIC 29) and the title painting at start-up
-  (Best/Amiga only). Original DOS draws what it drew before, pixel for pixel; the encounter pictures are new on every
-  setting (before, a text stand-in).
+  (Best/Amiga only; s22: as the introduction's title page in place of DOS TITLE block 2). Original DOS draws what it drew
+  before, pixel for pixel; the encounter pictures are new on every setting (before, a text stand-in).
+- **Party-icon colours (importer 0.7.5):** `art/amiga/icon-colours.json` (`AmigaIconColoursDocument`: `pairs`, the six
+  index-pair bytes the Amiga program's party-icon recolouring reads, hunk 31 +0x210F, taken from the player's
+  `program` after checking the three routines that read them; `source`). Written only when the pairs hold the pens of
+  the DOS colour pairs. Engine side: `IPorContent.AmigaIconPairs()`; the Client builds party icons the Amiga way under
+  Best / Amiga (docs/re/por-art-formats.md §4 "Party icons").
 - `kind` names follow what the engine draws: `picture`, `portraitHead`, `portraitBody`, `sprite`, `icon`, `wallset`
   (symbol sheets, plus the WALLDEF layout in JSON), `backdrop`, `combatGround`, `tile`, `frame`, `font`, `title`.
 - The palette values themselves come from the player's files at import. The engine source holds none (see PLAN §9,
@@ -627,7 +632,7 @@ With `--amiga` (Amiga v1.0, s17): 508 Amiga pictures over 16 files (every pictur
    take only an `IPorContent`.
 2. `GoldBox.Importer` (CLI `goldbox-import por GAMEDIR OUTDIR [--amiga AMIGADIR]`): scripts, maps, records, item
    types first. Then art (DOS, then Amiga), rules tables, text, saves. **Done (s16; the Amiga overlay s17; the
-   overland `rules/overland.json` s18, importer 0.6 after the s18 merges; `audio/dos/pcsound.json` and new `PartyMsg`, `CombatMsg`, `Hall`, `End`, river texts s19, importer 0.7; the icon editor's size and hair / face words `PartyMsg.Icon*` s20, importer 0.7.1; HMENU's one-word swap `Msg.HmenuButton` / `Msg.HmenuEnter` s21, importer 0.7.2; the encounter menus, messages and parley attitudes `Msg.Encounter*`, `Msg.BothSidesWait`, `Msg.MonstersFlee`, `Msg.ParleyAttitudes` s21, importer 0.7.3).** The importer and the round
+   overland `rules/overland.json` s18, importer 0.6 after the s18 merges; `audio/dos/pcsound.json` and new `PartyMsg`, `CombatMsg`, `Hall`, `End`, river texts s19, importer 0.7; the icon editor's size and hair / face words `PartyMsg.Icon*` s20, importer 0.7.1; HMENU's one-word swap `Msg.HmenuButton` / `Msg.HmenuEnter` s21, importer 0.7.2; the encounter menus, messages and parley attitudes `Msg.Encounter*`, `Msg.BothSidesWait`, `Msg.MonstersFlee`, `Msg.ParleyAttitudes` s21, importer 0.7.3; the introduction's credits `Intro.0`–`Intro.28` s22, importer 0.7.4; the Amiga party-icon colour pairs `art/amiga/icon-colours.json` s22, importer 0.7.5).** The importer and the round
    trip live in `GoldBox.Data/Module/Por/` (the Client imports with them); the CLI stays in `GoldBox.Importer`.
 3. **Round-trip test:** for every raw resource, module → original block must be byte-identical to the DAX block. All
    existing real-data tests also pass with the Client and Core reading the module instead of the game folder.
@@ -689,8 +694,9 @@ With `--amiga` (Amiga v1.0, s17): 508 Amiga pictures over 16 files (every pictur
 - The Amiga overlay (s17; drawn by the Client s18): HEAD's x offset (16), and the palettes of HEAD/BODY/ICON
   (table 2) and the combat icons and grounds (table 3) are inferred, not traced (docs/re/por-art-formats.md §4).
   Client side (s19, docs/re/por-art-formats.md §4 "Amiga program reads"): under Amiga walls the backdrop takes the
-  Amiga program's pens; RANDCOM is the Amiga set as the Amiga draws it. `[?]`: the party icons stay DOS (the Amiga
-  recolouring is read, but the DOS colour bytes → Amiga pens move is not known for EGA 2–5); the sprite frame per
+  Amiga program's pens; RANDCOM is the Amiga set as the Amiga draws it; the party icons are built the Amiga way
+  (`art/amiga/icon-colours.json`). `[?]`: the EGA → pen move of the icon colours is from the art (EGA 5 and 13 have no
+  pen: such a character keeps its DOS icon); the sprite frame per
   distance and the use of the block x, y are from the art; the Amiga PIC animations are composed as the Amiga program
   composes them (XOR with the first frame) but timed with the DOS rule (the Amiga times them by poll passes). The title painting is optional (disk A's `intro`).
 - Settled (s18): the PoR overland tile table and special locations are in `rules/overland.json`, placed by areas

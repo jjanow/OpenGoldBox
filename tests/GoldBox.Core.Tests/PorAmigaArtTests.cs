@@ -141,6 +141,90 @@ public class PorAmigaArtTests(ITestOutputHelper output)
         Assert.Null(PorAmigaArt.Category("walldef"));
     }
 
+    // ---- party icons (por-art-formats.md §4 "Party icons") ----
+
+    /// <summary>Pairs in the program's shape: pair k holds the pens of DOS pair k, the dark one low when <paramref name="darkLow"/>.</summary>
+    private static byte[] Pairs(Func<int, bool> darkLow) =>
+    [
+        .. PorAmigaArt.DosIconPairs.Select((c, k) =>
+        {
+            byte dark = PorAmigaArt.IconPen(c)!.Value, light = PorAmigaArt.IconPen(c + 8)!.Value;
+            return darkLow(k) ? (byte)(light << 4 | dark) : (byte)(dark << 4 | light);
+        }),
+    ];
+
+    [Fact]
+    public void Dos_colour_bytes_move_to_the_amiga_nibbles_of_each_pair()
+    {
+        byte[] defaults = [0x91, 0xA2, 0xB3, 0xC4, 0xE6, 0xF7];   // DOS Create: (c + 8)·16 + c
+        foreach (var pairs in new[] { Pairs(_ => true), Pairs(_ => false), Pairs(k => k % 2 == 0) })
+        {
+            Assert.True(PorAmigaArt.IconPairsAgree(pairs));
+            // The DOS defaults become the pair bytes themselves: the Amiga's own defaults, the art's colours.
+            Assert.Equal(pairs, PorAmigaArt.AmigaIconColours(defaults, pairs));
+            Assert.Equal(Enumerable.Range(0, 16).Select(i => (byte)i), PorAmigaArt.IconColourMap(pairs, pairs));
+            // The dark part of pair 1 (DOS index 1) in EGA red: the Amiga index of DOS 1 takes the pen of red.
+            var map = PorAmigaArt.IconColourMap(PorAmigaArt.AmigaIconColours([0x94, 0xA2, 0xB3, 0xC4, 0xE6, 0xF7], pairs)!, pairs);
+            Assert.Equal(PorAmigaArt.IconPen(4), map[PorAmigaArt.IconPen(1)!.Value]);
+            Assert.Equal(PorAmigaArt.IconPen(9), map[PorAmigaArt.IconPen(9)!.Value]);
+        }
+        Assert.Null(PorAmigaArt.AmigaIconColours([0x95, 0xA2, 0xB3, 0xC4, 0xE6, 0xF7], Pairs(_ => true)));   // EGA 5 [?]
+        Assert.Null(PorAmigaArt.AmigaIconColours([0xD1, 0xA2, 0xB3, 0xC4, 0xE6, 0xF7], Pairs(_ => true)));   // EGA 13 [?]
+        var wrong = Pairs(_ => true);
+        (wrong[0], wrong[1]) = (wrong[1], wrong[0]);
+        Assert.False(PorAmigaArt.IconPairsAgree(wrong));
+        Assert.Null(PorAmigaArt.AmigaIconColours(defaults, wrong));
+    }
+
+    [PorAmigaFact]
+    public void The_programs_colour_pairs_agree_and_reach_the_module()
+    {
+        var (dir, report) = Imported.Value;
+        var pairs = PorAmigaArt.IconPairs(File.ReadAllBytes(PorAmigaArt.Locate(PorAmigaData.Dir!).Program));
+        Assert.NotNull(pairs);
+        Assert.True(PorAmigaArt.IconPairsAgree(pairs));
+        Assert.True(report.Amiga!.IconColours);
+        Assert.Equal(pairs, PorModule.Open(dir).AmigaIconPairs());
+        var r = PorAmigaArt.Check(PorAmigaData.Dir!, PorModule.Open(dir));
+        Assert.Equal(1, r.Checked["AMIGA ICON COLOURS"]);
+        Assert.Empty(r.Mismatches);
+        // Not the program: no pairs.
+        Assert.Null(PorAmigaArt.IconPairs(File.ReadAllBytes(PorAmigaArt.LocateIntro(PorAmigaData.Dir!) ?? PorAmigaArt.Locate(PorAmigaData.Dir!).Program)[..64]));
+    }
+
+    /// <summary>
+    /// The pens of <see cref="PorAmigaArt.IconPen"/> are the art's: over every CHEAD / CBODY block both versions have,
+    /// pixel by pixel, the most common non-zero Amiga index under each DOS colour (with at least 200 pixels) is its pen.
+    /// </summary>
+    [PorAmigaFact]
+    public void The_icon_pens_are_what_the_amiga_icon_art_uses()
+    {
+        var module = PorModule.Open(Imported.Value.Dir);
+        var counts = new int[16, 16];
+        foreach (var file in new[] { "CHEAD", "CBODY" })
+            for (int id = 0; id < 256; id++)
+            {
+                if (module.Picture(file, id) is not [{ Items: [var dos] } d]
+                    || module.Art(file, id, PorArtChoice.Amiga) is not { Variant: "amiga", Frames: [{ Items: [var am] } a] }
+                    || (d.Width, d.Height) != (a.Width, a.Height))
+                    continue;
+                for (int i = 0; i < dos.Length; i++)
+                    counts[dos[i], am[i]]++;
+            }
+        int seen = 0;
+        for (int e = 1; e < 16; e++)
+        {
+            int total = Enumerable.Range(0, 16).Sum(p => counts[e, p]);
+            if (total < 200)
+                continue;
+            int best = Enumerable.Range(1, 15).MaxBy(p => counts[e, p]);
+            output.WriteLine($"DOS {e}: Amiga {best} ({counts[e, best]} of {total})");
+            Assert.Equal(PorAmigaArt.IconPen(e), (byte)best);
+            seen++;
+        }
+        Assert.Equal(13, seen);                                   // 1–4, 6–12, 14, 15
+    }
+
     // ---- the player's files ----
 
     private static readonly Lazy<(string Dir, PorImportReport Report)> Imported = new(() =>
@@ -170,7 +254,8 @@ public class PorAmigaArtTests(ITestOutputHelper output)
     public void Every_overlay_sidecar_reads_strictly()
     {
         var root = Path.Combine(Imported.Value.Dir, "art", "amiga");
-        var files = Directory.EnumerateFiles(root, "*.json", SearchOption.AllDirectories).ToList();
+        var files = Directory.EnumerateFiles(root, "*.json", SearchOption.AllDirectories)
+            .Where(p => !p.EndsWith(Path.GetFileName(AmigaIconColoursDocument.RelativePath), StringComparison.Ordinal)).ToList();
         bool title = Imported.Value.Report.Amiga!.Title;
         Assert.Equal(PorAmigaArt.LocateIntro(PorAmigaData.Dir!) is not null, title);
         Assert.Equal(508 + (title ? 1 : 0), files.Count);

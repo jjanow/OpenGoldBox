@@ -112,12 +112,18 @@ public sealed class HallView
             return ChoiceRequest.PreviousMember;
         if (input.Pressed(GameAction.NextMember))
             return ChoiceRequest.NextMember;
+        // The hidden J (0x19E2C), from its binding (the pad's left stick) as from the J key.
+        if (input.Pressed(GameAction.HallJ))
+            return HallScreens.PasswordKey;
         if (input.NewInput is (InputDevice.Keyboard, { Length: 1 } key))
             return char.ToUpperInvariant(key[0]);
         return null;
     }
 
-    /// <summary>A click: an entry (answered), or a member's name (picked); right click does nothing (no way out).</summary>
+    /// <summary>
+    /// A click: an entry (answered), a member's name (picked), or the prompt (the hidden J); right click does nothing
+    /// (no way out).
+    /// </summary>
     public object? Click(HallMenuRequest m, int col, int row, int partySize)
     {
         Sync(m);
@@ -128,6 +134,9 @@ public sealed class HallView
         }
         if (col is >= 1 and <= 38 && row - 4 is var p and >= 0 && p < Math.Min(partySize, 8))
             return TradeContext.MemberPick - p;
+        // The prompt on the bottom line: the hidden J for the mouse (the original shows no entry for it).
+        if (row == BottomRow && col < m.Prompt.Length)
+            return HallScreens.PasswordKey;
         return null;
     }
 
@@ -158,7 +167,10 @@ public sealed class HallView
         {
             if (pictures.Find("FINAL", layer.Block, scene.Disk, PorArtChoice.Dos) is not { Frames.Count: > 0 } img)
                 continue;
-            var p = img.Frames[Math.Clamp(layer.Frame, 0, img.Frames.Count - 1)];
+            // Later frames of a FINAL block are XOR deltas against the first (loader 0x2E170, as PIC; DOSBox-X s22: the
+            // spirit's frames drawn raw showed speckled colours and a black box).
+            int k = Math.Clamp(layer.Frame, 0, img.Frames.Count - 1);
+            var p = k == 0 ? img.Frames[0] : ViewPictures.Composed(img.Frames[0], img.Frames[k]);
             if (p.Items.Count == 0)
                 continue;
             var px = p.Items[0];

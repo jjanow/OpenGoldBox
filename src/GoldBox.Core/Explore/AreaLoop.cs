@@ -182,12 +182,16 @@ public sealed class AreaLoop
     /// <summary>The event accessor 0x2EE71 for the party's square (0 with no map).</summary>
     public byte EventHere() => Map is null ? (byte)0 : (byte)Map.Event(Memory.Position.X, Memory.Position.Y);
 
+    /// <summary>Raised at each view redraw (after the step or its bump, and the other callers of <see cref="Redraw"/>).</summary>
+    public event Action? Redrawn;
+
     /// <summary>
     /// The view redraw's state part (0x2DCF4): the event byte of the party's square is read again; the area map is
     /// switched off where $49FB ≠ 0. The program does this when DS:49FA = 1 or $49E6 ≠ 0 (0x2DCFA–0x2DD15).
     /// </summary>
     public void Redraw()
     {
+        Redrawn?.Invoke();
         if (Overland.Shown(Memory))
         {
             // 0x2DD10 → 0x2DE39 (the tiles) and 0x2DB87 (the marker, which advances DS:6DDC).

@@ -160,6 +160,12 @@ public interface IEclHost
     /// <summary>DAMAGE (0x2E) hit one creature: the text-box line ("dies" / "is hit FOR n points of Damage").</summary>
     void DamageReport(EclDamageReport report) { }
 
+    /// <summary>
+    /// The end of every DAMAGE (0x375A–0x37E4): with <paramref name="partyKilled"/> (no list member left in play,
+    /// DS:49FF) the party-killed window and a 3-second pause first; then the press-enter line and a key, wipe or not.
+    /// </summary>
+    void DamageEnd(bool partyKilled) { }
+
     // ---- Added in s12 --------------------------------------------------------------------------------------------
     /// <summary>
     /// EXIT (0x00, and PROGRAM 9 which ends like it): the text cursor goes to column 1, row 17 (DS:5E24/5E25) without

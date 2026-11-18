@@ -5,10 +5,10 @@ using GoldBox.Data.Por;
 namespace GoldBox.Client.Screens;
 
 /// <summary>
-/// The title painting shown at start-up under the Best / Amiga art setting (the Amiga intro painting,
-/// docs/re/por-art-formats.md §5; <see cref="Play.ClientArt.Title"/>), over the game screen it hands over to. Any
-/// key, pad button or click goes on (the host swallows that input, so it does not reach the game). Original DOS shows
-/// no title, as before ([?] the DOS TITLE.DAX screens are not drawn yet).
+/// The title painting shown under the Best / Amiga art setting (the Amiga intro painting, docs/re/por-art-formats.md §5;
+/// <see cref="Play.ClientArt.Title"/>) when the Client starts from a save or an area, over the game screen it hands
+/// over to. Any key, pad button or click goes on (the host swallows that input, so it does not reach the game). A start
+/// at the party menu shows the introduction instead (<see cref="IntroScreen"/>, which uses <see cref="Paint"/>).
 /// </summary>
 public sealed class TitleScreen(PorArtImage title, int paletteBase, IScreenHost host) : IScreen
 {

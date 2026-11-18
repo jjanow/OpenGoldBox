@@ -19,6 +19,8 @@ public sealed class CampContext
     public Func<char, string?>? Save { get; init; }
     /// <summary>Quit to DOS (closes the Client).</summary>
     public Action? Quit { get; init; }
+    /// <summary>The icon editor 0x1D1AC on a character (Alter Icon), or null when the Client has none.</summary>
+    public Action<EclCharacter>? EditIcon { get; init; }
 
     public Dialog Dialog => Trade.Dialog;
     public GameText Text => Trade.Text;
@@ -28,7 +30,7 @@ public sealed class CampContext
 /// <summary>
 /// The camp (GAME.OVR 0x196A0) and its menus as the program runs them (docs/re/camp.md): Save 0x1FD3E, View, Magic
 /// 0x18C22 (Cast 0x17CD2, Memorize 0x1813B, Scribe 0x1838C, Display 0x187ED, Rest 0x17FAB), Rest 0x17FAB → 0x24A66,
-/// Alter 0x1948A (Order 0x18FB1, Drop 0x19116, Speed 0x192C8, Icon, Pics). The rules are Core's (<see cref="CampRest"/>,
+/// Alter 0x1948A (Order 0x18FB1, Drop 0x19116, Speed 0x192C8, Icon 0x1D1AC, Pics). The rules are Core's (<see cref="CampRest"/>,
 /// <see cref="CampSpells"/>, <see cref="CampParty"/>, <see cref="CampCast"/>); texts are the program's
 /// (<see cref="GameText"/>). [?] The screen layout keeps the Client's explore frame (text window, bottom-line menus,
 /// full-screen lists); cell positions of the program's messages are followed where read (rest time row 17, messages
@@ -657,8 +659,12 @@ public static class CampScreens
                     Speed(c);
                     break;
                 case 'I':
-                    // [?] The icon editor (CustomizeIcon) belongs to character creation, not built.
-                    c.Dialog.Say("ICON: NOT IN THIS BUILD YET.", colour: 14);
+                    // 0x1951F: the icon editor 0x1D1AC (0078:002F) on the current character (DS:5D92), then the screen
+                    // redrawn for the interface state (START 0x3379): the camp's own frame comes back with the menu.
+                    if (c.EditIcon is { } edit && c.Party.Current is { } who)
+                        edit(who);
+                    else
+                        c.Dialog.Say("ICON: NOT IN THIS BUILD YET.", colour: 14);
                     break;
                 case 'P':
                     Pictures(c);
