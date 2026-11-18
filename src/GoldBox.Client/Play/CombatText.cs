@@ -35,6 +35,11 @@ public enum CombatMsg
     Cursed, WrongClass, AlreadyUsing, HandsFull, CannotHalve, UsesAnItem, ItemLabel, SelectCoin, HowMuch, WillYouDrop,
     // The AI's messages (0xABC0–0xBC8C).
     FleesInPanic, AiMagicOn, AiMagicOff, ForcedToFlee, Surrenders,
+    // The slain helpless defender's words (0x12AF4); the AI's move prompt (0xB396, AiMoveStep).
+    CruelBlow, AiMoveLeft,
+    // Non-weapon damage (0x2C22E): the damage, the element, a lost spell, the down words; an effect resisted (0x2C540).
+    Takes, PointsOfDamage, TakesOnePoint, FromFire, FromCold, FromElectricity, FromAcid, FromMagic, SpellLostSpell,
+    SpellGoesDown, SpellAndIsDying, SpellIsKilled, Unaffected,
 }
 
 /// <summary>
@@ -144,6 +149,21 @@ public sealed class CombatText
         [CombatMsg.AiMagicOff] = "MAGIC OFF",
         [CombatMsg.ForcedToFlee] = "MUST RUN",
         [CombatMsg.Surrenders] = "GIVES UP",
+        [CombatMsg.CruelBlow] = "FINISHED OFF",
+        [CombatMsg.AiMoveLeft] = "MOVE, MOVES LEFT: ",
+        [CombatMsg.Takes] = "SUFFERS ",
+        [CombatMsg.PointsOfDamage] = " HP ",
+        [CombatMsg.TakesOnePoint] = "SUFFERS 1 HP ",
+        [CombatMsg.FromFire] = "BY FIRE",
+        [CombatMsg.FromCold] = "BY FROST",
+        [CombatMsg.FromElectricity] = "BY LIGHTNING",
+        [CombatMsg.FromAcid] = "BY ACID",
+        [CombatMsg.FromMagic] = "BY MAGIC",
+        [CombatMsg.SpellLostSpell] = "SPELL LOST",
+        [CombatMsg.SpellGoesDown] = "FALLS",
+        [CombatMsg.SpellAndIsDying] = ", DYING",
+        [CombatMsg.SpellIsKilled] = "IS DEAD",
+        [CombatMsg.Unaffected] = "NO EFFECT",
     };
 
     /// <summary>START.EXE strings (offsets in the unpacked image, PorProgram.Image), read before the status panel 0x1583.</summary>

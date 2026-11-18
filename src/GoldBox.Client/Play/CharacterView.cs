@@ -26,7 +26,7 @@ public static class CharacterView
         string[] actions = ["ITEMS", "SPELLS", "TRADE", "DROP", "EXIT"];
         while (t.Current is { } c)
         {
-            var a = t.Dialog.Page(new ListRequest(Sheet(t, c), [], actions, actions.Length - 1) { PartySelect = true });
+            var a = t.Dialog.Page(new ListRequest(Sheet(t, c), [], actions, actions.Length - 1) { PartySelect = true, SharedHighlight = true });
             if (t.SelectMember(a.Action))
                 continue;
             switch (a.Action)

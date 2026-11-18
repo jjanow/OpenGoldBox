@@ -28,6 +28,8 @@ public sealed class PorImportReport
     public int EngineSaves { get; set; }
     /// <summary><c>rules/overland.json</c> was written.</summary>
     public bool Overland { get; set; }
+    /// <summary><c>audio/dos/pcsound.json</c> was written (the program's sound driver, docs/re/sound.md).</summary>
+    public bool Sound { get; set; }
     /// <summary>Per disk: ids that are both a <c>MON&lt;d&gt;ITM</c> block and an <c>ITEM&lt;d&gt;</c> block (§16).</summary>
     public SortedDictionary<int, List<int>> ItemIdCollisions { get; } = [];
     /// <summary>Colliding ids whose two blocks hold different bytes.</summary>
@@ -45,7 +47,7 @@ public sealed class PorImportReport
 /// </summary>
 public static class PorImporter
 {
-    public const string ImporterName = "GoldBox.Importer 0.6";
+    public const string ImporterName = "GoldBox.Importer 0.7";
 
     /// <summary>VM $6E12 (DS:5376): the disk LOADFILES reads GEO&lt;d&gt; from.</summary>
     private const ushort DiskCell = 0x6E12;
@@ -240,6 +242,16 @@ public static class PorImporter
             }
             else
                 report.Notes.Add("the overland tables were not found in GAME.OVR's code: rules/overland.json not written");
+            // The sound driver's data (docs/re/sound.md §4); the cue table stays in program.json's data segment.
+            var cueTable = PorSoundDriver.CueTable(program.Ds);
+            if (game.Find("START.EXE") is { } exePath
+                && PorSoundDriver.Read(PorProgram.LoadImage(File.ReadAllBytes(exePath)).Image) is { } driver && cueTable is not null)
+            {
+                ModuleJson.Write(Out(PcSoundDocument.RelativePath), PcSoundDocument.From(driver, cueTable));
+                report.Sound = true;
+            }
+            else
+                report.Notes.Add("the sound driver or its cue table was not found in START.EXE: audio/dos/pcsound.json not written");
             report.Texts = program.Texts.Count;
             if (program.Texts.Count == 0)
                 report.Notes.Add("GAME.OVR is not the v1.3 overlay: no program texts (the Client uses its own wording)");

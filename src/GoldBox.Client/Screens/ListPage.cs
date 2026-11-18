@@ -62,6 +62,13 @@ public sealed class ListPage
         Scroll(r);
     }
 
+    /// <summary>The highlighted action of the page on screen (the shared menu highlight, set by the screen).</summary>
+    public void SetAction(ListRequest r, int action)
+    {
+        Sync(r);
+        _action = Math.Clamp(action, 0, Math.Max(0, r.Actions.Count - 1));
+    }
+
     private static int FirstRow(ListRequest r) => Math.Max(r.FirstRow, r.Lines.Count + 1);
 
     private static int Visible(ListRequest r) => Math.Max(1, Math.Min(r.VisibleRows, LastListRow(r) - FirstRow(r) + 1));

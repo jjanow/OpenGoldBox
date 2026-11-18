@@ -18,8 +18,10 @@ catch (Exception e) when (e is ArgumentException or FormatException)
 
 var settings = ClientSettings.Load();
 if (options.GameDirectory is not null || options.Stretch43 is not null || options.AmigaDirectory is not null
-    || options.Art is not null)
+    || options.Art is not null || options.Sound is not null)
 {
+    if (options.Sound is not null)
+        settings.Sound = options.Sound;
     if (options.GameDirectory is not null)
         settings.GameDirectory = Path.GetFullPath(options.GameDirectory);
     if (options.AmigaDirectory is not null)
@@ -58,6 +60,13 @@ ClientArt? clientArt = null;
 var runner = new ScriptRunner();
 PorGame? game = null;
 ClientPlayer? player = null;
+GoldBox.Client.Audio.ClientAudio? audio = null;
+// No --save and no --area: the party menu, the original's first screen (create, add, load, begin).
+PartyMenuFlow? partyMenu = null;
+bool startAtMenu = options.Area is null && options.Save is null;
+PorViewArt? menuContent = null;
+PorProgramData? menuProgram = null;
+GoldBox.Core.Game.BaseItemTable? menuItems = null;
 string? problem = null;
 if (options.ModuleDirectory is null && (string.IsNullOrWhiteSpace(gameDir) || !Directory.Exists(gameDir)))
     problem = "Pool of Radiance folder not set: start with --game DIR or --module DIR";
@@ -86,6 +95,7 @@ else
         IPorContent content = PorModule.Open(moduleDir);
         Console.Error.WriteLine($"content: {content.Origin}");
         var art = PorViewArt.Load(content);
+        menuContent = art;
         // The art setting (Original DOS / Best / Amiga) applies before the area entry loads its wall sets.
         clientArt = new ClientArt(content, art, palette, settings.ArtChoice);
         clientArt.Changed = c =>
@@ -100,8 +110,14 @@ else
             Game = () => game,
         };
         player.InstallPaging();
+        // Sound (docs/re/sound.md): the program's driver data from the content, on the device the setting names.
+        audio = GoldBox.Client.Audio.ClientAudio.Open(content.Sound(), GoldBox.Client.Audio.ClientAudio.Parse(settings.Sound));
+        Console.Error.WriteLine($"sound: {(audio is null ? "off" : audio.Device.ToString().ToLowerInvariant())}");
+        if (audio is not null)
+            player.Sound = audio;
         player.SaveFolder = ClientSettings.SavesFolder;
         var program = content.Program();
+        menuProgram = program;
         player.Chooser.Text = new CombatText(program);
         if (program?.SpellNames is { Count: > 0 } names)
         {
@@ -112,7 +128,27 @@ else
         // The game seeds its generator from the DOS clock at start-up.
         uint seed = (uint)Environment.TickCount64;
         string? savePath = null;
-        if (options.Area is null)
+        if (startAtMenu)
+        {
+            var tables = program?.CreationTables()
+                ?? throw new InvalidOperationException("the party menu's tables were not found (not Pool of Radiance DOS v1.3?)");
+            var items = PorFight.Kit(content)?.Items ?? throw new InvalidOperationException("no item types");
+            PorGame WithSound(PorGame g) { g.Loop.Sound = player.Sound; return g; }
+            var roster = new PorRoster(Path.Combine(ClientSettings.SavesFolder, "characters"));
+            IReadOnlyList<char> Slots() => [.. "ABCDEFGHIJ".Where(l => ClientOptions.ResolveSave(l.ToString(), ClientSettings.SavesFolder, content.SaveFolder) is not null)];
+            partyMenu = new PartyMenuFlow(runner.Ask, new PartyMenuTexts(program, player.Resources), tables, items, roster, seed)
+            {
+                NewGame = (party, s) => game = WithSound(PorGame.NewGame(content, art, party, who, s)),
+                SaveSlots = Slots,
+                LoadGame = (slot, s) => game = WithSound(PorGame.FromSave(content, art,
+                    ClientOptions.ResolveSave(slot.ToString(), ClientSettings.SavesFolder, content.SaveFolder)!, who, s)),
+            };
+            menuItems = items;
+            runner.Start(partyMenu.Run);
+            if (runner.Fault is { } menuFault)
+                throw menuFault;
+        }
+        else if (options.Area is null)
         {
             // The player's own saves (written by the camp) come first, then the module's shipped saves; engine saves
             // before original files, which are converted on load.
@@ -121,15 +157,17 @@ else
             Console.Error.WriteLine($"save: {savePath}");
         }
         // The entry runs on the logic thread, so its menus or text (if any) wait for the window.
+        if (!startAtMenu)
         runner.Start(() =>
         {
             game = options.Area is { } script && options.At is var (x, y, f)
                 ? PorGame.Enter(content, art, script, x, y, f, who, seed)
                 : PorGame.FromSave(content, art, savePath!, who, seed);
+            game.Loop.Sound = player.Sound;
         });
         if (runner.Fault is { } fault)
             throw fault;
-        if (game is null && runner.Pending is null)
+        if (game is null && runner.Pending is null && !startAtMenu)
             throw new InvalidOperationException("the area entry did not finish");
         if (game is not null)
             Console.Error.WriteLine($"area: script {game.Vm.CurrentScript} map {game.Loop.Map?.Id} at {game.Memory.Position.X},{game.Memory.Position.Y}; entry {game.EntryRun.Reason}");
@@ -149,6 +187,19 @@ if (problem is not null)
 using var window = new GoldBoxGame(
     host =>
     {
+        if (partyMenu is not null && player is not null && menuContent is not null)
+        {
+            var menu = new PartyMenuScreen(partyMenu, runner, host, menuContent.Font, player.Resources, clientArt!,
+                g => new ExploreScreen(g, player, runner, host, 'A', clientArt))
+            {
+                Program = menuProgram,
+                Items = menuItems,
+            };
+            if (clientArt?.Title() is not { } menuTitle)
+                return menu;
+            host.Push(menu);
+            return new TitleScreen(menuTitle, palette.Base(menuTitle.PaletteRgb), host);
+        }
         if (game is null || player is null)
             return null;
         char letter = options.Area is null ? ClientOptions.SlotOf(options.Save ?? "A") : 'A';
@@ -169,4 +220,5 @@ if (player is not null)
     player.Quit = window.Exit;
 window.Run();
 runner.Dispose();
+audio?.Dispose();
 return problem is null ? 0 : 1;

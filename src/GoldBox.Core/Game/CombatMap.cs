@@ -148,6 +148,11 @@ public sealed class CombatMap : IFightMap, IFightAuraRange, IFightTerrain, IFigh
     /// </summary>
     public void Downed(EclCharacter c, FightState fight)
     {
+        // Sound (docs/re/sound.md §2.4): resident bracket 0x31554 … 0x317D6 with the body cue at 0x31744 for every
+        // creature; the program's drawing and message pause inside the bracket (its length) are the front end's.
+        fight.Sound.BeginResident();
+        fight.Sound.Cue(Sound.SoundCue.Body);
+        fight.Sound.EndResident();
         int slot = Slot(c);
         var rec = fight.Record(c);
         if (rec[CombatRecord.NotParty] == 0)

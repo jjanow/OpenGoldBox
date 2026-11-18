@@ -23,6 +23,16 @@ public enum AreaCommand
     Look,
     /// <summary>E: Encamp (0x3B19): vector 2, the camp menu, vector 3 when a rest was interrupted.</summary>
     Encamp,
+    /// <summary>
+    /// Overland (DS:49FA 2–4) arrows (0x17390–0x173BD): Up / Right / Down / Left set the facing to 0 / 2 / 4 / 6 and
+    /// end the command; vector 0, the overland step (<see cref="Overland.Step"/>), the redraw and vector 1 follow.
+    /// Ignored in the 3D view; the 3D commands Forward, the turns and A are ignored on the overland (its command
+    /// line, DS:04DF, has no A, and its arrows do not turn).
+    /// </summary>
+    TravelNorth,
+    TravelEast,
+    TravelSouth,
+    TravelWest,
 }
 
 /// <summary>Messages the explore loop itself shows (the program's own fixed texts are not reproduced).</summary>
@@ -30,6 +40,8 @@ public enum AreaMessage
 {
     /// <summary>A pressed where $49FB ≠ 0 (cs:0x97B, shown in colour 14).</summary>
     NoAreaMapHere,
+    /// <summary>An overland step onto a river tile while $4AA2 = 0 (GAME.OVR cs:0x7F4 of the unit at 0x166CB, colour 14).</summary>
+    RiverBlocks,
 }
 
 /// <summary>The player-facing side of the explore loop that is not an ECL host call.</summary>
@@ -78,6 +90,13 @@ public sealed class AreaLoop
     public EclMemory Memory => Vm.Memory;
 
     /// <summary>
+    /// The program's sound calls here (docs/re/sound.md §2.4): the step cue in the move (0x16E09), on turning left or
+    /// right (0x171DB / 0x17220) and after a command whose redraw finds x or y changed (0x4215). The bump is
+    /// <see cref="IAreaUi.Bump"/>. None by default.
+    /// </summary>
+    public Sound.ISoundSink Sound { get; set; } = GoldBox.Core.Sound.NoSound.Instance;
+
+    /// <summary>
     /// The effect timeout 0x23DCC (count, unit) that the clock routine 0x241A1 runs after every advance (a step, Look,
     /// the CLOCK opcode through <see cref="AreaHost"/>): <see cref="GoldBox.Core.Game.CampTime.TimeOutEffects(EclMemory, byte[], bool, int, int, Action{EclCharacter, byte[]})"/>
     /// with the session's flags. Null: the clock alone.
@@ -95,6 +114,15 @@ public sealed class AreaLoop
 
     /// <summary>The 3D map in memory (null until a LOADFILES loaded one, or outdoors).</summary>
     public AreaMap? Map { get; private set; }
+
+    /// <summary>The overland map (<see cref="Overland"/>), or null when the content has none (no overland step then).</summary>
+    public OverlandMap? OverlandMap { get; set; }
+
+    /// <summary>
+    /// The column where the overland x = 0 of view mode m (2–4) sits: the program's DS:3C76[m], a module's area
+    /// <c>overland.column</c>. Null: no overland step.
+    /// </summary>
+    public Func<int, int?>? OverlandColumn { get; set; }
 
     /// <summary>Reads GEO&lt;disk&gt; block id; null when there is none.</summary>
     public Func<int, int, AreaMap?>? MapSource { get; set; }
@@ -160,12 +188,34 @@ public sealed class AreaLoop
     /// </summary>
     public void Redraw()
     {
+        if (Overland.Shown(Memory))
+        {
+            // 0x2DD10 → 0x2DE39 (the tiles) and 0x2DB87 (the marker, which advances DS:6DDC).
+            MarkerCounter = (MarkerCounter + 1) % 6;
+            return;
+        }
         if (Map is null || (Memory.ViewMode != 1 && Memory.Read(View3DCell) == 0))
             return;
         Memory.Position.EventByte = EventHere();
         if (Memory.Read(NoAreaMap) != 0)
             ShowAreaMap = false;
     }
+
+    /// <summary>
+    /// DS:6DDC, the overland marker's animation counter (0–5): the frame the next overland redraw draws
+    /// (<see cref="Overland.MarkerFrame"/>); each redraw advances it. The frame on screen is the one before it, with
+    /// the frame <see cref="MarkerCounter"/> itself drawn over it while <see cref="OverlandInterfacePending"/>.
+    /// [?] Its value after a load is not traced (DOSBox-X, a load from the main menu: 2, set by the session).
+    /// </summary>
+    public int MarkerCounter { get; set; }
+
+    /// <summary>
+    /// The overland interface is drawn when the command routine starts in modes 2–4 with DS:49F9 &lt; 2 (0x17285, START
+    /// 0x36FE): the ICON frames are loaded, the view is redrawn (tiles and marker, frame c) and the marker drawn once
+    /// more alone (frame c + 1, over the first). True while that is still to come for the next command: a Client
+    /// shows the view as it will look then (DOSBox-X: frames 2 and 3 after a load).
+    /// </summary>
+    public bool OverlandInterfacePending => Overland.Commands(Memory) && Memory.PreviousViewMode < 2;
 
     /// <summary>Runs a vector; after a NEWECL, the new script's vectors (0x3EFA).</summary>
     public EclRunResult Run(int vector)
@@ -189,10 +239,31 @@ public sealed class AreaLoop
             return;
         Vm.CommandRead();
         Memory.Write(CancelStep, 0); // 0x17060: every command read starts with $6DC9 = 0
+        bool overland = Overland.Commands(Memory);
+        if (overland ? command is AreaCommand.Forward or AreaCommand.TurnLeft or AreaCommand.TurnRight
+                or AreaCommand.TurnAround or AreaCommand.AreaMap
+            : command is AreaCommand.TravelNorth or AreaCommand.TravelEast or AreaCommand.TravelSouth
+                or AreaCommand.TravelWest)
+            return; // not on this mode's command line (0x17054: DS:49FA = 1 or 2–4 branch)
+        if (OverlandInterfacePending)
+        {
+            MarkerCounter = (MarkerCounter + 2) % 6;
+            Memory.PreviousViewMode = Memory.ViewMode; // drawn once per entry of the routine (DS:49F9 := DS:49FA at its end)
+        }
         switch (command)
         {
-            case AreaCommand.TurnLeft: Turn(Facing.Left(Memory.Position.Facing)); return;
-            case AreaCommand.TurnRight: Turn(Facing.Right(Memory.Position.Facing)); return;
+            case AreaCommand.TravelNorth: Memory.Position.Facing = Facing.North; break;
+            case AreaCommand.TravelEast: Memory.Position.Facing = Facing.East; break;
+            case AreaCommand.TravelSouth: Memory.Position.Facing = Facing.South; break;
+            case AreaCommand.TravelWest: Memory.Position.Facing = Facing.West; break;
+            case AreaCommand.TurnLeft:
+                Sound.Cue(GoldBox.Core.Sound.SoundCue.Step);
+                Turn(Facing.Left(Memory.Position.Facing));
+                return;
+            case AreaCommand.TurnRight:
+                Sound.Cue(GoldBox.Core.Sound.SoundCue.Step);
+                Turn(Facing.Right(Memory.Position.Facing));
+                return;
             case AreaCommand.TurnAround: Turn(Facing.Back(Memory.Position.Facing)); return;
             case AreaCommand.AreaMap:
                 if (Memory.Read(NoAreaMap) == 0)
@@ -212,6 +283,7 @@ public sealed class AreaLoop
                 break;
         }
 
+        Memory.PreviousViewMode = Memory.ViewMode; // 0x173E7: the command routine ends with DS:49F9 := DS:49FA
         // The area loop (0x40E3 on): $49F2 = the current block after every command read.
         Memory.Write(PreviousScript, (ushort)Vm.CurrentScript);
         try
@@ -242,6 +314,8 @@ public sealed class AreaLoop
             Memory.Write(PreviousY, Memory.Position.Y);
             Step();
             Redraw();
+            if (Memory.Position.X != Memory.Read(PreviousX) || Memory.Position.Y != Memory.Read(PreviousY))
+                Sound.Cue(GoldBox.Core.Sound.SoundCue.Step); // 0x4215
             Run(1);
         }
         finally
@@ -311,6 +385,16 @@ public sealed class AreaLoop
             Memory.Write(CancelStep, 0);
             return;
         }
+        if (Overland.Commands(Memory))
+        {
+            // 0x1771B: DS:49FA 2–4 → the overland step 0x16EE3 (DS:49FA other than 1–4: no step at all).
+            if (OverlandMap is { } om && OverlandColumn?.Invoke(Memory.ViewMode) is { } column
+                && Overland.Step(Memory, om, column, AdvanceClock) == OverlandStep.River)
+                Ui.Message(AreaMessage.RiverBlocks);
+            return;
+        }
+        if (Memory.ViewMode != 1)
+            return;
         if (Map is null)
             return;
         var p = Memory.Position;
@@ -367,6 +451,7 @@ public sealed class AreaLoop
     /// </summary>
     public void Move()
     {
+        Sound.Cue(GoldBox.Core.Sound.SoundCue.Step); // 0x16E09
         var p = Memory.Position;
         int x = (sbyte)p.X + Facing.DeltaX(p.Facing), y = (sbyte)p.Y + Facing.DeltaY(p.Facing);
         x = x < 0 ? 15 : x > 15 ? 0 : x;

@@ -15,6 +15,8 @@ public enum Msg
     ShopTitle, ShopOverloaded, ShopNoMoney, ShopMoneyLeft, ShopGoBack,
     // Camp (0x19654)
     MakesCamp, CampPrompt, QuitToDos,
+    // Overland step (0x16EBF)
+    RiverBlocks,
     // Camp spells (0x17B33–0x18376)
     NoMagicHere, NoCondition, CondCast, CondMemorise, CondScribe, NoSpellsMemorised, CanMemorise, ClericSpells,
     MageSpells, MemoriseThese, CannotMemorise, MemoriseTheseAgain, ScribeThese, NoCopyableScrolls, AlreadyKnow,
@@ -71,6 +73,7 @@ public sealed class GameText
         [Msg.TempleMoneyLeft] = "THERE IS MONEY LEFT IN THE POOL.",
         [Msg.TempleGoBack] = "GO BACK FOR IT?",
         [Msg.LostDuel] = "THE DUEL IS LOST.",
+        [Msg.RiverBlocks] = "THE RIVER BLOCKS THE WAY.",
         [Msg.WonDuel] = "THE DUEL IS WON.",
         [Msg.PartyWon] = "VICTORY.",
         [Msg.PartyFled] = "THE PARTY RAN.",

@@ -19,6 +19,8 @@ public sealed class ClientArt
     public ScreenPalette Palette { get; }
     public CombatArt Combat { get; }
     public ViewPictures Pictures { get; }
+    /// <summary>The overland view's tiles and party marker (<see cref="OverlandArt"/>).</summary>
+    public OverlandArt Overland { get; }
     public PorArtChoice Choice { get; private set; }
 
     /// <summary>Called after a change (the Client saves the setting).</summary>
@@ -36,6 +38,7 @@ public sealed class ClientArt
         Palette = palette;
         Combat = content is null ? new CombatArt() : new CombatArt(content);
         Pictures = new ViewPictures(content);
+        Overland = new OverlandArt(content);
         Use(choice);
     }
 
@@ -52,6 +55,7 @@ public sealed class ClientArt
         _view?.UseArt(choice, Palette.Base);
         Combat.UseArt(choice, Palette.Base);
         Pictures.UseArt(choice, Palette.Base);
+        Overland.UseArt(choice, Palette.Base);
     }
 
     /// <summary>

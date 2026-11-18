@@ -138,18 +138,24 @@ public sealed class FightItemScreens(IItemScreenChooser chooser, Action<EclChara
     // ---- The screens (IFightItemScreens) ----------------------------------------------------------------------------
 
     /// <summary>
+    /// The keys after which the View loop 0x21AED draws the whole page again (the set at CS:0A93 of its unit, GAME.OVR
+    /// 0x21ACD: I, S, T). Drop (D) only clears and rewrites the money lines (0x21547); any other key redraws nothing.
+    /// </summary>
+    public static bool RedrawsViewPage(ViewEntry e) => e is ViewEntry.Items or ViewEntry.Spells or ViewEntry.Trade;
+
+    /// <summary>
     /// 0x21AED in a fight for the current creature: until Exit or "done", the View menu: Items → the Items screen
     /// (<see cref="Use"/>, which may report done); Spells → the memorised list (nothing changes); Drop → drop money
-    /// (<see cref="DropMoney"/>). Returns done.
+    /// (<see cref="DropMoney"/>). Returns done. The page (0x21084) recalculates the creature (0x21642 → START 0x1758)
+    /// each time it is drawn: on entry and after the keys of <see cref="RedrawsViewPage"/> (read s19), so after Drop
+    /// the weight word is lower but the derived bytes (movement…) stand until the next recalculation.
     /// </summary>
     public bool View(Fight fight, EclCharacter c)
     {
         bool done = false;
+        fight.RecalculateStats(c);
         while (!done)
         {
-            // The page (0x21084) recalculates the creature (0x21642 → START 0x1758) each time it is drawn: on entry
-            // and after every choice that redraws it ([?] the keys at CS:0A93 that skip the redraw are not read).
-            fight.RecalculateStats(c);
             var entries = ViewEntries(c, InFight);
             var pick = Chooser.ChooseView(c, entries);
             if (!entries.Contains(pick) || pick == ViewEntry.Exit)
@@ -166,6 +172,8 @@ public sealed class FightItemScreens(IItemScreenChooser chooser, Action<EclChara
                     Chooser.Notice(ItemNotice.NotModelled, c, null); // 0x23190 [?]
                     break;
             }
+            if (!done && RedrawsViewPage(pick))
+                fight.RecalculateStats(c);
         }
         return done;
     }

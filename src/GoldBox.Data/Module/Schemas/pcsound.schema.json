@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "PcSoundDocument",
+  "type": "object",
+  "properties": {
+    "driver": {
+      "type": "string"
+    },
+    "origin": {
+      "type": "integer"
+    },
+    "data": {
+      "type": "string"
+    },
+    "speakerSongs": {
+      "type": "integer"
+    },
+    "tandySongs": {
+      "type": "integer"
+    },
+    "speakerNotes": {
+      "type": "integer"
+    },
+    "tandyNotes": {
+      "type": "integer"
+    },
+    "speakerVoices": {
+      "type": "integer"
+    },
+    "tandyVoices": {
+      "type": "integer"
+    },
+    "voiceSize": {
+      "type": "integer"
+    },
+    "tuneCount": {
+      "type": "integer"
+    },
+    "timerDivisor": {
+      "type": "integer"
+    },
+    "biosChainTicks": {
+      "type": "integer"
+    },
+    "cueTable": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "source": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "container": {
+          "type": "string"
+        },
+        "block": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "container"
+      ]
+    }
+  },
+  "required": [
+    "driver",
+    "data"
+  ]
+}

@@ -26,8 +26,10 @@ public sealed record ViewPicture(ViewPictureKind Kind, int Id, int? Head, int Di
 /// Draws <see cref="ViewPicture"/>s into the picture window from the content, in the chosen art (DOS, or a variant
 /// with its own palette moved into a <see cref="ScreenPalette"/> run, DOS where the variant has no such block).
 /// docs/re/ecl-format.md (SETUPMON): at distance 0 the close-up, from PIC or head + body; at distance 1–2 the sprite.
-/// [?] Only frame 0 of an animated picture is drawn (the later frames are XOR deltas against frame 0 on both
-/// platforms; the timing is not read). [?] The sprite frame for a distance (frame distance − 1, the nearest first) and
+/// An animated PIC is drawn at the frame <see cref="PictureAnimation"/> picks: the later frames are XOR deltas against
+/// the first (the loader 0x2E170 XORs them in, read s19; the Amiga loader does the same, hunk 19 +0x13D6). [?] Amiga
+/// timing: its program changes frames every 3000 polls of the menu wait (CPU speed), not by the stored delay; the
+/// Client uses the delay with the DOS rule. [?] The sprite frame for a distance (frame distance − 1, the nearest first) and
 /// the frame's place (its block x, y in 8-pixel units inside the window) are from the art, not from the program. A
 /// portrait draws both parts from one variant (one palette): when the variant lacks either part, both are DOS. The
 /// Amiga HEAD is 56 px wide with no position; it is drawn at x = 16 [?] (outline matching, por-art-formats.md §3).
@@ -88,7 +90,7 @@ public sealed class ViewPictures
     /// Draws <paramref name="v"/> into the window whose top-left pixel is (<paramref name="x"/>, <paramref name="y"/>);
     /// false (nothing drawn) when the content has no such art.
     /// </summary>
-    public bool Draw(IndexedFrame f, int x, int y, ViewPicture v)
+    public bool Draw(IndexedFrame f, int x, int y, ViewPicture v, int frame = 0)
     {
         switch (v.Kind)
         {
@@ -98,6 +100,8 @@ public sealed class ViewPictures
                     return false;
                 int b = Base(img);
                 f.FillRect(x, y, Window, Window, (byte)b);
+                if (frame > 0 && frame < img.Frames.Count)
+                    p = Composed(p, img.Frames[frame]);
                 Blit(f, x, y, 0, 0, p, b, transparent: false);
                 return true;
             }
@@ -129,6 +133,28 @@ public sealed class ViewPictures
             }
         }
         return false;
+    }
+
+    /// <summary>
+    /// The frame delays of the picture <paramref name="v"/> shows (units of 100 ms, <see cref="PictureAnimation"/>):
+    /// one per frame of an animated PIC, empty otherwise.
+    /// </summary>
+    public IReadOnlyList<uint> Delays(ViewPicture v) =>
+        v.Kind == ViewPictureKind.Picture && Find("PIC", v.Id, v.Disk) is { Frames.Count: > 1 } img
+            ? [.. img.Frames.Select(p => p.Delay ?? 0)]
+            : [];
+
+    /// <summary>A later frame as the loader 0x2E170 makes it: its pixels XORed with the first frame's (item 0).</summary>
+    public static DaxPicture Composed(DaxPicture first, DaxPicture delta)
+    {
+        if (first.Items.Count == 0 || delta.Items.Count == 0 || first.Width != delta.Width || first.Height != delta.Height)
+            return delta;
+        var a = first.Items[0];
+        var d = delta.Items[0];
+        var px = new byte[d.Length];
+        for (int i = 0; i < px.Length; i++)
+            px[i] = (byte)(a[i] ^ d[i]);
+        return DaxPicture.Create(delta.Width, delta.Height, delta.X, delta.Y, [px], delay: delta.Delay);
     }
 
     /// <summary>[?] The sprite frame for an encounter distance: distance − 1 (frame 0 is the nearest), within the frames.</summary>

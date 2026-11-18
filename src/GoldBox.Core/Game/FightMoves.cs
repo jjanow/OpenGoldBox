@@ -96,6 +96,7 @@ public sealed class FightMoves(CombatMap map) : IFightMoves
         Map.Rebuild();
         rec[CombatRecord.FlankCount] = 0;
         rec[CombatRecord.FlankSpread] = 0;
+        fight.State.Sound.Cue(Sound.SoundCue.Step); // 0x1306D
         GuardsAttack(fight, c);
         if (c[FightRules.InPlay] == 0 || FightRules.IsHelpless(c))
             rec[CombatRecord.Movement] = 0;

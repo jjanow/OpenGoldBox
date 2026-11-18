@@ -37,6 +37,13 @@ public sealed record ChoiceRequest(string? Prompt, IReadOnlyList<string> Items, 
     /// <summary>The item highlighted first (the program's yes/no for a drop starts on No; the combat screen).</summary>
     public int Selected { get; init; }
 
+    /// <summary>
+    /// The menu routine's animate flag ([bp+0xA] of 0x2CC8C): while this menu waits, the picture window's animation
+    /// plays (<see cref="PictureAnimation"/>). Set by the camp's menus and, while a close-up is shown, by HMENU and
+    /// ENCMENU (read s19).
+    /// </summary>
+    public bool Animates { get; init; }
+
     /// <summary>Items answered by the Up / Down actions of a horizontal menu (the rest-time menu's Inc / Dec); null = none.</summary>
     public int? UpAnswer { get; init; }
     public int? DownAnswer { get; init; }
@@ -76,6 +83,13 @@ public sealed record ListRequest(IReadOnlyList<ListLine> Lines, IReadOnlyList<st
 
     /// <summary>Rows that are labels (the spell lists' level headings, the Display list's names): shown, never picked.</summary>
     public IReadOnlySet<int> Labels { get; init; } = new HashSet<int>();
+
+    /// <summary>
+    /// The page's menu is the menu routine's own (the View page 0x21AED): it opens on the shared highlight
+    /// (<see cref="MenuHighlight"/>) instead of <see cref="SelectedAction"/>. Otherwise the page is an item list
+    /// (0x2D669), whose menu starts on <see cref="SelectedAction"/> and leaves the shared highlight where it ends.
+    /// </summary>
+    public bool SharedHighlight { get; init; }
 }
 
 /// <summary>The action picked on a <see cref="ListRequest"/> (or a member switch) and the row it applies to.</summary>

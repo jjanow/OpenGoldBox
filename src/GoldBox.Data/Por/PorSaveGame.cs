@@ -226,4 +226,27 @@ public sealed class PorSaveGame
         s[OffPosition + 2] = (byte)facing;
         return s;
     }
+
+    /// <summary>
+    /// A copy of <paramref name="save"/> with the party on the overland of wilderness script <paramref name="script"/>
+    /// (25–27): <see cref="PlaceInArea"/> (3D position 0,0), then the location type byte (DS:49FA) = the script's view
+    /// mode 2–4, $49E6 = 0 and the overland square $49C3 / $49C4 = <paramref name="x"/>, <paramref name="y"/>. Main menu
+    /// → Load then keeps the view mode (no map is read for a mode ≥ 2) and runs the script's vector 4.
+    /// </summary>
+    public static byte[] PlaceOnOverland(byte[] save, PorGameDirectory dir, int script, int x, int y, int facing)
+    {
+        int mode = PorOverland.ViewMode(script) ?? throw new ArgumentException($"script {script} is not a wilderness script");
+        var s = PlaceInArea(save, dir, script, 0, 0, facing);
+        void Cell(int addr, int v)
+        {
+            int o = Off4900 + 2 * (addr - 0x4900);
+            s[o] = (byte)v;
+            s[o + 1] = (byte)(v >> 8);
+        }
+        Cell(0x49E6, 0);
+        Cell(Core.Explore.Overland.CellX, x);
+        Cell(Core.Explore.Overland.CellY, y);
+        s[OffLocationType] = (byte)mode;
+        return s;
+    }
 }

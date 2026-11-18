@@ -75,6 +75,21 @@ public static class PorAmigaArt
     /// The title painting from disk A's <c>intro</c> (docs/re/por-art-formats.md §5) is written as
     /// <c>art/amiga/intro/0/1</c>, category <c>title</c>. DOS has no such asset (its TITLE.DAX screens are other pictures).
     /// </summary>
+    /// <summary>
+    /// The 3D view's backdrop under the Amiga walls (read s19 in the Amiga <c>program</c>, hunks numbered from 0 in file
+    /// order): DrawView (hunk 25 +0x292E) fills the same four bands as DOS through hunk 25 +0x2438 with pens of the
+    /// palette the walls use (table 3, set at hunk 25 +0x358E). The sky pen comes from a 16-byte list at hunk 8 +0x35F
+    /// indexed by $49FD / $49FE as on DOS; horizon and ground from the same $C05F / $C059 rule (hunk 7 +0x38A2,
+    /// +0x38E2, +0x3922). Each Amiga value is the DOS colour of the same entry moved to a table-3 pen; this gives that
+    /// move for the twelve colours the DOS rule can produce (sky list 0, 15, 12, 11, 13, 10, 9, 14; horizon 0, 15, 8,
+    /// 7; ground 8, 1, 6). Null for any other colour.
+    /// </summary>
+    public static byte? BackdropPen(byte dosColour) => dosColour switch
+    {
+        0 => 4, 15 => 15, 12 => 6, 11 => 11, 13 => 7, 10 => 10, 9 => 9, 14 => 8, 8 => 12, 7 => 14, 6 => 5, 1 => 1,
+        _ => null,
+    };
+
     public const string IntroContainer = "intro";
     public const int TitleId = 1;
     public const string TitleCategory = "title";

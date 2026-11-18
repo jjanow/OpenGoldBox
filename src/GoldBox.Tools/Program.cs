@@ -31,6 +31,8 @@ public static class Program
                 "ecl-compare" => EclCompare(args[1..]),
                 "view-compare" => ViewCommands.Compare(args[1..]),
                 "save-area" => ViewCommands.SaveArea(args[1..]),
+                "save-overland" => OverlandCommands.Save(args[1..]),
+                "overland-compare" => OverlandCommands.Compare(args[1..]),
                 _ => Usage(),
             };
         }
@@ -51,6 +53,8 @@ public static class Program
               goldbox-tools ecl-compare GAMEDIR [FIXTURES] [--capture NAME] [--trace-out DIR]
               goldbox-tools view-compare GAMEDIR SAVGAMx.DAT REF.bin [--map] [--dump] [--keys ULRDSK]
               goldbox-tools save-area    GAMEDIR SAVGAMx.DAT OUT.DAT SCRIPT X,Y,F [--flag0 N] [--walls A,B,C]
+              goldbox-tools save-overland GAMEDIR SAVGAMx.DAT OUT.DAT SCRIPT X,Y,F [CELL=VALUE …]
+              goldbox-tools overland-compare GAMEDIR SAVGAMx.DAT REF.bin [--keys NESWK] [--counter N] [--dump]
             """);
         return 2;
     }

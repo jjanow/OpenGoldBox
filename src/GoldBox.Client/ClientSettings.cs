@@ -37,6 +37,13 @@ public sealed class ClientSettings
         };
     }
 
+    /// <summary>
+    /// The sound (docs/re/sound.md), key <c>"Sound"</c>: <c>"speaker"</c> (default: the PC speaker, the installer's
+    /// usual choice), <c>"tandy"</c> (the Tandy 1000's SN76489) or <c>"off"</c>, as POOL.CFG's P / T / other. Changed
+    /// with <c>--sound</c>. The Amiga version's sampled sounds are not decoded yet, so there is no Amiga choice.
+    /// </summary>
+    public string Sound { get; set; } = "speaker";
+
     /// <summary>QoL, off = original: show the 320×200 screen stretched to 4:3 (pixels 1.2 times taller, as on a CRT).</summary>
     public bool Stretch43 { get; set; }
 

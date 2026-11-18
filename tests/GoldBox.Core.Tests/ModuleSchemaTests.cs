@@ -36,6 +36,7 @@ public class ModuleSchemaTests
         ProgramRulesDocument.RelativePath => typeof(ProgramRulesDocument),
         TextDocument.RelativePath => typeof(TextDocument),
         OverlandDocument.RelativePath => typeof(OverlandDocument),
+        PcSoundDocument.RelativePath => typeof(PcSoundDocument),
         ItemTypesDocument.RelativePath => typeof(ItemTypesDocument),
         _ when GoldBox.Data.Module.Por.PorRulesTables.Files.Any(f => f.Path == rel) =>
             GoldBox.Data.Module.Por.PorRulesTables.Files.First(f => f.Path == rel).Type,

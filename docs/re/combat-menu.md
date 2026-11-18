@@ -355,9 +355,14 @@ and Speed menus, an AI attack at game speed 9). Code: `src/GoldBox.Client/Screen
   icon (party at 7 mirrored, orcs at 3 not, both pixel-exact); s15 (save K, Rhiannon stepping): facing 0 and 4 show
   the stored icon, 6 the mirrored one. The party's attack pose (+ 128) is from the art only `[?]`; DOSBox-X drew a
   creature that had just stepped with the sword raised (the other pose?) `[?]`.
-- **Cursor box**: under the icon of the creature whose menu is up (and of the aim candidate, the manual cursor): fill
-  colour 7, top row and left two columns white, right two columns and bottom row black (colour 8 before the swap).
-  None while moving or during the AI's turns.
+- **Cursor box** (read s19): the box sprite (icon cell 25 = COMSPR 25) painted into the view by DrawCursorCell through
+  ScrollView 0x310D0 while the arena's cursor flag (+4) is set, on every cell of the footprint in +5 (0x319D2 sets
+  the creature's icon size; the aim cursor size 1); fill colour 7, top row and left two columns white, right two
+  columns and bottom row black (colour 8 before the swap). It is never erased on its own: it goes when its cell is
+  redrawn (the creature steps or is drawn in its attack pose, 0x310D0 redraws the cell it scrolls to, the turn's end
+  0x30A0F) or the view is rebuilt. The turn (0x99FD) calls 0x319D2(creature, 2, 1) for **every** creature, the AI's
+  too. **D** (s19, save K all-Quick): the box under each AI creature at its turn start and under a casting MU, gone
+  once it steps or attacks; none while the player moves.
 - **Menus**: the menu routine draws the prompt (colour 13) and the entries right after it with no space (Aim's prompt 0x15296 then
   the first entry); the highlighted entry all white, the others with a white hotkey. Aim adds the range line on row 23;
   Manual shows its own prompt (GAME.OVR 0x155E2) with Target (when the square's creature can be taken), Center, Exit,
@@ -367,41 +372,73 @@ and Speed menus, an AI attack at game speed 9). Code: `src/GoldBox.Client/Screen
   is past its last entry (0x2CCDE); a hotkey moves the cell to its entry (0x2CF48), ',' / '.' move it, Escape leaves
   it. **D** (s18, save K loaded as B from "A B J"): the area line on Cast, Darkstar's first menu on View, its View menu
   on Spells; Exit (4th) → the main menu's Done (7th) → the Done menu (Delay Quit Speed Exit) on Delay; Quit (2nd) →
-  Thrender's menu on View, his View menu (Items Drop Exit) on Drop. The item list routine 0x2D669 (Items screen) is not
-  this cell (first entry each time). Client: `MenuHighlight` (shared by the area line and the combat screen, seeded
+  Thrender's menu on View, his View menu (Items Drop Exit) on Drop. Read s19: the item list routine 0x2D669 (Items screen, the coin
+  list, VMENU) stores 1 in the cell once on entry (0x2D6B9) and then runs its menu through 0x2CC8C (so: first entry
+  each time, and the cell left where its menu ends); the yes/no routine 0x2D9A0 stores 2 (0x2D9B9) before its menu
+  (it opens on No, the cell left on the answer); past the last entry 0x2CCE7 stores 1 back. No other code writes the
+  cell. DOSBox-X (s19, save A): Encamp → the camp menu on Rest (4th); R → the rest menu on Mins (4th); its Exit (7th) →
+  the camp menu on Save; A → the Alter menu on its 5th; Escape → the camp menu on Alter; Save, C → the quit question
+  on No; N → the camp menu on View. Return does nothing in the camp menu (0x2CC8C returns 13 only when its
+  [bp+0x10] / [bp+0x0E] are set, and the camp does not use it); the Client's Confirm on the highlight is its own. The yes/no routine loops until N or Y (its set at cs:0x10B1), so Escape does nothing there; the Client's Cancel = No is its own too. Client: `MenuHighlight` (shared by the area line and the combat screen, seeded
   with the loaded slot's place among the saves present).
-- **Attack messages** (strings 0x12A2D–0x12AEA): attacker name, the attacks word, defender name, then on a hit the
-  damage on two lines (the hitting word + the number; the points word + the damage word) or the misses word; a creature
-  that drops: a blank line, its name in light red, the down word (0x12AB3). A skull on red (COMSPR 11) covers the hit
-  defender's square while the message is up. **Read (s15, 0x12D4B)**: a defender out of play (0x10D = 0) gets the
-  down message (START 0x16EC, defender + 0x12AB3) two rows on; then status 5 → the dying words 0x12ABD in green at
-  column 23 on the next row; status 6, 7 or 8 (Pascal set at 0x12ACA) → START 0x16EC with the killed words 0x12AEA.
-- **Pauses** (read s15): START 0x709:0x0DBE is `Delay(DS:49E2 × 225)` ms (game speed; 0 = no wait), called after the
-  attack message, by the message routine and the item use. Steps and turn changes `[?]` (the Client: 60 + 30 × speed ms).
+- **View scrolling** (read s19, 0x30F0E / 0x310D0): ScrollView(x, y, delta, dir) aims at (x, y) + one step in dir;
+  the view's centre is (view x + 3, view y + 3); a point within delta of it on both axes leaves the view (delta 255:
+  always rebuilt, band 0); else on each axis where the point is outside the band the centre steps to the point, x kept
+  in 3..46 and y in 3..21. Deltas by caller: turn start and the menu loop 2 (0x319D2), a player's step 1, an AI's step
+  3 after ScrollView(old square, 2) when the new square is off the view (0x12F0D), the AI's attack 2 toward the target
+  (0xBA22), the aim candidate 3 (cursor on), the manual cursor 3 in its direction (0x1566C), Center 0, Move's Escape 0
+  (0xA343), a message on a creature not wholly in view 3 (START 0x2BFE), end of round 255 at the centre (0xA15E).
+  **D** (s19): Phineas at view column 6 → the view moved 3 right, rows unchanged; Sean's AI steps inside the view
+  moved nothing (the s18 "one square off" was the Client's inner-3 × 3 rule). Code: `CombatView.Rebuild` / `Scroll`.
+- **The panel's text** (read s19): START 0x16EC in a fight clears (23, row)–(38, 21), writes the name at (23, row)
+  (START 0x23B6: out of play light red, hostile = 1 yellow, else cyan) and word-wraps the text into
+  (23, row + 1)–(38, 21) in green through START 0x77F8 (the text window routine, `TextWindow`; break set DS:0D16 =
+  ! , - . : ; ?), with its pause flag: the game-speed pause then START 0x2383 (clear rows 10–21). The cursor
+  DS:5E24 / DS:5E25 stays after the text, so a word ending on column 38 moves it to the next row (the "blank line"
+  before a down message). The status panel START 0x1583 clears rows 1–21; its weapon name (ending in a space) is
+  wrapped into (23, 7)–(38, 9) (a 16-letter two-word weapon name plus its space takes two rows, **D**). While DS:4A00 is set 0x77F8 types each
+  character with Delay(DS:49E2 × 10) (**D**: seen in the panel, s19); DS:4A00 is left by the last PRINT (0) / game
+  start / after-combat (1) — not modelled `[?]`: the Client shows the text at once.
+- **Attack messages** (read s19, 0x12AF4, called per hit and for the miss by 0x13C01: 0x13CBE helpless, 0x13F2E hit,
+  0x13F92 miss): START 0x16EC(attacker, the attacks word — backstab / slays-helpless words for manner 2 / 3 —, row 10);
+  the defender's name at (23, 12) in its colour before the damage; the text in (23, 13)–(38, 16): the from-behind words
+  for manner 1, then the cruel-blow words (manner 3), or the hitting words + the number + the point / points word +
+  the damage words, or the miss words; then the damage (START 0x2DC8) and the pause (with damage and a spell being cast:
+  pause, then the lost-spell message at row 12 with its pause). Out of play: START 0x16EC(defender, the down words) at
+  the cursor row + 1, then two rows on the dying words at column 23 (status 5) or START 0x16EC(defender, the killed
+  words) (status 6–8); 0x2BEF4, trigger 0x0D; still out of play CreatureDowned 0x3154B (the downed picture, icon cell
+  24 = COMSPR 11, on its footprint, then the pause) else the pause; last START 0x2383. **D** (s19): the rows of a
+  3-point hit (attacks word, defender, hitting words + 3 on row 13, points and damage words on row 14) and of a miss. A plain hit draws no picture (the s13 skull
+  was CreatureDowned's). MakeAttack (0x1407F) first shows the attacker in the panel (0x140FE), draws it in its attack
+  pose (0x31232 frame 1) and waits Delay(100) (0x1412E); the end (0x142C5) draws frame 0 again.
+- **Spell results** (read s19, non-weapon damage 0x2C22E): the takes word, n and the points-of-damage words (n = 1: its own
+  string 0x2C18B), then the element by DS:6819 AND 0xF7 (1 fire, 2 cold, 4 electricity, 0x10 acid) and the magic words when
+  DS:6819 AND 8 = DS:6819 (mask 0 too; 9 and 0x0C get no magic words), shown by PrintNameStringAnim START 0x2B8B
+  before the damage: ScrollView(its square, 3) when not wholly in view, START 0x16EC from row 10, the four frames of
+  icon cell 23 (COMSPR 10: stored, mirrored, 138 mirrored, 138; 0x257E) with Delay(70) each, then the pause. An
+  effect's message (0x2C540 with a text) uses cell 22 (COMSPR 9), DS:49E2 + 1 rounds and no pause; the unaffected
+  words (0x2C532) are START 0x16EC with their pause. Lost spell: row 12 with pause. Out of play: the down words (0x2C1EB) + the dying words
+  (0x2C1F5, status 5) or the killed words (0x2C224, 6–8) at the cursor row + 1, then CreatureDowned or the pause. The fight start
+  (0xEADC) loads COMSPR i into icon cell i + 13. Each spell routine passes its own effect text to 0x278DB (33 call
+  sites in the unit at 0x27018) — not mapped yet `[?]` (the Client shows no effect lines).
+- **Pauses** (read s15, s19): PauseOnly START 0x709:0x0DBE = Delay(DS:49E2 × 225) ms. Every Delay call site
+  (`9a 9c 02 40 0a`): GAME.OVR 0x848–0x898 (150/100/50 ms, not combat), 0x37BB (3000), 0x9C7D and 0x9D82 (200: Alt-Q and
+  Quick), 0x14132 (100, attack pose); START 0x2884 / 0x2B4A (the moving icon's pace), 0x2CCB (70, hit frames), 0x778D
+  (typing), 0x7E5C (PauseOnly). **A step and a turn change wait nothing** (the sound is timer-driven); the Client
+  shows such a moment for one frame.
 - **Messages** (read s15): START 0x1693 clears row 24, writes the text at column 0 in green, pauses, clears row 24
-  again (the item screens' refusals). START 0x16EC writes a creature and a text into the panel from a given row
-  (cols 23–38). The cast message (0x27D48, only when 0x27C38's third argument ≠ 0 and DS:6DBF = 0, i.e. not from an
-  item or scroll) comes **before** the target pick: 0x2A332 (read s18) in a fight (DS:49F3 = 5) writes the caster and
-  the casts-a-spell words (0x2A31D) into the panel through START 0x16EC from row 10, clears row 23 and writes "Spell:"
-  (0x2A32B) with the spell's name (DS:28E9 + 41·spell) there in green, with no pause of its own; outside a fight the
-  caster on row 19, the 0x27C16 word after it, the name on row 20, then the pause. **D** (s18): the AI's Hold Person
-  and Magic Missile; the row-23 line stays while the results are shown (target name, the held / damage words; spell
-  damage is worded "takes n points of damage from magic", then "goes down, and is dying" as one wrapped text, with
-  the name in light red: a different routine from the attack message's, not read `[?]`). The AI's 0x27C38(spell, 1, 1)
-  shows it. The Client announces the player's cast-now spells from the spell list (before the aim) and everything
-  else through `FightSpells.Announce` (a begun player spell after its aim `[?]`). Item use (0x22B58, DS:6DBF = 1, not
-  scrolls): START 0x16EC with 0x22AB1 from row 10, "Item:" (0x22ABE) on row 23 col 0 green and the item name at col 5,
-  the pause (`FightSpells.ItemUsed`). The AI's own messages: 0xABC0, 0xBB6E, 0xBB77, 0xBC7A, 0xBC8C (panel, layout `[?]`).
-- **Not read `[?]`**: the view's scrolling (0x310D0; the Client keeps the creature in the inner 3 × 3 squares and the
-  view inside the arena),
-  the spell list 0x239D6 (the Client: a full-screen list; spell names from START.EXE's string array of the widest
-  entries, taken to start at spell 1), the Guard message, monster icon recolouring (orc icons matched unchanged).
-  Seen in DOSBox-X (s18, all-Quick run of save K's fight) and not yet in the Client: during an AI creature's move the
-  panel shows that creature (name, hit points, AC, weapon) and row 24 the move prompt with its moves left; a cast shows
-  the caster and a "casts a spell" line in the panel and the spell's name after "Spell:" on row 23, then each target's
-  result line (held, damage "from magic"); a helpless defender gets the "slays helpless … with one cruel blow" words;
-  a rear attack adds "(from behind)"; a party member dropping to dying gets "goes down, and is dying" with its name in
-  light red; the end-of-round dying notice on row 24.
+  again (the item screens' refusals). The cast message (0x27D48, only when 0x27C38's third argument ≠ 0 and DS:6DBF
+  = 0) comes **before** the target pick: 0x2A332 in a fight writes the caster and the casts-a-spell words through
+  START 0x16EC from row 10 **with its pause** (flag 1 at 0x2A36B; s18 said none), then clears row 23 and writes
+  the spell label + the name there in green; **D** (s19): an AI magic-user's cast message, then its Charm Person on
+  row 23 while the target's unaffected message follows. Item use (0x22B58): START 0x16EC with 0x22AB1 from row 10, the item label on row
+  23, the pause. The AI's own messages: 0xABC0, 0xBB6E, 0xBB77, 0xBC7A, 0xBC8C.
+- **AI turn** (read s19): 0x99FD shows the box and the panel; the AI (0xABCF) starts by clearing row 24 (0x2CFCA)
+  and rows 10–21; each step (AiMoveStep) first writes 0xB396 + movement ÷ 2 + " " on row 24 in green, which stays
+  until row 24 is written again. **D** (s19): 9, 6, 4, 3 under Brother Sean's steps.
+- **Not read `[?]`**: the spell list 0x239D6 (the Client: a full-screen list), the Guard message, the missile and
+  spell-travel animations (CombatAnimateMovingIcon START 0x2884 scrolls the view along the path; not in the Client),
+  the per-spell effect texts, DS:4A00 typing.
 - **Manual in the Client**: Aim's Manual answers `AimKey.Manual` and each cursor pass is Core's (`ChooseManual`):
   arrows / pad move it one square, Return / T Target (ending Manual even where it is not offered), E / Escape Exit,
   C / shoulders re-centre; the panel shows `ManualView.Creature`, row 23 the range to the square in attack mode when the line got
@@ -411,10 +448,8 @@ and Speed menus, an AI attack at game speed 9). Code: `src/GoldBox.Client/Screen
 
 - **s18 checks** (screenshots in the session scratch folder): the View page equal pixel for pixel (rows 1–22) on
   all six members of save K; the menus' first highlight follows DS:6B2B; the attack and "goes down" lines of an
-  all-Quick run read as DOSBox-X's. Still different: the cursor box is drawn under an AI caster while it casts
-  (DOSBox-X), the Client draws none on AI turns; during an AI's move DOSBox-X shows the moving creature in the panel
-  and its move prompt on row 24 `[?]` (not read); the view scrolling (the Client keeps the creature in the inner
-  3 × 3; DOSBox-X left Darkstar at view column 4 and Thrender at 3 without scrolling, the Client put Thrender at 4).
+  all-Quick run read as DOSBox-X's. The differences noted then (box on AI turns, the AI's panel and move prompt, the
+  view scrolling) are settled above (s19).
 - **Parity check** (s15): save K's fight start (Rhiannon's first menu) in the Client and in DOSBox-X: the map window
   and the status panel equal pixel for pixel; differences only in the braided frame (stand-in) and the menu's starting
   highlight (above).
@@ -447,9 +482,13 @@ DOSBox-X, save K (Darkstar, Thrender), `Play/CombatItemScreens.cs` (`CombatChoos
   with effect 0x2A, halved with effect 0x27, at column 34; labels white, values green. Row 20: a readied weapon
   (pointer 0xCC) → the weapon label (1,20) and its name (START 0x442) at column 8; row 21: body armour (0xD4) → the
   armour label at **column 2** and its name at column 8; row 22: status label (1,22) and the status name (DS:1047 +
-  13·0x10C) at column 8, green. All numbers are unsigned. The View loop (0x21AED) redraws the page after each choice
-  unless the key is in the set at CS:0A93 `[?]`. Client: `Play/CombatSheet.cs`; Core recalculates in
-  `FightItemScreens.View` before each menu.
+  13·0x10C) at column 8, green. All numbers are unsigned. The View loop (0x21AED, read s19) loops until the key is in
+  the set at CS:0A4C (#0, E) or "done"; it draws the page (and so recalculates) on entry and again only after a key in
+  the set at CS:0A93 (GAME.OVR 0x21ACD: I, S, T). D runs drop money (0x234E1) and then only 0x21547, which clears the
+  box (12, 7)–(26, 14) and writes the money lines; the rest of the page (encumbrance, movement…) keeps its old values,
+  and no recalculation runs (the weight word is lower, the movement byte stands until the next START 0x1758). Other
+  keys redraw nothing. Client: `Play/CombatSheet.cs`, the money-only redraw in `CombatChooser.ChooseView`; Core:
+  `FightItemScreens.View` / `RedrawsViewPage`.
 - **Drop money** (0x234E1): a coin-type prompt (colour 13) then Exit; the sheet's money lines are the list (picked
   one white; the Client lists them in the sheet's order, kinds 6 down to 0); then an amount question naming the coin, in green on row 24 and the typed number.
 
@@ -458,7 +497,7 @@ DOSBox-X, save K (Darkstar, Thrender), `Play/CombatItemScreens.cs` (`CombatChoos
 - Trade (0x2276E, 0x23190), Sell (0x22D28) and Id (0x22F8C) on the item screens (not shown in a fight); the money
   input 0x24F1D in detail; the area search's order (0x3045B) and the path distance; the step
   routines (0x130AD, 0x12F0D) and flee (0x13465) in detail (combat-map work).
-- Manual: the view scrolling 0x310D0 and the cursor drawing 0x30A0F (display only).
+- Manual: settled s19 (ScrollView 0x310D0 with delta 3 per pass, the box through DrawCursorCell; see "View scrolling", "Cursor box").
 - The abort question's wording and what it shows (0x27EF2); the 1–7 mode's repeat message (0x14B7F).
 - Sweep with a defender missing from the adjacent-enemy list.
 - Turn undead against real undead (no capture yet).

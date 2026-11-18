@@ -14,8 +14,12 @@ public class FightItemScreensTests
         public List<ItemNotice> Notices { get; } = [];
         public List<IReadOnlyList<ItemsEntry>> Shown { get; } = [];
         public bool DropYes { get; set; } = true;
-        public ViewEntry ChooseView(EclCharacter c, IReadOnlyList<ViewEntry> entries) =>
-            Views.Count > 0 ? Views.Dequeue() : ViewEntry.Exit;
+        public Action? OnView { get; set; }
+        public ViewEntry ChooseView(EclCharacter c, IReadOnlyList<ViewEntry> entries)
+        {
+            OnView?.Invoke();
+            return Views.Count > 0 ? Views.Dequeue() : ViewEntry.Exit;
+        }
         public ItemChoice ChooseItem(EclCharacter c, IReadOnlyList<ItemsEntry> entries, IReadOnlyList<byte[]> items)
         {
             Shown.Add(entries);
@@ -166,5 +170,35 @@ public class FightItemScreensTests
         Assert.Equal(0, FightItemScreens.Coins(c, 3));
         Assert.Equal(10, c[FightItemScreens.Weight]);
         Assert.All(pool, p => Assert.Equal(0u, p));
+    }
+
+    [Fact]
+    public void View_recalculates_only_on_entry_and_after_the_redraw_keys()
+    {
+        // The View loop 0x21AED draws the page (and recalculates) on entry and after I, S, T only (set at CS:0A93):
+        // after Drop the derived bytes stand.
+        var (f, c) = Setup();
+        int recalcs = 0;
+        f.Recalculate = _ => recalcs++;
+        c[FightItemScreens.Money + 2 * 3] = 50;
+        c[FightItemScreens.Weight] = 60;
+        var wand = Item(Wand, true, charges: 5, power: 5);
+        AddItems(c, wand);
+        var seen = new List<int>();
+        var s = new Script { OnView = () => seen.Add(recalcs) };
+        s.Views.Enqueue(ViewEntry.Drop);
+        s.Coins.Enqueue((3, 10));
+        s.Views.Enqueue(ViewEntry.Drop);
+        s.Views.Enqueue(ViewEntry.Items); // the Items screen exits at once
+        s.Views.Enqueue(ViewEntry.Exit);
+        Assert.False(new FightItemScreens(s).View(f, c));
+        Assert.Equal(1, seen[0]);
+        Assert.Equal(1, seen[1]); // after Drop: no recalculation
+        Assert.Equal(1, seen[2]);
+        Assert.True(seen[3] > seen[2]); // after Items: the page is drawn again
+        Assert.True(FightItemScreens.RedrawsViewPage(ViewEntry.Spells));
+        Assert.True(FightItemScreens.RedrawsViewPage(ViewEntry.Trade));
+        Assert.False(FightItemScreens.RedrawsViewPage(ViewEntry.Drop));
+        Assert.False(FightItemScreens.RedrawsViewPage(ViewEntry.Exit));
     }
 }

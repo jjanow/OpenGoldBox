@@ -13,7 +13,9 @@ namespace GoldBox.Client;
 /// folder first (<see cref="ClientSettings.ModuleCacheFolder"/>, again only when the folder changes) and the game runs
 /// from that module. <c>--module DIR</c> plays a module made by <c>goldbox-import por</c> (docs/module-format.md)
 /// instead, with no game folder. Without <c>--save</c> or <c>--area</c> the Client
-/// loads save A (<see cref="ResolveSave"/>: the player's <c>a.json</c>, else the module's shipped save A). <c>--area N --at X,Y,F</c> enters area script N at square X,Y facing F (N, E, S,
+/// starts at the party menu, the original's first screen (create, add and load characters, load a saved game, begin a
+/// new game; docs/re/start-menu.md). <c>--save A</c> loads save A (<see cref="ResolveSave"/>: the player's
+/// <c>a.json</c>, else the module's shipped save A). <c>--area N --at X,Y,F</c> enters area script N at square X,Y facing F (N, E, S,
 /// W) with no save. <c>--scale</c> sets the window size (default 3 × 320×200). <c>--stretch</c> switches on the QoL 4:3
 /// display (remembered; <c>--no-stretch</c> switches it off). <c>--amiga DIR</c> names the unpacked Amiga disks (remembered;
 /// the environment variable <c>GOLDBOX_POR_AMIGA_DIR</c> also works): their art is imported with the game folder as the
@@ -36,8 +38,10 @@ public sealed record ClientOptions
     public string? AmigaDirectory { get; init; }
     /// <summary>--art dos|best|amiga (remembered).</summary>
     public Data.Por.PorArtChoice? Art { get; init; }
+    /// <summary>--sound speaker|tandy|off (remembered).</summary>
+    public string? Sound { get; init; }
 
-    public const string Usage = "usage: GoldBox.Client [--game DIR] [--amiga DIR] [--module DIR] [--art dos|best|amiga] [--save A|FILE] [--area N --at X,Y,F] [--scale K] [--stretch|--no-stretch]";
+    public const string Usage = "usage: GoldBox.Client [--game DIR] [--amiga DIR] [--module DIR] [--art dos|best|amiga] [--save A|FILE] [--area N --at X,Y,F] [--scale K] [--stretch|--no-stretch] [--sound speaker|tandy|off]";
 
     public static ClientOptions Parse(IReadOnlyList<string> args)
     {
@@ -56,6 +60,9 @@ public sealed record ClientOptions
                 "--stretch" => o with { Stretch43 = true },
                 "--no-stretch" => o with { Stretch43 = false },
                 "--amiga" => o with { AmigaDirectory = Next() },
+                "--sound" => Next() is var sw && (Audio.ClientAudio.Parse(sw) is not null || sw.Equals("off", StringComparison.OrdinalIgnoreCase))
+                    ? o with { Sound = sw.ToLowerInvariant() }
+                    : throw new ArgumentException($"--sound {sw}: use speaker, tandy or off"),
                 "--art" => Next() is var w && Play.ClientArt.Parse(w) is { } art
                     ? o with { Art = art }
                     : throw new ArgumentException($"--art {w}: use dos, best or amiga"),

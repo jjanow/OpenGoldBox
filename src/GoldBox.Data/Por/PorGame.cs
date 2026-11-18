@@ -71,6 +71,9 @@ public sealed class PorGame
         // ADDNPC runs the level stats 0x2AA87 on the joined record (and DAMAGE's handlers see the race limit).
         FightKit.WireLevels(Vm.Effects, kit?.LevelTables);
         Loop = new AreaLoop(Vm, Rng, player.Area) { MapSource = content.LoadMap, NoWrapOffMap = content.NoWrapOffMap };
+        // The overland step (view modes 2–4 → wilderness scripts 25–27): the content's map and columns.
+        Loop.OverlandMap = content.Overland();
+        Loop.OverlandColumn = mode => content.OverlandColumn(mode - Overland.FirstMode + PorOverland.FirstScript);
         // 0x241A1 → 0x23DCC outside camp (DS:49F3 = 3 or 4): every flag set, the whole list aged.
         Loop.EffectTimeout = (count, unit) => CampTime.TimeOutEffects(memory, Camp.EffectFlags, false, count, unit,
             (c, e) => OutsideEffects.RemoveEffect(c, e[0], e));
@@ -151,6 +154,10 @@ public sealed class PorGame
         // A NEWECL in this vector 4 is followed only after the next command's vector (DS:442F stays set).
         g.EntryRun = g.Vm.RunLoadedGame();
         g.FinishEntry(follow: false);
+        // [?] DS:6DDC after a load onto the overland: DOSBox-X shows frames 2 + 3 at the first command (load from the
+        // main menu after the program start); the redraws of the load that advance it are not traced.
+        if (Overland.Shown(g.Memory))
+            g.Loop.MarkerCounter = 2;
         return g;
     }
 
@@ -168,6 +175,37 @@ public sealed class PorGame
         g.Vm.CommandRead();
         g.FinishEntry(follow: true);
         return g;
+    }
+
+    /// <summary>The new game's script, disk and square: GAME.OVR 0xE600 (start-up) zeroes the VM and puts the party on
+    /// 15,1 facing west (DS:6AAD–6AAF); the party menu (0x19AE7) sets the disk byte DS:5376 to 3; the game loop (0x403E)
+    /// then loads ECL&lt;disk&gt; block $49F2 (0 after the start-up) and runs it (docs/re/start-menu.md "Begin").</summary>
+    public const int NewGameScript = 0, NewGameDisk = 3, NewGameX = 15, NewGameY = 1, NewGameFacing = Facing.West;
+
+    /// <summary>
+    /// The party menu's Begin Adventuring (0x19DB8) on a new game: fresh VM memory with <paramref name="party"/> (as the
+    /// menu's joins left it: order, current member) and the party size $6E3E, at the new game's square. Nothing runs yet:
+    /// <see cref="RunNewGameEntry"/> runs the script, so a front end can show the game before the entry's first text.
+    /// </summary>
+    public static PorGame NewGame(IPorContent content, PorViewArt art, EclParty party, PorPlayer player, uint seed)
+    {
+        var g = new PorGame(content, art, player, seed);
+        g.Memory.Party = party;
+        g.Memory.Write(EclPartyRules.PartySizeCell, (ushort)party.Members.Count);
+        g.Memory.Disk = (byte)(content.ScriptDisk(NewGameScript) ?? NewGameDisk);
+        g.Memory.Position.X = NewGameX;
+        g.Memory.Position.Y = NewGameY;
+        g.Memory.Position.Facing = NewGameFacing;
+        return g;
+    }
+
+    /// <summary>The game loop's first pass on a new game (0x403E with DS:49F8 = 0): the script loaded, its init, then vector 4.</summary>
+    public void RunNewGameEntry()
+    {
+        Vm.LoadScript(NewGameScript, Memory.Disk);
+        EntryRun = Vm.RunVector(EclLayout.VectorInit);
+        Vm.CommandRead();
+        FinishEntry(follow: true);
     }
 
     /// <summary>
@@ -199,7 +237,15 @@ public sealed class PorGame
     }
 
     /// <summary>The four backdrop colours now (<see cref="BackdropRule"/>).</summary>
-    public Backdrop Backdrop() => BackdropRule.For(Memory, Art.Program.SkyColours, Loop.EventHere());
+    public Backdrop Backdrop()
+    {
+        var d = BackdropRule.For(Memory, Art.Program.SkyColours, Loop.EventHere());
+        if (Art.BackdropBase is not { } b)
+            return d;
+        // Under the Amiga walls the bands take the Amiga program's pens of the same palette (PorAmigaArt.BackdropPen).
+        byte P(byte c) => Module.Por.PorAmigaArt.BackdropPen(c) is { } pen ? (byte)(b + pen) : c;
+        return new Backdrop(P(d.Sky), P(d.Horizon1), P(d.Horizon2), P(d.Ground));
+    }
 
     /// <summary>Draws the 88×88 view (3D or area map) with its top-left pixel at (x, y). Nothing without a 3D map.</summary>
     public void DrawView(IndexedFrame f, int x, int y, bool areaMap)

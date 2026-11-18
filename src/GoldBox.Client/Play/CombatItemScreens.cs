@@ -78,17 +78,16 @@ public sealed partial class CombatChooser
     // ---- Messages of the fight (display hooks) ----------------------------------------------------------------------
 
     /// <summary>
-    /// The cast message (0x27D48 → 0x2A332, read s18): in a fight, START 0x16EC writes the caster and the "casts a
-    /// spell" words into the panel from row 10, row 23 is cleared and "Spell:" with the spell's name is written there
-    /// in green (it stays while the spell's results are shown; DOSBox-X s18: the AI's Hold Person and Magic Missile).
+    /// The cast message (0x27D48 → 0x2A332, read s18, s19): in a fight, START 0x16EC writes the caster and the "casts a
+    /// spell" words into the panel from row 10 with its pause (pause flag 1 at 0x2A36B) and clears them; then row 23 is
+    /// cleared and "Spell:" with the spell's name is written there in green (it stays while the spell's results are
+    /// shown; DOSBox-X s18: the AI's Hold Person and Magic Missile).
     /// </summary>
     private void SayCast(EclCharacter caster, int spell)
     {
-        View.Page = null;
-        View.Mode = CombatMode.Watch;
-        View.Shown = caster;
+        View.StatusLine = null;
+        Say(caster, Text[CombatMsg.CastsASpell]);
         View.StatusLine = Text[CombatMsg.SpellLabel].Trim() + SpellLabel(spell);
-        Say(new PanelLine(Name(caster), NameColour(caster)), new PanelLine(Text[CombatMsg.CastsASpell].Trim(), 10));
     }
 
     /// <summary><see cref="FightSpells.Announce"/>: every cast not from an item (the AI's included).</summary>
@@ -109,11 +108,8 @@ public sealed partial class CombatChooser
     /// </summary>
     private void ItemUsed(EclCharacter user, byte[] item)
     {
-        View.Page = null;
-        View.Mode = CombatMode.Watch;
-        View.Shown = user;
         View.StatusLine = Text[CombatMsg.ItemLabel] + ItemName(item);
-        Say(new PanelLine(Name(user), NameColour(user)), new PanelLine(Text[CombatMsg.UsesAnItem].Trim(), 10));
+        Say(user, Text[CombatMsg.UsesAnItem]);
         View.StatusLine = null;
     }
 
@@ -121,11 +117,7 @@ public sealed partial class CombatChooser
     private void SpellEvent(EclCharacter who, int spell, EffectEvent e)
     {
         if (e == EffectEvent.BeginsCasting)
-        {
-            View.Page = null;
-            View.Mode = CombatMode.Watch;
-            Say(new PanelLine(Name(who), NameColour(who)), new PanelLine(Text[CombatMsg.BeginsCasting].Trim(), 10));
-        }
+            Say(who, Text[CombatMsg.BeginsCasting]);
     }
 
     /// <summary>The monster AI's messages (0xABC0–0xBC8C) in the panel. [?] Their rows and pause are not read.</summary>
@@ -139,9 +131,7 @@ public sealed partial class CombatChooser
             AiMessage.QuickMagicOn => CombatMsg.AiMagicOn,
             _ => CombatMsg.AiMagicOff,
         };
-        View.Page = null;
-        View.Mode = CombatMode.Watch;
-        Say(new PanelLine(Name(who), NameColour(who)), new PanelLine(Text[word].Trim(), 10));
+        Say(who, Text[word]);
     }
 
     // ---- IItemScreenChooser: View (0x21AED) -------------------------------------------------------------------------
@@ -174,21 +164,45 @@ public sealed partial class CombatChooser
         _ => CombatMsg.ViewExit,
     }].Trim();
 
+    /// <summary>
+    /// The View page drawn last and the choice made on it: after Drop the View loop does not draw the page again, it
+    /// clears and rewrites the money lines only (0x21547: the box (12, 7)–(26, 14)), so the other texts keep the values
+    /// they had (FightItemScreens.RedrawsViewPage).
+    /// </summary>
+    private (EclCharacter C, CombatPage Page, ViewEntry Pick)? _lastView;
+
+    /// <summary>The money box 0x21547 clears before it writes the money lines (columns 12–26, rows 7–14).</summary>
+    private static bool InMoneyBox(int col, int row) => col is >= 12 and <= 26 && row is >= 7 and <= 14;
+
+    /// <summary>The View page after a choice that does not redraw it: the old texts, the money lines new.</summary>
+    private CombatPage MoneyRedrawn(EclCharacter c, CombatPage old)
+    {
+        var page = new CombatPage { FrameRows = old.FrameRows, HintRow = old.HintRow };
+        page.Texts.AddRange(old.Texts.Where(t => !InMoneyBox(t.Col, t.Row)));
+        page.Texts.AddRange(ViewPage(c).Texts.Where(t => InMoneyBox(t.Col, t.Row)));
+        return page;
+    }
+
     public ViewEntry ChooseView(EclCharacter c, IReadOnlyList<ViewEntry> entries)
     {
         _fromView = true;
         _itemRow = 0;
+        bool redraw = !(_lastView is { } last && ReferenceEquals(last.C, c) && !FightItemScreens.RedrawsViewPage(last.Pick));
         while (true)
         {
-            View.Page = ViewPage(c);
+            View.Page = redraw || _lastView is not { } prev ? ViewPage(c) : prev.Pick == ViewEntry.Drop ? MoneyRedrawn(c, prev.Page) : prev.Page;
+            redraw = true;
             View.Mode = CombatMode.Page;
             int exit = entries.Count - 1;
             var a = Ask(new PageRequest([.. entries.Select(ViewWord)], Text[CombatMsg.ViewPrompt].Trim(), exit) { SharedHighlight = true }) as ListAnswer;
             var pick = a is { Action: >= 0 } && a.Action < entries.Count ? entries[a.Action] : ViewEntry.Exit;
+            _lastView = pick == ViewEntry.Exit ? null : (c, View.Page!, pick);
             if (pick != ViewEntry.Spells)
                 return pick;
-            // Spells (0x239D6 in show mode): the memorised list; nothing changes, the View menu comes back.
+            // Spells (0x239D6 in show mode): the memorised list; nothing changes, the View menu comes back. S is a
+            // redraw key: the page is drawn again, with its recalculation (0x21642 → START 0x1758).
             ShowMemorised(c);
+            View.Fight?.RecalculateStats(c);
         }
     }
 

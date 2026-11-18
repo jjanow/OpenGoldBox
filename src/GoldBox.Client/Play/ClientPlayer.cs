@@ -53,8 +53,19 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
     /// <summary>Host calls that have no player-facing effect yet, for the log.</summary>
     public List<string> Log { get; } = [];
 
-    private int Choose(string? prompt, IReadOnlyList<string> items, bool vertical = false, int? cancel = null) =>
-        runner.Ask(new ChoiceRequest(prompt, items, vertical, cancel)) is int i ? i : 0;
+    private int Choose(string? prompt, IReadOnlyList<string> items, bool vertical = false, int? cancel = null,
+        bool animates = false) =>
+        runner.Ask(new ChoiceRequest(prompt, items, vertical, cancel) { Animates = animates }) is int i ? i : 0;
+
+    /// <summary>
+    /// DS:84E1 (read s19): cleared when a head and body are loaded (0x79E4, 0x7B77), set by PICTURE 255 (0x1684) and by
+    /// the area loop's pass (0x4223). HMENU (0x1EB2) and ENCMENU (0x2DA1) animate only while it and DS:84E0 (a close-up
+    /// loaded by PICTURE or the encounter, 0x15F8 / 0x7B0B; cleared with the view's redraw) are both set.
+    /// </summary>
+    public bool PictureArmed { get; set; } = true;
+
+    /// <summary>HMENU's and ENCMENU's animate flag: DS:84E0 and DS:84E1.</summary>
+    private bool CloseUpAnimates => PictureArmed && ViewPicture is { Kind: ViewPictureKind.Picture };
 
     /// <summary>A notice the player must acknowledge (stand-ins for screens not built yet).</summary>
     private void Acknowledge(string text)
@@ -89,7 +100,7 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
 
     // ---- Menus and input -----------------------------------------------------------------------------------------
     public ushort VerticalMenu(string prompt, IReadOnlyList<string> choices) => (ushort)Choose(prompt, Upper(choices), vertical: true);
-    public ushort HorizontalMenu(IReadOnlyList<string> choices) => (ushort)Choose(null, Upper(choices));
+    public ushort HorizontalMenu(IReadOnlyList<string> choices) => (ushort)Choose(null, Upper(choices), animates: CloseUpAnimates);
 
     private static string[] Upper(IReadOnlyList<string> s) => [.. s.Select(c => c.ToUpperInvariant())];
 
@@ -158,45 +169,131 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
         }
     }
     public void Clock(ushort minutes) { }
-    public void Call(ushort routine) => Log.Add($"CALL {routine:X4}");
+    public void Call(ushort routine)
+    {
+        Log.Add($"CALL {routine:X4}");
+        // CALL $BA03 (OVR 0x3AC6): the sound picked by the last write to $03DE (DS:84CC): 8 → step, 10 → cue 262A.
+        if (routine == 0xBA03 && memory().SpecialWriteValues.TryGetValue(0x03DE, out var which))
+        {
+            if (which == 8)
+                Sound.Cue(GoldBox.Core.Sound.SoundCue.Step);
+            else if (which == 10)
+                Sound.Cue(GoldBox.Core.Sound.SoundCue.Fireball);
+        }
+    }
+
+    /// <summary>Where the program's sound calls go (the Client's audio, or none).</summary>
+    public GoldBox.Core.Sound.ISoundSink Sound { get; set; } = GoldBox.Core.Sound.NoSound.Instance;
     public void Protect(ushort address) { } // the code wheel: imported modules skip it (PLAN 6)
     public ushort Random(ushort range) => 0; // AreaHost draws from the game's generator
     public void ScriptChanging(ushort script) => Log.Add($"NEWECL {script}");
 
-    /// <summary>PROGRAM: 0 training hall, 8 end game (not built yet), 9 camp (0x3B56: the camp menu, then the run ends).</summary>
+    /// <summary>PROGRAM: 0 training hall (0x19AE0), 8 end game (0x20941), 9 camp (0x3B56: the camp menu, then the run ends).</summary>
     public void Program(ushort program)
     {
-        if (program == 9)
+        switch (program)
         {
-            Camp();
-            return;
+            case 0: TrainingHall(); break;
+            case 8: EndGameSequence(); break;
+            case 9: Camp(); break;
         }
-        string what = program switch { 0 => "THE TRAINING HALL", 8 => "THE END GAME", _ => "" };
-        if (what.Length > 0)
-            Acknowledge(what + " IS NOT IN THIS BUILD YET.");
     }
+
+    /// <summary>The training hall's screen while it is open (<see cref="HallScreens"/>), else null.</summary>
+    public HallState? Hall { get; private set; }
+
+    /// <summary>The end game's pictures over the view while it runs, else null.</summary>
+    public EndScene? Scene { get; set; }
+
+    /// <summary>The frame delays of an end-game animation block (FINAL of the disk, else of any disk), or null.</summary>
+    public Func<int, int, IReadOnlyList<uint>>? EndArtDelays => (disk, block) =>
+    {
+        var content = Game()?.Content;
+        if (content is null)
+            return [];
+        foreach (int d in new[] { disk }.Concat(Enumerable.Range(1, 8)))
+            if (content.Picture(EndGame.FileName(d), block) is { Count: > 0 } frames)
+                return [.. frames.Select(f => f.Delay ?? 0)];
+        return [];
+    };
+
+    /// <summary>
+    /// The training hall (PROGRAM 0, 0x19AE0; docs/re/training.md): its menu over the party, Train Character with
+    /// Core's rules, View and Save as in camp; DS:49F3 is 0 meanwhile (saved as such), then the area view returns.
+    /// </summary>
+    public void TrainingHall()
+    {
+        if (Trade(Game()?.Encounter.State) is not { } t)
+            return;
+        var game = Game();
+        var camp = CampContextFor(t);
+        var hall = new HallState();
+        var context = new HallContext
+        {
+            Camp = new CampContext
+            {
+                Trade = camp.Trade, State = camp.State, Spells = camp.Spells, Rest = camp.Rest, Memory = camp.Memory,
+                Cast = camp.Cast, Resources = camp.Resources, Save = l => SaveGame(l, 0), Quit = camp.Quit,
+            },
+            State = hall,
+            Text = Resources.HallTexts,
+            Memory = memory(),
+            Tables = Resources.Training,
+            Random = n => game is null ? (ushort)0 : game.Rng.Next(n),
+            Defaults = Resources.HallDefaults,
+            Hooks = HallHooks,
+        };
+        Hall = hall;
+        try
+        {
+            HallScreens.Run(context);
+        }
+        finally
+        {
+            Hall = null;
+        }
+    }
+
+    /// <summary>The hall entries other screens provide (character creation, the roster); empty ones show a notice.</summary>
+    public HallHooks HallHooks { get; } = new();
+
+    /// <summary>The end game (PROGRAM 8, 0x20941): <see cref="HallScreens.EndGameSequence"/>.</summary>
+    public void EndGameSequence() => HallScreens.EndGameSequence(this, Text, runner.Ask, memory());
 
     // ---- IEncounterUi ---------------------------------------------------------------------------------------------
     public void ShowEncounter(byte sprite, byte picture, int distance)
     {
         // The text stays the stand-in where the art is missing (ExploreScreen draws ViewPicture when it can).
+        ViewBlanked = false; // a picture after CLEARBOX shows (DOSBox-X, s19: CLEARBOX, CALL $0806, PICTURE 40)
         ViewOverlay = distance == 0
             ? ["CLOSE-UP", $"PIC {picture}", "", "(ART NOT", "FOUND)"]
             : ["MONSTER", $"SPRITE {sprite}", $"DISTANCE {distance}", "", "(ART NOT", "FOUND)"];
+        // At distance 0 the close-up: PIC when $6DE1 = 255, else head $6DE1 + body (ecl-format.md "SETUPMON"; DOSBox-X
+        // s19: the new game's guide is a portrait).
+        ushort head = memory().Read(GoldBox.Core.Game.EncounterHost.HeadPicture);
         ViewPicture = distance == 0
-            ? new ViewPicture(ViewPictureKind.Picture, picture, null, 0, memory().Disk)
+            ? head != 255
+                ? new ViewPicture(ViewPictureKind.Portrait, picture, head, 0, memory().Disk)
+                : new ViewPicture(ViewPictureKind.Picture, picture, null, 0, memory().Disk)
             : new ViewPicture(ViewPictureKind.Sprite, sprite, null, distance, memory().Disk);
     }
 
     public void ShowPicture(byte picture, byte? head)
     {
+        ViewBlanked = false; // a picture after CLEARBOX shows (DOSBox-X, s19: CLEARBOX, CALL $0806, PICTURE 40)
         ViewOverlay = head is { } h ? ["PICTURE", $"HEAD {h}", $"BODY {picture}"] : ["PICTURE", $"{picture}"];
+        if (head is not null)
+            PictureArmed = false;
         ViewPicture = head is { } hd
             ? new ViewPicture(ViewPictureKind.Portrait, picture, hd, 0, memory().Disk)
             : new ViewPicture(ViewPictureKind.Picture, picture, null, 0, memory().Disk);
     }
 
-    public void RestoreView() => ViewOverlay = null;
+    public void RestoreView()
+    {
+        ViewOverlay = null;
+        PictureArmed = true;
+    }
 
     public int ChooseEncounterAction(EncounterMenuKind kind, string? text, int distance)
     {
@@ -205,7 +302,7 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
         string[] items = kind == EncounterMenuKind.CombatWaitFleeAdvance
             ? ["COMBAT", "WAIT", "FLEE", "ADVANCE"]
             : ["COMBAT", "WAIT", "FLEE", "PARLEY"];
-        return Choose(null, items);
+        return Choose(null, items, animates: CloseUpAnimates);
     }
 
     public void ShowEncounterMessage(EncounterMessage message)
@@ -247,6 +344,7 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
         FightView.Speed = (byte)(speed <= 9 ? speed : 0);
         FightView.Dungeon = memory().ViewMode == 1; // [?] the tile set follows DS:49FA (combat-map.md 0xD815)
         Chooser.Attach(fight);
+        fight.State.Sound = Sound;
         try
         {
             fight.Run();
@@ -368,12 +466,16 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
         return i >= 0 && i < choices.Count ? choices[i] : null;
     }
 
-    public void Bump() { }
+    /// <summary>The bump of a refused step or failed door (OVR 0x176FE): cue DS:2622.</summary>
+    public void Bump() => Sound.Cue(GoldBox.Core.Sound.SoundCue.Impact);
 
     public void Message(AreaMessage message)
     {
         if (message == AreaMessage.NoAreaMapHere)
             Notice = "NO AREA MAP HERE.";
+        // [?] The program flashes it on row 24 in colour 14 for DS:49E2 × 225 ms (START 0x7DF8); shown as a notice.
+        else if (message == AreaMessage.RiverBlocks)
+            Notice = Resources.Texts[Msg.RiverBlocks];
     }
 
     /// <summary>
@@ -464,7 +566,10 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
     /// (<see cref="EclMemory.ViewMode"/>) and writes the game speed DS:49E2 (<see cref="EclMemory.GameSpeed"/>) into
     /// $49FC, as the program does.
     /// </summary>
-    public string? SaveGame(char letter)
+    public string? SaveGame(char letter) => SaveGame(letter, 2);
+
+    /// <summary>The save with the interface state DS:49F3 the program writes (2 camp, 0 the training hall).</summary>
+    public string? SaveGame(char letter, byte interfaceState)
     {
         if (SaveFolder is null || memory().Party is not { } party || Game() is null)
             return "NO SAVE FOLDER.";
@@ -477,7 +582,7 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
             }
         try
         {
-            var bytes = GoldBox.Data.Por.PorSaveGame.Build(mem, party.Members.Count, letter, 2);
+            var bytes = GoldBox.Data.Por.PorSaveGame.Build(mem, party.Members.Count, letter, interfaceState);
             var content = Game()!.Content;
             var save = GoldBox.Data.Module.Por.PorEngineSave.FromOriginal(bytes, party,
                 GoldBox.Data.Module.Por.PorEngineSave.Identity(content), content.LoadBlock, content.VmProfile);

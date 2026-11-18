@@ -73,6 +73,12 @@ public interface IPorContent : IEclScriptSource, IAreaMapSource
     int? OverlandColumn(int script) =>
         Program() is { OverlandOffsets: { } at } p ? PorOverland.Column(p.Ds, at, script) : null;
 
+    /// <summary>
+    /// The program's sound driver and cue table (docs/re/sound.md): START.EXE for the folder, <c>audio/dos/pcsound.json</c>
+    /// plus the program's data segment in a module; null when absent.
+    /// </summary>
+    PorSound? Sound() => null;
+
     /// <summary>The folder holding the shipped saves (<c>SAVGAM?.DAT</c>, <c>CHRDAT*</c>), or null.</summary>
     string? SaveFolder { get; }
 

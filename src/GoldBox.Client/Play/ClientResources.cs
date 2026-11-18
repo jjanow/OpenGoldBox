@@ -41,6 +41,11 @@ public sealed class ClientResources
     /// <summary>The spell table (Core's reader), or null without the program.</summary>
     public SpellTable? Spells { get; init; }
 
+    /// <summary>The training hall's and end game's texts, the hall's tables and its menu's shown-by-default flags.</summary>
+    public HallText HallTexts { get; init; } = new(null);
+    public TrainingTables? Training { get; init; }
+    public bool[]? HallDefaults { get; init; }
+
     /// <summary>The base item slot of an item record (ITEMS table, field 0 of the item's type), or −1.</summary>
     public Func<byte[], int> ItemSlot { get; init; } = _ => -1;
 
@@ -82,6 +87,10 @@ public sealed class ClientResources
             StatusName = Table(StatusDs, 13),
             SheetCoin = Table(SheetCoinDs, 11),
             Spells = program?.Spells(),
+            HallTexts = new HallText(program),
+            Training = PorTrainingTables.From(program),
+            HallDefaults = program is null ? null
+                : [.. Enum.GetValues<TrainingHall.Entry>().Select(e => PorTrainingTables.MenuDefault(program, e) ?? true)],
             ItemSlot = items is null ? _ => -1 : it => items[it[0x2E], BaseItemTable.Slot],
             PagePrompt = program?.PagePrompt,
         };

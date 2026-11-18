@@ -40,12 +40,25 @@ public sealed class CombatRecord
 }
 
 /// <summary>
+/// The arguments of the attack message routine 0x12AF4 (read s19): <paramref name="Manner"/> 1 from behind, 2 a
+/// backstab, 3 a slain helpless defender (0x13CA6), else 0 (0x13E30–0x13E52); <paramref name="Damage"/> the damage
+/// shown (DS:6818 on a hit, 1 for the helpless defender, 0 on the miss); <paramref name="Hit"/>. Plus what the routine
+/// saw before its damage: the defender in play (its name's colour on row 12) and a spell it was casting (+0 &gt; 0,
+/// lost on damage).
+/// </summary>
+public readonly record struct AttackMessage(EclCharacter Attacker, EclCharacter Defender, int Manner, byte Damage, bool Hit,
+    bool DefenderWasInPlay, bool SpellLost);
+
+/// <summary>
 /// Data-segment state of a running fight (GAME.OVR 0x9881 and the units it calls): the combat records, the round
 /// counter, the team counts and the scratch cells the attack code passes values through. Headless.
 /// </summary>
 public sealed class FightState
 {
     private readonly Dictionary<EclCharacter, CombatRecord> _records = new(ReferenceEqualityComparer.Instance);
+
+    /// <summary>The program's sound calls in a fight (docs/re/sound.md §2.4); none by default.</summary>
+    public Sound.ISoundSink Sound { get; set; } = GoldBox.Core.Sound.NoSound.Instance;
 
     /// <summary>The combat record of a creature (created on first use, zeroed, as 0xD8B2 does at the fight start).</summary>
     public CombatRecord Record(EclCharacter c)
@@ -89,6 +102,13 @@ public sealed class FightState
     public byte TargetBlocked { get; set; }
     /// <summary>The creature acting now (DS:5D92 during the fight).</summary>
     public EclCharacter? Current { get; set; }
+
+    /// <summary>
+    /// Display hook (no game state): each call of the attack message routine 0x12AF4 from the attack routine 0x13C01
+    /// (a hit, a slain helpless defender, or the miss after no hit), called after its damage part
+    /// (<see cref="FightRules.ApplyAttackResult"/>). A front end shows the program's message here.
+    /// </summary>
+    public Action<AttackMessage>? AttackMessage { get; set; }
 
     // Cells the monster AI (GAME.OVR 0xABCF, docs/re/combat-ai.md) passes to the effect handlers and the map.
     /// <summary>DS:6825: the morale value the trigger-0x11 effects see (morale check 0xBC97).</summary>

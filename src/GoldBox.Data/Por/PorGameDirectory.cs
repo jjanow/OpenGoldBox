@@ -116,6 +116,19 @@ public sealed class PorGameDirectory : IPorContent
         return _program;
     }
 
+    private PorSound? _sound;
+    private bool _soundRead;
+
+    public PorSound? Sound()
+    {
+        if (!_soundRead)
+        {
+            _soundRead = true;
+            _sound = Find("START.EXE") is { } exe ? PorSound.FromProgram(File.ReadAllBytes(exe)) : null;
+        }
+        return _sound;
+    }
+
     public IReadOnlyList<DaxPicture>? Picture(string file, int id)
     {
         if (Dax(file + ".DAX")?.Block(id) is not { } b)

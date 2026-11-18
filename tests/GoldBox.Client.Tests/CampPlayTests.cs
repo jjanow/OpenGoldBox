@@ -80,7 +80,7 @@ public class CampPlayTests
             Assert.Equal(7, rest.Items.Count);
             Press(r, GameAction.MenuUp);                           // Inc: 5 minutes (minutes highlighted first)
             Press(r, GameAction.MenuUp);
-            Press(r, GameAction.Confirm);                          // REST (the first item)
+            Key(r, Keys.R);                                        // REST (the menu opened on the camp's Rest place, 4th)
             Idle(r);
             Assert.Equal(t0 + 10, GameClock.TotalMinutes(r.Game.Memory));
             Assert.IsType<ChoiceRequest>(r.Runner.Pending);        // back at the camp menu
@@ -183,6 +183,85 @@ public class CampPlayTests
     }
 
     [Fact]
+    public void Area_menus_open_on_the_shared_highlight_as_in_dosbox()
+    {
+        // DOSBox-X (s19), save A loaded as A: Encamp → the camp menu on REST; R → the rest menu on MINS; Exit (7th) →
+        // the camp menu on SAVE (past its end); A → the Alter menu on its 5th; Escape → the camp menu on ALTER; Save, C
+        // → the quit question on NO; N → the camp menu on VIEW.
+        if (Dir() is null)
+            return;
+        var tmp = Directory.CreateTempSubdirectory("goldbox-camp-");
+        try
+        {
+            var r = Start(saveDir: tmp.FullName);
+            Assert.Equal(0, r.Screen.MenuHighlight);               // AREA
+            Press(r, GameAction.Encamp);
+            Sync(r);
+            Assert.Equal(3, r.Screen.Selected);                    // REST
+            Key(r, Keys.R);
+            Sync(r);
+            Assert.Equal(7, Assert.IsType<ChoiceRequest>(r.Runner.Pending).Items.Count);
+            Assert.Equal(3, r.Screen.Selected);                    // MINS
+            Key(r, Keys.E);
+            Sync(r);
+            Assert.Equal("CAMP:", Assert.IsType<ChoiceRequest>(r.Runner.Pending).MenuPrompt);
+            Assert.Equal(0, r.Screen.Selected);                    // SAVE
+            Key(r, Keys.A);
+            Sync(r);
+            Assert.Equal(4, r.Screen.Selected);
+            Press(r, GameAction.Cancel);
+            Sync(r);
+            Assert.Equal(4, r.Screen.Selected);                    // ALTER
+            Key(r, Keys.S);
+            Key(r, Keys.C);
+            Sync(r);
+            Assert.Equal(["YES", "NO"], Assert.IsType<ChoiceRequest>(r.Runner.Pending).Items);
+            Assert.Equal(1, r.Screen.Selected);                    // NO
+            Key(r, Keys.N);
+            Sync(r);
+            Assert.Equal(1, r.Screen.Selected);                    // VIEW
+            Press(r, GameAction.Cancel);                           // Escape leaves the cell: the command line on CAST
+            Assert.Null(r.Runner.Pending);
+            Assert.Equal(1, r.Screen.MenuHighlight);
+            r.Runner.Dispose();
+        }
+        finally
+        {
+            tmp.Delete(recursive: true);
+        }
+    }
+
+    [Fact]
+    public void The_camp_picture_animates_while_a_camp_menu_waits()
+    {
+        // PIC 29 (two frames, delays 2 and 2: 200 ms each); DOSBox-X alternates them about every 0.22 s.
+        if (Dir() is null)
+            return;
+        var r = Start();
+        Press(r, GameAction.Encamp);
+        Sync(r);
+        Assert.Equal(0, r.Screen.PictureFrame);
+        var seen = new HashSet<int>();
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        while (clock.ElapsedMilliseconds < 700)
+        {
+            Thread.Sleep(20);
+            Sync(r);
+            seen.Add(r.Screen.PictureFrame);
+        }
+        Assert.Equal([0, 1], seen.Order());
+        Press(r, GameAction.Cancel);
+        r.Runner.Dispose();
+    }
+
+    /// <summary>A frame with no input (the screen takes up the request on screen).</summary>
+    private static void Sync(Rig r)
+    {
+        r.Input.Update(default, default, default, TimeSpan.Zero, _ => null);
+        r.Screen.Update(r.Input);
+    }
+
+    [Fact]
     public void Alter_order_by_pad_actions_moves_the_member()
     {
         if (Dir() is null)
@@ -192,7 +271,8 @@ public class CampPlayTests
         var first = party.Members[0];
         Press(r, GameAction.Encamp);
         Key(r, Keys.A);                                            // Alter
-        Press(r, GameAction.Confirm);                              // ORDER (first item)
+        Assert.Equal(4, r.Screen.MenuHighlight);                   // the Alter menu opens on the camp's Alter place
+        Key(r, Keys.O);                                            // ORDER
         Press(r, GameAction.Confirm);                              // SELECT → place mode
         Press(r, GameAction.NextMember);                           // RB / End: one place down
         Assert.Same(first, party.Members[1]);

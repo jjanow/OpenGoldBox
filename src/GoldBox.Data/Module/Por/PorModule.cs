@@ -197,6 +197,27 @@ public sealed class PorModule : IPorContent
         return _program;
     }
 
+    // ---- sound -----------------------------------------------------------------------------------------------------
+
+    private PorSound? _sound;
+    private bool _soundRead;
+
+    /// <summary><c>audio/dos/pcsound.json</c> with the cue words from the program's data segment, or null.</summary>
+    public PorSound? Sound()
+    {
+        if (!_soundRead)
+        {
+            _soundRead = true;
+            if (Modules.File(PcSoundDocument.RelativePath) is { } sp)
+            {
+                var doc = ModuleJson.Read<PcSoundDocument>(sp);
+                if (doc.CueTable is { } at && Program() is { } prog && PorSound.CueWordsAt(prog.Ds, at) is { } words)
+                    _sound = new PorSound(doc.ToImage(), words);
+            }
+        }
+        return _sound;
+    }
+
     // ---- art -------------------------------------------------------------------------------------------------------
 
     private readonly Dictionary<(string, int), (ArtDocument Doc, string Path)?> _art = [];

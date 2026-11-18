@@ -63,17 +63,34 @@ public class CombatScreenUnitTests
     }
 
     [Fact]
-    public void The_view_follows_inside_the_arena()
+    public void The_view_scrolls_as_the_program_does()
     {
+        // 0x30F0E: a band of delta squares around the centre (view + 3); outside it the centre goes to the point.
         var v = new CombatView { ViewX = 24, ViewY = 10 };
-        v.Follow(27, 13);                       // centred: no scroll
+        Assert.False(v.Rebuild(29, 12, 2));     // view column 5, row 2: inside the band of 2 (s18: DOSBox-X kept columns 3 and 4)
         Assert.Equal((24, 10), (v.ViewX, v.ViewY));
-        v.Follow(30, 13);                       // past the inner 3 × 3: one square
-        Assert.Equal((26, 10), (v.ViewX, v.ViewY));
-        v.Follow(49, 24);                       // the arena's corner: clamped
+        Assert.True(v.Rebuild(30, 12, 2));      // column 6: the centre moves onto the point's x, y untouched
+        Assert.Equal((27, 10), (v.ViewX, v.ViewY));
+        Assert.False(v.Rebuild(33, 16, 3));     // a band of 3: anywhere in the view
+        Assert.True(v.Rebuild(30, 13, 255));    // 255: always redrawn, centred on the point (band 0)
+        Assert.Equal((27, 10), (v.ViewX, v.ViewY));
+        Assert.True(v.Rebuild(49, 24, 2));      // the arena's corner: centre kept at 46, 21
         Assert.Equal((CombatArena.Width - 7, CombatArena.Height - 7), (v.ViewX, v.ViewY));
         v.Center(0, 0);
         Assert.Equal((0, 0), (v.ViewX, v.ViewY));
+
+        // 0x310D0: the point plus one step in the direction; the cursor box goes with a redraw and comes back when on.
+        v = new CombatView { ViewX = 10, ViewY = 10 };
+        v.Scroll(13, 13, 2, 8, cursorSize: 1);
+        Assert.Equal((13, 13), v.Cursor);
+        v.Scroll(16, 13, 2, 2);                 // 16 + 1 east = 17: out of the band, the view moves and the box is gone
+        Assert.Equal((14, 10), (v.ViewX, v.ViewY));
+        Assert.Null(v.Cursor);
+        v.Scroll(17, 13, 3, 8, cursorSize: 4);
+        Assert.Equal((17, 13), v.Cursor);
+        Assert.Equal(4, v.CursorSize);
+        v.Scroll(17, 13, 3);                    // the cell itself is redrawn: its box goes
+        Assert.Null(v.Cursor);
     }
 
     [Fact]
@@ -85,6 +102,13 @@ public class CombatScreenUnitTests
         f[2, 0] = 7;
         CombatScreen.SwapGrey(f);
         Assert.Equal(new byte[] { 8, 0, 7 }, f.Pixels);
+    }
+
+    [Fact]
+    public void Monster_icons_turn_light_magenta_into_dark_grey_on_load()
+    {
+        // 0x31C34: a CPIC picture is remapped through DS:0CD2 → DS:0CE2 (13 → 8).
+        Assert.Equal(new byte[] { 0, 8, 7, 8, 15 }, CombatArt.MonsterColours([0, 13, 7, 8, 15]));
     }
 
     [Fact]

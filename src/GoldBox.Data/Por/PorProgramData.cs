@@ -129,6 +129,13 @@ public sealed class PorProgramData
 
     public LevelStatsTables? LevelTables() => Offsets.LevelStats?.Tables(Ds);
 
+    /// <summary>
+    /// The party menu's Create tables (<see cref="CreationTables"/>, fixed v1.3 DS offsets), or null when the level-stats
+    /// tables were not found at their v1.3 places (THAC0 DS:3C7C, spells DS:31FA), i.e. not Pool of Radiance DOS v1.3.
+    /// </summary>
+    public CreationTables? CreationTables() =>
+        LevelTables() is { Thac0: 0x3C7C, SpellTable: 0x31FA } levels ? new CreationTables { Data = Ds, Levels = levels } : null;
+
     public byte[]? AiSteps(int count = 40) => Offsets.AiSteps is { } b ? PorDsTables.Bytes(Ds, b, count) : null;
 
     public ushort[]? RandomItemTable(int words = TreasureMaker.TableWords) =>

@@ -84,7 +84,8 @@ records/itemTemplates.json, records/itemTypes.json
 rules/program.json             the program's data segment and table offsets (section 12)
 rules/overland.json            the overland tile map and special locations (sections 6, 12)
 text/<lang>.json               program and module text by key (section 13)
-audio/                         sounds and music by id (optional)
+audio/dos/pcsound.json         the program's PC-speaker / Tandy sound driver data (section 10a; optional)
+audio/<variant>/               further sound variants (Amiga: not yet; section 10a)
 transfer.json                  what characters bring in and take out (section 14)
 saves/                         shipped saves / premade characters (optional; section 15; PoR: engine saves a.json, j.json + the original files)
 ```
@@ -127,8 +128,10 @@ A module is a directory, or the same tree in a zip. File names are lower case, a
   itself.
 - `source` records the files the import read, by hash. This is enough to say "re-import needed" when the importer
   changes, and it ties bug reports to a release.
-- `start`: for imported games, the new-game position. The original start position is a script matter (PoR runs a
-  script at start-up); `start` is what the engine passes to it `[?]` until the start-up sequence is specified.
+- `start`: for imported games, the new-game position. **PoR (s19, `docs/re/start-menu.md` §1):** the program's
+  start-up and party menu fix it (ECL3 block 0 at 15,1 facing west, VM zeroed, then that script's init and entry), so
+  the engine's PoR start (`PorGame.NewGame`) does not read `start`; the importer's value stays informational. Other
+  games' start-up sequences are not read yet `[?]`.
 
 ## 5. Profiles (in the engine, not in the module)
 
@@ -264,7 +267,8 @@ for ECL games (PoR: 0–29) and the area number for FRUA (1–40).
   DS:0C36, 9 × 6 bytes; the column table DS:3C76) and writes areas 25 / 26 / 27 with columns 0 / 13 / 26 (the
   program's view modes 2–4). The engine reads the map through `IPorContent.Overland()` and the column through
   `IPorContent.OverlandColumn(script)`; the combat arena's wilderness terrain comes from the overland's tiles, so an
-  edited overland changes both. The overland view itself is not built in the Client yet.
+  edited overland changes both. The Client draws the overland view and travels on it (s19, `geo-format.md`
+  "Overland view, move and entry"); the art is the module's `sqrpaci`, `bacpac` and `icon` (DOS or the Amiga overlay).
 
 ## 7. Maps (`maps/<bank>/<id>.json`)
 
@@ -379,14 +383,34 @@ For FRUA designs, and later for hand-made modules that don't want bytecode.
   controls screen's ART row; default Best) goes through `IPorContent.Art`. Each asset's palette gets its own run of 16
   in a 256-entry screen palette (`ScreenPalette`; EGA stays 0–15), so DOS and Amiga art share a frame; the indices are
   moved into the run when the asset is loaded. Drawn through it: the 3D view's 8X8D tiles (Amiga 0 = DOS mask 13 on
-  every tile; Amiga 202/203 have one blank tile more, DOS's count is used), the combat grounds DUNGCOM/WILDCOM (cut to
-  DOS's count), the CPIC monster icons and COMSPR, the encounter pictures (PIC, HEAD + BODY with the Amiga head at
-  x = 16 `[?]`, SPRIT over the view) and the title painting at start-up (Best/Amiga only). Original DOS draws what it
-  drew before, pixel for pixel; the encounter pictures are new on every setting (before, a text stand-in).
+  every tile; Amiga 202/203 have one blank tile more, DOS's count is used; s19: the backdrop then takes the Amiga
+  program's pens of that palette), the combat grounds DUNGCOM/WILDCOM (cut to DOS's count) and RANDCOM (s19, from
+  tile 0x22), the CPIC monster icons and COMSPR, the encounter pictures (PIC, HEAD + BODY with the Amiga head at
+  x = 16 `[?]`, SPRIT over the view; s19: PIC animations and the camp's PIC 29) and the title painting at start-up
+  (Best/Amiga only). Original DOS draws what it drew before, pixel for pixel; the encounter pictures are new on every
+  setting (before, a text stand-in).
 - `kind` names follow what the engine draws: `picture`, `portraitHead`, `portraitBody`, `sprite`, `icon`, `wallset`
   (symbol sheets, plus the WALLDEF layout in JSON), `backdrop`, `combatGround`, `tile`, `frame`, `font`, `title`.
 - The palette values themselves come from the player's files at import. The engine source holds none (see PLAN §9,
   the held-back Amiga palette scripts).
+
+## 10a. Sound (`audio/`)
+
+- **As built for PoR DOS (s19):** PoR DOS has no sound files: its effects are tunes of a timer-driven PC-speaker /
+  Tandy sequencer inside START.EXE (docs/re/sound.md). The importer finds the driver by its code
+  (`PorSoundDriver`) and writes `audio/dos/pcsound.json` (`PcSoundDocument`): `driver` (the dialect the engine runs,
+  `por-1.3`), `origin` and `data` (base64: the driver's data bytes as they sit in its code segment from `origin`, so
+  the stream, envelope and LFO pointers inside stay valid), the segment offsets of the two song tables, the two note
+  tables and the two voice-block arrays, the voice size, the tune count, the timer divisor and the BIOS-chain count,
+  and `cueTable`: the data-segment offset (in `rules/program.json`) of the program's 16 cue words, which the engine
+  reads from there (not copied). The engine (`GoldBox.Core.Sound`) runs the driver and synthesises the speaker or
+  the SN76489 from its port writes. Engine side: `IPorContent.Sound()`.
+- **Variants** follow the art rule: `dos` is always there when the program had a driver; an `amiga` variant would
+  hold the Amiga version's sampled sounds where it has one, and the player's setting picks (Original DOS / Best /
+  Amiga, as for art). The Amiga player is located but not decoded (docs/re/sound.md §5), so no `amiga` folder is
+  written yet and every setting plays DOS.
+- Kind names for later modules: `sound` (an effect by id) and `music` (a song by id), each with its own format
+  (PCM WAV for sampled sound is the plan `[?]`).
 
 ## 11. Records
 
@@ -602,7 +626,7 @@ With `--amiga` (Amiga v1.0, s17): 508 Amiga pictures over 16 files (every pictur
    take only an `IPorContent`.
 2. `GoldBox.Importer` (CLI `goldbox-import por GAMEDIR OUTDIR [--amiga AMIGADIR]`): scripts, maps, records, item
    types first. Then art (DOS, then Amiga), rules tables, text, saves. **Done (s16; the Amiga overlay s17; the
-   overland `rules/overland.json` s18, importer 0.6 after the s18 merges).** The importer and the round
+   overland `rules/overland.json` s18, importer 0.6 after the s18 merges; `audio/dos/pcsound.json` and new `PartyMsg`, `CombatMsg`, `Hall`, `End`, river texts s19, importer 0.7).** The importer and the round
    trip live in `GoldBox.Data/Module/Por/` (the Client imports with them); the CLI stays in `GoldBox.Importer`.
 3. **Round-trip test:** for every raw resource, module → original block must be byte-identical to the DAX block. All
    existing real-data tests also pass with the Client and Core reading the module instead of the game folder.
@@ -640,7 +664,10 @@ With `--amiga` (Amiga v1.0, s17): 508 Amiga pictures over 16 files (every pictur
 ## 18. Open `[?]`
 
 - JSON arrays vs a binary sidecar for large layers and raw blobs. JSON is used until size or load time says otherwise.
-- The start-up sequence (new game vs load), and therefore what `start` means.
+- Settled for PoR (s19): the start-up sequence (party menu, new game vs load; `docs/re/start-menu.md`). Characters made
+  at the party menu are roster files (the original's `charlist.txt` plus one save party entry per character), not
+  module data. Open: whether `start` should name the PoR new-game script and square (it is informational now), and
+  the other games' start-up.
 - DQK's 6 map-header bytes and edge rule. Settled: PoD drops the same 2-byte prefix as PoR (`survey-pod.md` §3.1)
   and exits on RETURN with an empty stack (`survey-pod.md` §3.4; Curse and SotSB already do, `survey-sotsb.md`).
 - VM profiles beyond PoR: a SotSB profile needs the region bases and the character redirection list as profile data
@@ -660,9 +687,11 @@ With `--amiga` (Amiga v1.0, s17): 508 Amiga pictures over 16 files (every pictur
   experience levels 0 and 1 `[?]`. When an editor changes a decoded table, other games' profiles need their own files.
 - The Amiga overlay (s17; drawn by the Client s18): HEAD's x offset (16), and the palettes of HEAD/BODY/ICON
   (table 2) and the combat icons and grounds (table 3) are inferred, not traced (docs/re/por-art-formats.md §4).
-  Client side `[?]`: the 3D view's sky/horizon/ground stay EGA under Amiga walls; RANDCOM and the party icons stay
-  DOS (other tile order; recolouring routine not read); encounter pictures draw frame 0 only; the sprite frame per
-  distance and the use of the block x, y are from the art. The title painting is optional (disk A's `intro`).
+  Client side (s19, docs/re/por-art-formats.md §4 "Amiga program reads"): under Amiga walls the backdrop takes the
+  Amiga program's pens; RANDCOM is the Amiga set as the Amiga draws it. `[?]`: the party icons stay DOS (the Amiga
+  recolouring is read, but the DOS colour bytes → Amiga pens move is not known for EGA 2–5); the sprite frame per
+  distance and the use of the block x, y are from the art; the Amiga PIC animations are composed as the Amiga program
+  composes them (XOR with the first frame) but timed with the DOS rule (the Amiga times them by poll passes). The title painting is optional (disk A's `intro`).
 - Settled (s18): the PoR overland tile table and special locations are in `rules/overland.json`, placed by areas
   25–27 (section 6). Open: what the special-location VM cells mean, and the tile file the view draws from.
 - Saves (section 15): a save from another module version or content loads with a note, not refused; the shipped

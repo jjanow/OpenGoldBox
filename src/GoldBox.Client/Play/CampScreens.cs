@@ -74,6 +74,7 @@ public static class CampScreens
                 Hotkeys = keys,
                 UpAnswer = up,
                 DownAnswer = down,
+                Animates = true, // the camp unit's menus pass 1 (0x18C73, 0x194D0, 0x19750, …)
             }) is int a ? a : items.Count - 1;
             if (i is ChoiceRequest.PreviousMember or ChoiceRequest.NextMember || i <= TradeContext.MemberPick)
             {
@@ -168,6 +169,7 @@ public static class CampScreens
         {
             MenuPrompt = c.Text[Msg.SaveWhich].TrimEnd(),
             Hotkeys = keys,
+            Animates = c.State.Camping, // 0x1FD7B: DS:49F3 = 2
         }) is int a ? a : -1;
         if (i < 0 || i >= items.Count || keys[i] is < 'A' or > 'J')
             return;
@@ -684,6 +686,7 @@ public static class CampScreens
                 MenuPrompt = c.Text[Msg.PartyOrder].TrimEnd(),
                 PartySelect = true,
                 Hotkeys = keys,
+                Animates = true, // 0x19006
             }) is int a ? a : items.Count - 1;
             if (i is ChoiceRequest.PreviousMember or ChoiceRequest.NextMember || i <= TradeContext.MemberPick)
             {
@@ -763,6 +766,7 @@ public static class CampScreens
                 Hotkeys = keys,
                 UpAnswer = -10,
                 DownAnswer = -11,
+                Animates = true, // 0x193BD
             }) is int a ? a : items.Count - 1;
             switch (i)
             {
@@ -795,7 +799,7 @@ public static class CampScreens
                 + c.Text.Original(CampSettings.Portraits(c.Memory) ? Msg.PortraitsOn : Msg.PortraitsOff)
                 + c.Text.Original(Msg.PicsExit);
             var (items, keys) = ParseMenu(line);
-            int i = c.Dialog.Ask(new ChoiceRequest(null, items, false, items.Count - 1) { Hotkeys = keys }) is int a ? a : items.Count - 1;
+            int i = c.Dialog.Ask(new ChoiceRequest(null, items, false, items.Count - 1) { Hotkeys = keys, Animates = true }) is int a ? a : items.Count - 1;
             char k = i >= 0 && i < keys.Length ? keys[i] : 'E';
             if (k == 'M')
                 CampSettings.ToggleMonsters(c.Memory);

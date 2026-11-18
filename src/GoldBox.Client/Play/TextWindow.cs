@@ -26,12 +26,32 @@ public sealed class TextWindow
     /// <summary>The colour PRINT uses (EGA light green; the glyph routine remaps it only in CGA mode, DS:4A1E = 0).</summary>
     public const byte ScriptColour = 10;
 
-    private readonly char[,] _chars = new char[Bottom - Top + 1, Right - Left + 1];
-    private readonly byte[,] _colours = new byte[Bottom - Top + 1, Right - Left + 1];
+    private readonly char[,] _chars;
+    private readonly byte[,] _colours;
+    private readonly int _left, _top, _right, _bottom;
 
-    /// <summary>The text cursor (screen cells).</summary>
-    public int Column { get; private set; } = Left;
-    public int Row { get; private set; } = Top;
+    /// <summary>The script text box (<see cref="Left"/>, <see cref="Top"/>)–(<see cref="Right"/>, <see cref="Bottom"/>).</summary>
+    public TextWindow() : this(Left, Top, Right, Bottom)
+    {
+    }
+
+    /// <summary>
+    /// Screen cells (<paramref name="left"/>, <paramref name="top"/>)–(<paramref name="right"/>,
+    /// <paramref name="bottom"/>) the program prints into through windows inside them (the combat panel: columns 23–38,
+    /// rows 1–21, the windows of START 0x16EC); the cursor and <see cref="Print"/>'s window start as the whole area.
+    /// </summary>
+    public TextWindow(int left, int top, int right, int bottom)
+    {
+        (_left, _top, _right, _bottom) = (left, top, right, bottom);
+        _chars = new char[bottom - top + 1, right - left + 1];
+        _colours = new byte[bottom - top + 1, right - left + 1];
+        Column = left;
+        Row = top;
+    }
+
+    /// <summary>The text cursor (screen cells; DS:5E24 column, DS:5E25 row).</summary>
+    public int Column { get; private set; }
+    public int Row { get; private set; }
 
     /// <summary>Called when the box is full and more text follows: show the page prompt and wait for a key.</summary>
     public Action? Pause { get; set; }
@@ -48,8 +68,8 @@ public sealed class TextWindow
     }
 
     /// <summary>The character and colour of a box cell (row and column in screen cells); '\0' = blank.</summary>
-    public (char Char, byte Colour) Cell(int row, int col) => _chars[row - Top, col - Left] is var c && c != '\0'
-        ? (c, _colours[row - Top, col - Left])
+    public (char Char, byte Colour) Cell(int row, int col) => _chars[row - _top, col - _left] is var c && c != '\0'
+        ? (c, _colours[row - _top, col - _left])
         : ('\0', (byte)0);
 
     /// <summary>The box rows as strings (blanks as spaces, trailing blanks cut): for tests and logs.</summary>
@@ -58,9 +78,9 @@ public sealed class TextWindow
         get
         {
             var list = new List<string>();
-            for (int r = 0; r <= Bottom - Top; r++)
+            for (int r = 0; r <= _bottom - _top; r++)
             {
-                var s = new char[Right - Left + 1];
+                var s = new char[_right - _left + 1];
                 for (int c = 0; c < s.Length; c++)
                     s[c] = _chars[r, c] == '\0' ? ' ' : _chars[r, c];
                 list.Add(new string(s).TrimEnd());
@@ -80,8 +100,8 @@ public sealed class TextWindow
     /// <summary>The cursor to the box's top-left corner without blanking (EXIT: column 1, row 17).</summary>
     public void Home()
     {
-        Column = Left;
-        Row = Top;
+        Column = _left;
+        Row = _top;
     }
 
     /// <summary>
@@ -90,34 +110,37 @@ public sealed class TextWindow
     /// </summary>
     public void Put(int row, int col, string text, byte colour = ScriptColour)
     {
-        if (row < Top || row > Bottom)
+        if (row < _top || row > _bottom)
             return;
         for (int i = 0; i < text.Length; i++)
         {
             int c = col + i;
-            if (c < Left || c > Right)
+            if (c < _left || c > _right)
                 continue;
-            _chars[row - Top, c - Left] = text[i];
-            _colours[row - Top, c - Left] = colour;
+            _chars[row - _top, c - _left] = text[i];
+            _colours[row - _top, c - _left] = colour;
         }
     }
 
     /// <summary>Blanks one row of the box.</summary>
-    public void ClearRow(int row)
+    public void ClearRow(int row) => ClearRect(_left, row, _right, row);
+
+    /// <summary>Blanks the cells (<paramref name="left"/>, <paramref name="top"/>)–(<paramref name="right"/>,
+    /// <paramref name="bottom"/>) inside the area (ClearBox START 0x4047). The cursor does not move.</summary>
+    public void ClearRect(int left, int top, int right, int bottom)
     {
-        if (row < Top || row > Bottom)
-            return;
-        for (int c = 0; c <= Right - Left; c++)
-        {
-            _chars[row - Top, c] = '\0';
-            _colours[row - Top, c] = 0;
-        }
+        for (int r = Math.Max(top, _top); r <= Math.Min(bottom, _bottom); r++)
+            for (int c = Math.Max(left, _left); c <= Math.Min(right, _right); c++)
+            {
+                _chars[r - _top, c - _left] = '\0';
+                _colours[r - _top, c - _left] = 0;
+            }
     }
 
     /// <summary>PRINTRET (GAME.OVR 0x3831): column 1 of the next row (the next print starts at the top if that is below the box).</summary>
     public void NewLine()
     {
-        Column = Left;
+        Column = _left;
         Row++;
     }
 
@@ -125,12 +148,26 @@ public sealed class TextWindow
     /// PRINT (<paramref name="clear"/> false: from the cursor) or PRINTCLR (true: the box blanked first), in
     /// <paramref name="colour"/>.
     /// </summary>
-    public void Print(string text, bool clear = false, byte colour = ScriptColour)
+    public void Print(string text, bool clear = false, byte colour = ScriptColour) =>
+        PrintIn(_left, _top, _right, _bottom, text, clear, colour);
+
+    /// <summary>
+    /// START 0x77F8 with its window (<paramref name="left"/>, <paramref name="top"/>)–(<paramref name="right"/>,
+    /// <paramref name="bottom"/>), inside this area: the same word wrap as <see cref="Print"/>.
+    /// </summary>
+    public void PrintIn(int left, int top, int right, int bottom, string text, bool clear, byte colour)
     {
-        if (Column < Left || Column > Right || Row < Top || Row > Bottom)
-            Home();
+        if (Column < left || Column > right || Row < top || Row > bottom)
+        {
+            Column = left;
+            Row = top;
+        }
         if (clear)
-            Clear();
+        {
+            ClearRect(left, top, right, bottom);
+            Column = left;
+            Row = top;
+        }
         int len = text.Length;
         if (len == 0)
             return;
@@ -147,20 +184,19 @@ public sealed class TextWindow
             if (S(i) != ' ')
                 while (i + 1 < len && IsDelimiter(S(i + 1)))
                     i++;
-            if (Column + (i - p) > Right)
+            if (Column + (i - p) > right)
             {
                 // (0x79A9–0x79E2 test for a word whose last cell is exactly the right edge; it cannot be reached.)
-                Column = Left;
+                Column = left;
                 Row++;
                 while (p < len && S(p) == ' ')
                     p++;
-                if (Row > Bottom && p < len)
+                if (Row > bottom && p < len)
                 {
-                    Column = Left;
-                    Row = Top;
+                    Column = left;
+                    Row = top;
                     Pause?.Invoke();
-                    Array.Clear(_chars);
-                    Array.Clear(_colours);
+                    ClearRect(left, top, right, bottom);
                     p = Put(text, p, i, colour);
                 }
                 // else the word is printed by the next pass at the new row
@@ -169,9 +205,9 @@ public sealed class TextWindow
                 p = Put(text, p, i, colour);
         }
         while (p <= len);
-        if (Column > Right)
+        if (Column > right)
         {
-            Column = Left;
+            Column = left;
             Row++;
         }
     }
@@ -181,7 +217,7 @@ public sealed class TextWindow
     {
         for (; p <= i; p++)
         {
-            int r = Row - Top, c = Column - Left;
+            int r = Row - _top, c = Column - _left;
             // [?] A cell outside the box (a one-character last word after a full box) is drawn by the program on the
             // row below the box; we drop it.
             if (r >= 0 && r < _chars.GetLength(0) && c >= 0 && c < _chars.GetLength(1))

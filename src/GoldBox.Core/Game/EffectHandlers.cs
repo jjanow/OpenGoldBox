@@ -32,6 +32,8 @@ public enum EffectEvent
     StartsTraining, Silenced, LostImage, Coughing, Collapses, Ages, Weakens, PoisonDeath, ParalysisFailed,
     StatusChange, GainsItem, Unaffected, EffectGained, CastingLost, NonWeaponDamage, MissileDodged, Hardier,
     FearsDragon, Charmed, Healed, SpellCast, SpellAborted, BeginsCasting, Other,
+    /// <summary>Non-weapon damage put the creature out of play (0x2C44A: the "goes down" / dying / killed message).</summary>
+    GoesDown,
 }
 
 /// <summary>The data-segment cells the effect handlers read and write besides those in <see cref="FightState"/>.</summary>
@@ -393,6 +395,8 @@ public sealed partial class EffectHandlers : IFightEffects
                 rec[CombatRecord.SpellCast] = 0;
             }
         }
+        if (c[InPlay] == 0)
+            Emit(c, EffectEvent.GoesDown); // 0x2C458–0x2C4E0: the message, in and out of a fight
         if (c[InPlay] == 0 && InCombat)
         {
             RemoveEffectsHp0(c);

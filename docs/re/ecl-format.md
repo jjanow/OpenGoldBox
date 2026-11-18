@@ -590,7 +590,7 @@ only. `[?]` = unknown or unconfirmed.
 | 35 | SAVETABLE | SAVE TABLE | 3 | 3 | v a v | Store v1 at (a + v2), v2 full 16 bits | P | 17 |
 | 36 | ADDNPC | ADD NPC | 2 | **1** | v v | Party < 8: load monster v1, append it to the party as current (portrait rolls); then current 0x84 = 0x80 OR v2/2 | P | 8 |
 | 37 | LOADPIECES | LOAD PIECES | 3 | 3 | v v v | Load wall sets for slots 1–3 (same handler as 21; see below) | P | 35 |
-| 38 | PROGRAM | PROGRAM | 1 | 1 | v | 0 training hall, 8 end game, 9 camp (then EXIT: the run ends, 0x3BBC); else nothing | P (ids) | 4 |
+| 38 | PROGRAM | PROGRAM | 1 | 1 | v | 0 training hall (0x19AE0), 8 end game (0x20941), 9 camp (then EXIT: the run ends, 0x3BBC); else nothing (training.md) | P | 4 |
 | 39 | WHO | WHO | 1 | 1 | s | Prompt, player picks a character (becomes current; survives EXIT) | P | 11 |
 | 3A | DELAY | DELAY | 0 | 0 | – | Pause for game speed (DS:49E2, 0–9) × 225 ms (Crt-style Delay, START.EXE 0x7E4E/0xA69C); speed 0 = none | P | 188 |
 | 3B | SPELL | SPELL | 3 | 3 | v a a | Search the first member's spell bytes for v (skipped when the residue byte is non-zero, as in DOSBox: 0xCA at the v1.3 site); results written to $00xx (low address bytes only): no effect in v1.3 | P, D | 1 |

@@ -43,6 +43,8 @@ public sealed class ExploreScreen : IScreen
     private string _typed = "";
     private TimeSpan _delayEnd;
     private readonly ListPage _list = new();
+    /// <summary>The training hall's screen (PROGRAM 0), drawn while <see cref="ClientPlayer.Hall"/> is set.</summary>
+    private readonly HallView _hall = new();
     /// <summary>A click already chose this answer (a party member, a key wait); given on the next update.</summary>
     private object? _clickAnswer;
     private bool _hasClickAnswer;
@@ -51,6 +53,19 @@ public sealed class ExploreScreen : IScreen
 
     /// <summary>The art setting and the art drawn through it (combat pictures, encounter pictures).</summary>
     private readonly ClientArt _art;
+
+    /// <summary>The picture window's animation, played while a menu with the animate flag waits.</summary>
+    private readonly PictureAnimation _anim = new();
+
+    /// <summary>
+    /// The camp's picture: on entering the camp (0x196A0 → START 0x27D9 with DS:49F3 = 2) the program loads PIC block
+    /// 0x1D (START 0x2852) and its menus animate it.
+    /// </summary>
+    public const int CampPicture = 0x1D;
+
+    /// <summary>What the picture window shows: the camp's picture while camping, else the encounter picture (or null).</summary>
+    private ViewPicture? ShownPicture =>
+        _player.Camping ? new ViewPicture(ViewPictureKind.Picture, CampPicture, null, 0, _game.Memory.Disk) : _player.ViewPicture;
 
     /// <summary>The combat screen this screen hands over to during a fight.</summary>
     public CombatScreen Combat => _combat;
@@ -76,6 +91,19 @@ public sealed class ExploreScreen : IScreen
     }
 
     public PorGame Game => _game;
+
+    /// <summary>The shared menu highlight cell (0-based, DS:6B2B − 1).</summary>
+    public int MenuHighlight => _highlight.Index;
+
+    /// <summary>The highlighted entry of the bottom-line menu on screen.</summary>
+    public int Selected => _selected;
+
+    /// <summary>The picture window's animation frame (0-based).</summary>
+    public int PictureFrame => _anim.Frame;
+
+    /// <summary>The command line now: the overland's (<see cref="OverlandUi.CommandLine"/>) while DS:49FA is 2–4.</summary>
+    private string[] Commands => OverlandUi.Commands(_game) ? OverlandUi.CommandLine(_commands) : _commands;
+
     public bool ShowingAreaMap => _game.Loop.ShowAreaMap;
 
     // ---------------------------------------------------------------------------------------------------------------
@@ -98,6 +126,7 @@ public sealed class ExploreScreen : IScreen
         };
         if (letter is { } l)
             Took(l);
+        _player.PictureArmed = true; // the area loop's pass sets DS:84E1 (0x4223)
         if (command == AreaCommand.Forward)
             _player.Text.Clear(); // [?] when the original clears the text window is not read; we clear on a step
         _runner.Start(() => _game.Loop.Execute(command));
@@ -142,7 +171,7 @@ public sealed class ExploreScreen : IScreen
     /// <summary>A command taken by its hotkey: the shared highlight moves to it.</summary>
     private void Took(char letter)
     {
-        int at = Array.FindIndex(_commands, w => w[0] == letter);
+        int at = Array.FindIndex(Commands, w => w[0] == letter);
         if (at >= 0)
             _highlight.Chosen(at);
     }
@@ -189,15 +218,20 @@ public sealed class ExploreScreen : IScreen
         if (click.Right)
             return null;
         int col = click.X / 8, row = click.Y / 8;
-        if (click.X >= ViewX && click.X < ViewX + 88 && click.Y >= ViewY && click.Y < ViewY + 88)
+        if (OverlandUi.Commands(_game))
+        {
+            if (OverlandUi.Click(_game, click.X, click.Y) is { } travel)
+                return travel;
+        }
+        else if (click.X >= ViewX && click.X < ViewX + 88 && click.Y >= ViewY && click.Y < ViewY + 88)
         {
             int vx = click.X - ViewX, vy = click.Y - ViewY;
             if (vx < 29) return GameAction.TurnLeft;
             if (vx >= 59) return GameAction.TurnRight;
             return vy >= 59 ? GameAction.TurnAround : GameAction.Forward;
         }
-        if (row == MenuRow && WordAt(_commands, col) is { } cmd)
-            return CommandAction(_commands[cmd]);
+        if (row == MenuRow && WordAt(Commands, col) is { } cmd)
+            return CommandAction(Commands[cmd]);
         if (row == HelpRow + 1 && _player.Text.IsEmpty)
             return GameAction.Controls;
         return null;
@@ -211,7 +245,9 @@ public sealed class ExploreScreen : IScreen
             return;
         }
         Sync();
-        if (_runner.Pending is ListRequest l)
+        if (_runner.Pending is HallMenuRequest hm)
+            _hall.Hover(hm, x / 8, y / 8);
+        else if (_runner.Pending is ListRequest l)
             _list.Hover(l, x / 8, y / 8);
         else if (_runner.Pending is ChoiceRequest c && ItemAt(c, x / 8, y / 8) is { } i)
             _selected = i;
@@ -225,6 +261,13 @@ public sealed class ExploreScreen : IScreen
         {
             case KeyRequest:
                 return GameAction.Confirm;
+            case HallMenuRequest hm:
+                if (!click.Right && _hall.Click(hm, click.X / 8, click.Y / 8, _game.Memory.Party?.Members.Count ?? 0) is { } ha)
+                {
+                    _clickAnswer = ha;
+                    _hasClickAnswer = true;
+                }
+                return null;
             case ListRequest l:
                 return _list.Click(l, click);
             case ChoiceRequest c:
@@ -370,9 +413,15 @@ public sealed class ExploreScreen : IScreen
             return;
         }
         Sync();
+        var shown = ShownPicture;
+        _anim.Show(shown);
+        if (_runner.Pending is ChoiceRequest { Animates: true } && shown is not null)
+            _anim.Tick(_clock.Elapsed, _art.Pictures.Delays(shown));
         if (_runner.Pending is { } request)
         {
-            if (Answer(request, input) is { } answer)
+            var reply = Answer(request, input);
+            FollowHighlight(request, reply, input.Pressed(GameAction.Cancel));
+            if (reply is { } answer)
             {
                 _runner.Answer(answer.Value);
                 if (_runner.Fault is { } e)
@@ -383,6 +432,15 @@ public sealed class ExploreScreen : IScreen
             return;
         }
 
+        if (OverlandUi.Commands(_game))
+        {
+            // The overland's arrows set the direction and travel (0x17390); its line has no A.
+            if (input.Pressed(GameAction.Search)) Run(AreaCommand.Search);
+            else if (input.Pressed(GameAction.Look)) Run(AreaCommand.Look);
+            else if (input.Pressed(GameAction.Encamp)) Run(AreaCommand.Encamp);
+            else if (OverlandUi.Travel(input) is { } travel) Run(travel);
+            return;
+        }
         if (input.Pressed(GameAction.AreaMap)) Run(AreaCommand.AreaMap);
         else if (input.Pressed(GameAction.Search)) Run(AreaCommand.Search);
         else if (input.Pressed(GameAction.Look)) Run(AreaCommand.Look);
@@ -393,7 +451,14 @@ public sealed class ExploreScreen : IScreen
         else if (input.Pressed(GameAction.Forward)) Run(AreaCommand.Forward);
     }
 
-    /// <summary>A new request on screen starts with its first item selected and nothing typed.</summary>
+    /// <summary>
+    /// A new request on screen starts with nothing typed and its first item selected, except the menus that share the
+    /// program's highlight cell (DS:6B2B, <see cref="MenuHighlight"/>): a bottom-line menu (the menu routine 0x2CC8C)
+    /// opens on the cell, a yes/no first sets it to No (<see cref="ChoiceRequest.Selected"/>, 0x2D9A0); a vertical list
+    /// (VMENU and the other item lists 0x2D669, WHO's one-entry "Select" menu) sets it to the first entry; a full-screen
+    /// list page is an item list whose menu starts where the page asks, and the View page (0x21AED,
+    /// <see cref="ListRequest.SharedHighlight"/>) opens on the cell.
+    /// </summary>
     private void Sync()
     {
         var request = _runner.Pending;
@@ -403,13 +468,52 @@ public sealed class ExploreScreen : IScreen
         _selected = 0;
         _typed = "";
         _hasClickAnswer = false;
-        if (request is ListRequest l)
-            _list.Sync(l);
+        if (request is ChoiceRequest { Animates: true })
+            _anim.MenuOpened(_clock.Elapsed);
+        switch (request)
+        {
+            case ChoiceRequest { Vertical: false } h:
+                if (h.Selected != 0)
+                    _highlight.Index = h.Selected;
+                _selected = _highlight.Start(h.Items.Count);
+                break;
+            case ChoiceRequest v:
+                _highlight.ItemList();
+                _selected = Math.Clamp(v.Selected, 0, Math.Max(0, v.Items.Count - 1));
+                break;
+            case ListRequest l:
+                _list.Sync(l);
+                if (l.SharedHighlight)
+                    _list.SetAction(l, _highlight.Start(l.Actions.Count));
+                else
+                    _highlight.Index = _list.SelectedAction;
+                break;
+        }
+
         if (request is DelayRequest d)
             _delayEnd = _clock.Elapsed + d.Duration;
     }
 
     private readonly record struct Reply(object? Value);
+
+    /// <summary>
+    /// The shared cell follows a menu's highlight while it is up (',' / '.' move the cell itself in 0x2CC8C) and takes
+    /// the chosen entry (a hotkey moves it there, 0x2CF48); Escape leaves it.
+    /// </summary>
+    private void FollowHighlight(PlayerRequest request, Reply? reply, bool cancelled)
+    {
+        switch (request)
+        {
+            case ChoiceRequest { Vertical: false } h:
+                _highlight.Index = !cancelled && reply is { Value: int i } && i >= 0 && i < h.Items.Count ? i : _selected;
+                break;
+            case ListRequest l:
+                _highlight.Index = !cancelled && reply is { Value: ListAnswer { Action: var a } } && a >= 0 && a < l.Actions.Count
+                    ? a
+                    : _list.SelectedAction;
+                break;
+        }
+    }
 
     /// <summary>The answer to the request this frame, or null while the player has not answered.</summary>
     private Reply? Answer(PlayerRequest request, ActionInput input)
@@ -425,6 +529,9 @@ public sealed class ExploreScreen : IScreen
                 return input.NewInput is not null || input.Pressed(GameAction.Confirm) || input.Pressed(GameAction.Cancel)
                     ? new Reply(null)
                     : null;
+
+            case HallMenuRequest hm:
+                return _hall.Answer(hm, input) is { } ha ? new Reply(ha) : null;
 
             case ListRequest l:
                 return _list.Update(l, input) is { } a ? new Reply(a) : null;
@@ -537,13 +644,20 @@ public sealed class ExploreScreen : IScreen
             _list.Draw(f, font, page, input);
             return;
         }
+        if (_player.Hall is { } hall)
+        {
+            _hall.Draw(f, font, hall, _game.Memory.Party, pending, _selected, input);
+            return;
+        }
         f.Clear(0);
         // Frame cells as on the original screen: outer box, the divider under the view and party list, the divider
         // between view and party list, the view's own box, the box over the command line.
         Chrome.Box(f, 0, 0, 39, 23);
         Chrome.HLine(f, 16, 1, 38);
         Chrome.VLine(f, 16, 1, 15);
-        Chrome.Box(f, 2, 2, 14, 14);
+        bool overlandBoxed = OverlandUi.Shown(_game) && OverlandUi.Boxed(_player);
+        if (!OverlandUi.Shown(_game) || overlandBoxed)
+            Chrome.Box(f, 2, 2, 14, 14); // the 3D view's own box; the overland view fills cells 1–15
         foreach (var (c, r) in new[] { (16, 0), (0, 16), (16, 16), (39, 16) })
             Chrome.BraidCell(f, c, r, true);
 
@@ -571,7 +685,7 @@ public sealed class ExploreScreen : IScreen
                 if (pending is ChoiceRequest { Prompt: { } prompt })
                     Chrome.Text(f, font, 1, TextRow + TextRows - 1, Fit(prompt, 38), Chrome.White);
                 if (pending is null && _player.Text.IsEmpty && _player.Notice is null)
-                    DrawHelp(f, font, input);
+                    DrawHelp(f, font, input, OverlandUi.Commands(_game));
                 break;
         }
         if (_player.Notice is { } notice)
@@ -589,7 +703,7 @@ public sealed class ExploreScreen : IScreen
         }
         else if (pending is null)
         {
-            DrawLine(f, font, _commands, _highlight.Start(_commands.Length), 0);
+            DrawLine(f, font, Commands, _highlight.Start(Commands.Length), 0);
         }
         else if (pending is TextRequest tr)
             Chrome.Text(f, font, 0, MenuRow, Fit(tr.Prompt + (tr.Prompt.Length > 0 ? " " : "") + _typed + "_", 40), Chrome.White);
@@ -647,9 +761,9 @@ public sealed class ExploreScreen : IScreen
     public static string StatusLine(PorGame game, bool camping)
     {
         var m = game.Memory;
-        var p = m.Position;
-        string s = m.Read(AreaLoop.NoAreaMap) == 0 ? $"{p.X},{p.Y} " : "";
-        s += Facing.Letter(p.Facing) + " " + GameClock.Format(m);
+        var (px, py) = Overland.StatusPosition(m); // the overland's x, y in modes 2–4 (START 0x34C2)
+        string s = m.Read(AreaLoop.NoAreaMap) == 0 ? $"{px},{py} " : "";
+        s += Facing.Letter(m.Position.Facing) + " " + GameClock.Format(m);
         if (camping)
             s += " CAMPING";
         else if (game.Loop.SearchOn)
@@ -659,22 +773,42 @@ public sealed class ExploreScreen : IScreen
 
     private void DrawView(IndexedFrame f, TextFont font)
     {
-        if (!_game.Loop.InView3D)
+        if (_player.Scene is { } scene)
         {
-            // [?] Outdoors ($49E6 = 0) the program shows the wilderness picture and the overland map; not built.
-            Chrome.Text(f, font, 3, 5, "WILDERNESS", Chrome.Cyan);
-            Chrome.Text(f, font, 3, 7, "NOT IN THIS", Chrome.Cyan);
-            Chrome.Text(f, font, 3, 8, "BUILD YET", Chrome.Cyan);
+            HallView.DrawScene(f, scene, _art.Pictures); // the end game (PROGRAM 8) over the view and its box
             return;
         }
-        _game.DrawView(f, ViewX, ViewY, _game.Loop.ShowAreaMap);
-        if (_player.ViewBlanked)
+        if (OverlandUi.Shown(_game))
+        {
+            // The overland view (OverlandUi); encounter pictures and the like go over it as over the 3D view
+            // (DOSBox-X: a monster sprite at the 3D view's place over the tiles).
+            if (OverlandUi.Boxed(_player))
+            {
+                OverlandUi.Blank(f); // a picture in the 3D view's box over a blank window (below)
+                Chrome.Box(f, 2, 2, 14, 14);
+            }
+            else if (!OverlandUi.Draw(f, _game, _art.Overland))
+                Chrome.Text(f, font, 3, 7, "NO OVERLAND", Chrome.Cyan);
+        }
+        else if (!_game.Loop.InView3D)
+        {
+            // [?] No map in memory and not the overland (DS:49FA 5+, or $49E6 = 0 outside blocks 25–27): nothing drawn.
+            Chrome.Text(f, font, 3, 7, "NO VIEW", Chrome.Cyan);
+            return;
+        }
+        else
+            _game.DrawView(f, ViewX, ViewY, _game.Loop.ShowAreaMap);
+        if (_player.ViewBlanked && OverlandUi.Shown(_game))
+        {
+            // CLEARBOX blanked cells 1–15 (OverlandUi.Blank above)
+        }
+        else if (_player.ViewBlanked)
         {
             for (int y = 0; y < 88; y++)
                 for (int x = 0; x < 88; x++)
                     f[ViewX + x, ViewY + y] = 0;
         }
-        else if (_player.ViewPicture is { } picture && _art.Pictures.Draw(f, ViewX, ViewY, picture))
+        else if (ShownPicture is { } picture && _art.Pictures.Draw(f, ViewX, ViewY, picture, _anim.Frame))
         {
             // the encounter picture, portrait or sprite in the chosen art (ViewPictures)
         }
@@ -756,7 +890,7 @@ public sealed class ExploreScreen : IScreen
     }
 
     /// <summary>Two help lines in the text window, in the device used last (keys, pad buttons, or mouse gestures).</summary>
-    private static void DrawHelp(IndexedFrame f, TextFont font, ActionInput input)
+    private static void DrawHelp(IndexedFrame f, TextFont font, ActionInput input, bool overland = false)
     {
         var d = input.LastDevice;
         var b = input.Bindings;
@@ -773,7 +907,8 @@ public sealed class ExploreScreen : IScreen
         }
         string area = d == InputDevice.Mouse ? "CLICK AREA" : L(GameAction.AreaMap);
         string controls = d == InputDevice.Mouse ? "CLICK HERE" : L(GameAction.Controls);
-        Chrome.Text(f, font, 1, HelpRow - 1, Fit(move + "  MAP: " + area, 38), Chrome.Grey);
+        Chrome.Text(f, font, 1, HelpRow - 1, Fit(overland ? move.Replace("MOVE", "TRAVEL", StringComparison.Ordinal)
+            : move + "  MAP: " + area, 38), Chrome.Grey);
         string cmds = d == InputDevice.Mouse
             ? "COMMANDS: CLICK THE BOTTOM LINE"
             : $"SEARCH {L(GameAction.Search)} LOOK {L(GameAction.Look)} CAMP {L(GameAction.Encamp)}";

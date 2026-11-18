@@ -221,4 +221,4 @@ No random draws.
 - Direction to or from a cell off the arena (endless loop); distance to a creature not on the map; the class of an
   unlisted wilderness code (residue).
 - The menu's undo (0x317E1) and the AI's own step choice are left to their callers (`CombatMap.TryPlace`).
-- The drawing (view scrolling 0x310D0, icons 0x31232) is not modelled.
+- The drawing: view scrolling 0x310D0 is read (combat-menu.md "View scrolling", Client `CombatView.Scroll`); icons 0x31232 are not modelled in Core.

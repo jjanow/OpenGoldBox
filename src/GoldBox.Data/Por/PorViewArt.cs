@@ -25,6 +25,12 @@ public sealed class PorViewArt
 
     private Func<byte[], int>? _paletteBase;
 
+    /// <summary>
+    /// Where the palette of the variant's wall tiles starts in the screen palette while a variant draws them (the
+    /// backdrop is then drawn with that variant's pens, <see cref="Module.Por.PorAmigaArt.BackdropPen"/>); null for DOS.
+    /// </summary>
+    public int? BackdropBase { get; private set; }
+
     public PorViewTables Program { get; }
     public SymbolSet Symbols { get; }
     public WallBuffer Walls { get; } = new();
@@ -99,6 +105,10 @@ public sealed class PorViewArt
         {
             Choice = choice;
             _paletteBase = paletteBase;
+            BackdropBase = choice != PorArtChoice.Dos && paletteBase is not null
+                && _dir.Art("8X8D1", CommonBlock, choice) is { Variant: Module.Por.PorAmigaArt.Variant } img
+                ? paletteBase(img.PaletteRgb)
+                : null;
             for (int b = 0; b < SymbolSet.Blocks; b++)
                 if (_blockSource[b] is var (file, id))
                     Symbols.SetBlock(b, Tiles(_dir, file, id, Choice, _paletteBase));

@@ -172,7 +172,10 @@ public class ArtSettingTests
         Assert.Equal(b + 0, art.Dungeon[0].Pixels[0]);           // ground: every index moves (opaque)
         Assert.Equal(b + 4, art.Dungeon[1].Pixels[0]);
         Assert.Equal(2, art.Wilderness[0].Pixels[0]);            // no Amiga set: DOS
-        Assert.Equal(6, art.Rare[0].Pixels[0]);                  // [?] RANDCOM stays DOS
+        Assert.Equal(b + 1, art.Rare[0].Pixels[0]);              // RANDCOM: the Amiga set as it is (s19)
+        Assert.Same(art.Rare[0], art.Ground(CombatArt.RareFirstTile, dungeon: true)); // tile 0x22 in both sets
+        Assert.Same(art.Rare[0], art.Ground(CombatArt.RareFirstTile, dungeon: false));
+        Assert.Null(art.Ground(2, dungeon: true));               // past DUNGCOM's tiles, before the rare set
         var m = art.Monster(5, false)!;
         Assert.Equal(0, m.Pixels[0]);                            // icon: 0 stays see-through
         Assert.Equal(b + 7, m.Pixels[1]);
@@ -182,6 +185,25 @@ public class ArtSettingTests
 
         art.UseArt(PorArtChoice.Dos, palette.Base);
         Assert.Equal(1, art.Monster(5, false)!.Pixels[1]);       // the cache follows the change
+    }
+
+    [Fact]
+    public void The_amiga_backdrop_pens_are_the_amiga_programs()
+    {
+        // The DOS rule's colours moved to the Amiga pens (PorAmigaArt.BackdropPen): horizon 0/15, 8/7, ground 8/1/6
+        // as the Amiga rule (hunk 7 +0x38A2..) gives them.
+        Assert.Equal([(byte)4, (byte)15, (byte)12, (byte)14, (byte)12, (byte)1, (byte)5],
+            new byte[] { 0, 15, 8, 7, 8, 1, 6 }.Select(c => PorAmigaArt.BackdropPen(c)!.Value));
+        Assert.Null(PorAmigaArt.BackdropPen(2));
+        // With both programs: the DOS sky list moved to pens is the Amiga sky list (hunk 8 +0x35F, file offset 0x1604B).
+        var dos = Environment.GetEnvironmentVariable("GOLDBOX_POR_DIR");
+        var amiga = Environment.GetEnvironmentVariable("GOLDBOX_POR_AMIGA_DIR");
+        if (string.IsNullOrWhiteSpace(dos) || !Directory.Exists(dos) || string.IsNullOrWhiteSpace(amiga)
+            || !File.Exists(Path.Combine(amiga, "program")))
+            return;
+        var sky = PorViewArt.Load(new PorGameDirectory(dos)).Program.SkyColours;
+        var program = File.ReadAllBytes(Path.Combine(amiga, "program"));
+        Assert.Equal(program.AsSpan(0x1604B, 16).ToArray(), sky.Select(c => PorAmigaArt.BackdropPen(c)!.Value).ToArray());
     }
 
     [Fact]

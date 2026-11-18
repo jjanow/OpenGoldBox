@@ -310,6 +310,22 @@ public static class PorEngineSave
         return party;
     }
 
+    /// <summary>One character as a save's party entry holds it (record, items, effects; null lists when empty, as the
+    /// program writes no file for them). Used by the party menu's roster (<see cref="Por.PorRoster"/>).</summary>
+    public static SavedCharacter Character(EclCharacter c, string? stem) =>
+        Member(stem, c.Record, c.Items.Count > 0 ? [.. c.Items] : null, c.Effects.Count > 0 ? [.. c.Effects] : null);
+
+    /// <summary>A party entry back as the VM's character (raw bytes are authoritative).</summary>
+    public static EclCharacter Character(SavedCharacter m)
+    {
+        var c = new EclCharacter([.. m.Raw]);
+        foreach (var r in m.Items ?? [])
+            c.Items.Add([.. r.Raw]);
+        foreach (var r in m.Effects ?? [])
+            c.Effects.Add([.. r.Raw]);
+        return c;
+    }
+
     /// <summary>The save as <see cref="PorSaveGame"/>, the reader the game loads with.</summary>
     public static PorSaveGame ToSaveGame(EngineSaveDocument save) => new(ToSavgam(save));
 

@@ -319,6 +319,11 @@ public sealed partial class FightSpells : IFightSpells
                 var (cx, cy) = map.Position(caster);
                 var (ax, ay) = Aim;
                 fight.Record(caster)[CombatRecord.Facing] = (byte)map.DirectionToward(cx, cy, ax, ay);
+                // 0x27E05–0x27E56: the cast's flight to the aim, resident; Fireball (47) and Lightning Bolt (51) have
+                // their own cue (docs/re/sound.md §2.4).
+                fight.State.Sound.BeginResident();
+                fight.State.Sound.Cue(spell switch { 47 => Sound.SoundCue.Fireball, 51 => Sound.SoundCue.LightningBolt, _ => Sound.SoundCue.Cast });
+                fight.State.Sound.EndResident();
             }
             Effects.RemoveInvisibility(caster);
             if (!UsingItem)
@@ -685,6 +690,13 @@ public sealed partial class FightSpells : IFightSpells
         {
             if (Targets[i] is not { } t)
                 continue;
+            if (i < n - 1)
+            {
+                // 0x286F5–0x2874E: a further target gets the cast's flight from the caster, resident (sound.md §2.4).
+                F.Sound.BeginResident();
+                F.Sound.Cue(Sound.SoundCue.Cast);
+                F.Sound.EndResident();
+            }
             bool saved = Effects.SavingThrow(t, info.SaveType, mod);
             if (t[EffectHandlers.CreatureType] > 1 || t[EffectHandlers.Size] > 1)
                 saved = true;

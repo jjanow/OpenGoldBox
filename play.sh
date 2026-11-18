@@ -4,7 +4,7 @@
 #
 #   ./play.sh --game ~/games/POOLRAD      first start: the player's Pool of Radiance (DOS) folder (remembered;
 #                                         imported into ~/.cache/goldbox/modules/ first, again when it changes)
-#   ./play.sh                             load save A of that folder
+#   ./play.sh                             the party menu (create characters, load a game, begin)
 #   ./play.sh --module DIR                play a module made by goldbox-import (no game folder needed)
 #   ./play.sh --save B                    load SAVGAMB.DAT
 #   ./play.sh --area 20 --at 15,4,W       enter area script 20 at 15,4 facing west (no save)

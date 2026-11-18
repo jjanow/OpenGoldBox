@@ -329,7 +329,7 @@ GAME.OVR (traced s18; v1.3 offsets):
   by 0x2C (`mov dx,2Ch / mul dx / … mov al,[di+3648h]` at 0xD7D9, 0x16F79, 0x2DE78). 36 rows: the overland move
   clamps y to 0–35 (0x16F4D), and the 5 × 5 view clamps its top row to 0–31 (0x2DE06) and its left column to 0–39.
   The values are **1-based tile numbers**: the view draws value − 1 (0x2DE87). talonius and DrEvil place the same
-  44 × 36 table; which tile file the view draws them from is not traced here `[?]`.
+  44 × 36 table. The tiles are drawn from `SQRPACI.DAX` (settled s19, below).
 - **Three windows.** The wilderness scripts 25 / 26 / 27 switch to view modes 2 / 3 / 4 outdoors (DS:49FA, 0x3F4C),
   and the overland x of the party is VM $49C3 plus **DS:3C76[mode]** = 0 / 13 / 26 (0x16F5E square ahead, 0x2DB94
   marker, 0x2DDC6 view). The square-ahead routine (0x16EE3: $49C3 + DS:2736[facing], $49C4 + DS:273F[facing]) clamps
@@ -365,8 +365,54 @@ GAME.OVR (traced s18; v1.3 offsets):
   talonius `BuildWildernessMap` also keys the records by index (its conditions were not compared).
   `OverlandMap.DrawnTile` (Core) implements the table above.
 - The tile word − 1 is pushed as a byte, so a stored word above 255 draws its low byte − 1 (one v1.3 record does).
+- **What the cells mean** (s19, static: the scripts that write them): $4A8C = 255 is set by the New Phlan council
+  (ECL3 block 8 $ACFA) when it asks for the Bivant heir, so site 3 (12,31, tile 2) hides the buccaneer base until
+  then; $4A9F = 1 when the party stumbles on the nomad camp (ECL7 block 26 $9BFF), $4AD2 = 1 and $4A7C bit 3 are set
+  by the nomad camp's own script (ECL7 block 17 $A1BC, $B2C4 / $B3A0), so site 4 (25,11, grass) shows the camp only
+  between finding it and those events; $4AA0 bits 0 / 1 are set by the eastern wilderness script when the Lizardman
+  Keep / the kobold caves are found (ECL8 block 27 $9B4A / $9CE0), so sites 7 and 5 hide them until found; $4AB3 =
+  254 is set in Yarash's pyramid (ECL7 block 23 $AC53), so sites 8 and 9 change the pyramid island and Phlan's square
+  once Yarash is beaten. Site 6 (33,23) always shows its tile.
 - The module holds both tables in `rules/overland.json` (module-format.md §6); the round trip rebuilds the 1,584 and 54
   bytes.
+
+### Overland view, move and entry (program read s19; Core `Overland`, Data `PorOverlandArt`)
+
+Checked against DOSBox-X (PoR v1.3, EGA, save A put on the overland with `goldbox-tools save-overland`): 17 views of
+120 × 120 pixels match with 0 differing pixels, marker included (`OverlandViewTests`); the position lines matched too.
+
+- **Tiles.** Two sheets of 128 tiles of 24 × 24: the game init loads `SQRPACI.DAX` block 1 (DS:5E52, tiles 0–127) and
+  block 2 (DS:5E56, tiles 128–255) (GAME.OVR 0xEAA9 / 0xEACB); the tile draw 0x31B5D takes t < 128 from the low sheet,
+  else t & 0x7F from the high one. Outdoors LOADFILES (o3 ≠ 255, $49E6 = 0) copies `BACPAC.DAX` block 1 (40 tiles) over
+  low tiles 0–39 (0x1A4E → 0x31A8E, start 0, count 0x28); the combat ground loads (DUNGCOM / WILDCOM at 0, RANDCOM at
+  34, 0xD82C) overwrite the same tiles, so BACPAC puts them back. Its 40 tiles equal SQRPACI's 0–39 (tested).
+- **Screen.** The view is at pixel (8, 8) (window cells 1–15, no inner box), tile (dx, dy) at (24·dx, 24·dy). The
+  window's top-left square is (column + x − 2, y − 2) clamped to 0–39 / 0–31 (0x2DD9B).
+- **Marker** (0x2DB87): ICON.DAX blocks 0–2 and 128–130 (animation slots 9–11, loaded when the command routine starts
+  in modes 2–4 with DS:49F9 < 2), colour 0 see-through, light magenta → black kept opaque (DS:0CD2 → DS:0CF2). Square:
+  column + x → < 2 as is, < 42 → 2, < 43 → 3, else 4; y → < 2 as is, < 34 → 2, < 35 → 3, else 4. Frame: counter
+  DS:6DDC (0–5) → ICON block counter / 2 (+ 128 when odd), then counter + 1 mod 6; facings above 3 are mirrored
+  (0x31FD2). No idle animation: one frame per redraw. On entry the interface (START 0x36FE) redraws (frame c) and draws
+  the marker once more over it (frame c + 1). DOSBox-X after a load: frames 2 + 3; then one per step. `[?]` The
+  counter's value after a load or a script switch is not traced (the session sets 2 after a load).
+- **Commands** (0x17054, modes 2–4): the line DS:04DF (the 3D line without Area), C (no status check), V, E, S, L as
+  in 3D; Up / Right / Down / Left set the facing to 0 / 2 / 4 / 6 and end the command (vector 0, step, redraw,
+  vector 1). The routine ends with DS:49F9 := DS:49FA (0x173E7).
+- **Step** (0x17438 → 0x16EE3, when $6DC9 < 255): x and y + the facing's deltas as signed bytes, clamped to 0–15 /
+  0–35; the stored tile at (column + x, y): 0x4E, 0x7E–0x80, 0x82–0x84, 0xA8–0xAC, 0xAE–0xB3, 0xBC, 0xDD–0xDE,
+  0xE1–0xE9, 0xF5 refuse silently; 0x66–0x6C and 0x72 refuse with the river message (cs:0x7F4, flashed on row 24 in
+  colour 14 for DS:49E2 × 225 ms, START 0x7DF8) while $4AA2 = 0; else $49C3/$49C4 = x, y and 12 hours pass (clock
+  count 12, unit 3), Search or not. The scripts' vector 0 cancels steps off the window's edge ($6DC9 = 255).
+- **Position line** (START 0x34C2): x = $49C3 + 13 in mode 3, + 26 in mode 4 (immediates), y = $49C4.
+- **What runs on a special square** is the wilderness script, not the program: vector 1 walks its tables (ECL7 block
+  26 $9B0A: rows $B04A, counts $B061, columns $B053, cases $B06A → ONGOTO; the other two scripts likewise) and runs the
+  site's text, picture and HMENU; leaving sets $49E6 = 1, LOADFILES #127, the position ($C04B–$C04D), the disk and
+  NEWECL (tested: Phlan's north edge → CITY → block 14 at 4,0 S, as DOSBox-X). Otherwise a random encounter may come.
+  Pictures on the overland are drawn in the 3D view's box over a blank window; sprites over the tiles (DOSBox-X).
+- The CALL ids the wilderness scripts use besides $2C90 ($C01B, $0806, $2C4E, $2C51, $C003, $C009) have no case in the
+  handler 0x3A15 (address − 0x7FFF compared with 0xAC91, 1, 2, 0x3A04, 0x401F, 0x4019): no effect in v1.3. The
+  SAVETABLEs of ECL7 block 26's vector 4 into $D000 / $6300 once Yarash is beaten land on no VM area (the writer
+  0x814A ignores them): no effect in v1.3.
 - The special-location table (DS:0C36 in v1.3) sits verbatim in the START.EXE file. v1.3's START.EXE is EXEPACKed, but this table survives the packing
   unchanged. File offsets: v1.1 (47,936 bytes) **33786**, v1.2 (75,536 bytes) **61380**, v1.3 (65,231 bytes) **52740**.
   The 54 bytes are identical in all three. `geo.py special START.EXE --offset N` decodes them. The table contents are not
@@ -459,4 +505,4 @@ the numbers below test the shipped code.
 - Settled (s18, static): ECL5 block 3 loads GEO 3 or 5 by facing (table at $9C24); block 5 loads 3 + Random(4) =
   3–6 at $9CD4, and at $9AD8 a facing table per current map 3–6 (module-format.md §6).
 - The WALLDEF piece layout.
-- What the overland tiles look like (the tile file the view draws from) and what the special-location VM cells mean.
+- Settled s19: the overland tile file (SQRPACI, BACPAC) and what the special-location cells mean (above).

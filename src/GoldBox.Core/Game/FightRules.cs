@@ -468,6 +468,20 @@ public static class FightRules
         }
     }
 
+    /// <summary>
+    /// 0x12AF4 as the attack routine calls it (0x13CBE, 0x13F2E, 0x13F92): <see cref="ApplyAttackResult"/> with
+    /// <paramref name="damage"/>, then the display hook <see cref="FightState.AttackMessage"/> with the message's
+    /// arguments (<paramref name="manner"/>, <paramref name="shown"/>, the hit) and the state it saw before the damage.
+    /// </summary>
+    private static void ShowAttack(EclCharacter att, EclCharacter def, int manner, byte damage, byte shown, bool hit,
+        FightState fight, IFightEffects effects)
+    {
+        bool wasInPlay = def[InPlay] != 0;
+        bool spellLost = damage > 0 && fight.Record(def)[CombatRecord.SpellCast] > 0;
+        ApplyAttackResult(def, damage, hit, fight, effects);
+        fight.AttackMessage?.Invoke(new AttackMessage(att, def, manner, shown, hit, wasInPlay, spellLost));
+    }
+
     /// <summary>0x2BEBC: while the creature has an invisibility effect (0x19, START 0x2199), 0x2AF10 removes it.</summary>
     public static void RemoveInvisibility(EclCharacter c, IFightEffects effects)
     {
@@ -521,12 +535,13 @@ public static class FightRules
         int hits = 0, attacks = 0;
         if (IsHelpless(def))
         {
+            fight.Sound.Cue(Sound.SoundCue.Impact); // 0x13C54
             while (aRec[CombatRecord.AttackPhase] > 0 && att[AttacksLeft + aRec[CombatRecord.AttackPhase]] == 0)
                 aRec[CombatRecord.AttackPhase]--; // [?] the program has no lower bound here
             fight.AttacksMade[Math.Clamp((int)aRec[CombatRecord.AttackPhase], 0, 2)]++;
             attacks++;
             hits++;
-            ApplyAttackResult(def, (byte)(def[Hp] + 5), true, fight, effects);
+            ShowAttack(att, def, 3, (byte)(def[Hp] + 5), 1, true, fight, effects);
             RemoveInvisibility(att, effects);
             att[0x113] = 0;
             att[0x114] = 0;
@@ -568,10 +583,11 @@ public static class FightRules
                     if (AttackRoll(att, def, defense, fight, memory, random, effects) || IsHelpless(def))
                     {
                         fight.HitsMade[phase]++;
+                        fight.Sound.Cue(Sound.SoundCue.Impact); // 0x13EF1
                         hits++;
                         anyHit = true;
                         byte dmg = WeaponDamage(att, def, phase, backstab, fight, random, effects);
-                        ApplyAttackResult(def, dmg, true, fight, effects);
+                        ShowAttack(att, def, backstab ? 2 : behind ? 1 : 0, dmg, dmg, true, fight, effects);
                         if (def[InPlay] != 0)
                             effects.Trigger(phase + 1, att, fight);
                         if (def[InPlay] == 0)
@@ -580,7 +596,10 @@ public static class FightRules
                 }
             }
             if (!anyHit)
-                ApplyAttackResult(def, 0, false, fight, effects);
+            {
+                fight.Sound.Cue(Sound.SoundCue.Miss); // 0x13F6F
+                ShowAttack(att, def, backstab ? 2 : behind ? 1 : 0, 0, 0, false, fight, effects);
+            }
             done = att[0x113] == 0 && att[0x114] == 0;
             aRec[CombatRecord.SweepBudget] = 0;
         }

@@ -36,6 +36,8 @@ public sealed class CombatScreen
     /// <summary>The digits typed into a number request (drop money's amount).</summary>
     private string _typed = "";
     private TimeSpan _delayEnd;
+    /// <summary>The pending request's screen has been drawn at least once (a zero wait still shows one frame).</summary>
+    private bool _drawn;
     private object? _clickAnswer;
     private bool _hasClickAnswer;
 
@@ -212,6 +214,7 @@ public sealed class CombatScreen
         };
         _typed = "";
         _hasClickAnswer = false;
+        _drawn = false;
         if (request is ListRequest l)
             _list.Sync(l);
         if (request is DelayRequest d)
@@ -272,7 +275,7 @@ public sealed class CombatScreen
         switch (request)
         {
             case DelayRequest:
-                return _clock.Elapsed >= _delayEnd || input.Pressed(GameAction.Confirm);
+                return (_drawn && _clock.Elapsed >= _delayEnd) || input.Pressed(GameAction.Confirm);
             case KeyRequest:
                 return input.NewInput is not null || input.Pressed(GameAction.Confirm) || input.Pressed(GameAction.Cancel);
             case ListRequest l:
@@ -690,6 +693,7 @@ public sealed class CombatScreen
     public void Draw(IndexedFrame f, ActionInput input)
     {
         Sync();
+        _drawn = true;
         if (_runner.Pending is ListRequest page)
         {
             _list.Draw(f, _font, page, input);
@@ -745,10 +749,11 @@ public sealed class CombatScreen
                 if (_art.Ground(map.Tables.Tile(arena[x, y]), _view.Dungeon) is { } tile)
                     CombatArt.Draw(f, tile, MapX + c * Square, MapY + r * Square, false, clip, opaque: true);
             }
-        bool box = _view.Mode is CombatMode.Menu or CombatMode.Aim or CombatMode.Manual or CombatMode.Done
-            or CombatMode.Speed or CombatMode.Question;
-        if (box && _view.Cursor is { } cur)
-            DrawCursor(f, cur, clip);
+        // The box stays painted until its cell or the view is redrawn (CombatView.Cursor follows the program's redraws).
+        if (_view.Cursor is { } cur)
+            for (int i = 0; i < 4; i++)
+                if (map.Tables.IconCell(_view.CursorSize, i, out int dx, out int dy) && _view.InView(cur.X + dx, cur.Y + dy))
+                    DrawCursor(f, (cur.X + dx, cur.Y + dy), clip);
         foreach (var c in _view.Fight.List)
         {
             if (!map.OnMap(c))
@@ -761,6 +766,8 @@ public sealed class CombatScreen
         }
         if (_view.HitMarker is { } hm && _art.Sprite(CombatArt.HitMarker) is { } skull)
             CombatArt.Draw(f, skull, MapX + (hm.X - _view.ViewX) * Square, MapY + (hm.Y - _view.ViewY) * Square, false, clip);
+        if (_view.Flash is { } fl && _art.Sprite(fl.Sprite) is { } flash)
+            CombatArt.Draw(f, flash, MapX + (fl.X - _view.ViewX) * Square, MapY + (fl.Y - _view.ViewY) * Square, fl.Mirror, clip);
     }
 
     /// <summary>
@@ -819,11 +826,24 @@ public sealed class CombatScreen
             Text(f, PanelCol, 3, Fit(_text[CombatMsg.PanelHitpoints].Trim() + " " + c[FightRules.Hp].ToString(CultureInfo.InvariantCulture), 16), Chrome.Green);
             // [?] AC as 60 − record byte 0x111, as the party list (ExploreScreen); DOSBox-X: Darkstar 7, Thrender 1.
             Text(f, PanelCol, 5, Fit(_text[CombatMsg.PanelAc].Trim() + " " + (60 - c[FightRules.Ac]).ToString(CultureInfo.InvariantCulture), 16), Chrome.Green);
+            // START 0x1675: the weapon's name (ending in a space, as composed) word-wrapped into (23, 7)–(38, 9) through
+            // 0x77F8 (DOSBox-X s19: "TWO-HANDED SWORD " takes two rows).
             if (_view.Fight is { } fight && FightRules.Equipment(c, fight.Items)[FightRules.SlotWeapon] is { } w)
-                Text(f, PanelCol, 7, Fit(ItemNames.Compose(w, _itemWord).Trim(), 16), Chrome.Green);
+            {
+                var box = new TextWindow(PanelCol, 7, 38, 9);
+                box.PrintIn(PanelCol, 7, 38, 9, ItemNames.Compose(w, _itemWord), true, Chrome.Green);
+                for (int row = 7; row <= 9; row++)
+                    for (int col = PanelCol; col <= 38; col++)
+                        if (box.Cell(row, col) is ({ } ch and not '\0', var colour))
+                            Text(f, col, row, ch.ToString(), colour);
+            }
         }
-        for (int i = 0; i < _view.Messages.Count && MessageRow + i <= 21; i++)
-            Text(f, PanelCol, MessageRow + i, Fit(_view.Messages[i].Text, 16), _view.Messages[i].Colour);
+        // The message area: the panel's cells as START 0x16EC / 0x77F8 wrote them.
+        var panel = _view.Panel;
+        for (int row = 1; row <= CombatView.PanelBottom; row++)
+            for (int col = CombatView.PanelLeft; col <= CombatView.PanelRight; col++)
+                if (panel.Cell(row, col) is ({ } ch and not '\0', var colour))
+                    Text(f, col, row, ch.ToString(), colour);
     }
 
     private void DrawLines(IndexedFrame f, ActionInput input)
@@ -831,6 +851,9 @@ public sealed class CombatScreen
         // Row 23: Aim's range line, and while watching the cast's "Spell:" line or an item use's "Item:" line.
         if (_view.StatusLine is { } s && _view.Mode is CombatMode.Aim or CombatMode.Manual or CombatMode.Watch)
             Text(f, 0, StatusRow, Fit(s, 40), Chrome.Green);
+        // An AI creature's move prompt (AiMoveStep) stays on row 24 while nothing else is asked there.
+        if (_view.MovePrompt is { } mp0 && _runner.Pending is null or DelayRequest)
+            Text(f, 0, MenuRow, Fit(mp0, 40), Chrome.Green);
         switch (_runner.Pending)
         {
             case CombatMoveRequest m:

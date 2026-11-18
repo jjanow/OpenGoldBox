@@ -36,6 +36,7 @@ public static class ModuleSchemas
         ("rules-temple.schema.json", typeof(TempleDocument)),
         ("rules-combat-map.schema.json", typeof(CombatMapDocument)),
         ("overland.schema.json", typeof(OverlandDocument)),
+        ("pcsound.schema.json", typeof(PcSoundDocument)),
     ];
 
     /// <summary>The options of <see cref="ModuleJson"/> that reject members the types do not have.</summary>

@@ -20,9 +20,12 @@ public sealed record CombatPicture(int Width, int Height, byte[] Pixels);
 /// Art setting (<see cref="UseArt"/>): the ground tiles, monster icons and COMSPR come from the chosen variant (the Amiga
 /// overlay, each with its palette), DOS where it has none. The Amiga DUNGCOM holds DOS's 25 tiles in the same order
 /// plus one (only DOS's count is used, so the rare-feature numbering after it stays DOS's); WILDCOM matches tile for
-/// tile. [?] RANDCOM stays DOS: the Amiga set has 8 tiles with two of DOS's 6 in swapped places, and which tile byte
-/// the Amiga program gives each rare terrain is not read. [?] Party icons stay DOS: the Amiga CHEAD/CBODY use other
-/// indices for the recoloured pairs (CBODY: DOS 8 → 4, 12 → 7) and the Amiga recolouring routine is not read.
+/// tile. RANDCOM (read s19): both programs load it at tile 0x22 (DOS GAME.OVR 0xD867, after DUNGCOM 0–0x18 and WILDCOM
+/// 0–0x21; Amiga hunk 13 +0x1706) and share the terrain table, so the Amiga set (8 tiles; its 2 and 3 are DOS's 3 and
+/// 2, its 6 and 7 never drawn) is used as it is, as the Amiga shows it. [?] Party icons stay DOS: the Amiga record
+/// keeps the icon bytes 2 further on, its recolouring (hunk 16 +0x3B6) maps other index pairs (9/1, 10/2, 11/3, 6/7,
+/// 5/8, 15/14) to colour nibbles that are Amiga pens, and it ORs the head into the body; turning a DOS character's
+/// EGA colour bytes into those pens is not settled for EGA 2–5.
 /// </para>
 /// </summary>
 public sealed class CombatArt
@@ -71,7 +74,8 @@ public sealed class CombatArt
         var dosWild = Items(Single(_dir, "WILDCOM", 1, PorArtChoice.Dos, null), opaque: true);
         Dungeon = SameOrDos(Items(Single(_dir, "DUNGCOM", 1, choice, paletteBase), opaque: true), dosDungeon);
         Wilderness = SameOrDos(Items(Single(_dir, "WILDCOM", 1, choice, paletteBase), opaque: true), dosWild);
-        Rare = Items(Single(_dir, "RANDCOM", 1, PorArtChoice.Dos, null), opaque: true);
+        var dosRare = Items(Single(_dir, "RANDCOM", 1, PorArtChoice.Dos, null), opaque: true);
+        Rare = SameOrDos(Items(Single(_dir, "RANDCOM", 1, choice, paletteBase), opaque: true), dosRare);
     }
 
     /// <summary>The variant's ground set cut to DOS's tile count (the tile bytes number DOS's set), or DOS's when it has fewer.</summary>
@@ -121,22 +125,28 @@ public sealed class CombatArt
         return p;
     }
 
+    /// <summary>The tile the rare-feature set starts at (the loader 0x31A8E called with 0x22 for RANDCOM, GAME.OVR 0xD867).</summary>
+    public const int RareFirstTile = 0x22;
+
     /// <summary>
     /// A ground tile by the terrain table's tile byte (DS:2744 + 4·t + 3; 22 = open ground): an index into the area's
-    /// set, the rare-feature set after it [?] (which tile bytes the rare terrains 26–29 carry is not checked).
+    /// set (DUNGCOM 0–0x18, WILDCOM 0–0x21), the rare-feature set from <see cref="RareFirstTile"/> (terrains 0x1A–0x1F
+    /// carry tiles 0x22–0x27).
     /// </summary>
     public CombatPicture? Ground(int tile, bool dungeon)
     {
         var set = dungeon ? Dungeon : Wilderness;
-        if (tile >= 0 && tile < set.Count)
+        if (tile >= 0 && tile < set.Count && tile < RareFirstTile)
             return set[tile];
-        int r = tile - set.Count;
+        int r = tile - RareFirstTile;
         return r >= 0 && r < Rare.Count ? Rare[r] : null;
     }
 
     /// <summary>
     /// A monster icon: CPIC block <paramref name="picture"/> (+ 128 for the attack pose) from the first CPIC file that
-    /// has it (the disks hold byte-identical copies, por-art-formats.md).
+    /// has it (the disks hold byte-identical copies, por-art-formats.md). The icon loader (GAME.OVR 0x31C34, read s19)
+    /// recolours a CPIC picture on load through the tables DS:0CD2 → DS:0CE2: colour 13 (light magenta) becomes 8 (dark
+    /// grey, black on the combat palette); the DOS art only ([?] what the Amiga art needs is not checked).
     /// </summary>
     public CombatPicture? Monster(int picture, bool attack)
     {
@@ -145,11 +155,19 @@ public sealed class CombatArt
         {
             p = null;
             for (int d = 1; d <= 8 && p is null; d++)
-                p = One(Single(_dir, $"CPIC{d}", id, _choice, _paletteBase));
+            {
+                var s = Single(_dir, $"CPIC{d}", id, _choice, _paletteBase);
+                p = One(s);
+                if (p is not null && s is (_, 0))
+                    p = p with { Pixels = MonsterColours(p.Pixels) };
+            }
             _cpic[id] = p;
         }
         return p;
     }
+
+    /// <summary>The CPIC load remap (DS:0CE2 against the identity DS:0CD2): 13 → 8, every other colour kept.</summary>
+    public static byte[] MonsterColours(byte[] px) => [.. px.Select(v => v == 13 ? (byte)8 : v)];
 
     /// <summary>A COMSPR picture (missiles, the hit marker).</summary>
     public CombatPicture? Sprite(int id)
