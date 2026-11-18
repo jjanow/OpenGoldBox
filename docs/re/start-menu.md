@@ -46,7 +46,8 @@ routine.
 - **Where:** the main program calls 0019:0025 (START 0x11D) and 001C:0025 (0x122) unless ParamStr(1) is the debug word
   (START 0x116). Those are overlay stubs: unit GAME.OVR 0xD4 (size 0x80E, stub segment 0x19) entry 0x627 = **0x6FB**
   (the introduction) and unit 0x9AC entry 0xFD = 0xAA9 (the code wheel). Code-segment offsets below are the unit's,
-  so CS:n is GAME.OVR 0xD4 + n.
+  so CS:n is GAME.OVR 0xD4 + n. **D** (s24): `START STING` (the debug word) boots straight to the party menu; the
+  Client does the same when its start word is the program's.
 - **The waits** use GetTime (START 0x7CCF: h·360000 + m·6000 + s·100 + hundredths, from INT 21h 2Ch; the m·6000
   product keeps only its low word, so the clock steps back where it passes a multiple of 65536, at minutes 11, 22, 33,
   44, 55: a wait that spans one runs until a key `[?]` not modelled). Near routine **0xD4**(n): end := GetTime +
@@ -92,12 +93,35 @@ routine.
   counts as a bug; `PassesPerMillisecondAt3000Cycles` keeps the measured rate for tests). Client
   `IntroScreen`, shown at start-up over the party menu (not with `--save` / `--area`, which stand for the debug start
   that skips the intro and the code wheel). Pictures DOS TITLE 1 and 2 from the module (`art/dos/title`); register 1
-  is drawn by recolouring index 1. Under Best / Amiga the title page shows the Amiga intro painting
-  (`art/amiga/intro/0/1`, s18) when the module has it, without the lightning (an EGA register trick; index 1 is
-  another colour there); the logo stays DOS, the credits keep the DOS layout and texts with the frame drawn as the
-  setting draws every frame (the Amiga intro's own logo sheet and sequence are not imported `[?]`). Departures: the intro draws from a generator of its own (so `--seed` stays repeatable); every page
+  is drawn by recolouring index 1. Under Best / Amiga with the Amiga intro's pages in the module (importer 0.7.8) the
+  **Amiga intro** plays instead (below). With an older module that has only the painting (`art/amiga/intro/0/1`,
+  s18) the title page shows it, without the lightning (an EGA register trick; index 1 is another colour there), and
+  the logo and credits stay DOS. Departures: the intro draws from a generator of its own (so `--seed` stays repeatable); every page
   is shown (as with POOL.CFG's `F`); the GetTime step-back is not copied; the DOS clock's 55 ms steps are not
   modelled. A page whose picture or texts are missing is left out. The code wheel is still skipped.
+
+**Amiga v1.0 intro (read s24 from disk A's `intro`, decrunched; hunk 4; P, no emulator run).** The program
+(`program`, hunk 10 +0x556) first runs the code wheel (hunk 25 +0x4576), starts song 1 (hunk 27 +0x6E54) `[?]`
+(music: not modelled), then Executes disk A's `intro`. The intro (hunk 1) finds the program's screen, runs hunk 4 +0
+and then Delays 150 ticks (3 s) with the system display back (what shows then is the program's screen, not read
+`[?]`; the Client goes straight on). Hunk 4 +0: a 320×200 4-plane screen with its own copper list (one palette, all
+black at first), then nine pages, each: a black wait (+0xB14), the screen cleared (+0x7EE), the page blitted, a fade
+in, a hold (+0xAE4), a fade out (+0x8EC). Pages: eight credits panels from the 320×600 sheet (sheet row, screen row,
+rows): SSI logo (93, 30, 48), a joining word (455, 60, 16), Ubi Soft (398, 30, 56), the presenting word (474, 60, 19), the AD&D logo
+and copyright (141, 20, 146), the game's logo (0, 20, 92; the only page with the second colour table), the SSI
+credits box (288, 20, 110), the Amiga version's credits (499, 20, 100); last the title painting (whole screen), faded
+in and held, then +0x26C ends at once (no fade out). Fades: 16 steps, each colour component (4 bits) divided by
+16, 15 … 1 in and 1 … 16 out (`divu`, integer), 9 beam passes per step. Waits and holds count passes of a loop that
+returns while the beam is on line 128 (gap 81, hold 1001) and test the left mouse button (CIA-A bit 6) each pass: a
+press ends the whole intro (+0xB02 → +0x26C). Keys are not read. `[?]` Timing: several passes fall in one frame and
+how many depends on the CPU; from 68000 cycle counts (7.09 MHz PAL) about 4 wait passes per frame (hold ≈ 5.0 s,
+gap ≈ 0.4 s) and two frames per fade step (≈ 0.64 s per fade). **Engine:** the importer writes each panel as a whole
+320×200 screen with its colours (`art/amiga/intro/0/2`–`/9`, rows and places read from the code by
+`AmigaIntro.Panels`); Core `AmigaIntroSequence` (phases, divisor, the estimate as named constants); Client
+`AmigaIntroScreen` (one palette run reserved and rewritten each frame, `ScreenPalette.Reserve` / `SetRun`), shown at
+start-up under Best / Amiga when the module has all nine pages. Departure: a key, pad button or click also counts
+(full controller support), and one that comes during a fade ends the intro at the next wait or hold (the Amiga reads
+the button's level only then).
 
 ## 2. The party menu (0x19AE0)
 
@@ -113,7 +137,7 @@ Enabled bytes (0x19B2D–0x19BA3), `PartyMenu.Enabled`:
 |---|---|---|
 | 0 Create, 5 Add, 10 Exit | initial byte (1 in v1.3), never written | same |
 | 1 Drop, 2 Modify, 4 View, 6 Remove, 8 Save, 9 Begin | on | off |
-| 3 Train | on when $6DA8 ≠ 0 or the debug flag DS:470C; never cleared in this branch | off |
+| 3 Train | on when $6DA8 ≠ 0 or the debug flag DS:470C (J, training.md); never cleared in this branch | off |
 | 7 Load | off | on |
 
 Home / End select the previous / next member (0x23819, shared with the camp; wrapping `[?]`). Any key but E and S

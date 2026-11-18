@@ -87,7 +87,12 @@ public sealed class ExploreScreen : IScreen
         _highlight = highlight ?? new MenuHighlight { Index = LoadMenuIndex(game.Content.SaveFolder, char.ToUpperInvariant(lastLetter)) };
         _game = game;
         _player = player;
-        game.Loop.Redrawn += () => player.PositionLineErased = false; // the step redraws the position line (0x17707)
+        game.Loop.Redrawn += () =>
+        {
+            player.PositionLineErased = false; // the step redraws the position line (0x17707)
+            Interlocked.Increment(ref _viewRedraws); // and the view replaces a picture kept on screen (DrawView)
+        };
+        game.Loop.PassBeforeVector1 += () => player.PictureArmed = true; // the step's pass sets DS:84E1 (0x4223)
         _runner = runner;
         _host = host;
         _art = art ?? new ClientArt(game.Content, null, new ScreenPalette(), Data.Por.PorArtChoice.Dos);
@@ -180,7 +185,6 @@ public sealed class ExploreScreen : IScreen
             _lineAtCommand = StatusLine(_game, _player.Camping);
             _scriptAtCommand = _game.Vm.CurrentScript;
         }
-        _player.PictureArmed = true; // the area loop's pass sets DS:84E1 (0x4223)
         if (command == AreaCommand.Forward)
             _player.Text.Clear(); // [?] when the original clears the text window is not read; we clear on a step
         _runner.Start(() => _game.Loop.Execute(command));
@@ -254,7 +258,8 @@ public sealed class ExploreScreen : IScreen
 
     /// <summary>
     /// The load menu's highlight after picking <paramref name="slot"/>: its place among the saves present (the menu
-    /// lists the letters of the SAVGAM?.DAT files found, A to J). 0 when unknown.
+    /// lists the letters of the SAVGAM?.DAT files found, A to J; a module holds its shipped saves as engine saves
+    /// <c>x.json</c>, which count the same). 0 when unknown.
     /// </summary>
     public static int LoadMenuIndex(string? saveFolder, char slot)
     {
@@ -262,9 +267,11 @@ public sealed class ExploreScreen : IScreen
             return 0;
         var letters = Directory.EnumerateFiles(saveFolder)
             .Select(Path.GetFileName)
-            .Where(n => n is { Length: 11 } && n.StartsWith("SAVGAM", StringComparison.OrdinalIgnoreCase) &&
-                        n.EndsWith(".DAT", StringComparison.OrdinalIgnoreCase))
-            .Select(n => char.ToUpperInvariant(n![6]))
+            .Select(n => n is { Length: 11 } && n.StartsWith("SAVGAM", StringComparison.OrdinalIgnoreCase) &&
+                         n.EndsWith(".DAT", StringComparison.OrdinalIgnoreCase) ? n[6]
+                : n is { Length: 6 } && n.EndsWith(".json", StringComparison.OrdinalIgnoreCase) ? n[0]
+                : '\0')
+            .Select(char.ToUpperInvariant)
             .Where(ch => ch is >= 'A' and <= 'J')
             .Distinct()
             .Order()
@@ -485,7 +492,8 @@ public sealed class ExploreScreen : IScreen
             return;
         }
         // Keys pressed during a pause wait for the next key read (ActionInput.ReadingKeys); a party page reads them there.
-        input.ReadingKeys(_runner.Pending is not DelayRequest { ReportInput: false });
+        input.ReadingKeys(_runner.Pending is not DelayRequest { ReportInput: false },
+            _runner.Pending is not (KeyRequest { AsMenu: false } or TextRequest));
         if (_runner.Pending is { } request)
         {
             var reply = Answer(request, input);
@@ -583,7 +591,13 @@ public sealed class ExploreScreen : IScreen
         }
 
         if (request is DelayRequest d)
-            _delayEnd = _clock.Elapsed + d.Duration;
+        {
+            // A chained pause starts where the last one ended, unless that was longer ago than the pause itself.
+            var start = _clock.Elapsed;
+            if (d.Chained && _delayEnd <= start && start - _delayEnd < d.Duration)
+                start = _delayEnd;
+            _delayEnd = start + d.Duration;
+        }
     }
 
     private readonly record struct Reply(object? Value);
@@ -927,6 +941,14 @@ public sealed class ExploreScreen : IScreen
         return s;
     }
 
+    /// <summary>
+    /// The picture the window last showed, its frame and <see cref="_viewRedraws"/> then: kept while a later one cannot
+    /// be drawn (another disk's), until the view is redrawn.
+    /// </summary>
+    private (ViewPicture Picture, int Frame, int Redraws)? _pictureOnScreen;
+    /// <summary>View redraws so far (AreaLoop.Redrawn, on the logic thread).</summary>
+    private int _viewRedraws;
+
     private void DrawView(IndexedFrame f, TextFont font)
     {
         if (_player.Scene is { } scene)
@@ -954,12 +976,15 @@ public sealed class ExploreScreen : IScreen
         }
         else
             _game.DrawView(f, ViewX, ViewY, _game.Loop.ShowAreaMap);
+        if (ShownPicture is null || _player.ViewBlanked || _player.Interface == Venue.Shop)
+            _pictureOnScreen = null;
         if (_player.ViewBlanked && OverlandUi.Shown(_game))
         {
             // CLEARBOX blanked cells 1–15 (OverlandUi.Blank above)
         }
-        // Shop/temple (START 0x3379 case 1): an empty view box, also after a PICTURE before CLRMON (DOSBox-X s22). [?] A
-        // shop entered without CLRMON (no v1.3 script does that) is not checked.
+        // Shop/temple (START 0x3379 case 1): an empty view box, also after a PICTURE before CLRMON (DOSBox-X s22) and
+        // with the picture still armed (no CLRMON; DOSBox-X s24: empty on entry and after View → Exit, the 3D view back
+        // on leaving).
         else if (_player.ViewBlanked || _player.Interface == Venue.Shop)
         {
             for (int y = 0; y < 88; y++)
@@ -969,10 +994,16 @@ public sealed class ExploreScreen : IScreen
         else if (ShownPicture is { } picture && _art.Pictures.Draw(f, ViewX, ViewY, picture, _anim.Frame))
         {
             // the encounter picture, portrait or sprite in the chosen art (ViewPictures)
+            _pictureOnScreen = (picture, _anim.Frame, Volatile.Read(ref _viewRedraws));
         }
         else if (ShownPicture is { } elsewhere && _art.Pictures.Exists(elsewhere))
         {
-            // On another disk only: the program's loader finds no block and draws nothing (DOSBox-X s22), the view stays.
+            // On another disk only: the program's loader finds no block and draws nothing, so the window keeps what it
+            // showed: the view, or the picture drawn before (DOSBox-X s24: PICTURE 2, then PICTURE 3, which only PIC4
+            // holds, leaves picture 2 up; the step's redraw then shows the view). [?] Whether the kept picture animates
+            // in a later menu is not checked; it stays on the frame last drawn.
+            if (_pictureOnScreen is { } kept && kept.Redraws == Volatile.Read(ref _viewRedraws))
+                _art.Pictures.Draw(f, ViewX, ViewY, kept.Picture, kept.Frame);
         }
         else if (_player.ViewOverlay is { } lines)
         {

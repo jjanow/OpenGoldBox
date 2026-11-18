@@ -28,6 +28,10 @@ public sealed class PartyMenuScreen(PartyMenuFlow flow, ScriptRunner runner, ISc
 
     private PlayerRequest? _shown;
     private PlayerRequest? _background;
+    private readonly System.Diagnostics.Stopwatch _clock = System.Diagnostics.Stopwatch.StartNew();
+    private TimeSpan _delayEnd;
+    /// <summary>Train's Learn list (a full-screen list page).</summary>
+    private readonly ListPage _list = new();
     private int _selected, _word;
     private string _typed = "";
     private bool _switched;
@@ -73,7 +77,8 @@ public sealed class PartyMenuScreen(PartyMenuFlow flow, ScriptRunner runner, ISc
         if (runner.Pending is not { } request)
             return;
         // A key kept from a pause is read here (ActionInput.ReadingKeys).
-        input.ReadingKeys(request is not DelayRequest { ReportInput: false });
+        input.ReadingKeys(request is not DelayRequest { ReportInput: false },
+            request is not (KeyRequest { AsMenu: false } or TextRequest));
         if (Answer(request, input) is { } reply)
         {
             runner.Answer(reply.Value);
@@ -128,6 +133,16 @@ public sealed class PartyMenuScreen(PartyMenuFlow flow, ScriptRunner runner, ISc
         _hasClick = false;
         if (r is PartyMenuRequest or PickRequest or SheetRequest or IconRequest or ModifyRequest)
             _background = r;
+        if (r is DelayRequest d)
+            _delayEnd = _clock.Elapsed + d.Duration;
+        if (r is ListRequest l)
+        {
+            _list.Sync(l);
+            if (l.SharedHighlight)
+                _list.SetAction(l, flow.Highlight.Start(l.Actions.Count));
+            else
+                flow.Highlight.Index = _list.SelectedAction;
+        }
         _word = r switch
         {
             SheetRequest s => flow.Highlight.Start(s.Actions.Count),
@@ -168,11 +183,27 @@ public sealed class PartyMenuScreen(PartyMenuFlow flow, ScriptRunner runner, ISc
                 if (input.Pressed(GameAction.PreviousMember)) return new Reply(ChoiceRequest.PreviousMember);
                 if (input.Pressed(GameAction.NextMember)) return new Reply(ChoiceRequest.NextMember);
                 if (input.Pressed(GameAction.Confirm)) return new Reply(_selected);
+                // The hidden J (0x19E2C), from its binding (the pad's left stick) as from the J key.
+                if (input.Pressed(GameAction.HallJ)) return new Reply(PartyMenuFlow.PasswordAnswer);
                 if (Key(input, out var k))
                     for (int i = 0; i < n; i++)
                         if (char.ToUpperInvariant(m.Items[i].Name[0]) == k)
                             return new Reply(i);
                 return null;
+            }
+            case DelayRequest { ReportInput: true }:
+                if (input.NewInput is not null || input.Pressed(GameAction.Confirm) || input.Pressed(GameAction.Cancel))
+                    return new Reply(true);
+                return _clock.Elapsed >= _delayEnd ? new Reply(false) : null;
+            case DelayRequest:
+                return _clock.Elapsed >= _delayEnd || input.SkipsPause ? new Reply(null) : null;
+            case ListRequest l:
+            {
+                var a = _list.Update(l, input);
+                if (a is null)
+                    return null;
+                flow.Highlight.Index = a.Action >= 0 && a.Action < l.Actions.Count ? a.Action : _list.SelectedAction;
+                return new Reply(a);
             }
             case PickRequest p:
             {
@@ -381,6 +412,9 @@ public sealed class PartyMenuScreen(PartyMenuFlow flow, ScriptRunner runner, ISc
         int col = x / 8, row = y / 8;
         switch (runner.Pending)
         {
+            case ListRequest l:
+                _list.Hover(l, col, row);
+                break;
             case PartyMenuRequest m when row >= ItemsRow && row < ItemsRow + m.Items.Count:
                 _selected = row - ItemsRow;
                 break;
@@ -419,11 +453,16 @@ public sealed class PartyMenuScreen(PartyMenuFlow flow, ScriptRunner runner, ISc
         }
         switch (runner.Pending)
         {
+            case ListRequest l:
+                return _list.Click(l, click);
             case PartyMenuRequest m:
                 if (click.Right)
                     return null;
                 if (row >= ItemsRow && row < ItemsRow + m.Items.Count)
                     Give(row - ItemsRow);
+                // The prompt on the bottom line: the hidden J for the mouse (the original shows no entry for it).
+                else if (row == MenuRow && m.Notice is null && col < m.Prompt.Length)
+                    Give(PartyMenuFlow.PasswordAnswer);
                 else if (row >= RosterRow && row - RosterRow < flow.Party.Members.Count && row < ItemsRow)
                 {
                     // A click on a member makes it current: step to it.
@@ -510,8 +549,21 @@ public sealed class PartyMenuScreen(PartyMenuFlow flow, ScriptRunner runner, ISc
     public void Draw(IndexedFrame f, ActionInput input)
     {
         var pending = runner.Pending;
+        if (pending is ListRequest list)
+        {
+            _list.Draw(f, font, list, input);
+            return;
+        }
         f.Clear(0);
-        var back = pending is ChoiceRequest or TextRequest or KeyRequest ? _background : pending;
+        var back = pending is ChoiceRequest or TextRequest or KeyRequest or DelayRequest ? _background : pending;
+        if (flow.Hall.Page is { } page)
+        {
+            // Train's page (0x1C32D) over the menu window: "NAME will become:" and the levels.
+            Chrome.Box(f, 0, 0, 39, 23);
+            foreach (var (col, row, text, colour) in page)
+                Chrome.Text(f, font, col, row, Fit(text, 39 - col), colour);
+            back = null;
+        }
         switch (back)
         {
             case PartyMenuRequest m:
@@ -528,6 +580,8 @@ public sealed class PartyMenuScreen(PartyMenuFlow flow, ScriptRunner runner, ISc
                 break;
             case ModifyRequest md:
                 DrawSheet(f, md.Character, md.Field);
+                break;
+            case null when flow.Hall.Page is not null:
                 break;
             default:
                 Chrome.Box(f, 0, 0, 39, 23);
@@ -556,6 +610,12 @@ public sealed class PartyMenuScreen(PartyMenuFlow flow, ScriptRunner runner, ISc
             case TextRequest t:
                 DrawTextEntry(f, t, input);
                 break;
+        }
+        // J's message and Train's (START 0x7DF8 / 0x2233: bottom line, during the pause).
+        if (flow.Hall.Message is { } msg)
+        {
+            Chrome.Clear(f, 0, MenuRow, 40);
+            Chrome.Text(f, font, 0, MenuRow, Fit(msg.Text, 40), msg.Colour);
         }
         if (Problem is { } p2)
             Chrome.Text(f, font, 0, MenuRow, Fit(p2, 40), Chrome.Yellow);

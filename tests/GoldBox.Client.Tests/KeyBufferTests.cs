@@ -56,6 +56,142 @@ public class KeyBufferTests
         Assert.False(i.HasBuffered);
     }
 
+    /// <summary>Presses one key per frame while the program does not read, with a key-up frame between.</summary>
+    private static void Waiting(ActionInput i, params Keys[][] presses)
+    {
+        foreach (var p in presses)
+        {
+            Frame(i, p);
+            i.ReadingKeys(false);
+            Frame(i);
+            i.ReadingKeys(false);
+        }
+    }
+
+    private static void Read(ActionInput i)
+    {
+        Frame(i);
+        i.ReadingKeys(true);
+    }
+
+    [Fact]
+    public void An_extended_key_after_a_character_reads_as_its_scan_code()
+    {
+        // DOSBox-X s24, party menu: X then Right during the hall word's message opened Modify ('M' = Right's 0x4D).
+        var i = new ActionInput(InputBindings.Defaults());
+        Waiting(i, [Keys.X], [Keys.Right]);
+        Read(i);
+        Assert.Equal((InputDevice.Keyboard, "M"), i.NewInput);
+        Assert.False(i.Pressed(GameAction.MenuRight));
+        Assert.False(i.HasBuffered);
+    }
+
+    [Fact]
+    public void A_character_after_an_extended_key_reads_as_an_extended_code()
+    {
+        // DOSBox-X s24: Right then C read an extended 0x63, which no menu takes: nothing happened, C was used up.
+        var i = new ActionInput(InputBindings.Defaults());
+        Waiting(i, [Keys.Right], [Keys.C]);
+        Read(i);
+        Assert.Null(i.NewInput);
+        Assert.False(i.HasBuffered);
+        // An extended key after an extended key reads as the last one.
+        Waiting(i, [Keys.Right], [Keys.Left]);
+        Read(i);
+        Assert.Equal((InputDevice.Keyboard, "Left"), i.NewInput);
+        Assert.True(i.Pressed(GameAction.MenuLeft));
+        Waiting(i, [Keys.Home], [Keys.LeftAlt, Keys.X]);
+        Read(i);
+        Assert.Equal((InputDevice.Keyboard, "Alt+X"), i.NewInput);
+    }
+
+    [Fact]
+    public void A_single_read_leaves_an_extended_keys_scan_code_waiting()
+    {
+        // A key wait or line input calls GetKey once: an extended key first gives 0 and its scan code stays; the next
+        // read takes it as a character (DOSBox-X s24: Right at the character-name prompt typed M).
+        var i = new ActionInput(InputBindings.Defaults());
+        Waiting(i, [Keys.Right]);
+        Frame(i);
+        i.ReadingKeys(true, scanRead: false);
+        Assert.Equal((InputDevice.Keyboard, "Right"), i.NewInput);
+        Assert.True(i.HasBuffered);
+        Read(i);
+        Assert.Equal((InputDevice.Keyboard, "M"), i.NewInput);
+        Assert.False(i.HasBuffered);
+        // With more keys behind it, the next read drains them and keeps the last as a character.
+        Waiting(i, [Keys.Right], [Keys.C]);
+        Frame(i);
+        i.ReadingKeys(true, scanRead: false);
+        Assert.Equal((InputDevice.Keyboard, "Right"), i.NewInput);
+        Read(i);
+        Assert.Equal((InputDevice.Keyboard, "C"), i.NewInput);
+        // A character first: the single read drains everything as GetKey does.
+        Waiting(i, [Keys.X], [Keys.Up]);
+        Frame(i);
+        i.ReadingKeys(true, scanRead: false);
+        Assert.Equal((InputDevice.Keyboard, "H"), i.NewInput);
+        Assert.False(i.HasBuffered);
+    }
+
+    [Fact]
+    public void One_waiting_extended_key_is_read_as_itself()
+    {
+        var i = new ActionInput(InputBindings.Defaults());
+        Waiting(i, [Keys.Right]);
+        Read(i);
+        Assert.Equal((InputDevice.Keyboard, "Right"), i.NewInput);
+        Assert.True(i.Pressed(GameAction.MenuRight));
+    }
+
+    [Fact]
+    public void The_buffer_holds_fifteen_keys_and_loses_later_ones()
+    {
+        // DOSBox-X s24: fifteen keys waiting, the last one C, opened Create; sixteen or seventeen did not.
+        var i = new ActionInput(InputBindings.Defaults());
+        for (int k = 0; k < 14; k++)
+            Waiting(i, [Keys.X]);
+        Waiting(i, [Keys.C]);
+        Assert.Equal(ActionInput.BufferSize, i.Buffered);
+        Read(i);
+        Assert.Equal((InputDevice.Keyboard, "C"), i.NewInput);
+        for (int k = 0; k < 15; k++)
+            Waiting(i, [Keys.X]);
+        Waiting(i, [Keys.C]);
+        Assert.Equal(ActionInput.BufferSize, i.Buffered);
+        Read(i);
+        Assert.Equal((InputDevice.Keyboard, "X"), i.NewInput);
+    }
+
+    [Fact]
+    public void A_waiting_pad_button_read_last_is_itself()
+    {
+        var i = new ActionInput(InputBindings.Defaults());
+        Waiting(i, [Keys.Right]);
+        PadFrame(i, Buttons.A);
+        i.ReadingKeys(false);
+        Read(i);
+        Assert.True(i.Pressed(GameAction.Confirm));
+        Assert.Equal((InputDevice.Gamepad, "A"), i.NewInput);
+    }
+
+    [Fact]
+    public void Dos_key_bytes()
+    {
+        Assert.Equal(((byte)'m', (byte)0x32), DosKeys.Of("M"));
+        Assert.Equal(((byte)0, (byte)0x32), DosKeys.Of("Alt+M"));
+        Assert.Equal(((byte)0x13, (byte)0x1F), DosKeys.Of("Ctrl+S"));
+        Assert.Equal(((byte)0, (byte)0x48), DosKeys.Of("Up"));
+        Assert.Equal(((byte)'\r', (byte)0), DosKeys.Of("Enter"));
+        Assert.Equal(((byte)'2', (byte)3), DosKeys.Of("D2"));
+        Assert.Null(DosKeys.Of("F12"));
+        Assert.Equal("M", DosKeys.OfCharacter(0x4D));
+        Assert.Equal("Space", DosKeys.OfCharacter(0x20));
+        Assert.Equal("Up", DosKeys.OfScan(0x48));
+        Assert.Equal("Alt+X", DosKeys.OfScan(0x2D));
+        Assert.Null(DosKeys.OfScan(0x63));
+    }
+
     [Fact]
     public void Pad_buttons_wait_like_keys_and_clicks_are_dropped()
     {
@@ -157,6 +293,10 @@ public class KeyBufferTests
         Frame(i, Keys.LeftAlt, Keys.Q);
         i.ReadingKeys(false);
         Assert.Equal(0, i.TakeAiKey());                              // Alt-Q: menu only
+        Frame(i);
+        Frame(i, Keys.D2);
+        i.ReadingKeys(false);
+        Assert.Equal(0x32, i.TakeAiKey());                           // the check compares the byte: '2' is Alt-M's 0x32
         Assert.Equal("ALT-M", PromptLabels.Key("Alt+M"));
     }
 

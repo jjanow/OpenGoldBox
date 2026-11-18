@@ -18,7 +18,7 @@ public class EclProfileTests
         Assert.Null(EclProfiles.ForVm(null)); // no vm = no ECL VM (module-format.md §4)
         Assert.True(EclProfiles.TryGet("ecl-por-1.3", out var p));
         Assert.Same(EclProfiles.Por13, p);
-        Assert.Equal(["ecl-por-1.3"], EclProfiles.Names);
+        Assert.Equal(["ecl-por-1.3", "ecl-sotsb-1.3"], EclProfiles.Names);
     }
 
     [Theory]

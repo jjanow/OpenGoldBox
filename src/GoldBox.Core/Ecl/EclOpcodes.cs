@@ -69,12 +69,22 @@ public static class EclOpcodes
         SpriteOff = 0x31, FindItem = 0x32, PrintRet = 0x33, Clock = 0x34, SaveTable = 0x35, AddNpc = 0x36,
         LoadPieces = 0x37, Program = 0x38, Who = 0x39, Delay = 0x3A, Spell = 0x3B, Protect = 0x3C, ClearBox = 0x3D;
 
+    /// <summary>Opcodes of the later dialects (Curse / SotSB, docs/re/survey-sotsb.md §3.5); PoR has no handler for them.</summary>
+    public const byte Dump = 0x3E, FindSpecial = 0x3F, DestroyItems = 0x40, AddEp = 0x41;
+
     /// <summary>
     /// The table as profile data (<see cref="EclProfiles.Por13"/>): the rows below, and the IF-skip counts of GAME.OVR
     /// 0x9379. These differ from the handler's count for 0C, 36 (one short) and 15, 25, 26, 2B (0); 0x1F = 2; opcodes
     /// ≥ 0x3E = 0.
     /// </summary>
     public static EclOpcodeTable Por13 { get; } = BuildTable();
+
+    /// <summary>
+    /// The Secret of the Silver Blades table (v1.00–v1.30, docs/re/survey-sotsb.md §3.4–3.5; <see cref="EclProfiles.Sotsb"/>):
+    /// PoR's rows with CLOCK taking a second operand, 0x3C a stub, and 3E–41 added; dispatcher OVR 0x458B covers
+    /// 0x00–0x41 except 0x1F. The IF-skip counts are the chain at OVR 0xAFB0, given here as the program has them.
+    /// </summary>
+    public static EclOpcodeTable Sotsb { get; } = BuildSotsbTable();
 
     /// <summary>Handler info, or null for an opcode with no handler (0x1F, ≥ 0x3E).</summary>
     public static EclOpcodeInfo? Get(byte op) => Por13.Get(op);
@@ -96,6 +106,43 @@ public static class EclOpcodes
         for (int op = 0; op < 256; op++)
             skip[op] = op == Undefined1F ? 2 : rows[op]?.SkipCount ?? 0;
         return new EclOpcodeTable(rows, skip, new Dictionary<byte, string> { [Undefined1F] = "UNDEF1F" });
+    }
+
+    private static EclOpcodeTable BuildSotsbTable()
+    {
+        const EclEffectSource P = EclEffectSource.Program;
+        var t = Build();
+        EclOpcodeInfo With(byte op, int skip) => t[op]! with { SkipCount = skip };
+        // Changed rows. SETUPMON: same 3 operands, the IF-skip now takes all 3 (PoR's mis-skip is fixed).
+        t[SetupMon] = With(SetupMon, 3);
+        // CLOCK (0x3D37) loads 2 operands; the IF-skip still takes 1 (the mis-skip Curse introduced).
+        t[Clock] = new EclOpcodeInfo(Clock, "CLOCK", ["amount", "unit"], EclVariadic.None, 1, P);
+        // 0x3C: the handler (0x4248) is an empty frame: it loads nothing and does not move the PC, so it is no handler
+        // here. [?] at run time (assumed to hang like an unhandled opcode; not run in DOSBox). No script uses it.
+        t[Protect] = null;
+        // New rows. 3E–40 from Curse (names from the program's debug list, OVR 0x431CE), 41 new in SotSB.
+        // DUMP (0x424F): PC + 1, then drops the current character [?] details.
+        t[Dump] = new EclOpcodeInfo(Dump, "DUMP", [], EclVariadic.None, 0, P);
+        // FIND SPECIAL (0x4282): "=" if the current character has effect v, else "≠".
+        t[FindSpecial] = new EclOpcodeInfo(FindSpecial, "FINDSPECIAL", ["effect"], EclVariadic.None, 1, P);
+        // DESTROY ITEMS (0x42D3): every member's items whose byte +0x2E equals the operand are removed (readied ones
+        // unreadied first). [?] which item field +0x2E is.
+        t[DestroyItems] = new EclOpcodeInfo(DestroyItems, "DESTROYITEMS", ["item_type"], EclVariadic.None, 1, P);
+        // ADD EP (0x43FF): o1 = 0 current character, else every member; o2 = amount, split over the member's classes.
+        t[AddEp] = new EclOpcodeInfo(AddEp, "ADDEP", ["who", "amount"], EclVariadic.None, 2, P);
+
+        // IF-skip, OVR 0xAFB0 (compare chain; anything not listed skips the opcode byte only).
+        var skip = new int[256];
+        void Skip(int n, params byte[] ops) { foreach (var op in ops) skip[op] = n; }
+        Skip(1, 0x01, 0x02, 0x0A, 0x0E, 0x11, 0x12, 0x1D, 0x20, 0x2D, 0x32, 0x34, 0x36, 0x38, 0x39, 0x3C, 0x3F, 0x40);
+        Skip(2, 0x03, 0x08, 0x09, 0x0F, 0x10, 0x1F, 0x22, 0x41);
+        Skip(3, 0x04, 0x05, 0x06, 0x07, 0x0B, 0x0C, 0x21, 0x28, 0x2A, 0x2F, 0x30, 0x35, 0x37, 0x3B);
+        Skip(4, 0x14, 0x23);
+        Skip(5, 0x2E);
+        Skip(6, 0x1E, 0x2C);
+        Skip(8, 0x27);
+        Skip(14, 0x29);
+        return new EclOpcodeTable(t, skip, new Dictionary<byte, string> { [Undefined1F] = "UNDEF1F", [Protect] = "PROTECT" });
     }
 
     private static EclOpcodeInfo?[] Build()

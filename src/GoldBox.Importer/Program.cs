@@ -99,7 +99,7 @@ Console.WriteLine($"module written to {Path.GetFullPath(outDir)}");
 Console.WriteLine($"  scripts {report.Scripts}, areas {report.Areas}, maps {report.Maps}, monsters {report.Monsters}, " +
                   $"item lists {report.ItemLists}, effect lists {report.EffectLists}, treasure lists {report.TreasureLists}, " +
                   $"item types {report.ItemTypes}");
-Console.WriteLine($"  art: {report.Pictures} pictures, {report.ArtData} data blocks; program texts {report.Texts}; rules tables {report.RulesTables}; saves {report.Saves} files, {report.EngineSaves} engine saves" +
+Console.WriteLine($"  art: {report.Pictures} pictures, {report.ArtData} data blocks; program texts {report.Texts}; rules tables {report.RulesTables}; saves {report.Saves} files read, {report.EngineSaves} engine saves" +
                   (report.Overland ? "; overland" : ""));
 if (report.Amiga is { } amiga)
     Console.WriteLine($"  Amiga overlay: {amiga.Pictures} pictures; placeholders left out: {string.Join(", ", amiga.Skipped)}" +

@@ -458,8 +458,8 @@ public sealed class EncounterHost : IEclHost
 
     /// <summary>
     /// The type a random TREASURE's first item gets when its second roll is 48 or 49: stack residue in the program,
-    /// left by whatever ran before (docs/re/item-format.md "Random treasure"). DOSBox-X read 0 at both Slums sites
-    /// on every sample (s18); 0 makes a blank item of type 0. [?] The wilderness sites were not sampled.
+    /// left by whatever ran before (docs/re/item-format.md "Random treasure"). DOSBox-X read 0 at all seven v1.3 sites
+    /// on every sample (Slums s18, wilderness s24); 0 makes a blank item of type 0. [?] Only for modules.
     /// </summary>
     public byte FirstItemTypeResidue { get; set; }
 

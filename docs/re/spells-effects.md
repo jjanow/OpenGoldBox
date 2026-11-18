@@ -373,8 +373,8 @@ The class index of 0x29C5B ([bp−0xC], signed) is written only when a class qua
 (0x74 > 0) and no qualifying class takes the residue. That is the case for every monster: no class levels and drain
 bytes 255/255 (so g = 1, 0x74 and 0x75 become 254). In v1.3 the spell comes only from the clerical scrolls in
 `ITEM2`–`ITEM4` (no monster memorises it; random scrolls never hold spell 56). A drained party member normally
-has a class to raise; one at its race limit or its class's top level has none and takes the residue too (E, s22,
-below).
+has a class to raise; one at its race limit or its class's top level has none and takes the residue too (E, s22;
+D, s24, below).
 
 DOSBox-X, residue probe (`dosbox-trace-method.md`), fixture `fight_restoration`: a scroll used by a level-1 cleric
 in a fight on a drained party member (a class was found), then on a goblin guard, and outside a fight on another
@@ -386,7 +386,16 @@ byte for byte after a stat recalculation: THAC0 0x110 had been recomputed by the
 the turn-start recalculation 0x9A8A, but its trigger was not pinned; the routine itself does not recalculate). What writes the 8 was not traced; a cast from a memorised Restoration (impossible in v1.3) might
 see another value.
 
-## Restoration at the race limit — P, E (s22)
+At the limit, DOSBox-X (s24, fixture `restoration_limit`, residue probe): the same scroll read outside a fight on a
+drained human fighter 8 (top level, male) and a drained elf fighter 7 with Strength 18 (the elf's limit row, female).
+The probe read **8** both times (BP 3BD0), neither gained a level, and the camp save after it holds exactly the
+records the routine gives with index 8 followed by the stat recalculation (`RestorationProgramTests`): HP + g, XP
+10,000,000, gender + 1. It matters on screen: the man becomes FEMALE, and the woman's gender 2 has no name. View
+reads the gender table (DS:0FEC, 7-byte strings) unchecked, so entry 2 is the next table's first string and the
+sheet reads "COPPER ELF". The Client reads the same table the same way (`ClientResources.Gender`), so it shows
+the same text.
+
+## Restoration at the race limit — P, E (s22), D (s24)
 
 The race limit is START 0x3AF7, called inside the class loop with the class's **current** level L (before the raise)
 and the current Strength byte 0x10; it answers "stopped" only on the exact (race, class, L, Strength) rows below, so
@@ -399,7 +408,7 @@ reads 0 past its row; classes 1, 3, 4 and 7 hold −1 from level 2 up). For a dr
   and magic-user slots and newly known cleric spells, the fighter's 0xA1, thief skills).
 - **At the limit** (single class, or every class stopped or at its top): no class qualifies. The hit points still come
   back (0x32, 0x11B, 0xB1 + g; 0x75 − g; 0x74 − 1), the level does not, the uninitialised index takes the + 1
-  (DOSBox-X: 8 → gender 0x9E + 1, so a male becomes female), and experience below 10,000,000 becomes 10,000,000.
+  (DOSBox-X: 8 → gender 0x9E + 1, so a male becomes female and a female shows "COPPER"; seen on two party members, s24), and experience below 10,000,000 becomes 10,000,000.
   0x2AA87 still runs (nothing changes for the unchanged levels unless those bytes were stale). The same happens at a
   class's top level for any race (a human cleric 6, fighter 8, magic-user 6, thief 9).
 - **Multi-class with one class at its limit**: that class is skipped and another gains the level (the scan in class

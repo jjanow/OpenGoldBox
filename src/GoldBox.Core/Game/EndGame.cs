@@ -27,6 +27,13 @@ public sealed record EndGameAnimation(int Block, int Column, int Row, int Loops)
 public sealed record EndGamePause : EndGameStep;
 
 /// <summary>
+/// Amiga (hunk 13 +0x25CE): every frame of block <paramref name="Block"/> once, first to last or, with
+/// <paramref name="Backwards"/>, last to first, each drawn whole at screen cell (<paramref name="Column"/>,
+/// <paramref name="Row"/>) and held for <see cref="EndGame.AmigaFrameTime"/>; the last one drawn stays.
+/// </summary>
+public sealed record EndGameFrames(int Block, int Column, int Row, bool Backwards) : EndGameStep;
+
+/// <summary>
 /// Pool of Radiance DOS v1.3: the end game, ECL PROGRAM 8 (GAME.OVR 0x20941), run after Tyranthraxus' fight
 /// (ECL5 block 7 $A82A). Program read s19 and seen in DOSBox-X (docs/re/training.md "End game"). No key is waited for:
 /// the lines print, the pictures and animations of <c>FINAL&lt;disk&gt;.DAX</c> play on the clock, then three delays;
@@ -79,9 +86,58 @@ public static class EndGame
         return s;
     }
 
-    /// <summary>How long frame <paramref name="delay"/> stays up: (speed + 3) × delay hundredths of a second.</summary>
-    public static TimeSpan FrameTime(int gameSpeed, uint delay) => TimeSpan.FromMilliseconds(10.0 * (gameSpeed + 3) * delay);
+    /// <summary>
+    /// How long a frame with <paramref name="delay"/> stays up: 0x206A3 draws the frame on every pass and moves on once
+    /// the DOS clock has moved <b>more than</b> (speed + 3) × delay hundredths since the last change (0x2076E: jg / ja),
+    /// so whole BIOS ticks (<see cref="DosClock.TicksAbove"/>). DOSBox-X s24 (speed 4, 3000 cycles): the dragon's
+    /// delays 2, 1, 2, 1 held 3, 2, 3, 2 ticks (one loop 0.550 s), the spirit's 4, 2, 2, 3, 2, 2 held 6, 3, 3, 4, 3, 3
+    /// (1.199 s); 15 loops each.
+    /// </summary>
+    public static TimeSpan FrameTime(int gameSpeed, uint delay) =>
+        DosClock.Ticks(DosClock.TicksAbove((long)(gameSpeed + 3) * delay));
 
     /// <summary>The Delay of START 0x7E4E: speed × 225 ms.</summary>
     public static TimeSpan Pause(int gameSpeed) => TimeSpan.FromMilliseconds(225 * gameSpeed);
+
+    // ---- Amiga v1.0 (hunk 13 +0x26AE) ----------------------------------------------------------------------------
+
+    /// <summary>The FINAL blocks the Amiga end game draws (its <c>final.dax</c> has only these).</summary>
+    public static readonly IReadOnlyList<int> AmigaBlocks = [2, 7, 8];
+
+    /// <summary>
+    /// Where the Amiga draws them: the 88×88 picture window, screen cell (3, 3) (h19 +0x10CE draws at (x − 1, y − 1)
+    /// of the view buffer, which the refresh h25 +0x896 copies one cell further right and down).
+    /// </summary>
+    public const int AmigaColumn = 3, AmigaRow = 3;
+
+    /// <summary>Each Amiga frame's hold: dos.library Delay(100) (h36 +0), 100 ticks of 1/50 s, whatever the game speed.</summary>
+    public static readonly TimeSpan AmigaFrameTime = TimeSpan.FromSeconds(2);
+
+    /// <summary>
+    /// The Amiga end game (hunk 13 +0x26AE, read s24 from the program): the same texts at the same rows, but only its
+    /// own three blocks, in the picture window: the dragon (2) first to last, the spirit (7) first to last, block 8
+    /// last to first (the call's step −1: the spirit fades and the pool dries); no arena, no party figures, no loops
+    /// by game speed and no closing pauses. The state byte is 7 meanwhile and restored after, then the screen is
+    /// redrawn, as on DOS.
+    /// </summary>
+    public static IReadOnlyList<EndGameStep> AmigaSteps()
+    {
+        var s = new List<EndGameStep> { new EndGameClearText() };
+        for (int i = 0; i < 3; i++)
+            s.Add(new EndGameLine(17 + i, i));
+        s.Add(new EndGameFrames(2, AmigaColumn, AmigaRow, false));
+        s.Add(new EndGameClearText());
+        for (int i = 0; i < 6; i++)
+            s.Add(new EndGameLine(17 + i, 3 + i));
+        s.Add(new EndGameFrames(7, AmigaColumn, AmigaRow, false));
+        s.Add(new EndGameClearText());
+        for (int i = 0; i < 4; i++)
+            s.Add(new EndGameLine(17 + i, 9 + i));
+        s.Add(new EndGameFrames(8, AmigaColumn, AmigaRow, true));
+        return s;
+    }
+
+    /// <summary>The frame order of <paramref name="step"/> for a block of <paramref name="frames"/> frames (0-based).</summary>
+    public static IEnumerable<int> FrameOrder(EndGameFrames step, int frames) =>
+        step.Backwards ? Enumerable.Range(0, frames).Reverse() : Enumerable.Range(0, frames);
 }

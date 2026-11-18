@@ -120,9 +120,22 @@ public sealed partial class CombatChooser
             Say(who, Text[CombatMsg.BeginsCasting]);
     }
 
-    /// <summary>The monster AI's messages (0xABC0–0xBC8C) in the panel. [?] Their rows and pause are not read.</summary>
+    /// <summary>
+    /// The monster AI's messages (0xABC0–0xBC8C) in the panel. [?] Their rows and pause are not read, except the key
+    /// check's (0xBB81): Alt-M's (0xBBD7 / 0xBBED) and Alt-X's (0x1638E) go through START 0x1693 on row 24.
+    /// </summary>
     private void AiSays(EclCharacter who, AiMessage m)
     {
+        if (m is AiMessage.QuickMagicOn or AiMessage.QuickMagicOff or AiMessage.GodsIntervene)
+        {
+            PageSay(Text[m switch
+            {
+                AiMessage.QuickMagicOn => CombatMsg.AiMagicOn,
+                AiMessage.QuickMagicOff => CombatMsg.AiMagicOff,
+                _ => CombatMsg.GodsIntervene,
+            }]);
+            return;
+        }
         var word = m switch
         {
             AiMessage.FleesInPanic => CombatMsg.FleesInPanic,
@@ -382,8 +395,10 @@ public sealed partial class CombatChooser
         PageSay(text.Trim());
     }
 
+    /// <summary>START 0x1693 (0x2233): row 24 cleared, the text in green at column 0, the game-speed pause, row 24 cleared.</summary>
     private void PageSay(string text)
     {
+        View.MovePrompt = null; // row 24 is cleared, so an AI move prompt there goes
         View.PageMessage = text;
         if (Pauses)
             Ask(new DelayRequest(TimeSpan.FromMilliseconds(MessageMs)));

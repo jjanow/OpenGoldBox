@@ -158,15 +158,21 @@ public sealed class HallView
     // ---- End game ------------------------------------------------------------------------------------------------
 
     /// <summary>
-    /// The end game's FINAL blocks (<see cref="EndScene"/>, DOS art) at their cells, clipped to the screen; index 0 is
-    /// drawn (the blocks cover the view and its box as on the original screen).
+    /// The end game's FINAL blocks (<see cref="EndScene"/>) at their cells, clipped to the screen; index 0 is drawn (the
+    /// DOS blocks cover the view and its box as on the original screen). DOS art, or for the Amiga sequence
+    /// (<see cref="EndScene.Amiga"/>) the chosen art with its indices moved into its palette run (the Amiga sets table 4
+    /// for block 2 and table 3 for the others, h13 +0x2612; the importer gives each block that table).
     /// </summary>
     public static void DrawScene(IndexedFrame f, EndScene scene, ViewPictures pictures)
     {
         foreach (var layer in scene.Layers)
         {
-            if (pictures.Find("FINAL", layer.Block, scene.Disk, PorArtChoice.Dos, anyDisk: true) is not { Frames.Count: > 0 } img)
+            var img = scene.Amiga
+                ? pictures.Find("FINAL", layer.Block, scene.Disk, anyDisk: true)
+                : pictures.Find("FINAL", layer.Block, scene.Disk, PorArtChoice.Dos, anyDisk: true);
+            if (img is not { Frames.Count: > 0 })
                 continue;
+            int b = scene.Amiga ? pictures.RunBase(img) : 0;
             // Later frames of a FINAL block are XOR deltas against the first (loader 0x2E170, as PIC; DOSBox-X s22: the
             // spirit's frames drawn raw showed speckled colours and a black box).
             int k = Math.Clamp(layer.Frame, 0, img.Frames.Count - 1);
@@ -180,7 +186,7 @@ public sealed class HallView
                 {
                     int x = x0 + c, y = y0 + r;
                     if (x >= 0 && y >= 0 && x < f.Width && y < f.Height)
-                        f[x, y] = px[r * p.Width + c];
+                        f[x, y] = (byte)(b + px[r * p.Width + c]);
                 }
         }
     }

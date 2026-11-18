@@ -6,6 +6,10 @@ Usage (run with ``python3 -I``; inputs are untrusted data):
     ecl.py dis   GAMEDIR ECLn BLOCK [--hex] # disassembly (addresses, decoded strings, labels)
     ecl.py check GAMEDIR [-v]               # decode every block, report coverage / errors / opcode use
 
+    --vm sotsb (any command): Secret of the Silver Blades v1.00-v1.30 instead
+    (script base $8000, its opcode and IF-skip tables; docs/re/survey-sotsb.md
+    section 3, the same tables as the C# profile ecl-sotsb-1.3).
+
 GAMEDIR holds ECL1.DAX .. ECL8.DAX (any case).  ECLn may be given as "ECL3",
 "ECL3.DAX" or "3".  BLOCK is the DAX block id (= map/script id).
 
@@ -128,6 +132,38 @@ for _n, _ops in ((1, (0x01, 0x02, 0x0A, 0x0E, 0x11, 0x12, 0x1D, 0x20, 0x2D, 0x32
                  (4, (0x14, 0x23)), (5, (0x2E,)), (6, (0x1E, 0x2C)), (8, (0x27,)), (14, (0x29,))):
     for _o in _ops:
         SKIP[_o] = _n
+
+# Secret of the Silver Blades v1.00-v1.30 (docs/re/survey-sotsb.md 3.4-3.5; GAME.OVR v1.30 offsets).
+# PoR's rows, CLOCK with 2 operands, 0x3C a stub (no operand load, PC not moved: no handler here),
+# 3E-41 added.  IF-skip: the chain at OVR 0xAFB0.
+SOTSB_BASE = 0x8000
+SOTSB_VM_END = 0x9DFF
+SOTSB_OPS = dict(OPS)
+SOTSB_OPS[0x34] = ("CLOCK", ("amount", "unit"), None)
+del SOTSB_OPS[0x3C]
+SOTSB_OPS[0x3E] = ("DUMP", (), None)
+SOTSB_OPS[0x3F] = ("FINDSPECIAL", ("effect",), None)
+SOTSB_OPS[0x40] = ("DESTROYITEMS", ("item_type",), None)
+SOTSB_OPS[0x41] = ("ADDEP", ("who", "amount"), None)
+SOTSB_UNHANDLED_NAME = {0x1F: "UNDEF1F", 0x3C: "PROTECT"}
+SOTSB_SKIP = {}
+for _n, _ops in ((1, (0x01, 0x02, 0x0A, 0x0E, 0x11, 0x12, 0x1D, 0x20, 0x2D, 0x32, 0x34, 0x36, 0x38, 0x39, 0x3C,
+                      0x3F, 0x40)),
+                 (2, (0x03, 0x08, 0x09, 0x0F, 0x10, 0x1F, 0x22, 0x41)),
+                 (3, (0x04, 0x05, 0x06, 0x07, 0x0B, 0x0C, 0x21, 0x28, 0x2A, 0x2F, 0x30, 0x35, 0x37, 0x3B)),
+                 (4, (0x14, 0x23)), (5, (0x2E,)), (6, (0x1E, 0x2C)), (8, (0x27,)), (14, (0x29,))):
+    for _o in _ops:
+        SOTSB_SKIP[_o] = _n
+
+
+def use_vm(name):
+    """Switch the module's tables to another dialect ("por" or "sotsb")."""
+    global BASE, VM_END, OPS, SKIP, UNHANDLED_NAME
+    if name == "sotsb":
+        BASE, VM_END, OPS, SKIP, UNHANDLED_NAME = SOTSB_BASE, SOTSB_VM_END, SOTSB_OPS, SOTSB_SKIP, SOTSB_UNHANDLED_NAME
+    elif name != "por":
+        raise SystemExit("unknown --vm %s (por, sotsb)" % name)
+
 
 IFS = range(0x16, 0x1C)
 TERMINATORS = (0x00, 0x01, 0x13, 0x20)      # no fall-through
@@ -740,7 +776,7 @@ def cmd_check(gamedir, verbose):
     print("operand types: " + ", ".join("%02X:%d" % (k, v) for k, v in sorted(types.items())))
     print("opcode usage (decoded instructions, hard + speculative):")
     line = []
-    for op in range(0x40):
+    for op in range(256):
         if usage[op] or op in OPS:
             line.append("%02X %-10s %5d" % (op, opname(op), usage[op]))
     for k in range(0, len(line), 4):
@@ -753,6 +789,13 @@ def cmd_check(gamedir, verbose):
 
 
 def main(argv):
+    argv = list(argv)
+    if "--vm" in argv:
+        i = argv.index("--vm")
+        if i + 1 >= len(argv):
+            raise SystemExit("--vm needs a name (por, sotsb)")
+        use_vm(argv[i + 1])
+        del argv[i:i + 2]
     if len(argv) < 3:
         print(__doc__)
         return 2

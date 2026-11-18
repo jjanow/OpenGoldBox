@@ -8,6 +8,8 @@ public sealed class PorAmigaReport
     public int Pictures { get; set; }
     /// <summary>The title painting was imported (disk A's <c>intro</c> was found; it is optional).</summary>
     public bool Title { get; set; }
+    /// <summary>The intro's credits panels imported with it (0 without <c>intro</c>).</summary>
+    public int IntroPanels { get; set; }
     /// <summary>The party icons' colour pairs were read from <c>program</c> (<see cref="AmigaIconColoursDocument"/>).</summary>
     public bool IconColours { get; set; }
     /// <summary>Blocks left out on purpose (placeholders, incomplete sprites), as "file id".</summary>
@@ -198,6 +200,13 @@ public static class PorAmigaArt
 
     public const string IntroContainer = "intro";
     public const int TitleId = 1;
+
+    /// <summary>
+    /// The intro's credits panels (docs/re/por-art-formats.md §5) are <c>art/amiga/intro/0/2</c>–<c>/9</c>, in the order
+    /// the intro shows them, each a whole 320×200 screen as it stands once faded in (the panel's rows at their screen
+    /// row, index 0 elsewhere), with the colours its fade reads.
+    /// </summary>
+    public const int FirstPanelId = 2, PanelCount = 8;
     public const string TitleCategory = "title";
 
     /// <summary>The art category of a container (DAX name without disk digit, any case), or null when it has none.</summary>
@@ -330,6 +339,11 @@ public static class PorAmigaArt
             Write(moduleRoot, IntroContainer, TitleId,
                 [DaxPicture.Create(AmigaIntro.Width, AmigaIntro.Height, 0, 0, [pixels])], false, palette, null, 0);
             report.Title = true;
+            int id = FirstPanelId;
+            foreach (var (_, px, pal) in AmigaIntro.PanelScreens(intro))
+                Write(moduleRoot, IntroContainer, id++,
+                    [DaxPicture.Create(AmigaIntro.Width, AmigaIntro.Height, 0, 0, [px])], false, pal, null, 0);
+            report.IntroPanels = id - FirstPanelId;
         }
         return report;
     }
@@ -440,6 +454,16 @@ public static class PorAmigaArt
                 r.Mismatches.Add("amiga intro title: missing in the module");
             else if (!px.AsSpan().SequenceEqual(pixels) || !img.PaletteRgb.AsSpan().SequenceEqual(palette))
                 r.Mismatches.Add("amiga intro title: pixels or palette differ from the intro file");
+            int id = FirstPanelId;
+            foreach (var (_, panel, pal) in AmigaIntro.PanelScreens(File.ReadAllBytes(introPath)))
+            {
+                r.Count("AMIGA INTRO PANEL");
+                if (module.Art(IntroContainer, id, GoldBox.Data.Por.PorArtChoice.Amiga) is not { Variant: Variant, Frames: [{ Items: [var pp] }] } pi)
+                    r.Mismatches.Add($"amiga intro panel {id}: missing in the module");
+                else if (!pp.AsSpan().SequenceEqual(panel) || !pi.PaletteRgb.AsSpan().SequenceEqual(pal))
+                    r.Mismatches.Add($"amiga intro panel {id}: pixels or palette differ from the intro file");
+                id++;
+            }
         }
         return r;
     }

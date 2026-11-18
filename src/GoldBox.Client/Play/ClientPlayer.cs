@@ -3,6 +3,7 @@ using GoldBox.Core.Doors;
 using GoldBox.Core.Ecl;
 using GoldBox.Core.Explore;
 using GoldBox.Core.Game;
+using GoldBox.Data.Por;
 
 namespace GoldBox.Client.Play;
 
@@ -62,7 +63,12 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
     /// the area loop's pass (0x4223). HMENU (0x1EB2) and ENCMENU (0x2DA1) animate only while it and DS:84E0 (a close-up
     /// loaded by PICTURE or the encounter, 0x15F8 / 0x7B0B; cleared with the view's redraw) are both set.
     /// </summary>
-    public bool PictureArmed { get; set; } = true;
+    /// <remarks>
+    /// Clear until the first step's pass after a start or load (DOSBox-X s24: a PICTURE and HMENU in the first step's
+    /// vector 0 after loading a save from the main menu show the first frame, still). [?] A load in mid-session keeps
+    /// the program's value; the Client starts clear each time.
+    /// </remarks>
+    public bool PictureArmed { get; set; }
 
     /// <summary>HMENU's and ENCMENU's animate flag: DS:84E0 and DS:84E1.</summary>
     private bool CloseUpAnimates => PictureArmed && ViewPicture is { Kind: ViewPictureKind.Picture };
@@ -231,6 +237,19 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
 
     /// <summary>The end game's pictures over the view while it runs, else null.</summary>
     public EndScene? Scene { get; set; }
+
+    /// <summary>
+    /// An end-game block in the chosen art (disk, block → the FINAL picture, from the disk's file or any disk's), or
+    /// null: the art setting's source for <see cref="HallScreens.AmigaEndGame"/>. Unset: DOS only.
+    /// </summary>
+    public Func<int, int, PorArtImage?>? EndArt { get; set; }
+
+    /// <summary>
+    /// Under Best / Amiga with the Amiga blocks, play the Amiga program's end game (on, the default) rather than DOS's
+    /// with the Amiga dragon and spirit over the DOS arena pictures (the user decision of s5 names the arena pictures
+    /// as DOS fill-ins; the Amiga sequence has no place for them).
+    /// </summary>
+    public bool AmigaEndGame { get; set; } = true;
 
     /// <summary>The frame delays of an end-game animation block (FINAL of the disk, else of any disk), or null.</summary>
     public Func<int, int, IReadOnlyList<uint>>? EndArtDelays => (disk, block) =>

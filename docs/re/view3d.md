@@ -276,7 +276,13 @@ keys pressed meanwhile wait in the BIOS type-ahead buffer) and through these STA
   word at START 0x89E3 (the debugging word, training.md "J"), Ctrl-D (4) toggles DS:49F7 and Ctrl-C (3) quits
   (0x8990). Then, **unless the key is 0** (an extended key's first byte), `while KeyPressed: key := ReadKey`: every
   key waiting is read and **only the last one is returned**. A waiting extended key read in that loop comes back as
-  its bare scan code (Up 0x48 'H', Home 0x47 'G', End 0x4F 'O', …) `[?]` not modelled.
+  its bare scan code (Up 0x48 'H', Right 0x4D 'M', Home 0x47 'G', End 0x4F 'O', …). The menu routine (0x2CE4F) and
+  the AI's check (0xBBA5) call GetKey again when they get 0, for the scan code, and that call drains the rest the same
+  way: such a read takes **the whole buffer** and gets its **last byte**, as a character when the first key was not
+  extended, as an extended code when it was. Every other caller calls GetKey **once** (the key wait 0x7C85 at 0x7CC1,
+  line input START 0x7ABB, START 0x43B6 / 0x81EF / 0x826B, GAME.OVR 0x24F84 number input, 0x2F7A6, 0x2FA45, 0x32352,
+  0x32416): an extended key first gives it 0 and nothing more is read; Crt keeps the scan code, so the next GetKey
+  reads that as a **character** (and drains whatever follows).
 - **0x8A94** (0899:0104), called at 17 places (2 in START, 15 in GAME.OVR: START 0x48DA, the page prompt 0x7A29, the picture loader 0x2E170, the
   icon and tile loaders 0x31A8E / 0x31C34, LoadChar 0x1EAD2, the monster loader 0x1EEAA, Load 0x1F5E8, Alt-Q 0x9C74,
   the title waits 0xD4 / 0x6FB, …): **does nothing in v1.3** — right after its prologue a jump skips its
@@ -292,17 +298,31 @@ So nothing clears the buffer while text types: the typing (0x7737: glyph, then D
 PauseOnly and DELAY (Delay START 0xA69C: a busy loop on the BIOS tick byte) read no keys, and every key pressed
 meanwhile waits; the **next key read takes the last of them** (a waiting key answers the page prompt at once, then the
 next GetKey takes the rest). The s21 note "DOS clears its key buffer while text types" was the drain seen from the
-outside: of several keys pressed during a text only the last acted. `[?]` Not re-checked in DOSBox-X (the BIOS buffer
-holds 15 keys; with more, the oldest are lost anyway).
+outside: of several keys pressed during a text only the last acted.
+
+**D** (s24, DOSBox-X, 3000 cycles, `START STING` at the start-up party menu; keys typed during the hall word's message,
+J's pause of 225 ms): X then C opened Create (the last key); X then Right opened **Modify** (Right's scan code 0x4D
+read as 'M'); Right then C did nothing and C was used up (an extended 0x63, which the menu ignores); 14 X then C opened
+Create; 15 X then C (16 waiting) and 16 X then C did not: the BIOS buffer holds **15 keys and a key pressed when it is
+full is lost** (not the oldest). Right pressed at the character-name prompt (line input, one GetKey) typed **M**.
 
 **Client** (`ActionInput.ReadingKeys`): while the game logic waits on a plain pause (`DelayRequest` without
-`ReportInput`) it reads no keys: a key or pad button pressed then is kept (the newest replaces an older one) and that
-frame acts on nothing; the first frame of a key read (a menu, a key wait, the rest loop's poll, the command line) with
-no new press of its own gets the kept key. Pad buttons count as keys; mouse clicks during a pause are dropped. A
+`ReportInput`) it reads no keys: a key or pad button pressed then waits (up to 15, later ones lost) and that frame acts
+on nothing; the first frame of a key read (a menu, a key wait, the rest loop's poll, the command line) takes them all
+(its own new press, if any, joins them last) and gets what GetKey makes of them: the last press, except that a key
+after an extended first key reads as an extended code and an extended key after a character key reads as its scan
+code's character (`DosKeys`: the BIOS bytes of each key name, US layout, keypad with NumLock on). A single press, or a
+last one with no BIOS bytes (a pad button, a held key's repeat), is read as itself. A key wait or a line input
+(`KeyRequest` not shown as a menu, `TextRequest`) reads once: with an extended key first, that press is read alone and
+its scan code waits ahead of the rest as a character (`ReadingKeys(…, scanRead: false)`). Not followed: a key pressed
+at a line input while it reads (no pause) acts as the Client's own: the arrows move its character grid, where the
+original would type H, P, K or M. Mouse clicks during a pause are
+dropped. A
 fight's build reads the buffer once and drops the key (0xE402's reads), and the AI's key check reads it at every AI
 turn (Core `FightKit.AiKey` → `MonsterAi.ReadKey`, `ActionInput.TakeAiKey`): the action `FightManual` (space, the
 pad's right-stick press) puts the party back under the player's control, `FightQuickMagic` (Alt-M, left trigger)
 reads as 0x32 and `FightAltX` (Alt-X, left-stick press) as 0x2D (s23), any other key is taken with no effect. The
+check compares the byte only, extended or not, so the '2' key acts as Alt-M and '-' as Alt-X there (0xBBB0, 0xBC5F). The
 mouse has no way to them during a pause (clicks are dropped). Enter does not end a pause. The Client shows script text at once (no typing
 time), so pauses are the only busy time it has. QoL
 `SkipPauses` (settings, off = original): Enter or a click ends a pause, and keys pressed during it are dropped (the
@@ -342,7 +362,14 @@ s23: with DS:4431 set and one of the redraw flags DS:84E0 picture, 84E3 sprite, 
 writes to $C059/$C05F), 84E6 position (writes to $C04B–$C04D), 84E8 sky (writes to $49FD/$49FE) up; only that CALL
 clears 84E5/84E6/84E8; Core `EclMemory.ViewRedrawFlags`). The Home / End pick on the command line (0x173BF: 0x23819,
 the party list 0x173D0, the line 0x173D9) runs no command; the Client does the same (also a click on a name; on the
-pad the triggers, since its shoulders are Look / Encamp on this line and the commands are checked first). Each DAMAGE line blanks
+pad the triggers, since its shoulders are Look / Encamp on this line and the commands are checked first). In fact
+every key of the command routine ends at the line: in 3D at 0x17266 (turns, the step, A, C, V, S, L, a pick), on the
+overland at 0x173D9. **DOSBox-X s24** (test saves whose step runs, then waits in a one-word HMENU): `DAMAGE; CALL
+$2C90` right after a load leaves the line off (DS:4431 is 0); `LOADFILES; LOADPIECES; DAMAGE; CALL $2C90` draws it
+(84E5 from the script init); `LOADFILES; LOADPIECES; CALL; DAMAGE; CALL` leaves it off (flags cleared by the first
+CALL); a write to $C04B or to $49FD between DAMAGE and the second CALL draws it. Home / End after the slums → New
+Phlan exit (stale "15,4 E") pick the previous / next member and show "0,4 E". The Client matched all of them pixel for
+pixel (help lines apart). Each DAMAGE line blanks
 cells (17, 1)–(38, 15) before the party list is drawn again (GAME.OVR 0x96D0), which takes the position line off
 until the next of those points (DOSBox-X s22; ecl-format.md "DAMAGE"). A command whose script
 switches skips the step, so the line keeps the old square until the next command (DOSBox-X: slums → New Phlan shows
@@ -353,4 +380,11 @@ at such points: LOADCHAR's current member does not show until a redraw (Client: 
 corners, 1 the left / right columns, 2 the top / bottom rows; symbols 276… are 8X8D1 block 202 tiles 20… Every window
 seen uses style 0 (styles 1–3 are tiles 23–30 `[?]` where used).
 
-Not checked yet: the Valjevo Castle and wilderness-lair areas.
+**Lairs on disks 6–8 (s24).** Save A placed with `save-area` (the 3D maps of the wilderness scripts 25 and 27 with
+$4A9E = 255, as their vector 4 needs), loaded in DOSBox-X: ECL6 block 25 at 2,9 N, ECL8 block 27 at 3,11 W and
+0,7 S, ECL8 block 13 at 14,7 N, ECL7 block 23 at 7,0 E, 4,9 S and 13,13 S. 0 differing pixels in all 7, pinned in
+`OtherAreaViewTests.Lair_views_match_dosbox` (through `PorArea` and `PorGame`). Block 23's vector 4 loads no wall
+set, so its view shows the saved ones: `PorArea.FromSave` (the tools' and tests' load) now re-reads them before
+vector 4 as `PorGame` has done since s23 (0x1FBEE); before, `view-compare` showed an open view there.
+
+Not checked yet: the Valjevo Castle areas.

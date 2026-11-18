@@ -16,16 +16,43 @@ public class PictureAnimationTests
         a.Show("pic");
         a.MenuOpened(Ms(0));
         uint[] delays = [2, 0, 3];
-        a.Tick(Ms(199), delays);
+        a.Tick(Ms(219), delays);                 // 3 ticks: 16 cs
         Assert.Equal(0, a.Frame);
-        a.Tick(Ms(200), delays);
+        a.Tick(Ms(220), delays);                 // 4 ticks: 21 cs
         Assert.Equal(1, a.Frame);
-        a.Tick(Ms(216), delays);                 // delay 0: the next pass
+        a.Tick(Ms(236), delays);                 // delay 0: the next pass
         Assert.Equal(2, a.Frame);
-        a.Tick(Ms(515), delays);
+        a.Tick(Ms(549), delays);                 // 9 ticks: 49 cs, 28 since the change
         Assert.Equal(2, a.Frame);
-        a.Tick(Ms(516), delays);
+        a.Tick(Ms(550), delays);                 // 10 ticks: 54 cs
         Assert.Equal(0, a.Frame);                // the last wraps to the first
+    }
+
+    [Fact]
+    public void Frames_hold_whole_bios_ticks_as_in_dosbox()
+    {
+        // DOSBox-X s24: HMENU over the slave pen's PIC 42 (ECL6 block 1), delays 4, 3, 1, 2, 3, 2, held
+        // 0.44, 0.33, 0.11, 0.22, 0.33, 0.22 s (8, 6, 2, 4, 6, 4 ticks of 54.9 ms), the first from the menu's opening.
+        uint[] delays = [4, 3, 1, 2, 3, 2];
+        int[] ticks = [8, 6, 2, 4, 6, 4];
+        foreach (double open in new[] { 0.0, 20.0, 54.0 })      // the menu opens anywhere within a tick
+        {
+            var a = new PictureAnimation();
+            a.Show("pic");
+            a.MenuOpened(TimeSpan.FromMilliseconds(open));
+            double at = Math.Floor(open / PictureAnimation.TickMs) * PictureAnimation.TickMs;
+            for (int k = 0; k < 12; k++)
+            {
+                int f = k % delays.Length;
+                Assert.Equal(f, a.Frame);
+                double next = at + ticks[f] * PictureAnimation.TickMs;
+                a.Tick(TimeSpan.FromMilliseconds(next - 1), delays);
+                Assert.Equal(f, a.Frame);
+                a.Tick(TimeSpan.FromMilliseconds(next + 1), delays);
+                Assert.Equal((f + 1) % delays.Length, a.Frame);
+                at = next;
+            }
+        }
     }
 
     [Fact]
@@ -35,7 +62,7 @@ public class PictureAnimationTests
         a.Show("pic");
         a.MenuOpened(Ms(0));
         uint[] delays = [1, 5];
-        a.Tick(Ms(100), delays);
+        a.Tick(Ms(110), delays);                 // 2 ticks: 10 cs
         Assert.Equal(1, a.Frame);
         a.MenuOpened(Ms(10_000));
         a.Tick(Ms(10_400), delays);

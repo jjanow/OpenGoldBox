@@ -23,6 +23,7 @@ public sealed class PorImportReport
     public int Texts { get; set; }
     /// <summary>Decoded rules files written (rules/spells.json …, §12).</summary>
     public int RulesTables { get; set; }
+    /// <summary>Original save files read (<c>SAVGAM?.DAT</c>, <c>CHRDAT*</c>): manifest inputs, held as engine saves.</summary>
     public int Saves { get; set; }
     /// <summary>Engine saves written (<c>saves/&lt;slot&gt;.json</c>, one per <c>SAVGAMx.DAT</c>).</summary>
     public int EngineSaves { get; set; }
@@ -47,7 +48,7 @@ public sealed class PorImportReport
 /// </summary>
 public static class PorImporter
 {
-    public const string ImporterName = "GoldBox.Importer 0.7.7";
+    public const string ImporterName = "GoldBox.Importer 0.7.8";
 
     /// <summary>VM $6E12 (DS:5376): the disk LOADFILES reads GEO&lt;d&gt; from.</summary>
     private const ushort DiskCell = 0x6E12;
@@ -281,16 +282,14 @@ public static class PorImporter
         if (amigaDir is not null)
             report.Amiga = PorAmigaArt.Import(amigaDir, outDir);
 
-        // ---- shipped saves: the original files as they are (tools and DOSBox checks read them); the engine saves are
-        // written after the manifest, since they name the module's content hash ----
+        // ---- shipped saves: inputs only; the module holds them as engine saves (written after the manifest, since they
+        // name the module's content hash), which rebuild the original files byte for byte ----
         foreach (var path in Directory.EnumerateFiles(gameDir).Order(StringComparer.Ordinal))
         {
             var file = Path.GetFileName(path).ToUpperInvariant();
             if (!(file.StartsWith("SAVGAM", StringComparison.Ordinal) && file.EndsWith(".DAT", StringComparison.Ordinal))
                 && !file.StartsWith("CHRDAT", StringComparison.Ordinal))
                 continue;
-            Directory.CreateDirectory(Out("saves"));
-            File.Copy(path, Out("saves/" + file));
             read.Add(file);
             report.Saves++;
         }

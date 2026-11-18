@@ -232,7 +232,8 @@ public sealed class CombatScreen
         if (_runner.Pending is not { } request)
             return;
         // Keys pressed during a pause wait for the next key read (ActionInput.ReadingKeys).
-        input.ReadingKeys(request is not DelayRequest { ReportInput: false });
+        input.ReadingKeys(request is not DelayRequest { ReportInput: false },
+            request is not (KeyRequest { AsMenu: false } or TextRequest));
         object? answer;
         bool answered;
         if (_hasClickAnswer)
@@ -876,6 +877,10 @@ public sealed class CombatScreen
             Text(f, 0, MenuRow, Fit(mp0, 40), Chrome.Green);
         switch (_runner.Pending)
         {
+            case DelayRequest when _view.PageMessage is { } msg:
+                // The message routine START 0x1693 over the map (Alt-M, Alt-X): row 24 in green during its pause.
+                Text(f, 0, MenuRow, Fit(msg, 40), Chrome.Green);
+                break;
             case CombatMoveRequest m:
                 // DOSBox-X: Move's prompt (0xA1BB) and the moves left in green on the menu row.
                 Text(f, 0, MenuRow, Fit(_text[CombatMsg.MoveLeft] + m.MovementLeft.ToString(CultureInfo.InvariantCulture), 40), Chrome.Green);

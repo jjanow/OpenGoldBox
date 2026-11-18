@@ -108,7 +108,7 @@ public static class HallScreens
                 continue;
             if (char.ToUpperInvariant(key) == PasswordKey)
             {
-                if (Password(h))
+                if (Password(h.Trainer()))
                     cheat = true;
                 continue;
             }
@@ -118,7 +118,7 @@ public static class HallScreens
             switch (entry)
             {
                 case TrainingHall.Entry.Train:
-                    Train(h, cheat);
+                    Train(h.Trainer(), cheat);
                     break;
                 case TrainingHall.Entry.View:
                     CharacterView.Run(camp.Trade, Venue.Camp);
@@ -144,10 +144,10 @@ public static class HallScreens
                             h.Memory.Write(EclPartyRules.PartySizeCell,
                                 (ushort)(h.Memory.Read(EclPartyRules.PartySizeCell) + delta));
                         if (h.Hooks.Notice?.Invoke() is { } note)
-                            Message(h, note, 14);
+                            Message(h.Trainer(), note, 14);
                     }
                     else
-                        Message(h, $"{h.Text.Entry(entry).ToUpperInvariant()}: NOT IN THIS BUILD YET.", 14);
+                        Message(h.Trainer(), $"{h.Text.Entry(entry).ToUpperInvariant()}: NOT IN THIS BUILD YET.", 14);
                     break;
             }
         }
@@ -162,13 +162,17 @@ public static class HallScreens
     /// 0x19AC8 on the bottom line in green with its pause (START 0x2233). Not equal: nothing. No line is read. The word
     /// comes from the player's files only; without them J does nothing.
     /// </summary>
-    public static bool Password(HallContext h)
+    public static bool Password(HallTrainer h)
     {
-        if (h.Text.Program?.Text("Hall.Password") is not { Length: > 0 } word || ParamStr1(h.ProgramWord()) != word)
+        if (!IsProgramWord(h.Text, h.ProgramWord()))
             return false;
         Message(h, h.Text["Hall.Understood"], 10);
         return true;
     }
+
+    /// <summary>Whether ParamStr(1) of <paramref name="tail"/> is the program's debugging word (from the player's files only).</summary>
+    public static bool IsProgramWord(HallText text, string? tail) =>
+        text.Program?.Text("Hall.Password") is { Length: > 0 } word && ParamStr1(tail) == word;
 
     /// <summary>ParamStr(1) of a DOS command tail: its first word (words end at a space or a control character).</summary>
     public static string ParamStr1(string? tail)
@@ -201,12 +205,12 @@ public static class HallScreens
     };
 
     /// <summary>A message on the bottom line for the program's Delay (START 0x7DF8: game speed × 225 ms).</summary>
-    public static void Message(HallContext h, string text, byte colour)
+    public static void Message(HallTrainer h, string text, byte colour)
     {
         h.State.Message = (text.ToUpperInvariant(), colour);
         try
         {
-            h.Camp.Dialog.Ask(new DelayRequest(TimeSpan.FromMilliseconds(h.Memory.GameSpeed * 225)));
+            h.Ask(new DelayRequest(TimeSpan.FromMilliseconds(h.GameSpeed * 225)));
         }
         finally
         {
@@ -220,15 +224,14 @@ public static class HallScreens
     /// class", then "and a level …"), the question; on Yes "Congratulations..." (green) and the level-up
     /// (<see cref="TrainingHall.Train"/>), the Learn list for a magic-user level.
     /// </summary>
-    public static void Train(HallContext h, bool cheat)
+    public static void Train(HallTrainer h, bool cheat)
     {
-        var camp = h.Camp;
-        if (camp.Party.Current is not { } c || h.Tables is not { } t)
+        if (h.Party.Current is not { } c || h.Tables is not { } t)
         {
             Message(h, "TRAINING NEEDS THE GAME'S TABLES.", 14);
             return;
         }
-        var offer = TrainingHall.Check(c, h.Memory.Read(TrainingHall.HallMaskCell), cheat, t);
+        var offer = TrainingHall.Check(c, h.HallMask, cheat, t);
         if (offer.Refused)
         {
             string key = offer.Refusal switch
@@ -252,13 +255,13 @@ public static class HallScreens
         {
             row++;
             string words = (row == 5 ? h.Text["Hall.ALevel"] : h.Text["Hall.AndALevel"]).ToUpperInvariant();
-            string cname = (camp.Resources.ClassName(cls) ?? $"CLASS {cls}").ToUpperInvariant();
+            string cname = (h.Resources.ClassName(cls) ?? $"CLASS {cls}").ToUpperInvariant();
             page.Add((6, row, words + level.ToString(CultureInfo.InvariantCulture) + " " + cname, 10));
         }
         h.State.Page = page;
         try
         {
-            if (!camp.Dialog.YesNo(h.Text["Hall.WishToTrain"].ToUpperInvariant()))
+            if (!h.YesNo(h.Text["Hall.WishToTrain"].ToUpperInvariant()))
                 return;
             Message(h, h.Text["Hall.Congratulations"], 10);
         }
@@ -272,7 +275,7 @@ public static class HallScreens
         }
         catch (ProgramHaltException e)
         {
-            camp.Trade.Halt?.Invoke(e);
+            h.Halt?.Invoke(e);
             throw;
         }
     }
@@ -284,36 +287,35 @@ public static class HallScreens
     /// Learn and the list comes back until a spell is chosen (Escape does not leave). [?] The first highlighted row
     /// (DOSBox-X showed the last one).
     /// </summary>
-    private static int Learn(HallContext h, EclCharacter who, IReadOnlyList<int> spells)
+    private static int Learn(HallTrainer h, EclCharacter who, IReadOnlyList<int> spells)
     {
-        var camp = h.Camp;
         var rows = new List<string>();
         var ids = new List<int>();
         var labels = new HashSet<int>();
         int last = 0;
         foreach (int s in spells)
         {
-            int level = camp.Resources.Spells?[s].Level ?? 0;
+            int level = h.Resources.Spells?[s].Level ?? 0;
             if (level != last)
             {
                 labels.Add(rows.Count);
-                rows.Add((camp.Resources.LevelName(level) ?? $"LEVEL {level}").ToUpperInvariant());
+                rows.Add((h.Resources.LevelName(level) ?? $"LEVEL {level}").ToUpperInvariant());
                 ids.Add(0);
                 last = level;
             }
-            rows.Add("  " + CampScreens.SpellName(camp, s));
+            rows.Add("  " + (h.Resources.SpellName(s) ?? $"SPELL {s.ToString(CultureInfo.InvariantCulture)}").ToUpperInvariant());
             ids.Add(s);
         }
-        string title = who.Name.ToUpperInvariant() + "'S " + camp.Text[Msg.SpellsWord] + h.Text["Hall.ToChooseFrom"].ToUpperInvariant();
+        string title = who.Name.ToUpperInvariant() + "'S " + h.Resources.Texts[Msg.SpellsWord] + h.Text["Hall.ToChooseFrom"].ToUpperInvariant();
         while (true)
         {
-            var a = camp.Dialog.Page(new ListRequest([new ListLine(title, 11, 1)], rows,
+            var a = h.Ask(new ListRequest([new ListLine(title, 11, 1)], rows,
                 [h.Text["Hall.Learn"].ToUpperInvariant()], null, FirstRow: 3)
             {
                 Labels = labels,
                 RowActions = new HashSet<int> { 0 },
                 Selected = rows.Count - 1,
-            });
+            }) as ListAnswer ?? new ListAnswer(-1, 0);
             if (a.Action == 0 && a.Row >= 0 && a.Row < ids.Count && ids[a.Row] != 0)
                 return ids[a.Row];
         }
@@ -324,17 +326,19 @@ public static class HallScreens
     /// <summary>
     /// The end game (<see cref="EndGame.Steps"/>): DS:49F3 := 7 while it runs (restored after), the lines in the text
     /// window, the FINAL pictures over the view and animations on the clock (pauses the player cannot skip in the
-    /// program; Enter skips a frame here as for every Client delay). DOS art only: the Amiga has blocks 2, 7 and 8 of
-    /// another painting `[?]` (its program's sequence is not read).
+    /// program; Enter skips a frame here as for every Client delay). Under Best / Amiga, when the chosen art has the
+    /// Amiga's blocks 2, 7 and 8 (<see cref="ClientPlayer.EndArt"/>), the Amiga program's own sequence plays instead
+    /// (<see cref="EndGame.AmigaSteps"/>: those three blocks in the picture window, no arena), all from the Amiga art.
     /// </summary>
     public static void EndGameSequence(ClientPlayer player, TextWindow text, Func<PlayerRequest, object?> ask, EclMemory memory)
     {
-        var scene = new EndScene(memory.Disk);
+        bool amiga = AmigaEndGame(player, memory.Disk);
+        var scene = new EndScene(memory.Disk) { Amiga = amiga };
         player.Scene = scene;
         int speed = memory.GameSpeed;
         try
         {
-            foreach (var step in EndGame.Steps(memory.Read(0x6E3E), speed))
+            foreach (var step in amiga ? EndGame.AmigaSteps() : EndGame.Steps(memory.Read(0x6E3E), speed))
             {
                 switch (step)
                 {
@@ -354,6 +358,19 @@ public static class HallScreens
                     case EndGamePause:
                         ask(new DelayRequest(EndGame.Pause(speed)));
                         break;
+                    case EndGameFrames fr:
+                        int count = player.EndArt?.Invoke(scene.Disk, fr.Block)?.Frames.Count ?? 0;
+                        foreach (int f in EndGame.FrameOrder(fr, count))
+                        {
+                            // Each frame is drawn whole over the window (FINAL pictures get no mask: h25 +0x5C4).
+                            var layer = new EndLayer(fr.Block, fr.Column, fr.Row, f, true);
+                            if (scene.Layers.Count == 1)
+                                scene.Layers[0] = layer;
+                            else
+                                scene.Layers.Add(layer);
+                            ask(new DelayRequest(EndGame.AmigaFrameTime));
+                        }
+                        break;
                 }
             }
         }
@@ -363,6 +380,14 @@ public static class HallScreens
             text.Clear();
         }
     }
+
+    /// <summary>
+    /// True when the Amiga end game plays: <see cref="ClientPlayer.AmigaEndGame"/> is on and the chosen art gives the
+    /// Amiga version of every block it draws (never a mix of DOS and Amiga blocks in one run).
+    /// </summary>
+    public static bool AmigaEndGame(ClientPlayer player, int disk) =>
+        player.AmigaEndGame && player.EndArt is { } art
+        && EndGame.AmigaBlocks.All(b => art(disk, b) is { Variant: not "dos", Frames.Count: > 0 });
 
     private static void Animate(EndScene scene, EndGameAnimation a, int speed, Func<PlayerRequest, object?> ask, ClientPlayer player)
     {
@@ -376,7 +401,7 @@ public static class HallScreens
             for (int f = 0; f < delays.Count; f++)
             {
                 scene.Layers[^1] = layer with { Frame = f };
-                ask(new DelayRequest(EndGame.FrameTime(speed, delays[f])));
+                ask(new DelayRequest(EndGame.FrameTime(speed, delays[f])) { Chained = true });
             }
     }
 }
@@ -388,6 +413,8 @@ public sealed record EndLayer(int Block, int Column, int Row, int Frame, bool An
 public sealed class EndScene(int disk)
 {
     public int Disk { get; } = disk;
+    /// <summary>The Amiga sequence: the layers are drawn from the chosen art with their own palette, in the picture window.</summary>
+    public bool Amiga { get; init; }
     public List<EndLayer> Layers { get; } = [];
 }
 
@@ -405,6 +432,47 @@ public sealed class HallContext
     public HallHooks Hooks { get; init; } = new();
     /// <summary>The word after START on the DOS command line (ParamStr(1)), or null (the hall's J).</summary>
     public Func<string?> ProgramWord { get; init; } = () => null;
+
+    /// <summary>What J, Train and the hall's messages work on: the game's party, its hall mask $6DA8 and speed.</summary>
+    public HallTrainer Trainer() => new()
+    {
+        Ask = Camp.Dialog.Ask,
+        State = State,
+        Text = Text,
+        Resources = Camp.Resources,
+        Party = Camp.Party,
+        Tables = Tables,
+        HallMask = Memory.Read(TrainingHall.HallMaskCell),
+        GameSpeed = Memory.GameSpeed,
+        Random = Random,
+        Halt = Camp.Trade.Halt,
+        ProgramWord = ProgramWord,
+        YesNo = Camp.Dialog.YesNo,
+    };
+}
+
+/// <summary>
+/// What the menu routine's J (0x19E2C), Train Character (0x1C32D) and the bottom-line message (START 0x7DF8) need: the
+/// training hall's (<see cref="HallContext.Trainer"/>) or the start-up party menu's (<see cref="PartyMenuFlow"/>: the
+/// same routine 0x19AE0 on the menu's party).
+/// </summary>
+public sealed class HallTrainer
+{
+    public required Func<PlayerRequest, object?> Ask { get; init; }
+    public required HallState State { get; init; }
+    public required HallText Text { get; init; }
+    public required ClientResources Resources { get; init; }
+    public required EclParty Party { get; init; }
+    public TrainingTables? Tables { get; init; }
+    /// <summary>VM $6DA8 (the hall's classes).</summary>
+    public ushort HallMask { get; init; }
+    /// <summary>DS:49E2 (the message's pause is speed × 225 ms).</summary>
+    public byte GameSpeed { get; init; } = 1;
+    public required Func<ushort, ushort> Random { get; init; }
+    public Action<ProgramHaltException>? Halt { get; init; }
+    public Func<string?> ProgramWord { get; init; } = () => null;
+    /// <summary>The program's yes/no (0x2D9A0: the highlight on No first) with this prompt: true on Yes.</summary>
+    public required Func<string, bool> YesNo { get; init; }
 }
 
 /// <summary>

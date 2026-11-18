@@ -187,4 +187,36 @@ public class CombatMessageTests
         Assert.Single(r.Pauses);                          // no wait of the program's own: one frame
         Assert.Equal(TimeSpan.Zero, r.Pauses[0].Wait);
     }
+
+    [Theory]
+    [InlineData(FightNotice.GodsIntervene)]
+    [InlineData(FightNotice.DoesNotWork)]
+    [InlineData(FightNotice.MagicOn)]
+    public void Alt_key_messages_go_to_row_24_with_the_game_speed_pause(FightNotice notice)
+    {
+        // START 0x1693 (0x2233), called by Alt-X (0x1637A in 0x1638E), its refusal (0x9DC0) and Alt-M (0x9CD1): row 24
+        // in green, Delay(speed × 225), row 24 cleared; the panel keeps the current creature (DOSBox-X s24: about
+        // 0.9 s at the save's speed 4, then the map drawn again without the cursor box after Alt-X).
+        var seen = new List<(TimeSpan Wait, string? Line, string Panel)>();
+        var view = new CombatView { Speed = 4, Cursor = (3, 3), MovePrompt = "MOVE" };
+        var chooser = new CombatChooser(q =>
+        {
+            if (q is DelayRequest d)
+                seen.Add((d.Duration, view.PageMessage, string.Concat(view.Panel.Lines)));
+            return null;
+        }, view);
+        chooser.Notice(notice, null);
+        var (wait, line, panel) = Assert.Single(seen);
+        Assert.Equal(TimeSpan.FromMilliseconds(900), wait);
+        Assert.Equal(chooser.Text[notice switch
+        {
+            FightNotice.GodsIntervene => CombatMsg.GodsIntervene,
+            FightNotice.DoesNotWork => CombatMsg.DoesNotWork,
+            _ => CombatMsg.MagicOn,
+        }], line);
+        Assert.Equal("", panel.Trim());                   // nothing in the panel
+        Assert.Null(view.PageMessage);                    // row 24 cleared after the pause
+        Assert.Null(view.MovePrompt);
+        Assert.Equal(notice == FightNotice.GodsIntervene ? null : (3, 3), view.Cursor);
+    }
 }

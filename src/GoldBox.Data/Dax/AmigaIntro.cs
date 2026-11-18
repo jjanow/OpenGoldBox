@@ -25,27 +25,105 @@ public static class AmigaIntro
 
     /// <summary>
     /// Code checked before the hunks are trusted (hunk 4): +0x22A <c>lea hunk5+0,a0</c> … <c>move.l #200,d3</c> (the
-    /// title blit's arguments), +0x85C <c>lea hunk5+$1F52E,a0</c> (the fade-in's colour source).
+    /// title blit's arguments), +0x85C <c>lea hunk5+$1F52E,a0</c> (the fade-in's colour source), +0x9AC
+    /// <c>lea hunk5+$1F54E,a0</c> (the other fade-in's).
     /// </summary>
     private static readonly (int At, byte[] Code)[] Checks =
     [
         (0x22A, Convert.FromHexString("41F90000000022790001F486203C00000000223C00000000263C000000C8")),
         (0x85C, Convert.FromHexString("41F90001F52E")),
+        (0x9AC, Convert.FromHexString("41F90001F54E")),
     ];
 
     /// <summary>The title painting (320×200 indices 0..15) and its 16 colours (RGB triplets) from the intro file's bytes.</summary>
     public static (byte[] Pixels, byte[] PaletteRgb) Title(ReadOnlySpan<byte> intro)
     {
+        var (dec, pic, _, _) = Hunks(intro);
+        return (Planar(dec.AsSpan(pic, Planes * PlaneBytes), Width, Height),
+            AmigaHunks.Rgb12To24(dec.AsSpan(pic + TitlePalette), 16));
+    }
+
+    /// <summary>Hunk 5 offset of the credits sheet (320×600, 4 planes of 24,000 bytes), right after the title and its unread colours.</summary>
+    public const int SheetOffset = 0x7D20, SheetRows = 600;
+
+    /// <summary>Hunk 5 offset of the colours the one other fade (hunk 4 +0x994 in, +0xA3C out) reads.</summary>
+    public const int SecondPalette = 0x1F54E;
+
+    /// <summary>Hunk 4 offsets of the eight credits panels' argument blocks, in the order the intro shows them (0x42 apart).</summary>
+    public static readonly IReadOnlyList<int> PanelCode = [.. Enumerable.Range(0, 8).Select(i => 0x1A + 0x42 * i)];
+
+    /// <summary>
+    /// One credits panel of the intro (hunk 4 +0, read s24): the screen is cleared (+0x7EE), <paramref name="Rows"/> rows
+    /// of the sheet from <paramref name="SheetRow"/> are blitted to screen row <paramref name="ScreenRow"/> (+0x512, all 320
+    /// pixels), then faded in from black to its colours (+0x844 with the title's colours, or +0x994 with
+    /// <see cref="SecondPalette"/> when <paramref name="Second"/>).
+    /// </summary>
+    public sealed record Panel(int SheetRow, int ScreenRow, int Rows, bool Second);
+
+    /// <summary>
+    /// The eight panels, read from the intro's code: at each <see cref="PanelCode"/> offset <c>lea hunk5+$7D20,a0</c>,
+    /// <c>movea.l hunk5+$1F486,a1</c>, <c>move.l #row,d0</c>, <c>move.l #y,d1</c>, <c>move.l #rows,d3</c>,
+    /// <c>jsr +$512</c>, then <c>jsr +$844</c> or <c>jsr +$994</c> (the fade, which names the colours).
+    /// </summary>
+    public static IReadOnlyList<Panel> Panels(ReadOnlySpan<byte> intro)
+    {
+        var (dec, _, code, _) = Hunks(intro);
+        var list = new List<Panel>();
+        foreach (int at in PanelCode)
+        {
+            var c = dec.AsSpan(code + at);
+            if (!c[..10].SequenceEqual(Convert.FromHexString("41F900007D2022790001"))
+                || BinaryPrimitives.ReadUInt16BigEndian(c[10..]) != 0xF486
+                || !c[12..14].SequenceEqual(Op(0x203C)) || !c[18..20].SequenceEqual(Op(0x223C))
+                || !c[24..26].SequenceEqual(Op(0x263C)) || !c[30..36].SequenceEqual(Convert.FromHexString("4EB900000512"))
+                || !c[36..40].SequenceEqual(Convert.FromHexString("4EB90000")))
+                throw new DaxFormatException($"'intro': not the Amiga Pool of Radiance v1.0 intro (panel code at hunk 4 +0x{at:X})");
+            int row = (int)BinaryPrimitives.ReadUInt32BigEndian(c[14..]), y = (int)BinaryPrimitives.ReadUInt32BigEndian(c[20..]);
+            int rows = (int)BinaryPrimitives.ReadUInt32BigEndian(c[26..]);
+            int fade = BinaryPrimitives.ReadUInt16BigEndian(c[40..]);
+            if (fade is not (0x844 or 0x994) || row < 0 || rows <= 0 || row + rows > SheetRows || y < 0 || y + rows > Height)
+                throw new DaxFormatException($"'intro': panel at hunk 4 +0x{at:X} out of range");
+            list.Add(new Panel(row, y, rows, fade == 0x994));
+        }
+        return list;
+    }
+
+    /// <summary>
+    /// Each panel as the screen shows it once faded in: 320×200 indices (index 0 outside the panel's rows, as the cleared
+    /// screen) and its 16 colours (RGB triplets).
+    /// </summary>
+    public static IReadOnlyList<(Panel Panel, byte[] Pixels, byte[] PaletteRgb)> PanelScreens(ReadOnlySpan<byte> intro)
+    {
+        var panels = Panels(intro);
+        var (dec, pic, _, _) = Hunks(intro);
+        var sheet = Planar(dec.AsSpan(pic + SheetOffset, Planes * RowBytes * SheetRows), Width, SheetRows);
+        var first = AmigaHunks.Rgb12To24(dec.AsSpan(pic + TitlePalette), 16);
+        var second = AmigaHunks.Rgb12To24(dec.AsSpan(pic + SecondPalette), 16);
+        var o = new List<(Panel, byte[], byte[])>();
+        foreach (var p in panels)
+        {
+            var px = new byte[Width * Height];
+            Array.Copy(sheet, p.SheetRow * Width, px, p.ScreenRow * Width, p.Rows * Width);
+            o.Add((p, px, p.Second ? second : first));
+        }
+        return o;
+    }
+
+    private static byte[] Op(int w) => [(byte)(w >> 8), (byte)w];
+
+    /// <summary>The decrunched file, the picture hunk's and code hunk's data offsets and the code hunk's size, after the checks.</summary>
+    private static (byte[] Dec, int Pic, int Code, int CodeSize) Hunks(ReadOnlySpan<byte> intro)
+    {
         var dec = DecrunchExecutable(intro);
         var hunks = AmigaHunks.Parse(dec);
         if (hunks.Count <= PictureHunk || hunks[PictureHunk] is not { Type: AmigaHunks.Data, DataOffset: { } pic } ph
-            || ph.Size < TitlePalette + 32 || hunks[CodeHunk] is not { Type: AmigaHunks.Code, DataOffset: { } code } ch)
+            || ph.Size < SecondPalette + 32 || hunks[CodeHunk] is not { Type: AmigaHunks.Code, DataOffset: { } code } ch
+            || ch.Size < 0x9B2)
             throw new DaxFormatException("'intro': not the Amiga Pool of Radiance v1.0 intro (hunk layout)");
         foreach (var (at, bytes) in Checks)
             if (at + bytes.Length > ch.Size || !dec.AsSpan(code + at, bytes.Length).SequenceEqual(bytes))
                 throw new DaxFormatException($"'intro': not the Amiga Pool of Radiance v1.0 intro (code at hunk 4 +0x{at:X})");
-        return (Planar(dec.AsSpan(pic, Planes * PlaneBytes), Width, Height),
-            AmigaHunks.Rgb12To24(dec.AsSpan(pic + TitlePalette), 16));
+        return (dec, pic, code, ch.Size);
     }
 
     /// <summary>

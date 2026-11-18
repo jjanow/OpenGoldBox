@@ -183,6 +183,9 @@ public sealed class ViewPictures
 
     private int Base(PorArtImage img) => img.Variant == "dos" || _paletteBase is null ? 0 : _paletteBase(img.PaletteRgb);
 
+    /// <summary>The first screen index of <paramref name="img"/>'s palette run (0 for DOS art).</summary>
+    public int RunBase(PorArtImage img) => Base(img);
+
     /// <summary>
     /// Copies item 0 of <paramref name="p"/> to (<paramref name="dx"/>, <paramref name="dy"/>) inside the window at
     /// (<paramref name="x"/>, <paramref name="y"/>), its indices moved into the run at <paramref name="b"/>, at most

@@ -540,6 +540,38 @@ public class CombatScreenGameTests
         Assert.NotNull(art.Monster(2, true));
         Assert.NotNull(art.Sprite(CombatArt.HitMarker));
     }
+
+    [Theory]
+    [InlineData(26, "bcb363a456232bd31955989bc3162a10f742d644772fc2c07e12c3d934b9e5fd")]
+    [InlineData(27, "7faf5e1bbb76a5e0fb0af1191b9fd27165c8a51336c1d23fbbdb6e7c4b8b0167")]
+    [InlineData(31, "de5da7e892b12fe3114f00117a1f268bb537dedb4300392d2d004a9f140e16df")]
+    public void Rare_terrain_in_a_dungeon_fight_matches_dosbox(int terrain, string sha256)
+    {
+        // DOSBox-X s24 (save K's Slums fight, fight_casts' setup, several boots): 24 × 24 cells of terrain 26 and 27
+        // (rare features, scrolled into view with Manual aim) and 31 (two bodies) reduced to EGA indices as shown,
+        // i.e. with the combat palette's 0/8 swap; every sample of a terrain gave the same cell.
+        if (Dir() is null)
+            return;
+        var dir = new PorGameDirectory(Dir()!);
+        var tables = PorCombatTables.Open(dir)!;
+        Assert.Equal(CombatArt.RareFirstTile + terrain - 26, tables.Tile(terrain));
+        var tile = new CombatArt(dir).Ground(tables.Tile(terrain), dungeon: true)!;
+        var shown = tile.Pixels.Select(p => p switch { 0 => (byte)8, 8 => (byte)0, var v => p }).ToArray();
+        Assert.Equal(sha256, Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(shown)));
+    }
+
+    [Fact]
+    public void Every_rare_terrain_draws_a_randcom_tile()
+    {
+        // Terrains 0x1A–0x1F (features 26–29, the area-spell cloud 30, a body 31) carry tiles 0x22–0x27 in a dungeon too.
+        if (Dir() is null)
+            return;
+        var dir = new PorGameDirectory(Dir()!);
+        var tables = PorCombatTables.Open(dir)!;
+        var art = new CombatArt(dir);
+        for (int t = 0x1A; t <= 0x1F; t++)
+            Assert.Same(art.Rare[t - 0x1A], art.Ground(tables.Tile(t), dungeon: true));
+    }
 }
 
 /// <summary>The controls screen with more actions than rows: the mouse reaches everything.</summary>

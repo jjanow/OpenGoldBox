@@ -117,6 +117,8 @@ else
             Resources = ClientResources.Load(content),
             Game = () => game,
         };
+        var endArt = clientArt;
+        player.EndArt = (disk, block) => endArt.Pictures.Find("FINAL", block, disk, anyDisk: true);
         player.InstallPaging();
         // Sound (docs/re/sound.md): the program's driver data from the content, on the device the setting names.
         audio = GoldBox.Client.Audio.ClientAudio.Open(content.Sound(), GoldBox.Client.Audio.ClientAudio.Parse(settings.Sound));
@@ -165,6 +167,9 @@ else
                 LoadGame = (slot, s) => game = WithSound(PorGame.LoadAtPartyMenu(content, art, SlotPath(slot), who, s)),
                 SaveGame = (slot, party, loaded) => player.SaveAtPartyMenu(slot, party, content, loaded),
                 Highlight = sharedHighlight,
+                // J and Train at the start-up menu (the hall's, on the menu's party).
+                Resources = player.Resources,
+                ProgramWord = () => player.ProgramWord,
             };
             // The training hall (PROGRAM 0) runs the same menu routine 0x19AE0 on the game's party: its Create, Drop,
             // Add, Remove and Load are the party menu's, drawing from the game's generator.
@@ -229,6 +234,7 @@ else
                                    or UnauthorizedAccessException or GoldBox.Data.Dax.DaxFormatException
                                    or GoldBox.Core.Ecl.EclVmFault or System.Text.Json.JsonException
                                    or GoldBox.Core.Ecl.Profiles.UnknownEclProfileException
+                                   or GoldBox.Core.Ecl.Profiles.EclProfileNotRunnableException
                                    or GoldBox.Data.Module.Por.ModuleHasNoVmException)
     {
         problem = "could not load the game files: " + e.Message;
@@ -302,9 +308,17 @@ using var window = new GoldBoxGame(
         {
             var menu = MenuScreen(partyMenu, host);
             // The introduction first (GAME.OVR 0x6FB: logo, title, credits), as the program runs it before the code
-            // wheel and the party menu. A start from a save or an area skips it, as the program's debug start does.
-            if (clientArt is null)
+            // wheel and the party menu. A start from a save or an area skips it, as the program's debug start does, and
+            // so does the start word when it is the program's debugging word (START 0x116: ParamStr(1) equal skips the
+            // introduction and the code wheel; DOSBox-X s24, START STING: straight to the party menu).
+            if (clientArt is null || GoldBox.Client.Play.HallScreens.IsProgramWord(player.Resources.HallTexts, player.ProgramWord))
                 return menu;
+            // Best / Amiga with the Amiga intro's pages: the Amiga intro (its credits panels and the painting, faded).
+            if (clientArt.AmigaIntroPages() is { } pages)
+            {
+                host.Push(menu);
+                return new AmigaIntroScreen(pages, palette, host);
+            }
             var logo = clientArt.IntroLogo();
             var titlePage = clientArt.IntroTitle();
             var intro = new IntroScreen(logo, logo is null ? 0 : palette.Base(logo.PaletteRgb),

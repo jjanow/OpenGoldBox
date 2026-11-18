@@ -48,10 +48,13 @@ public sealed class PorModule : IPorContent
 
     /// <exception cref="UnknownEclProfileException">The manifest names a VM profile the engine does not have.</exception>
     /// <exception cref="ModuleHasNoVmException">No module in the chain names a <c>vm</c>: PoR content is ECL scripts.</exception>
+    /// <exception cref="EclProfileNotRunnableException">The profile is one the engine only decodes (SotSB).</exception>
     public PorModule(ModuleResolver modules)
     {
         Modules = modules;
         VmProfile = EclProfiles.ForVm(modules.Vm) ?? throw new ModuleHasNoVmException(modules.Main.Manifest.Id);
+        if (VmProfile.Handlers != EclHandlerSet.Por13)
+            throw new EclProfileNotRunnableException(VmProfile);
     }
 
     public static PorModule Open(string moduleRoot, IEnumerable<string>? searchFolders = null) =>
@@ -321,7 +324,7 @@ public sealed class PorModule : IPorContent
 
     // ---- saves -----------------------------------------------------------------------------------------------------
 
-    /// <summary>The module's <c>saves/</c> folder (the shipped saves, copied as they are [?]), or null.</summary>
+    /// <summary>The module's <c>saves/</c> folder (the shipped saves as engine saves <c>x.json</c>, §15), or null.</summary>
     public string? SaveFolder =>
         Path.Combine(Modules.Main.Root, "saves") is var d && Directory.Exists(d) ? d : null;
 }

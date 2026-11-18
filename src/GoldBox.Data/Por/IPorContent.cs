@@ -86,7 +86,7 @@ public interface IPorContent : IEclScriptSource, IAreaMapSource
     /// </summary>
     PorSound? Sound() => null;
 
-    /// <summary>The folder holding the shipped saves (<c>SAVGAM?.DAT</c>, <c>CHRDAT*</c>), or null.</summary>
+    /// <summary>The folder holding the shipped saves, or null: a game folder's originals (<c>SAVGAM?.DAT</c>, <c>CHRDAT*</c>), a module's engine saves (<c>x.json</c>; <see cref="PorShippedSave"/> reads either).</summary>
     string? SaveFolder { get; }
 
     /// <summary>

@@ -86,6 +86,16 @@ row 23 shows them under the main menu ("ALT: MAGIC ALL-QUICK ALT-X", click a wor
 (`--param`, the controls screen's START WORD) equals the program's word (Core `FightKit.AltXEnabled`). Alt-R is not
 offered (it does nothing).
 
+**Messages of the Alt keys (P + D, s24):** Alt-M's two messages (0x9CD1 / 0x9CE7), Alt-X's refusal (0x9DC0) and
+Alt-X's own message (0x1637A in 0x1638E) all go through the message routine START 0x1693 (0x2233): row 24 cleared
+(0x3F1:0x137 over columns 0–39), the text at column 0 in **colour 10**, PauseOnly (DS:49E2 × 225 ms), row 24 cleared.
+The panel keeps the current creature and the map its cursor box meanwhile; the menu line comes back after it. The AI's
+key check uses the same routine for its Alt-M messages (0xBBD7 / 0xBBED) and through 0x1638E for Alt-X. After Alt-X's
+message, 0x1638E removes the hostile creatures and redraws the map (0x3E0:0x52): the goblins and the cursor box go,
+then the end of the fight asks the continue question. DOSBox-X (test save with eight goblins, game speed 4): each
+message about 0.9 s on row 24, the refusal and Alt-M the same. Client: `CombatChooser.Notice` / `AiSays` →
+`PageSay` (row 24 over the map in `CombatScreen.DrawLines`), the cursor box dropped after Alt-X's message.
+
 **Done menu** (0xA64C), loop until Exit / Escape or done:
 
 | Entry | Shown when | Effect |
@@ -355,7 +365,11 @@ and Speed menus, an AI attack at game speed 9). Code: `src/GoldBox.Client/Screen
   grey. The icon editor uses the same pair (0x1D1D9 / 0x1D8A7). The Client swaps the frame's indices 0 and 8
   (`CombatScreen.SwapGrey`; DOS art only, Amiga indices ≥ 16 untouched).
 - **Ground**: the terrain table's tile byte (DS:2744 + 4t + 3) indexes DUNGCOM block 1 (25 tiles of 24 × 24) in a
-  3D area; tile 22 is all colour 0. WILDCOM outdoors and the RANDCOM tiles for the rare terrains are not checked `[?]`.
+  3D area; tile 22 is all colour 0. The rare terrains 0x1A–0x1F draw RANDCOM block 1 tiles 0–5 (tile bytes
+  0x22–0x27, `CombatArt.RareFirstTile`); DOSBox-X s24 (save K's Slums fight, several boots, cells scrolled into view
+  with Manual aim): terrain 26 (tile 0), 27 (tile 1) and two bodies 31 (tile 5) pixel-exact with the 0/8 swap
+  (`CombatScreenGameTests.Rare_terrain_in_a_dungeon_fight_matches_dosbox`); 28–30 go through the same table and set, not
+  seen (28/29 are 1 in 10,000 per open cell). WILDCOM outdoors is not checked `[?]`.
 - **Icons**: player characters (record 0x84 < 0x80) get the party icon, other creatures the CPIC block = their icon slot's picture (LoadCombatIcon; a joined NPC not checked `[?]`), attack pose + 128 (seen in the AI
   burst); party members are CBODY + CHEAD (head on the top rows) recoloured by 0xC1–0xC6, + 64 for icon size 2: all six
   members of save A matched pixel for pixel (`CombatArt.Party`). Colour 0 is see-through. Facing 5–7 mirrors the

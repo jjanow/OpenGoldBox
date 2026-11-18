@@ -281,6 +281,39 @@ public class OtherAreaViewTests
         game.Loop.Execute(AreaCommand.Forward);
         Assert.Equal(step, Hash(game.RenderView(false)));
     }
+
+    /// <summary>
+    /// Lairs on disks 6–8 (s24, the residue runs' load screens): the 3D maps of the wilderness scripts 25 and 27
+    /// ($4A9E = 255) and the dungeons 13 and 23 (whose vector 4 loads no wall set: the saved ones show).
+    /// </summary>
+    public static TheoryData<int, int, int, int, int[], int, string> Lairs() => new()
+    {
+        { 25, 2, 9, Facing.North, [17, 17, 17], 0x4A9E, "d4c79eb4c85f2eea5d6a10ee88cd9c4bda69777c7e3ed761876f4f792d8eac69" },
+        { 27, 3, 11, Facing.West, [17, 17, 17], 0x4A9E, "8c3b1f291eb08d40a92e1fb60b9960014662fd3cae6549b8c48303ba3b55fea9" },
+        { 27, 0, 7, Facing.South, [17, 17, 17], 0x4A9E, "2eaadc14738de89a8ef9b601a3c66ff5cf6871650ac691dc57faf5ba52453f80" },
+        { 13, 14, 7, Facing.North, [17, 18, -1], 0, "a1d881a41b360b784233aa741f8472ab516ec7da9030b5c1c9d71d0b8eb68487" },
+        { 23, 7, 0, Facing.East, [1, 3, -1], 0, "0e828d4f0a8c8fcae4eb68a32e2d615c2ff6840a30a16c9afb7847668be17128" },
+        { 23, 4, 9, Facing.South, [1, 3, -1], 0, "c72dd6078ad91022aeea5064e74676ca84e84c9242a768ec90938e855cb4be0a" },
+        { 23, 13, 13, Facing.South, [1, 3, -1], 0, "4904a8f516cffb429e524fe464c4b465bf4e49d5f371fe25a4fab5fa4453670c" },
+    };
+
+    [PorTheory]
+    [MemberData(nameof(Lairs))]
+    public void Lair_views_match_dosbox(int script, int x, int y, int facing, int[] walls, int cell255, string view)
+    {
+        var dir = PorData.Open();
+        var savePath = dir.Find("SAVGAMA.DAT")!;
+        var save = PorSaveGame.PlaceInArea(File.ReadAllBytes(savePath), dir, script, x, y, facing, 0, walls);
+        if (cell255 != 0)
+            save[PorSaveGame.Off4900 + 2 * (cell255 - 0x4900)] = 255;
+        var art = PorViewArt.Load(dir);
+        var area = PorArea.FromSave(dir, art, save, Path.GetDirectoryName(savePath)!);
+        Assert.Equal(view, Hash(area.RenderView(art, false)));
+        var player = new PorPlayer(new GoldBox.Core.Ecl.ScriptedEclHost { StopWhenInputMissing = true },
+            new GoldBox.Core.Game.ScriptedEncounterUi { StopWhenInputMissing = true }, new GoldBox.Core.Game.RecordingCombatRunner(), new NoDoors());
+        var game = PorGame.FromSave(dir, PorViewArt.Load(dir), save, Path.GetDirectoryName(savePath)!, player, 0);
+        Assert.Equal(view, Hash(game.RenderView(false)));
+    }
 }
 
 /// <summary>Load (0x1FBEE–0x1FC86) re-reads the saved wall sets before vector 4 (s23).</summary>

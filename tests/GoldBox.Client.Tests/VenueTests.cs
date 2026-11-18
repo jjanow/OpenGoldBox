@@ -323,7 +323,7 @@ public class VenueTests
             0,                          // a deal: YES
             null,                       // "sold" key
             new ListAnswer(8, 0),       // EXIT the items
-            new ListAnswer(4, 0)), Party(c));  // EXIT the view
+            new ListAnswer(2, 0)), Party(c));  // EXIT the view (TRADE DROP EXIT: the item is gone, money came)
         CharacterView.Run(t, Venue.Shop);
         Assert.Empty(c.Items);
         Assert.Equal(3, c.Word(Money.Platinum));         // 15 gold = 3 pp
@@ -331,14 +331,31 @@ public class VenueTests
     }
 
     [Fact]
+    public void The_view_menu_offers_only_the_entries_of_0x21AED()
+    {
+        // DOSBox-X s24 (shop, Thrender: items and money, no spells): ITEMS TRADE DROP EXIT, so its Exit leaves the shared
+        // highlight on the shop menu's 4th entry (Appraise), as the program does.
+        var c = Member("ANNA", pp: 2);
+        c.Items.Add(Item(30, 5));
+        var (t, s) = Context(new Script(new ListAnswer(3, 0)), Party(c));
+        CharacterView.Run(t, Venue.Shop);
+        Assert.Equal(["ITEMS", "TRADE", "DROP", "EXIT"], s.Asked.OfType<ListRequest>().Single().Actions);
+        c[0x17] = 5;                                     // a memorised spell adds SPELLS
+        (t, s) = Context(new Script(new ListAnswer(4, 0)), Party(c));
+        CharacterView.Run(t, Venue.Shop);
+        Assert.Equal(["ITEMS", "SPELLS", "TRADE", "DROP", "EXIT"], s.Asked.OfType<ListRequest>().Single().Actions);
+    }
+
+    [Fact]
     public void Camp_view_has_no_sell()
     {
         var c = Member("ANNA");
+        c.Items.Add(Item(30, 5));
         var (t, s) = Context(new Script(
             1,                          // VIEW
             new ListAnswer(0, 0),       // ITEMS
             new ListAnswer(6, 0),       // EXIT (no SELL / ID in camp)
-            new ListAnswer(4, 0),       // EXIT the view
+            new ListAnswer(1, 0),       // EXIT the view (ITEMS EXIT)
             5), Party(c));              // EXIT
         Assert.False(VenueScreens.Camp(CampScreenTests.Camp(t), null));
         Assert.Equal(0, s.Left);

@@ -209,7 +209,7 @@ for 3E–41.
 | 34 | CLOCK 1 | **2** | 2 | **1** | 0x3D37 | amount, unit | changed (Curse), mis-skip | 1 |
 | 35 | SAVETABLE 3 | 3 | 3 | 3 | 0x1B78 | | same | 5 |
 | 36 | ADDNPC 2 | 2 | 2 | 1 | 0x3E52 | | same, mis-skip kept | 5 |
-| 38 | PROGRAM 1 | 1 | 1 | 1 | 0x41A1 | **ids 0 and 9 only**: 0 runs a program routine (OVR 0x41E5; training as in PoR `[?]`); 9 runs a routine with the PC saved around it (camp, as PoR's 9), then EXIT **only when $4C38 = 0** (OVR 0x422E). PoR: 0, 8, 9, and 9 always exits | same (read), ids changed | 2 |
+| 38 | PROGRAM 1 | 1 | 1 | 1 | 0x41A1 | **ids 0 and 9 only**: 0 runs a program routine (OVR 0x41E5; training as in PoR `[?]`); 9 runs a routine with the PC saved around it (camp, as PoR's 9), then EXIT **only when $4C38 = 0** (OVR 0x422E). Any other id loads its operand and does nothing: the scripts use 0 (block 16) and **3** (block 3, the start script, $82E3), so PROGRAM 3 is a no-op. PoR: 0, 8, 9, and 9 always exits | same (read), ids changed | 2 |
 | 39 | WHO 1 | 1 | 1 | 1 | 0x3DEC | | same | 15 |
 | 3A | DELAY 0 | 0 | 0 | 0 | 0x3961 | PC + 1, one delay call | same | 267 |
 | 3B | SPELL 3 | 3 | 3 | 3 | 0x3EC5 | | same | 4 |
@@ -333,15 +333,28 @@ single files. DQK then fixed the IF-skip.
 
 ## 9. Module-format and VM implications
 
+**Built (s24): the profile `ecl-sotsb-1.3`** (`EclProfiles.Sotsb13`, `EclOpcodes.Sotsb`), decoding only. It holds
+the layout, the four regions (script region not saved), the opcode rows of 3.5 and the IF-skip chain of 3.4 as data,
+`ReturnOnEmptyStack = Exits`, the CALL ids, PROGRAM ids 0 and 9 with the exit guard $4C38
+(`ProgramExitGuardCell`), the disk cell $7F12 and the banked kinds. 0x3C has no row (its handler neither loads an
+operand nor moves the PC); it keeps the name PROTECT and IF-skip 1. The character view (`Sotsb7C00Redirection`) and
+the handlers (`EclHandlerSet.Sotsb`) are named but not written: `EclMemory` refuses the profile, so nothing runs
+SotSB scripts yet. `EclDecoder` / `EclAnalysis` take a profile, `goldbox-tools ecl-check GAMEDIR --vm ecl-sotsb-1.3`
+and `ecl.py … --vm sotsb` decode the 22 v1.30 blocks with 0 errors, 0 overlaps, 0 unhandled opcodes and 0 IF-skip
+hazards (137,918 bytes, 15,322 instructions, 132,135 bytes on hard paths). `SotsbProfileTests` checks this on the
+player's files (`GOLDBOX_SOTSB_DIR`, skipped without). The scripts use CALL $2DCB, $B203 and $C01E only, and
+PROGRAM 0 and 3. The IF-skip chain, the CALL compares and the PROGRAM cases were re-read in v1.30 for this.
+
+
 1. **`ecl-por-1.3` is the template for a SotSB profile, not the PoD one.** A SotSB VM is PoR's code with: script base
    $8000, the three word areas moved (table 3.3), the IF-skip table of 3.4, RETURN-exits, CLOCK with 2 operands, the
    0x3C stub, 3E–41 handlers, SotSB's CALL and PROGRAM ids, and a redirection table into the 439-byte record. The
    regions, special cells, residue and width rule stay PoR's. In `EclProfile` (s17) the layout, regions, disk cell,
    opcode and IF-skip tables, width rule (`FromAddressRegion`) and unmapped read (`StackResidue`) are already data
-   that fits SotSB. Three things need additions: `EclReturnOnEmptyStack` has only `FallsThrough` (SotSB exits),
-   `EclCharacterView` has only `Por6B00Redirection`, which hard-codes PoR's base and record offsets (SotSB needs the
-   redirection list as data, base + case → record field, or a second view kind), and `EclHandlerSet` has only
-   `Por13` (SotSB's 3E–41, two-operand CLOCK, 0x3C stub and CALL/PROGRAM ids are handler code).
+   that fits SotSB. The enum members it needed exist since s24 (above); still to write before SotSB scripts run: the
+   redirection list into the 439-byte record (as data, base + case → record field, behind
+   `Sotsb7C00Redirection`), the special-cell changes, and the `EclHandlerSet.Sotsb` handlers (RETURN-exits, 3E–41,
+   two-operand CLOCK, the 0x3C stub, SotSB's CALL/PROGRAM ids).
 2. **Region base offsets are a profile field, not a constant.** The same special-cell addresses ($C04B…) sit next to
    moved areas, so "move every address" does not work; the profile must give each region's base.
 3. **Banks stay.** SotSB keeps disk digits for ECL, GEO, WALLDEF, 8X8D and ITEM (3 disks), and a fixed `MON1`. Its

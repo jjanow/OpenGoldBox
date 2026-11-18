@@ -231,12 +231,21 @@ the run-loop watch, every change of it between instructions:
   TREASURE, after the event's text. Both Slums sites, run from their real script code, read **0** every time: $A390's
   path from the load and after earlier loot screens (5 samples, 2 boots), $B0FB's path (SETUPMON, PRINTCLR, the
   "press Return" HMENU, CLRMON, LOADMON × 2) once; there the LOADMON writes 0, and ECL6 block 25 has a LOADMON in the
-  same place. The wilderness sites (ECL6–8) were not run; with no LOADMON before them their value is whatever the
-  step into the square left.
-- So there is no single value: it is a path-dependent residue, 0 on every v1.3 path sampled. The engine keeps it as
+  same place.
+- **The wilderness sites (s24)**, run from their real script code with the probe and the watch (save A placed in each
+  map with `save-area`, the site's flags set, loaded, then stepped in; 14 runs reached TREASURE): ECL6 block 25
+  $AAA4 reads **0** (the LOADMON at $AA9D writes 0 right before, as at $B0FB). The other four have no LOADMON:
+  ECL7 block 23 $A3CF (the three storerooms, entered from 7,0 E, 4,9 S and 13,13 S, search on from the save or
+  toggled with S before the step), ECL8 block 13 $AD3A (from 15,6 W and 14,7 N) and ECL8 block 27 $A39E (from 0,1 S)
+  and $A5EC (from 2,10 S, 3,11 W, 1,11 E, and a five-square walk from 0,7 with the area map, a turn and a camp on the
+  way) all read **0**. All four run in vector 1 (after the move), and nothing between the step and TREASURE writes
+  the cell (ONGOTO, AND/OR/CMPAND, PRINT/PRINTCLR, the "press Return" HMENU, GOSUB/RETURN, CLRMON). The step itself
+  does: a step that left 7 before vector 0 had 0 again before vector 1 (twice in the walk), the 1 left by vector 4's
+  LOADPIECES + LOADFILES became 0, and after a TREASURE's loot screen (0x0F) the next step read 0.
+- So it is a path-dependent residue, **0 on every v1.3 path sampled, at all seven sites**. The engine keeps it as
   a setting (`EncounterHost.FirstItemTypeResidue`, default **0**, as sampled); type 0 makes no rolls and gives a blank
   item (type 0, `hidden` 6). A non-zero residue t gives a type-t item made by the generator (12 → a plussed weapon).
-  `[?]` only for the unsampled wilderness sites and for modules.
+  `[?]` only for modules (a TREASURE after other opcodes than the v1.3 sites run).
 
 **Per-type generator** (OVR 0x25C99, arguments: base type, item pointer). Order of work and of the dice:
 
@@ -399,8 +408,9 @@ All found by code patterns, not fixed addresses (works on v1.1, v1.2 and v1.3):
 - Holy water: trigger-class lists not read; final damage of 1d1−1 against ordinary targets.
 - `byte29`; `weapon_kind` oddities.
 - Effect id 0 record in `MON4SPC.DAX` block 105.
-- The type of a random TREASURE's first item when its second roll is 48/49 at the unsampled wilderness sites (stack
-  residue, path-dependent; 0 at both Slums sites in DOSBox-X, s18; see "Random treasure").
+- The type of a random TREASURE's first item when its second roll is 48/49 in a module whose TREASURE follows other
+  opcodes than the v1.3 sites (stack residue, path-dependent; 0 at all seven v1.3 sites in DOSBox-X, s18 and s24; see
+  "Random treasure").
 
 Settled 2026-11-17 by code read: base `byte8` is never read; consumable vs worn (`3E`) and the handler codes; `save_bonus`; scroll
 self-identification (+96h = cleric level); holy water 1d6 + 1 against effect-117 creatures; the random item maker 0x25C99 in full (weights, value

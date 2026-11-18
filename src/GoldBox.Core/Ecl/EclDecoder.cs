@@ -1,6 +1,11 @@
+using GoldBox.Core.Ecl.Profiles;
+
 namespace GoldBox.Core.Ecl;
 
-/// <summary>Constants of the script block layout (docs/re/ecl-format.md "Block layout").</summary>
+/// <summary>
+/// Constants of the PoR v1.3 script block layout (docs/re/ecl-format.md "Block layout"). Other dialects take theirs
+/// from their <see cref="EclProfile"/>.
+/// </summary>
 public static class EclLayout
 {
     /// <summary>VM address of block byte 2 (the first loaded byte).</summary>
@@ -43,14 +48,17 @@ public sealed class EclOperand
 /// <summary>A statically decoded instruction.</summary>
 public sealed class EclInstruction
 {
+    /// <summary>The dialect it was decoded with (layout and opcode table).</summary>
+    public EclProfile Profile { get; init; } = EclProfiles.Por13;
     public int Offset { get; init; }
     public byte Op { get; init; }
     public List<EclOperand> Operands { get; } = [];
     public int Size { get; set; } = 1;
     /// <summary>Bytes the IF-skip consumes for this instruction (opcode + SKIP-count operands).</summary>
     public int SkipSize { get; set; } = 1;
-    public ushort Address => EclLayout.OffsetToAddress(Offset);
-    public EclOpcodeInfo? Info => EclOpcodes.Get(Op);
+    public ushort Address => Profile.OffsetToAddress(Offset);
+    public EclOpcodeInfo? Info => Profile.Opcodes.Get(Op);
+    public string Mnemonic => Profile.Opcodes.Name(Op);
     public bool Handled => Info is not null;
     public string Role(int i) => Info?.Role(i) ?? "?";
 }
@@ -60,7 +68,8 @@ public sealed class EclDecodeException(string message) : Exception(message);
 /// <summary>
 /// Static decoder over a whole DAX block (prefix included), the same rules as <c>tools/scripts/ecl.py</c>. Used for
 /// the flow analysis and disassembly; the VM decodes at run time from its live script area instead
-/// (<see cref="EclVm"/>), because scripts may write into it.
+/// (<see cref="EclVm"/>), because scripts may write into it. The operand encoding is the same in every dialect with a
+/// profile (PoR, SotSB); the layout and the opcode table come from the profile (default <c>ecl-por-1.3</c>).
 /// </summary>
 public static class EclDecoder
 {
@@ -87,11 +96,12 @@ public static class EclDecoder
     }
 
     /// <summary>Decodes one instruction at block offset <paramref name="off"/>.</summary>
-    public static EclInstruction DecodeInstruction(ReadOnlySpan<byte> b, int off)
+    public static EclInstruction DecodeInstruction(ReadOnlySpan<byte> b, int off, EclProfile? profile = null)
     {
         if (off >= b.Length)
             throw new EclDecodeException("past end of block");
-        var ins = new EclInstruction { Offset = off, Op = b[off] };
+        profile ??= EclProfiles.Por13;
+        var ins = new EclInstruction { Profile = profile, Offset = off, Op = b[off] };
         var info = ins.Info;
         if (info is null)
             return ins; // no handler: size 1
@@ -118,17 +128,18 @@ public static class EclDecoder
             }
         }
         ins.Size = p - off;
-        ins.SkipSize = 1 + sizes.Take(info.SkipCount).Sum();
+        ins.SkipSize = 1 + sizes.Take(profile.Opcodes.SkipCount(ins.Op)).Sum();
         return ins;
     }
 
     /// <summary>The five entry vectors: (ignored byte, operand).</summary>
-    public static (byte Ignored, EclOperand Operand)[] Vectors(ReadOnlySpan<byte> b)
+    public static (byte Ignored, EclOperand Operand)[] Vectors(ReadOnlySpan<byte> b, EclProfile? profile = null)
     {
-        var v = new (byte, EclOperand)[EclLayout.VectorCount];
-        for (int k = 0; k < EclLayout.VectorCount; k++)
+        profile ??= EclProfiles.Por13;
+        var v = new (byte, EclOperand)[profile.VectorCount];
+        for (int k = 0; k < profile.VectorCount; k++)
         {
-            int p = EclLayout.Prefix + 4 * k;
+            int p = profile.ScriptPrefix + 4 * k;
             v[k] = (b[p], DecodeOperand(b, p + 1));
         }
         return v;

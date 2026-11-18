@@ -54,6 +54,41 @@ public sealed class ScreenPalette
         }
     }
 
+    /// <summary>
+    /// A run of 16 of its own under <paramref name="name"/> (the same run for the same name), whose colours
+    /// <see cref="SetRun"/> rewrites: for colours that change while shown (the Amiga intro's fades). Throws when all 15
+    /// runs are taken.
+    /// </summary>
+    public int Reserve(string name)
+    {
+        lock (_sync)
+        {
+            var key = "reserved:" + name;
+            if (_runs.TryGetValue(key, out int b))
+                return b;
+            if (_next + RunLength > Size)
+                throw new InvalidOperationException("screen palette full: more than 15 distinct 16-colour palettes");
+            b = _next;
+            _next += RunLength;
+            _runs[key] = b;
+            return b;
+        }
+    }
+
+    /// <summary>Sets the 16 colours of a run from <see cref="Reserve"/> (16 RGB triplets).</summary>
+    public void SetRun(int first, byte[] rgb)
+    {
+        if (rgb.Length < RunLength * 3)
+            throw new ArgumentException("a palette of 16 RGB triplets expected", nameof(rgb));
+        lock (_sync)
+        {
+            if (!_runs.Any(kv => kv.Value == first && kv.Key.StartsWith("reserved:", StringComparison.Ordinal)))
+                throw new ArgumentException("not a reserved run", nameof(first));
+            for (int i = 0; i < RunLength; i++)
+                _colours[first + i] = new Color(rgb[3 * i], rgb[3 * i + 1], rgb[3 * i + 2]);
+        }
+    }
+
     private static bool IsEga(byte[] rgb)
     {
         for (int i = 0; i < RunLength; i++)

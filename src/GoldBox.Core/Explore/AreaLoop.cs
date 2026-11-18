@@ -186,6 +186,13 @@ public sealed class AreaLoop
     public event Action? Redrawn;
 
     /// <summary>
+    /// Raised by the step's pass right before vector 1 (0x421E–0x4223: the close-up flag DS:84E0 cleared and DS:84E1, the
+    /// picture's animation arm, set; HMENU / ENCMENU animate only while both are set). Vector 0 runs before it, so a
+    /// PICTURE there after a load (DS:84E1 still 0) does not animate (DOSBox-X s24).
+    /// </summary>
+    public event Action? PassBeforeVector1;
+
+    /// <summary>
     /// The view redraw's state part (0x2DCF4): the event byte of the party's square is read again; the area map is
     /// switched off where $49FB ≠ 0. The program does this when DS:49FA = 1 or $49E6 ≠ 0 (0x2DCFA–0x2DD15).
     /// </summary>
@@ -320,6 +327,7 @@ public sealed class AreaLoop
             Redraw();
             if (Memory.Position.X != Memory.Read(PreviousX) || Memory.Position.Y != Memory.Read(PreviousY))
                 Sound.Cue(GoldBox.Core.Sound.SoundCue.Step); // 0x4215
+            PassBeforeVector1?.Invoke(); // 0x421E / 0x4223: DS:84E0 := 0, DS:84E1 := 1
             Run(1);
         }
         finally

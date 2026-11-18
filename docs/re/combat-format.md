@@ -314,8 +314,11 @@ empty** and draws **no position line**; the party list is there, the text box em
 before CLRMON (as the New Phlan shop's script, ECL3 block 0 $A248) is not shown. Leaving with Exit: the 3D view and
 the position line come back with the step, and the command line opens on the shared cell left by the shop menu
 (Exit, entry 4: Search). Client: the view box blank and no position line while `Venue.Shop`; pixel-equal apart
-from its help lines. `[?]` What 03D0:0039 draws when a picture is still armed (no v1.3 script enters a shop or temple
-without CLRMON).
+from its help lines. **With a picture still armed** (DOSBox-X s24, test saves: PICTURE 2 then the shop or the temple
+with no CLRMON): the view box is just as empty on entry and again after View → Exit, and Exit shows the 3D view with
+the step, as with CLRMON (settled, was `[?]`). Between menus: View's menu offers only the entries 0x21AED builds
+(a fighter with items and money: Items, Trade, Drop, Exit), so its Exit leaves the shared highlight on the shop menu's
+4th entry, Appraise (DOSBox-X); the Client's View page uses the same entries since s24 (it offered Spells always).
 
 DS:49F3 = 1, the 28 bytes of the money pool DS:67F4 are zeroed, DS:6DC0 (a byte, not the VM cell) = 0, and every item
 of the treasure list DS:6810 is named (START 0xFE2): **the shop's stock is the treasure list**, filled by TREASURE

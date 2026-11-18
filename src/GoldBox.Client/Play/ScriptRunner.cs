@@ -134,6 +134,12 @@ public sealed record DelayRequest(TimeSpan Duration) : PlayerRequest
 
     /// <summary>A bottom line left on the screen during the pause (text, colour), or null.</summary>
     public (string Text, byte Colour)? BottomLine { get; init; }
+
+    /// <summary>
+    /// The pause runs on from the end of the pause just before it (a loop that times each frame from the last change,
+    /// as the end game's 0x206A3), so the screen's frame of delay in noticing each end does not add up.
+    /// </summary>
+    public bool Chained { get; init; }
 }
 
 /// <summary>Thrown inside the worker when the runner is shut down while it waits.</summary>

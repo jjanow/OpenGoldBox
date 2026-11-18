@@ -33,6 +33,11 @@ public enum EclReturnOnEmptyStack
 {
     /// <summary>PoR: nothing; the PC is already past the opcode, so the run goes on with the next instruction.</summary>
     FallsThrough,
+    /// <summary>
+    /// Curse / SotSB: the run ends as at EXIT (SotSB OVR 0x170A calls the EXIT handler 0x0C0B when the stack is empty;
+    /// docs/re/survey-sotsb.md §3.4).
+    /// </summary>
+    Exits,
 }
 
 /// <summary>How scripts see the current character.</summary>
@@ -43,6 +48,11 @@ public enum EclCharacterView
     /// on read, with side effects on write (routines 0x7C8F / 0x7F47). The list is code in <see cref="EclMemory"/>.
     /// </summary>
     Por6B00Redirection,
+    /// <summary>
+    /// SotSB: PoR's redirection scheme at $7C00 into the 439-byte record (reader OVR 0x9830, writer OVR 0x9D20;
+    /// docs/re/survey-sotsb.md §3.3). The case list is not modelled yet `[?]`.
+    /// </summary>
+    Sotsb7C00Redirection,
 }
 
 /// <summary>The opcode handlers (code). A profile names its set; the VM runs only the sets it has.</summary>
@@ -50,6 +60,12 @@ public enum EclHandlerSet
 {
     /// <summary>PoR v1.3: <c>EclVm.Execute</c> and the reader/writer of <see cref="EclMemory"/>.</summary>
     Por13,
+    /// <summary>
+    /// SotSB v1.00–v1.30 (docs/re/survey-sotsb.md §3.5): PoR's handlers plus RETURN-exits, two-operand CLOCK, the 0x3C
+    /// stub, opcodes 3E–41 and SotSB's CALL / PROGRAM ids. Not implemented: <see cref="EclMemory"/> refuses it, so a
+    /// SotSB profile decodes (<see cref="EclDecoder"/>, <see cref="EclAnalysis"/>) but does not run.
+    /// </summary>
+    Sotsb,
 }
 
 /// <summary>
@@ -88,8 +104,13 @@ public sealed class EclProfile
     public required IReadOnlyDictionary<ushort, string> CallIds { get; init; }
     /// <summary>PROGRAM ids the program implements, with what each does. Other ids do nothing.</summary>
     public required IReadOnlyDictionary<ushort, string> ProgramIds { get; init; }
-    /// <summary>PROGRAM ids after which the run ends like EXIT.</summary>
+    /// <summary>PROGRAM ids after which the run ends like EXIT (subject to <see cref="ProgramExitGuardCell"/>).</summary>
     public required IReadOnlySet<ushort> ProgramIdsThatExit { get; init; }
+    /// <summary>
+    /// When set, a PROGRAM id of <see cref="ProgramIdsThatExit"/> ends the run only while this VM cell is 0 (SotSB:
+    /// $4C38, OVR 0x422E). Null: it always does (PoR).
+    /// </summary>
+    public ushort? ProgramExitGuardCell { get; init; }
 
     public required EclCharacterView CharacterView { get; init; }
     public required EclHandlerSet Handlers { get; init; }
@@ -109,6 +130,13 @@ public sealed class EclProfile
 
     /// <summary>Last script address.</summary>
     public ushort ScriptEnd => (ushort)(ScriptBase + ScriptAreaSize - 1);
+
+    /// <summary>Block offset (prefix included) of VM script address <paramref name="addr"/>.</summary>
+    public int AddressToOffset(int addr) => addr - ScriptBase + ScriptPrefix;
+    /// <summary>VM script address of block offset <paramref name="off"/> (prefix included).</summary>
+    public ushort OffsetToAddress(int off) => (ushort)(ScriptBase + off - ScriptPrefix);
+    /// <summary>Block offset of the first byte after the vector table.</summary>
+    public int FirstCodeOffset => ScriptPrefix + 4 * VectorCount;
 
     public override string ToString() => Name;
 }

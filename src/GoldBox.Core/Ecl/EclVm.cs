@@ -989,8 +989,8 @@ public sealed class EclVm
                 RestoreSelected(); // 0x3B5C, before the operand is loaded
                 var v = Value16(1); // ids P; effects [?]
                 HostCall("Program", [Num(v)], null, () => Host.Program(v));
-                if (Profile.ProgramIdsThatExit.Contains(v))
-                    DoExit(); // P: camp (0x3B56), then EXIT (0x3BBC): the run ends
+                if (Profile.ProgramIdsThatExit.Contains(v) && (Profile.ProgramExitGuardCell is not { } guard || Memory.Read(guard) == 0))
+                    DoExit(); // P: camp (0x3B56), then EXIT (0x3BBC): the run ends (SotSB: only while the guard cell is 0)
                 return null;
             }
             case EclOpcodes.Protect:

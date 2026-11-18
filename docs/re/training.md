@@ -36,17 +36,29 @@ way the menu is drawn again; the flag stays until the menu routine is entered ag
 word (byte-identical copies) is compared with ParamStr(1) by GetKey (START 0x89E3: Ctrl-D toggles DS:49F7, Ctrl-C
 quits; view3d.md "Keys while the program is busy"), by Alt-X in a fight (combat-menu.md; its copy at GAME.OVR 0x16374 is inferred from the bytes and its place just
 before the routine 0x1638E, the unit's CS:0x3B79 was not resolved) and at
-start-up (START 0x10C, string at the main unit's CS:0: equal skips the two overlay calls 0019:0025 and 001C:0025 `[?]`
-what they are). No game text: the Client reads the word by offset (`PorTextCatalog` `Hall.Password`).
+start-up (START 0x10C, string at the main unit's CS:0: equal skips the two overlay calls 0019:0025 and 001C:0025, the
+introduction and the code wheel, start-menu.md §1; **D** s24: `START STING` boots straight to the party menu). No game
+text: the Client reads the word by offset (`PorTextCatalog` `Hall.Password`).
 
 Client (s22): the word after `START` is the Client's start word: `--param WORD` (remembered in client.json as
 `ProgramWord`; `--no-param` drops it) or the controls screen's START WORD row (typed, or picked on the character grid
 with the pad or the mouse); its first word is used, as ParamStr(1). J in the hall (`HallScreens.Password`) compares it with
 the files' word, sets the cheat and shows the message as above; without the game files J does nothing. J has no entry
 on screen in the original; the Client binds it as the action `HallJ` (key J, the pad's left-stick press, rebindable on
-the controls screen) and a click on the hall's prompt (bottom line) is J for the mouse. `[?]` The start-up party menu
-(the same routine) does not take J in the Client yet (its Train would need the hall's Train on the menu's party).
-Alt-X in a fight reads the word since s23 (combat-menu.md).
+the controls screen) and a click on the hall's prompt (bottom line) is J for the mouse. Alt-X in a fight reads the word
+since s23 (combat-menu.md).
+
+**Start-up party menu (the same routine), D** (s24, DOSBox-X, `START STING`, 3000 cycles): J showed the message on the
+bottom line for 0.23–0.26 s (game speed 1 at start-up × 225 ms) over the menu, with or without a party; once a
+character was current Train was offered (the flag set with no party counts later), and it stayed after Remove and Add
+(the flag lives until the menu routine is entered again). Train on a new level-1 dwarf fighter (0 experience, 120 gold):
+the page "BOB will become: / a level 2 fighter", the question with No highlighted, Yes, "Congratulations..." in green
+on the bottom line, the menu back with the hit points 11 → 16 and no gold taken. Client (s24): `PartyMenuFlow` runs
+J and Train through the hall's routines (`HallTrainer`: `HallScreens.Password`, `HallScreens.Train`) on the menu's
+party and generator, with $6DA8 and the speed from a save loaded at the menu (else 0 and 1); the party menu screen
+draws the message, the page and the Learn list, and takes J as in the hall (`HallJ`, a click on the prompt). The page
+and question equal DOSBox-X's pixel for pixel (Xvfb). A start word equal to the program's word also skips the
+introduction (the Client has no code wheel).
 
 Engine (s20): the Client's hall (`HallScreens.Run`) runs Train, View, Save, Begin and Exit itself; Create, Drop, Modify,
 Add and Remove are the party menu's (`PartyMenuFlow` through `HallHooks`, on the game's party and generator; the
@@ -115,8 +127,10 @@ Run after Tyranthraxus (ECL5 block 7 $A82A). DS:49F3 saved, := 7; the text windo
 (block 2) at (3, 5); picture 3 at (1, 1); party figures by $6E3E: > 1 block 4 at (1, 12), > 2 block 5 at (14, 10), > 3
 block 6 at (1, 10); six lines (rows 17–22); the spirit (block 7) at (3, 1); four lines (rows 17–20); block 8 at (3, 1)
 once; three Delays (speed × 225 ms); DS:49F3 restored, the screen redrawn. Animation 0x206A3: loops =
-((10 − speed) × 5) shr 1; frame k stays until (speed + 3) × its delay hundredths of a second (START 0x7CCF: the DOS
-clock in hundredths) have passed; the loop ends showing the last frame. No key is waited for anywhere. The script then
+((10 − speed) × 5) shr 1; the clock is read at entry (before the block loads), then each pass draws the current frame
+and moves to the next once the DOS clock (START 0x7CCF, hundredths) has moved **more than** (speed + 3) × its delay
+since the last change (0x2076E: jg / ja; the change time is the reading that saw it); the loop ends showing the last
+frame. No key is waited for anywhere. The script then
 prints its epilogue and NEWECLs to civilised Phlan: **no return to the menu**, the game goes on.
 
 **D**: DOSBox-X with a scratch copy whose PROGRAM 0 call was redirected to 0x20941 (and FINAL5 copied to FINAL3):
@@ -127,5 +141,28 @@ equal to it pixel for pixel (after two fixes: later frames of a FINAL block are 
 which the Client had drawn raw (speckled colours, a black box); the command line stays on row 24 during the sequence).
 A text line of 39 characters (the last group's second line) draws its last character on column 39, over the frame,
 on a black cell (the glyph routine draws up to column 39); the Client keeps such an overhang cell
-(`TextWindow`). `[?]`: exact frame timing not measured; the Amiga program's end sequence (it has
-blocks 2, 7, 8 of a repainted dragon) is not read, so the Client draws the DOS blocks under every art setting.
+(`TextWindow`). **D** (s24, save H, speed 4, 3000 cycles, window grabs about 70 a second): the DOS clock moves once a
+BIOS tick (5.49 hundredths), so frames hold whole ticks: the dragon's delays 2, 1, 2, 1 (limits 14, 7) held 3, 2, 3, 2
+ticks, one loop 0.550 s; the spirit's 4, 2, 2, 3, 2, 2 held 6, 3, 3, 4, 3, 3 ticks, 1.199 s; 15 loops each (speed 4);
+block 8's first frame showed only 0.06 s because loading it took longer than its 105 hundredths (the clock starts
+before the load); its last frame and the three Delays took 2.81 s. Client (`EndGame.FrameTime`, `DosClock`): the
+whole ticks until the clock is past the limit, each frame timed from the end of the one before (`DelayRequest.Chained`),
+so the loops are the program's (Xvfb s24: 0.550 s and 1.209 s). Not modelled: load time (the Client loads at once, so
+a first frame shows its whole time) and a clock reading one hundredth off with the tick's phase (a limit within a
+hundredth of a tick multiple can hold one tick more: 21 hundredths is 3.82 ticks, and 4 ticks read 21 or 22).
+
+**Amiga v1.0 end game (hunk 13 +0x26AE, read s24 from the program; P, no emulator run).** The same texts at the same
+rows (the Amiga strings drop the quotation marks and one double space; the Client keeps the module's texts), but only
+the Amiga's own three FINAL blocks (`final.dax` has nothing else), each through hunk 13 +0x25CE (block, step): load
+(hunk 19 +0x11B0, later frames XORed with the first as for PIC; no mask is made for FINAL, so every draw is whole), set
+table 4 for block 2 and table 3 for the others, draw the start frame in the picture window, then for each frame from
+the start: draw it at (3, 3) (hunk 19 +0x10CE: the view buffer at (2, 2), which the refresh hunk 25 +0x896 copies one
+cell right and down: screen pixel (24, 24), where PIC close-ups go, hunk 19 +0x51F4) and dos.library Delay(100)
+(hunk 36 +0, DOSBase from the start-up's OpenLibrary: 2 s). Order: state byte := 7, text cleared, lines 0–2; block 2
+(the dragon, frames 1→4); cleared, lines 3–8; block 7 (the spirit, 1→4); cleared, lines 9–12; block 8 with step −1
+(start frame := the count: 6→1, the spirit fades and the pool dries up); state restored and the screen redrawn
+(hunk 13 +0x5B16). No arena (DOS blocks 1, 3), no party figures (4–6), no loops by game speed, no closing pauses.
+**Engine:** Core `EndGame.AmigaSteps` (`EndGameFrames`, `AmigaFrameTime`); the Client plays it under Best / Amiga when
+the chosen art gives the Amiga version of blocks 2, 7 and 8 (`HallScreens.AmigaEndGame`, never a DOS/Amiga mix;
+`ClientPlayer.AmigaEndGame` switches it off for the DOS sequence), drawn in the blocks' own palette run
+(`HallView.DrawScene`). Under Original DOS the DOS sequence and art, as before.

@@ -111,7 +111,8 @@ public sealed record ClientOptions
     /// <summary>
     /// The file a <c>--save</c> value loads. A slot letter X is looked up in this order: the player's engine save
     /// <c>x.json</c> in <paramref name="ownFolder"/>, an original <c>SAVGAMX.DAT</c> there (written by earlier Clients;
-    /// converted on load), the module's engine save <c>saves/x.json</c>, the module's original <c>saves/SAVGAMX.DAT</c>.
+    /// converted on load), the content's engine save <c>saves/x.json</c>, then an original <c>SAVGAMX.DAT</c> in the
+    /// content's save folder (a game folder; an imported module holds its shipped saves only as engine saves).
     /// Any other value is a file name looked up in the same two folders, then a path. A <c>.json</c> file is an engine
     /// save, anything else an original <c>SAVGAMx.DAT</c>. Null when nothing is found.
     /// </summary>

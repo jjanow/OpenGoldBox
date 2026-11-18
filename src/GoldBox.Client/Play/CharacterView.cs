@@ -23,18 +23,22 @@ public static class CharacterView
     /// <summary>The character page until Exit.</summary>
     public static void Run(TradeContext t, Venue venue)
     {
-        string[] actions = ["ITEMS", "SPELLS", "TRADE", "DROP", "EXIT"];
         while (t.Current is { } c)
         {
+            // The menu has only the entries 0x21AED offers (FightItemScreens.ViewEntries): DOSBox-X s24, a fighter with
+            // no memorised spells gets Items, Trade, Drop, Exit, so its Exit (4th) leaves the shared highlight on the
+            // shop menu's 4th entry (Appraise).
+            var entries = FightItemScreens.ViewEntries(c, venue == Venue.Shop ? FightItemScreens.InShop : (byte)0);
+            string[] actions = [.. entries.Select(e => e.ToString().ToUpperInvariant())];
             var a = t.Dialog.Page(new ListRequest(Sheet(t, c), [], actions, actions.Length - 1) { PartySelect = true, SharedHighlight = true });
             if (t.SelectMember(a.Action))
                 continue;
-            switch (a.Action)
+            switch (a.Action >= 0 && a.Action < entries.Count ? entries[a.Action] : ViewEntry.Exit)
             {
-                case 0:
+                case ViewEntry.Items:
                     Items(t, venue);
                     break;
-                case 1 or 2 or 3:
+                case ViewEntry.Spells or ViewEntry.Trade or ViewEntry.Drop:
                     NotBuilt(t, actions[a.Action]);
                     break;
                 default:

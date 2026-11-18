@@ -126,7 +126,7 @@ public sealed class EclMemory
         Policy = policy ?? EclVmPolicy.Default;
         Profile = profile ?? EclProfiles.Default;
         if (Profile.Handlers != EclHandlerSet.Por13)
-            throw new NotSupportedException($"VM profile {Profile.Name}: handler set {Profile.Handlers} is not implemented");
+            throw new EclProfileNotRunnableException(Profile);
     }
 
     public Span<byte> ScriptArea => _script;

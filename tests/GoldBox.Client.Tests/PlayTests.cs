@@ -182,6 +182,54 @@ public class ExploreScreenTests
         Assert.Equal(before, party.CurrentIndex);
     }
 
+    private static byte[] ViewBox(Rig r)
+    {
+        var f = new IndexedFrame(320, 200);
+        r.Screen.Draw(f, r.Input);
+        var box = new byte[88 * 88];
+        for (int y = 0; y < 88; y++)
+            for (int x = 0; x < 88; x++)
+                box[y * 88 + x] = f[24 + x, 24 + y];
+        return box;
+    }
+
+    [Fact]
+    public void A_picture_on_another_disk_leaves_the_picture_shown_until_the_view_is_redrawn()
+    {
+        // DOSBox-X s24 (save A, disk 2): PICTURE 2, then PICTURE 3 (only PIC4 holds it) keeps picture 2 in the window;
+        // the step's redraw then shows the view. With nothing shown before, the view stays.
+        if (Dir() is null)
+            return;
+        var r = Start();
+        Settle(r);
+        Assert.Equal(2, r.Game.Memory.Disk);
+        var view = ViewBox(r);
+        r.Player.ShowPicture(3, null);
+        Assert.Equal(view, ViewBox(r));
+        r.Player.ShowPicture(2, null);
+        var picture = ViewBox(r);
+        Assert.NotEqual(view, picture);
+        r.Player.ShowPicture(3, null);
+        Assert.Equal(picture, ViewBox(r));
+        r.Game.Loop.Redraw();
+        Assert.Equal(view, ViewBox(r));
+    }
+
+    [Fact]
+    public void The_close_up_animates_only_after_the_steps_pass()
+    {
+        // DS:84E1 is set by the step's pass before vector 1 (0x4223), not before vector 0: after a load a PICTURE in the
+        // first step's vector 0 stays on its first frame (DOSBox-X s24).
+        if (Dir() is null)
+            return;
+        var r = Start();
+        Settle(r);
+        Assert.False(r.Player.PictureArmed);
+        Press(r, GameAction.Forward);
+        Settle(r);
+        Assert.True(r.Player.PictureArmed);
+    }
+
     private static void Pad(Rig r, Buttons b)
     {
         r.Input.Update(default, default, default, TimeSpan.Zero, _ => null);

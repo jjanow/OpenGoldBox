@@ -1,5 +1,6 @@
 using System.Globalization;
 using GoldBox.Core.Ecl;
+using GoldBox.Core.Ecl.Profiles;
 using GoldBox.Data.Por;
 using GoldBox.Data.Por.Dosbox;
 
@@ -10,13 +11,15 @@ namespace GoldBox.Tools;
 /// <code>
 ///   ecl-run   GAMEDIR SCRIPT [--vector N|all] [--save SAVGAMx.DAT] [--steps N] [--follow]
 ///             [--menu 0,1,..] [--random 3,5,..] [--seed N] [--randseed HEX] [--out FILE.jsonl]
-///   ecl-check GAMEDIR
+///   ecl-check GAMEDIR [--vm PROFILE]
 ///   ecl-compare GAMEDIR [FIXTURES] [--capture NAME] [--trace-out DIR]
 ///   view-compare GAMEDIR SAVGAMx.DAT REF.bin [--map] [--dump] [--keys ULRDSK]
 ///   save-area    GAMEDIR SAVGAMx.DAT OUT.DAT SCRIPT X,Y,F [--flag0 N] [--walls A,B,C]
 /// </code>
 /// ecl-run loads script SCRIPT (a block id of ECL1..8.DAX; its disk is found by id), optionally on top of a save
 /// game's VM state, runs the vector(s) headless with the scripted host and writes the JSONL trace (stdout by default).
+/// ecl-check decodes every ECL block of GAMEDIR with the VM profile PROFILE (default ecl-por-1.3; ecl-sotsb-1.3 reads a
+/// Secret of the Silver Blades folder).
 /// </summary>
 public static class Program
 {
@@ -49,7 +52,7 @@ public static class Program
             usage:
               goldbox-tools ecl-run   GAMEDIR SCRIPT [--vector N|all] [--save SAVGAMx.DAT] [--steps N] [--follow]
                                       [--menu 0,1,..] [--random 3,5,..] [--seed N] [--randseed HEX] [--out FILE.jsonl]
-              goldbox-tools ecl-check GAMEDIR
+              goldbox-tools ecl-check GAMEDIR [--vm PROFILE]   (ecl-por-1.3, ecl-sotsb-1.3)
               goldbox-tools ecl-compare GAMEDIR [FIXTURES] [--capture NAME] [--trace-out DIR]
               goldbox-tools view-compare GAMEDIR SAVGAMx.DAT REF.bin [--map] [--dump] [--keys ULRDSK]
               goldbox-tools save-area    GAMEDIR SAVGAMx.DAT OUT.DAT SCRIPT X,Y,F [--flag0 N] [--walls A,B,C]
@@ -145,13 +148,23 @@ public static class Program
         if (a.Length < 1)
             return Usage();
         var dir = new PorGameDirectory(a[0]);
+        var profile = EclProfiles.Default;
+        for (int i = 1; i < a.Length; i++)
+        {
+            if (a[i] == "--vm" && i + 1 < a.Length)
+                profile = EclProfiles.TryGet(a[++i], out var p)
+                    ? p
+                    : throw new ArgumentException($"unknown VM profile {a[i]} (have: {string.Join(", ", EclProfiles.Names)})");
+            else
+                throw new ArgumentException("unknown option " + a[i]);
+        }
         int blocks = 0, insns = 0, hardErr = 0, specErr = 0, overlaps = 0, unhandled = 0, hazards = 0;
         int bytes = 0, hardBytes = 0, specBytes = 0;
         foreach (var (disk, file) in dir.EclFiles())
         {
             foreach (var e in file.Entries)
             {
-                var an = new EclAnalysis(file.Decode(e));
+                var an = new EclAnalysis(file.Decode(e), profile);
                 blocks++;
                 insns += an.Instructions.Count;
                 hardErr += an.HardErrors.Count();

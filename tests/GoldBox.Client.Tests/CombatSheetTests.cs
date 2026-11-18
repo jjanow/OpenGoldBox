@@ -116,4 +116,40 @@ public class CombatSheetTests
             Assert.Equal(i, GoldBox.Client.Screens.ExploreScreen.LoadMenuIndex(d, ch));
         Assert.Equal(0, GoldBox.Client.Screens.ExploreScreen.LoadMenuIndex(d, 'Z'));
     }
+
+    [Fact]
+    public void Gender_2_reads_past_the_gender_table_as_the_program_does()
+    {
+        var d = Environment.GetEnvironmentVariable("GOLDBOX_POR_DIR");
+        if (d is null || !Directory.Exists(d))
+            return;
+        // Restoration at the race limit adds 1 to the gender byte (spells-effects.md); DOSBox-X's View showed a female
+        // elf after it as "COPPER ELF" (fixture restoration_limit): entry 2 of the 7-byte table at DS:0FEC is the
+        // first coin name.
+        var c = Fighter();
+        c[0x9E] = 2;
+        c[0x2E] = 2;
+        var l = CombatSheet.Build(ClientResources.Load(new GoldBox.Data.Por.PorGameDirectory(d)), c, null, null, _ => "");
+        Assert.Equal("COPPER", At(l, 1, 3).Text);
+        Assert.Equal("ELF", At(l, 8, 3).Text);
+    }
+
+    [Fact]
+    public void A_modules_engine_saves_count_as_the_load_menus_slots()
+    {
+        // A module keeps its shipped saves only as engine saves (saves/a.json, j.json; docs/module-format.md §15).
+        var tmp = Directory.CreateTempSubdirectory("goldbox-loadmenu-");
+        try
+        {
+            foreach (var f in new[] { "a.json", "j.json", "SAVGAMB.DAT", "notes.txt" })
+                File.WriteAllText(Path.Combine(tmp.FullName, f), "");
+            Assert.Equal(0, GoldBox.Client.Screens.ExploreScreen.LoadMenuIndex(tmp.FullName, 'A'));
+            Assert.Equal(1, GoldBox.Client.Screens.ExploreScreen.LoadMenuIndex(tmp.FullName, 'B'));
+            Assert.Equal(2, GoldBox.Client.Screens.ExploreScreen.LoadMenuIndex(tmp.FullName, 'J'));
+        }
+        finally
+        {
+            tmp.Delete(recursive: true);
+        }
+    }
 }

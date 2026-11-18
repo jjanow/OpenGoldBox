@@ -100,6 +100,16 @@ public sealed class PorArea
         {
             // The scripts run without the party (their reads of it get the VM's defaults).
         }
+        // Load game re-reads the saved wall sets before vector 4 (0x1FBEE, location type ≤ 1; as PorGame does): an area
+        // whose vector 4 loads none shows the saved walls.
+        sg.ApplyTo(vm.Memory);
+        if (vm.Memory.ViewMode < 2)
+            for (int i = 1; i <= 3; i++)
+            {
+                short id = (short)vm.Memory.Read((ushort)(0x4AF9 + i));
+                if (id >= 0)
+                    host.WallSetLoaded?.Invoke(vm.Memory.Read((ushort)(0x4AFC + i)) & 0xFF, id & 0xFF);
+            }
         var run = sg.LoadGame(vm);
         return Finish(content, sg.ScriptId, sg.Disk, new PartyPosition(sg.X, sg.Y, sg.Facing), vm, host, recorder, run);
     }

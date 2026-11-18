@@ -870,12 +870,23 @@ public sealed partial class CombatChooser(Func<PlayerRequest, object?> ask, Comb
     public void Notice(FightNotice notice, EclCharacter? who)
     {
         var t = Text;
+        // Alt-M (0x9CD1 / 0x9CE7), Alt-X's refusal (0x9DC0) and Alt-X's own message (0x1638E) go through the message
+        // routine START 0x1693: row 24 in green, the game-speed pause, row 24 cleared; the panel stays (DOSBox-X s24).
+        if (notice is FightNotice.MagicOn or FightNotice.MagicOff or FightNotice.DoesNotWork or FightNotice.GodsIntervene)
+        {
+            PageSay(notice switch
+            {
+                FightNotice.MagicOn => t[CombatMsg.MagicOn],
+                FightNotice.MagicOff => t[CombatMsg.MagicOff],
+                FightNotice.DoesNotWork => t[CombatMsg.DoesNotWork],
+                _ => t[CombatMsg.GodsIntervene],
+            });
+            if (notice == FightNotice.GodsIntervene)
+                View.Cursor = null; // 0x1638E redraws the map after its message: the cursor box goes (DOSBox-X s24)
+            return;
+        }
         string text = notice switch
         {
-            FightNotice.MagicOn => t[CombatMsg.MagicOn],
-            FightNotice.MagicOff => t[CombatMsg.MagicOff],
-            FightNotice.DoesNotWork => t[CombatMsg.DoesNotWork],
-            FightNotice.GodsIntervene => t[CombatMsg.GodsIntervene],
             FightNotice.Blocked => t[CombatMsg.Blocked],
             FightNotice.NotWithThatWeapon => t[CombatMsg.NotWithThatWeapon],
             FightNotice.Bandaged => t[CombatMsg.IsBandaged],

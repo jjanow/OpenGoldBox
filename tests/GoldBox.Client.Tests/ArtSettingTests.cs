@@ -328,6 +328,36 @@ public class ArtSettingTests
         Assert.False(pics.Draw(f, 24, 24, new ViewPicture(ViewPictureKind.Picture, 99, null, 0, 3)));
     }
 
+    [Fact]
+    public void The_amiga_end_game_draws_its_blocks_whole_in_the_picture_window_in_their_run()
+    {
+        var c = new FakeContent();
+        c.Dos[("FINAL5", 7)] = [Pic(120, 120, Fill(120 * 120, _ => 4))];
+        c.Amiga[("FINAL", 7)] = [Pic(88, 88, Fill(88 * 88, _ => 3)), Pic(88, 88, Fill(88 * 88, i => (byte)(i == 0 ? 1 : 0)))];
+        var palette = new ScreenPalette();
+        var pics = new ViewPictures(c, PorArtChoice.Amiga, palette.Base);
+        int b = palette.Base(AmigaPalette);
+        var f = new IndexedFrame(320, 200);
+
+        // Frame 1 of the Amiga block: XORed with frame 0, drawn at screen cell (3, 3), indices in the Amiga run.
+        var scene = new EndScene(5) { Amiga = true };
+        scene.Layers.Add(new EndLayer(7, EndGame.AmigaColumn, EndGame.AmigaRow, 1, true));
+        HallView.DrawScene(f, scene, pics);
+        Assert.Equal(b + 2, f[24, 24]);                          // 3 ^ 1
+        Assert.Equal(b + 3, f[25, 24]);
+        Assert.Equal(b + 3, f[24 + 87, 24 + 87]);
+        Assert.Equal(0, f[24 + 88, 24]);
+        Assert.Equal(0, f[23, 24]);
+
+        // The DOS sequence keeps the DOS block whatever the setting.
+        f.Clear();
+        var dos = new EndScene(5);
+        dos.Layers.Add(new EndLayer(7, 1, 1, 0, true));
+        HallView.DrawScene(f, dos, pics);
+        Assert.Equal(4, f[8, 8]);
+        Assert.Equal(4, f[127, 127]);
+    }
+
     // ---- the controls screen's ART row and the title ----
 
     private sealed class Host : IScreenHost
@@ -397,6 +427,63 @@ public class ArtSettingTests
         Assert.Equal(1, host.Pops);
         screen.Update(input);
         Assert.Equal(1, host.Pops);                              // once only
+    }
+
+    [Fact]
+    public void The_amiga_intro_fades_its_pages_through_a_run_of_its_own_and_a_click_in_a_hold_ends_it()
+    {
+        // Pages: index = column / 20 (0..15); the palette's colour i is (i, i, i) in 4-bit steps.
+        byte[] grey = [.. Enumerable.Range(0, 48).Select(i => (byte)(i / 3 * 17))];
+        var page = new PorArtImage("amiga", [Pic(320, 200, Fill(64000, i => (byte)(i % 320 / 20)))], grey);
+        var palette = new ScreenPalette();
+        var now = TimeSpan.Zero;
+        var host = new Host();
+        var screen = new AmigaIntroScreen([page, page, page], palette, host, () => now);
+        var f = new IndexedFrame(320, 200);
+        var input = new ActionInput(InputBindings.Defaults());
+        int run = screen.Run;
+        Assert.Equal(run, palette.Reserve("amiga-intro"));          // the same run every time
+        Assert.Throws<ArgumentException>(() => palette.SetRun(palette.Base(AmigaPalette), grey));
+
+        screen.Draw(f, input);                                       // the first wait: black
+        Assert.Equal(run + 15, f[319, 0]);
+        Assert.Equal(new Color(0, 0, 0), palette.Colours[run + 15]);
+        now = AmigaIntroSequence.GapTime + AmigaIntroSequence.FadeStepTime * 14;   // fade in, divisor 2
+        screen.Draw(f, input);
+        Assert.Equal(new Color(7 * 17, 7 * 17, 7 * 17), palette.Colours[run + 15]);
+        now = AmigaIntroSequence.GapTime + AmigaIntroSequence.FadeStepTime * 16;   // the hold: full colours
+        screen.Draw(f, input);
+        Assert.Equal(new Color(255, 255, 255), palette.Colours[run + 15]);
+        Assert.Equal(AmigaIntroPhase.Hold, screen.Sequence.Phase);
+        Assert.Null(screen.MapClick(new ScreenClick(10, 10, false)));
+        screen.Update(input);
+        Assert.Equal(1, host.Pops);
+        screen.Update(input);
+        Assert.Equal(1, host.Pops);                                  // once only
+
+        // Keyboard and pad: a press during a fade waits for the next wait or hold.
+        foreach (bool pad in new[] { false, true })
+        {
+            now = TimeSpan.Zero;
+            var host2 = new Host();
+            var keyed = new AmigaIntroScreen([page, page], palette, host2, () => now);
+            var keys = new ActionInput(InputBindings.Defaults());
+            now = AmigaIntroSequence.GapTime + AmigaIntroSequence.FadeStepTime * 3;
+            if (pad)
+                keys.Update(default, new Microsoft.Xna.Framework.Input.GamePadState(default,
+                    default, new Microsoft.Xna.Framework.Input.GamePadButtons(Microsoft.Xna.Framework.Input.Buttons.A), default),
+                    default, now, _ => null);
+            else
+                keys.Update(new Microsoft.Xna.Framework.Input.KeyboardState(Microsoft.Xna.Framework.Input.Keys.Enter),
+                    default, default, now, _ => null);
+            Assert.NotNull(keys.NewInput);
+            keyed.Update(keys);
+            Assert.Equal(0, host2.Pops);
+            now = AmigaIntroSequence.GapTime + AmigaIntroSequence.FadeStepTime * 16;
+            keys.Update(default, default, default, now, _ => null);
+            keyed.Update(keys);
+            Assert.Equal(1, host2.Pops);
+        }
     }
 
     // ---- the player's files (DOS + Amiga; nothing checked without GOLDBOX_POR_DIR and GOLDBOX_POR_AMIGA_DIR) ----

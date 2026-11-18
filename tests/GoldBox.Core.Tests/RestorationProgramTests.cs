@@ -147,4 +147,47 @@ public class RestorationProgramTests
         Assert.Equal(8, past[EffectHandlers.ClassLevels + Fighter]);
         Assert.Equal(Program.Value.Xp[Fighter * 14 + 8], Xp(past));
     }
+
+    private static readonly string? LimitDir = FightCapture.Folder("restoration_limit");
+
+    public sealed class LimitFactAttribute : FactAttribute
+    {
+        public LimitFactAttribute()
+        {
+            if (!PorData.Present)
+                Skip = PorData.SkipReason;
+            else if (LimitDir is null)
+                Skip = "needs the private DOSBox captures (restoration_limit)";
+        }
+    }
+
+    /// <summary>
+    /// DOSBox-X (fixture <c>restoration_limit</c>, README; residue probe): a scroll of two Restorations read outside a
+    /// fight on two drained party members with no class to raise, a human fighter 8 (the fighter's top level, male)
+    /// and an elf fighter 7 with Strength 18 (the elf's limit row, female). The probe read the class index as 8 both
+    /// times (BP 3BD0), and the camp save after it holds the records the routine gives with index 8 plus the stat
+    /// recalculation (START 0x1758): no level, hit points + g, experience 10,000,000, gender + 1 (the elf's 1 → 2,
+    /// which View shows as "COPPER").
+    /// </summary>
+    [LimitFact]
+    public void At_the_limit_matches_the_dosbox_party_records()
+    {
+        var before = PorParty.Load(PorSaveGame.Open(Path.Combine(LimitDir!, "before", "SAVGAMF.DAT")), Path.Combine(LimitDir!, "before"));
+        var after = PorParty.Load(PorSaveGame.Open(Path.Combine(LimitDir!, "after", "SAVGAMG.DAT")), Path.Combine(LimitDir!, "after"));
+        var items = PorData.Open().ItemTypes()!;
+        var diffs = new List<string>();
+        foreach (var (m, gender) in new[] { (0, 1), (2, 2) })
+        {
+            var c = before.Members[m];
+            Restore(c);
+            StatRecalc.Recalculate(c, items);
+            var want = after.Members[m];
+            Assert.Equal(gender, want[0x9E]);
+            for (int b = 0; b < EclCharacter.RecordSize; b++)
+                if (b is not (>= 0x7F and < 0x83 or >= 0xC8 and < 0x108) && c[b] != want[b]) // pointers are the program's
+                    diffs.Add($"{c.Name} +{b:X2}: {c[b]} vs DOSBox {want[b]}");
+            Assert.Equal(10_000_000, Xp(c));
+        }
+        Assert.True(diffs.Count == 0, string.Join("\n", diffs));
+    }
 }

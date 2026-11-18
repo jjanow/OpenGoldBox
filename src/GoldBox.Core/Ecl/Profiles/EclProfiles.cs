@@ -10,6 +10,16 @@ public sealed class UnknownEclProfileException(string name)
 }
 
 /// <summary>
+/// A VM profile the engine knows but cannot run: its handler set is not written (SotSB: decoding only).
+/// </summary>
+public sealed class EclProfileNotRunnableException(EclProfile profile)
+    : NotSupportedException($"VM profile {profile.Name}: handler set {profile.Handlers} is not implemented " +
+                            "(this engine decodes its scripts but does not run them)")
+{
+    public EclProfile Profile { get; } = profile;
+}
+
+/// <summary>
 /// The VM profiles that ship with the engine, by the name a module's manifest gives as <c>vm</c>
 /// (docs/module-format.md §5.1). Names are compared exactly (ordinal, case-sensitive).
 /// </summary>
@@ -67,14 +77,73 @@ public static class EclProfiles
         DiskCheckedKinds = new HashSet<string> { "script", "map" }.ToFrozenSet(),
     };
 
+    public const string Sotsb13Name = "ecl-sotsb-1.3";
+
+    /// <summary>
+    /// Secret of the Silver Blades DOS v1.30 (docs/re/survey-sotsb.md; the same VM in v1.00, v1.10, v1.20 and the 1992
+    /// WizardWorks "v1.3"). PoR's VM with the regions moved, its own opcode and IF-skip tables, RETURN-exits and other
+    /// CALL / PROGRAM ids. Decoding only: its handler set is not implemented, so <see cref="EclMemory"/> refuses it.
+    /// Offsets are SotSB v1.30 GAME.OVR file offsets.
+    /// </summary>
+    public static EclProfile Sotsb13 { get; } = new()
+    {
+        Name = Sotsb13Name,
+        // Script loader OVR 0x939F: clears 0x1E00 bytes, copies the block from offset 2 (prefix 0x1388 dropped);
+        // classifier OVR 0x9774: script area $8000–$9DFF; init OVR 0x922C reads five vectors, init = vector 4.
+        ScriptBase = 0x8000,
+        ScriptPrefix = 2,
+        ScriptAreaSize = 0x1E00,
+        VectorCount = 5,
+        InitVector = 4,
+        // Classifier OVR 0x9774, reader OVR 0xA0F1, writer OVR 0x9F3A: PoR's regions moved (survey §3.3). The save
+        // (writer ≈OVR 0x26AE0) holds the three word areas, not the script (survey §6).
+        Regions =
+        [
+            new("4B00", 0x4B00, 0x4EFF, 16, Saved: true),
+            new("7A00", 0x7A00, 0x7BFF, 16, Saved: true),
+            new("7C00", 0x7C00, 0x7FFF, 16, Saved: true),
+            new("script", 0x8000, 0x9DFF, 8, Saved: false),
+        ],
+        OperandWidth = EclOperandWidthRule.FromAddressRegion,  // value fetch OVR 0x91AB, as PoR
+        UnmappedRead = EclUnmappedRead.StackResidue,           // reader OVR 0xA1DD sets nothing, as PoR
+        Opcodes = EclOpcodes.Sotsb,
+        ReturnOnEmptyStack = EclReturnOnEmptyStack.Exits,      // OVR 0x170A → EXIT 0x0C0B
+        // CALL OVR 0x3FD1 compares field − 0x7FFF; the raw field values are listed.
+        CallIds = new Dictionary<ushort, string>
+        {
+            [0x2DCB] = "view refresh",
+            [0x6803] = "[?]",
+            [0xB203] = "sound",
+            [0xC018] = "wall ahead read again [?] (PoR's meaning, not re-read)",
+            [0xC01E] = "one square forward",
+        }.ToFrozenDictionary(),
+        // PROGRAM OVR 0x41A1.
+        ProgramIds = new Dictionary<ushort, string>
+        {
+            [0] = "program routine OVR 0x41E5 (training hall as in PoR [?])",
+            [9] = "camp",
+        }.ToFrozenDictionary(),
+        ProgramIdsThatExit = new HashSet<ushort> { 9 }.ToFrozenSet(),
+        ProgramExitGuardCell = 0x4C38, // OVR 0x422E: EXIT only when $4C38 = 0
+        CharacterView = EclCharacterView.Sotsb7C00Redirection,
+        Handlers = EclHandlerSet.Sotsb,
+        ScriptBytesSaved = false, // reloaded by id from $4BF2
+        DiskCell = 0x7F12,        // case 0x312 of the character view (PoR $6E12)
+        // ECL, GEO, WALLDEF, 8X8D and ITEM keep the disk digit (DS:7420); monsters are always MON1 (OVR 0x25BDA).
+        // [?] MON1ITM / MON1SPC: their name builders were not read (presumably fixed like MON1CHA).
+        BankedKinds = new HashSet<string> { "wallset", "tile", "treasureList" }.ToFrozenSet(),
+        DiskCheckedKinds = new HashSet<string> { "script", "map" }.ToFrozenSet(),
+    };
+
     private static readonly Dictionary<string, EclProfile> All = new(StringComparer.Ordinal)
     {
         [Por13.Name] = Por13,
+        [Sotsb13.Name] = Sotsb13,
     };
 
     /// <summary>
     /// The profile of code that names none (a DOS game folder, <c>new EclMemory()</c>): the engine runs PoR v1.3 only so
-    /// far. A module without <c>vm</c> does not get it (<see cref="ForVm"/>).
+    /// far (<see cref="Sotsb13"/> decodes but does not run). A module without <c>vm</c> does not get it (<see cref="ForVm"/>).
     /// </summary>
     public static EclProfile Default => Por13;
 

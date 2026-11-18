@@ -68,6 +68,26 @@ public sealed class ClientArt
         && _content?.Art(PorAmigaArt.IntroContainer.ToUpperInvariant(), PorAmigaArt.TitleId, Choice) is { Variant: not "dos", Frames: [{ Items.Count: > 0 }, ..] } t
             ? t : null;
 
+    /// <summary>
+    /// The Amiga intro's pages under this setting (the eight credits panels <c>art/amiga/intro/0/2</c>–<c>/9</c>, then the
+    /// title painting), or null when Original DOS is chosen or the module lacks any of them (an older module has the
+    /// painting only: the DOS introduction then shows it as its title page).
+    /// </summary>
+    public IReadOnlyList<PorArtImage>? AmigaIntroPages()
+    {
+        if (Title() is not { } title)
+            return null;
+        var pages = new List<PorArtImage>();
+        for (int i = 0; i < PorAmigaArt.PanelCount; i++)
+            if (_content?.Art(PorAmigaArt.IntroContainer.ToUpperInvariant(), PorAmigaArt.FirstPanelId + i, Choice)
+                is { Variant: not "dos", Frames: [{ Items.Count: > 0 }, ..] } p)
+                pages.Add(p);
+            else
+                return null;
+        pages.Add(title);
+        return pages;
+    }
+
     /// <summary>The introduction's logo page: DOS TITLE block 1 (the Amiga has no such screen), or null.</summary>
     public PorArtImage? IntroLogo() => _content?.Art(IntroContainer, 1, PorArtChoice.Dos);
 

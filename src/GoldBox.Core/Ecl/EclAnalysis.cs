@@ -1,3 +1,5 @@
+using GoldBox.Core.Ecl.Profiles;
+
 namespace GoldBox.Core.Ecl;
 
 /// <summary>
@@ -16,6 +18,8 @@ public sealed class EclAnalysis
     private const int Terminator = -1;
 
     public byte[] Block { get; }
+    /// <summary>The dialect the block is decoded with (default <c>ecl-por-1.3</c>).</summary>
+    public EclProfile Profile { get; }
     public IReadOnlyDictionary<int, EclInstruction> Instructions { get; }
     public IReadOnlyDictionary<int, Reach> Reached { get; }
     public IReadOnlyList<Error> Errors { get; }
@@ -33,11 +37,12 @@ public sealed class EclAnalysis
 
     public IEnumerable<Error> HardErrors => Errors.Where(e => e.Reach == Reach.Hard);
 
-    public EclAnalysis(byte[] block)
+    public EclAnalysis(byte[] block, EclProfile? profile = null)
     {
         Block = block;
-        var roots = EclDecoder.Vectors(block)
-            .Select(v => (Off: EclLayout.AddressToOffset(v.Operand.Word ?? 0), Edge: "vector", Src: Terminator))
+        Profile = profile ?? EclProfiles.Por13;
+        var roots = EclDecoder.Vectors(block, Profile)
+            .Select(v => (Off: Profile.AddressToOffset(v.Operand.Word ?? 0), Edge: "vector", Src: Terminator))
             .ToList();
         VectorOffsets = roots.Select(r => r.Off).ToArray();
         var hard = Walk(roots, false, [], null);
@@ -89,10 +94,10 @@ public sealed class EclAnalysis
         foreach (var (off, ins) in Instructions)
             for (int k = off; k < off + ins.Size && k < cov.Length; k++)
                 cov[k] = Reached[off] == Reach.Hard ? (byte)1 : (byte)2;
-        for (int k = EclLayout.Prefix; k < EclLayout.Prefix + 4 * EclLayout.VectorCount; k++)
+        for (int k = Profile.ScriptPrefix; k < Profile.FirstCodeOffset; k++)
             cov[k] = 1;
         int hard = 0, spec = 0, none = 0;
-        for (int k = EclLayout.Prefix; k < cov.Length; k++)
+        for (int k = Profile.ScriptPrefix; k < cov.Length; k++)
         {
             if (cov[k] == 1) hard++;
             else if (cov[k] == 2) spec++;
@@ -134,14 +139,14 @@ public sealed class EclAnalysis
                 EclOpcodes.OnGoto => "on-goto",
                 _ => "on-gosub",
             };
-            outs.Add((EclLayout.AddressToOffset(o.Word ?? 0), kind, true));
+            outs.Add((Profile.AddressToOffset(o.Word ?? 0), kind, true));
         }
         int next = ins.Offset + ins.Size;
         if (EclOpcodes.IsIf(ins.Op))
         {
             outs.Add((next, "if-true", true));
             EclInstruction? n = null;
-            try { n = EclDecoder.DecodeInstruction(Block, next); }
+            try { n = EclDecoder.DecodeInstruction(Block, next, Profile); }
             catch (EclDecodeException) { }
             if (n is not null && n.Handled)
             {
@@ -174,7 +179,7 @@ public sealed class EclAnalysis
         var work = new Stack<(int Off, string Edge, int Src)>(roots);
         var seen = new HashSet<int>();
         int n = Block.Length;
-        int firstCode = EclLayout.Prefix + 4 * EclLayout.VectorCount;
+        int firstCode = Profile.FirstCodeOffset;
         while (work.Count > 0)
         {
             var (off, edge, src) = work.Pop();
@@ -186,7 +191,7 @@ public sealed class EclAnalysis
                 continue;
             }
             EclInstruction ins;
-            try { ins = EclDecoder.DecodeInstruction(Block, off); }
+            try { ins = EclDecoder.DecodeInstruction(Block, off, Profile); }
             catch (EclDecodeException e)
             {
                 st.Errors.Add(new Error(Reach.Hard, off, src, edge, e.Message));
@@ -207,8 +212,8 @@ public sealed class EclAnalysis
             for (int i = 0; i < ins.Operands.Count; i++)
             {
                 var o = ins.Operands[i];
-                if (o.IsMemory && ins.Role(i) != "target" && o.Word is { } w && w >= EclLayout.Base && w <= EclLayout.End)
-                    st.Refs.Add(EclLayout.AddressToOffset(w));
+                if (o.IsMemory && ins.Role(i) != "target" && o.Word is { } w && w >= Profile.ScriptBase && w <= Profile.ScriptEnd)
+                    st.Refs.Add(Profile.AddressToOffset(w));
             }
             foreach (var (t, kind, isHard) in Edges(ins, st))
                 if (isHard || spec)

@@ -8,7 +8,7 @@ namespace GoldBox.Data.Por.Dosbox;
 /// <summary>One thing the game did between the captures, replayed in the VM or its stand-in host.</summary>
 public abstract record CaptureAction;
 
-/// <summary>Main menu → Load: memory from a save file (fixture <c>saves/</c> first, then the game folder), then the script init with DS:49F8 set and vector 4.</summary>
+/// <summary>Main menu → Load: memory from a save file (fixture <c>saves/</c> first, then the content's shipped save: the game folder's file or the module's engine save), then the script init with DS:49F8 set and vector 4.</summary>
 public sealed record LoadSaveAction(string SaveFile) : CaptureAction;
 
 /// <summary>Run one entry vector (area loop / camp routine).</summary>
@@ -47,7 +47,7 @@ public sealed record AnswersAction(params ushort[] Choices) : CaptureAction;
 /// <summary>Which character files the party comes from.</summary>
 public enum CaptureParty
 {
-    /// <summary>The shipped save A's party (<c>CHRDATA1-6</c> in the game folder).</summary>
+    /// <summary>The shipped save A's party (<c>CHRDATA1-6</c> in the game folder, or the module's <c>saves/a.json</c>).</summary>
     SaveA,
     /// <summary>The in-game save B's party (<c>CHRDATB1-6</c> in the fixture <c>saves/</c>).</summary>
     SaveB,
@@ -176,20 +176,22 @@ public sealed class EclCaptureComparer(string fixturesDir, IPorContent game)
 
     private string CapturePath(string capture, string part) => Path.Combine(FixturesDir, capture, part);
 
-    private string ResolveSave(string file)
+    /// <summary>A save by file name with its party: the fixture <c>saves/</c> first, then the content's shipped save of
+    /// that slot (<see cref="PorShippedSave"/>: the game folder's file or the module's engine save).</summary>
+    private (PorSaveGame Save, EclParty Party) OpenSave(string file)
     {
-        var f = Path.Combine(FixturesDir, "saves", file);
+        var saves = Path.Combine(FixturesDir, "saves");
+        var f = Path.Combine(saves, file);
         if (File.Exists(f))
-            return f;
-        var shipped = Content.SaveFolder is { } sf ? new PorGameDirectory(sf).Find(file) : null;
-        return shipped ?? throw new FileNotFoundException($"save {file} not in the fixtures or {Content.Origin}");
+        {
+            var save = PorSaveGame.Open(f);
+            return (save, PorParty.Load(save, saves));
+        }
+        return (file.Length == 11 ? PorShippedSave.Open(Content, file[6]) : null)
+               ?? throw new FileNotFoundException($"save {file} not in the fixtures or {Content.Origin}");
     }
 
-    private EclParty LoadParty(CaptureParty p) => p switch
-    {
-        CaptureParty.SaveA => PorParty.Load(PorSaveGame.Open(ResolveSave("SAVGAMA.DAT")), Content.SaveFolder ?? FixturesDir),
-        _ => PorParty.Load(PorSaveGame.Open(ResolveSave("SAVGAMB.DAT")), Path.Combine(FixturesDir, "saves")),
-    };
+    private EclParty LoadParty(CaptureParty p) => OpenSave(p == CaptureParty.SaveA ? "SAVGAMA.DAT" : "SAVGAMB.DAT").Party;
 
     private Attempt Run(CaptureScenario s, int hostDraws, IReadOnlyList<ushort>? rollPrefix, IEclTraceSink? extraSink = null)
     {
@@ -250,7 +252,7 @@ public sealed class EclCaptureComparer(string fixturesDir, IPorContent game)
                 {
                     case LoadSaveAction l:
                     {
-                        var save = PorSaveGame.Open(ResolveSave(l.SaveFile));
+                        var save = OpenSave(l.SaveFile).Save;
                         var r = save.LoadGame(vm);
                         encounter.Map ??= GeoMap(memory);
                         at.Stop = r.Reason;

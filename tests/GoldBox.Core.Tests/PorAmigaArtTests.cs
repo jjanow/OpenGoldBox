@@ -258,7 +258,8 @@ public class PorAmigaArtTests(ITestOutputHelper output)
             .Where(p => !p.EndsWith(Path.GetFileName(AmigaIconColoursDocument.RelativePath), StringComparison.Ordinal)).ToList();
         bool title = Imported.Value.Report.Amiga!.Title;
         Assert.Equal(PorAmigaArt.LocateIntro(PorAmigaData.Dir!) is not null, title);
-        Assert.Equal(508 + (title ? 1 : 0), files.Count);
+        Assert.Equal(title ? PorAmigaArt.PanelCount : 0, Imported.Value.Report.Amiga!.IntroPanels);
+        Assert.Equal(508 + (title ? 1 + PorAmigaArt.PanelCount : 0), files.Count);
         foreach (var path in files)
         {
             var doc = (ArtDocument)System.Text.Json.JsonSerializer.Deserialize(File.ReadAllText(path), typeof(ArtDocument), ModuleSchemas.Strict)!;
@@ -266,6 +267,39 @@ public class PorAmigaArtTests(ITestOutputHelper output)
             Assert.Equal(doc.Source!.Container != PorAmigaArt.IntroContainer, doc.PaletteTable is not null);
             Assert.NotNull(doc.Frames);
         }
+    }
+
+    [PorAmigaFact]
+    public void The_intro_panels_are_read_from_its_code()
+    {
+        if (PorAmigaArt.LocateIntro(PorAmigaData.Dir!) is not { } path)
+            return;                                               // the intro is optional
+        var intro = File.ReadAllBytes(path);
+        // hunk 4 +0x1A … +0x1E8: sheet row, screen row, rows, and the second fade for the logo panel only
+        Assert.Equal([new AmigaIntro.Panel(93, 30, 48, false), new AmigaIntro.Panel(455, 60, 16, false),
+            new AmigaIntro.Panel(398, 30, 56, false), new AmigaIntro.Panel(474, 60, 19, false),
+            new AmigaIntro.Panel(141, 20, 146, false), new AmigaIntro.Panel(0, 20, 92, true),
+            new AmigaIntro.Panel(288, 20, 110, false), new AmigaIntro.Panel(499, 20, 100, false)], AmigaIntro.Panels(intro));
+        var screens = AmigaIntro.PanelScreens(intro);
+        var (_, titlePalette) = AmigaIntro.Title(intro);
+        foreach (var (panel, px, pal) in screens)
+        {
+            Assert.Equal(AmigaIntro.Width * AmigaIntro.Height, px.Length);
+            // black (index 0) outside the panel's rows, something drawn inside
+            Assert.All(px.Take(panel.ScreenRow * AmigaIntro.Width), v => Assert.Equal(0, v));
+            Assert.All(px.Skip((panel.ScreenRow + panel.Rows) * AmigaIntro.Width), v => Assert.Equal(0, v));
+            Assert.Contains(px.Skip(panel.ScreenRow * AmigaIntro.Width).Take(panel.Rows * AmigaIntro.Width), v => v != 0);
+            Assert.Equal(!panel.Second, pal.AsSpan().SequenceEqual(titlePalette));
+        }
+        var module = PorModule.Open(Imported.Value.Dir);
+        for (int i = 0; i < PorAmigaArt.PanelCount; i++)
+        {
+            var a = module.Art("INTRO", PorAmigaArt.FirstPanelId + i, PorArtChoice.Best)!;
+            Assert.Equal("amiga", a.Variant);
+            Assert.Equal(screens[i].Pixels, a.Frames[0].Items[0]);
+            Assert.Equal(screens[i].PaletteRgb, a.PaletteRgb);
+        }
+        Assert.Null(module.Art("INTRO", PorAmigaArt.FirstPanelId, PorArtChoice.Dos));
     }
 
     [PorAmigaFact]

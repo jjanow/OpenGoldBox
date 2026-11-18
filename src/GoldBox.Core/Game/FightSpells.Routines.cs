@@ -519,11 +519,13 @@ public sealed partial class FightSpells
     /// that index as 8 in all three samples (a scroll used in a fight on a party member and on a goblin guard, and
     /// outside a fight), so record 0x9E (gender) + 1: <see cref="RestorationResidueIndex"/>. A party member at its race
     /// limit (START 0x3AF7 is an equality on the current level) or its class's top level takes the same path; checked
-    /// with the real limit and level stats by RestorationProgramTests (spells-effects.md "Restoration at the race limit").
+    /// with the real limit and level stats by RestorationProgramTests (spells-effects.md "Restoration at the race limit"),
+    /// and in DOSBox-X on two such party members (index 8 again, fixture <c>restoration_limit</c>).
     /// </summary>
     /// <summary>
     /// The class index Restoration raises when no class qualifies: residue in the program ([bp−0xC] of 0x29C5B), 8 in
-    /// every DOSBox-X sample (fixture <c>fight_restoration</c>), which lands on record 0x96 + 8 = 0x9E (gender).
+    /// every DOSBox-X sample (fixtures <c>fight_restoration</c>, <c>restoration_limit</c>), which lands on record
+    /// 0x96 + 8 = 0x9E (gender).
     /// Signed in the program (cwde), so any value would address 0x16..0x115.
     /// </summary>
     public const int RestorationResidueIndex = 8;

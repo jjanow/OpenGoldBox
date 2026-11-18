@@ -28,9 +28,10 @@ public sealed class Opnd
 
 /// <summary>
 /// Tiny assembler for synthetic test scripts: emits a full DAX-style block (prefix u16 0x1388, five vectors, code
-/// from $9914) with labels. Used instead of hex literals so tests stay readable.
+/// from $9914) with labels. Used instead of hex literals so tests stay readable. Another script base (SotSB: $8000)
+/// is given to the constructor.
 /// </summary>
-public sealed class EclAsm
+public sealed class EclAsm(ushort scriptBase = EclLayout.Base)
 {
     private readonly List<byte> _code = [];
     private readonly Dictionary<string, int> _labels = [];
@@ -39,8 +40,11 @@ public sealed class EclAsm
 
     public const ushort CodeStart = 0x9914;
 
+    /// <summary>VM address of the first code byte (after the five vectors).</summary>
+    public ushort Start { get; } = (ushort)(scriptBase + 4 * EclLayout.VectorCount);
+
     /// <summary>VM address of the next byte.</summary>
-    public ushort Here => (ushort)(CodeStart + _code.Count);
+    public ushort Here => (ushort)(Start + _code.Count);
 
     public EclAsm Label(string name)
     {
@@ -95,7 +99,7 @@ public sealed class EclAsm
         var block = new List<byte> { 0x88, 0x13 };
         for (int k = 0; k < EclLayout.VectorCount; k++)
         {
-            int a = _vectors[k] is { } l ? _labels[l] : CodeStart;
+            int a = _vectors[k] is { } l ? _labels[l] : Start;
             block.AddRange([0x01, 0x01, (byte)a, (byte)(a >> 8)]);
         }
         block.AddRange(code);

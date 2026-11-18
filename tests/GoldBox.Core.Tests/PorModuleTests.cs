@@ -34,13 +34,15 @@ public class PorModuleTests(ITestOutputHelper output)
         foreach (var engine in new[] { "ECL", "GEO", "MONCHA", "MONITM", "MONSPC", "ITEM" })
             Assert.Equal(r.Checked[engine], r.Checked[engine + " (engine)"]);
         // Art (every block of every art DAX; the pictures as the engine decodes them), the program's tables and
-        // texts, and the shipped saves.
+        // texts, and the shipped saves (held only as engine saves: no copy of the original files in saves/).
         Assert.Equal(822, r.Checked["ART"]);
         Assert.Equal(783, r.Checked["ART (engine)"]);
         Assert.Equal(1, r.Checked["PROGRAM"]);
         Assert.Equal(PorRulesTables.Files.Count, r.Checked["RULES"]);
-        Assert.Equal(36, r.Checked["SAVE"]);
+        Assert.False(r.Checked.ContainsKey("SAVE"));
         Assert.Equal(36, r.Checked["ENGINE SAVE"]);  // every original save file written back from the engine saves
+        Assert.Equal(36, PorModuleData.Report.Saves); // read as inputs (manifest)
+        Assert.Equal(["a.json", "j.json"], Directory.EnumerateFiles(PorModuleData.Open().SaveFolder!).Select(Path.GetFileName).Order(StringComparer.Ordinal));
         // The overland: tiles and special locations as bytes, as the engine reads them (and the combat terrain), and
         // every area's column.
         Assert.Equal(2, r.Checked["OVERLAND"]);
@@ -275,8 +277,9 @@ public class PorModuleTests(ITestOutputHelper output)
         ];
         List<string> Run(IPorContent? content)
         {
-            // The module run reads the save from the module's saves/ folder: nothing from the game folder.
-            var path = content is null ? dir.Find(save)! : Path.Combine(content.SaveFolder!, save);
+            // The module run reads the save from the module's saves/ folder (its engine save, the only form the module
+            // keeps): nothing from the game folder.
+            var path = content is null ? dir.Find(save)! : Path.Combine(content.SaveFolder!, PorEngineSave.FileName(save[6]));
             var (g, host, ui) = NewGame(p => PorGame.FromSave(content ?? dir, PorViewArt.Load(content ?? dir), path, p, 99));
             var states = new List<string> { Snapshot(g.Vm, g.Loop.Map, host.Calls.Concat(ui.Calls), g.EntryRun) };
             foreach (var c in commands)

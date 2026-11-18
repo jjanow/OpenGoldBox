@@ -68,8 +68,10 @@ public sealed record ModifyRequest(EclCharacter Character, int Field, IReadOnlyL
 /// as game logic on the <see cref="ScriptRunner"/> thread. The rules are Core's (<see cref="PartyMenu"/>,
 /// <see cref="CharacterCreation"/>); the characters go to the roster files (<see cref="PorRoster"/>) as the program's do.
 /// Modify (0x1BA1E). Save writes the unstarted (or loaded) game (<see cref="SaveGame"/>), Load takes such a save back
-/// into the menu. Train is the training
-/// hall's (offered only when $6DA8 is set, never at start-up).
+/// into the menu. J (0x19E2C) and Train (0x1C32D) are the training hall's (<see cref="HallScreens.Password"/>,
+/// <see cref="HallScreens.Train"/>) on the menu's party and generator: Train is offered once J saw the program's word
+/// (the debug flag DS:470C) or when a loaded save's $6DA8 is set (DOSBox-X s24, <c>START STING</c>: J, then Train with
+/// no gold or experience checks, the page, the question, "Congratulations" and the hit points raised).
 /// </summary>
 public sealed class PartyMenuFlow(Func<PlayerRequest, object?> ask, PartyMenuTexts texts, CreationTables tables,
     BaseItemTable items, PorRoster roster, uint seed)
@@ -111,6 +113,24 @@ public sealed class PartyMenuFlow(Func<PlayerRequest, object?> ask, PartyMenuTex
     /// </summary>
     public Func<char, EclParty, PorGame?, string?>? SaveGame { get; init; }
 
+    /// <summary>The resources Train reads (the training tables, class and spell names, the hall's words); null: no Train.</summary>
+    public ClientResources? Resources { get; init; }
+
+    /// <summary>The word after START on the DOS command line (ParamStr(1)), or null: J compares it.</summary>
+    public Func<string?> ProgramWord { get; init; } = () => null;
+
+    /// <summary>Where the original stops on a run-time error (Train's payment; not reached with the debug flag).</summary>
+    public Action<ProgramHaltException>? Halt { get; init; }
+
+    /// <summary>J's message and Train's page, drawn by the screen while they are up.</summary>
+    public HallState Hall { get; } = new();
+
+    /// <summary>DS:470C, the debug flag J sets (cleared when the menu routine is entered, 0x19AF4).</summary>
+    public bool DebugFlag { get; private set; }
+
+    /// <summary>An answer to the menu: the hidden J (0x19E2C; the screen gives it for the action <c>HallJ</c>).</summary>
+    public const char PasswordAnswer = HallScreens.PasswordKey;
+
     private string? _notice;
     private bool[]? _enabled;
     /// <summary>DS:557D: a save was written since the last menu key other than E and S (set at 0x2028F).</summary>
@@ -129,15 +149,25 @@ public sealed class PartyMenuFlow(Func<PlayerRequest, object?> ask, PartyMenuTex
     /// <summary>Runs the menu until a game starts (Begin, Load) or Exit is confirmed.</summary>
     public void Run()
     {
+        DebugFlag = false;
         while (Started is null)
         {
-            _enabled = PartyMenu.Enabled(Party.Current is not null, trainOn: false, _enabled);
+            _enabled = PartyMenu.Enabled(Party.Current is not null, trainOn: DebugFlag || HallMask > 0, _enabled);
             var shown = new List<(string, PartyMenuItem)>();
             for (int i = 0; i < PartyMenu.Count; i++)
                 if (_enabled[i])
                     shown.Add((texts.MenuItem(i), (PartyMenuItem)i));
             var answer = ask(new PartyMenuRequest(shown) { Prompt = texts.ChooseFunction, Notice = _notice });
             _notice = null;
+            if (answer is PasswordAnswer)
+            {
+                // Not an entry: no prompt, no echo; the word's message when it matches; the menu drawn again. A key
+                // other than E and S, so DS:557D is cleared first (0x19CB3).
+                _saved = false;
+                if (Trainer() is { } h && HallScreens.Password(h))
+                    DebugFlag = true;
+                continue;
+            }
             if (answer is not int pick)
                 continue;
             if (pick == ChoiceRequest.PreviousMember || pick == ChoiceRequest.NextMember)
@@ -164,6 +194,10 @@ public sealed class PartyMenuFlow(Func<PlayerRequest, object?> ask, PartyMenuTex
                     break;
                 case PartyMenuItem.Modify:
                     Modify();
+                    break;
+                case PartyMenuItem.Train:
+                    if (Trainer() is { } trainer)
+                        HallScreens.Train(trainer, DebugFlag);
                     break;
                 case PartyMenuItem.Add:
                     Add();
@@ -206,6 +240,26 @@ public sealed class PartyMenuFlow(Func<PlayerRequest, object?> ask, PartyMenuTex
             }
         }
     }
+
+    /// <summary>VM $6DA8 as the menu reads it: a save loaded here (interface state 0) brings its memory; else 0.</summary>
+    private ushort HallMask => _loaded?.Memory.Read(TrainingHall.HallMaskCell) ?? 0;
+
+    /// <summary>J and Train on the menu's party, generator and (after a load here) the save's speed and hall mask.</summary>
+    private HallTrainer? Trainer() => Resources is not { } r ? null : new HallTrainer
+    {
+        Ask = ask,
+        State = Hall,
+        Text = r.HallTexts,
+        Resources = r,
+        Party = Party,
+        Tables = r.Training,
+        HallMask = HallMask,
+        GameSpeed = _loaded?.Memory.GameSpeed ?? 1,
+        Random = n => Random.Next(n),
+        Halt = Halt,
+        ProgramWord = ProgramWord,
+        YesNo = YesNo,
+    };
 
     private bool YesNo(string prompt)
     {

@@ -169,6 +169,47 @@ public class HallPlayTests
         Assert.Null(r.Player.Scene);
     }
 
+    [Fact]
+    public void Amiga_end_game_plays_its_three_blocks_once_each_block_8_backwards()
+    {
+        if (Dir() is null)
+            return;
+        var r = Start();
+        r.Game.Memory.GameSpeed = 9;   // no effect on the Amiga sequence
+        r.Input.SkipPauses = true;
+        var counts = new Dictionary<int, int> { [2] = 4, [7] = 4, [8] = 6 };
+        var pic = Data.Dax.DaxPicture.Create(88, 88, 0, 0, [new byte[88 * 88]]);
+        r.Player.EndArt = (_, block) => counts.TryGetValue(block, out int n)
+            ? new PorArtImage("amiga", [.. Enumerable.Repeat(pic, n)], new byte[48]) : null;
+        r.Runner.Start(() => r.Player.EndGameSequence());
+        var shown = new List<(int Block, int Frame)>();
+        for (int guard = 0; r.Runner.Busy && guard < 20000; guard++)
+        {
+            Thread.Sleep(1);
+            if (r.Runner.Pending is DelayRequest d && r.Player.Scene is { } s)
+            {
+                Assert.True(s.Amiga);
+                Assert.Equal(EndGame.AmigaFrameTime, d.Duration);
+                var l = Assert.Single(s.Layers);
+                Assert.Equal((EndGame.AmigaColumn, EndGame.AmigaRow), (l.Column, l.Row));
+                shown.Add((l.Block, l.Frame));
+                Press(r, GameAction.Confirm);
+            }
+        }
+        Assert.False(r.Runner.Busy);
+        Assert.Equal([(2, 0), (2, 1), (2, 2), (2, 3), (7, 0), (7, 1), (7, 2), (7, 3),
+            (8, 5), (8, 4), (8, 3), (8, 2), (8, 1), (8, 0)], shown);
+        Assert.Null(r.Player.Scene);
+
+        // Off (the one switch), or a block missing from the Amiga art: the DOS sequence.
+        r.Player.AmigaEndGame = false;
+        Assert.False(HallScreens.AmigaEndGame(r.Player, 5));
+        r.Player.AmigaEndGame = true;
+        Assert.True(HallScreens.AmigaEndGame(r.Player, 5));
+        counts.Remove(8);
+        Assert.False(HallScreens.AmigaEndGame(r.Player, 5));
+    }
+
     /// <summary>The program's word for the hall's J, read from the player's files (never written in the tests).</summary>
     private static string Word(Rig r) => r.Player.Resources.HallTexts.Program!.Text("Hall.Password")!;
 

@@ -364,7 +364,9 @@ written to a.
 window is cleared first. v = 255 redraws the view if a picture or the sprite is shown. Display only; no VM cell. The
 block is read from `PIC<disk>` (0x3D0:2A into DS:6ABE, drawn at cell (3, 3) by 0x3D0:25) of the current disk only:
 a block that file lacks draws nothing and the window keeps what it showed (DOSBox-X s22; Client `ViewPictures.Find`
-since s23, also for HEAD/BODY/SPRIT).
+since s23, also for HEAD/BODY/SPRIT). DOSBox-X s24 (save A, disk 2): PICTURE 3 (only in PIC4) over the 3D view leaves
+the view; PICTURE 2 then PICTURE 3 leaves picture 2 up until the step redraws the view. The Client keeps the last
+picture drawn until the next view redraw (`ExploreScreen`; before s24 it showed the view there).
 
 **SPRITEOFF** (0x37E8): if the sprite is shown (DS:84E3), redraw the view and clear DS:84E3 and DS:84E0.
 
@@ -877,8 +879,8 @@ Run: `python3 -I tools/scripts/ecl.py check <gamedir>` on PoR DOS v1.3 (files as
   `combat_win` save), the structure of the shop (0x7212) and temple (0x5280); CALL $C01E (0x8EAE, step forward; the
   encounter flee in ECL2 block 20 is script code, and `encmenu_flee` now replays); TREASURE's per-item call 00BA:0442
   is the naming routine. Still open: the fight's actions and the loot/shop/temple details (`combat-format.md` "Open");
-  TREASURE's item maker 0x25C99; the item type for a second roll of 48/49 (sampled s18: 0 at the Slums sites; the
-  wilderness sites unsampled, `item-format.md`); the icon slot DS:6F83 before the first
+  TREASURE's item maker 0x25C99; the item type for a second roll of 48/49 (sampled s18 and s24: 0 at all seven v1.3
+  sites, `item-format.md`); the icon slot DS:6F83 before the first
   CLRMON; COMBAT's $6DC1 limit is not discriminated by a capture (the distance was already within the view).
 - Program-side random draws: the rest loop and the door menu follow their read rules (door model
   `GoldBox.Core.Doors`, `geo-format.md`); the comparison harness still searches the door draw counts.

@@ -210,19 +210,8 @@ public static class PorRoundTrip
             }
         }
 
-        // ---- shipped saves ----
-        foreach (var path in Directory.EnumerateFiles(game.Root).Order(StringComparer.Ordinal))
-        {
-            var file = Path.GetFileName(path).ToUpperInvariant();
-            if (!(file.StartsWith("SAVGAM", StringComparison.Ordinal) && file.EndsWith(".DAT", StringComparison.Ordinal))
-                && !file.StartsWith("CHRDAT", StringComparison.Ordinal))
-                continue;
-            var copy = module.SaveFolder is { } sf ? Path.Combine(sf, file) : null;
-            Compare($"save {file}", copy is not null && File.Exists(copy) ? File.ReadAllBytes(copy) : null, File.ReadAllBytes(path), "SAVE");
-        }
-
-        // ---- engine saves (§15): each saves/<slot>.json writes the original SAVGAM and party files back byte for byte,
-        // and exactly the files the game folder has for that save ----
+        // ---- shipped saves (§15): the module keeps them only as engine saves; each saves/<slot>.json writes the original
+        // SAVGAM and party files back byte for byte, and exactly the files the game folder has for that save ----
         var gameFiles = Directory.EnumerateFiles(game.Root)
             .ToDictionary(f => Path.GetFileName(f).ToUpperInvariant(), f => f, StringComparer.Ordinal);
         foreach (var (file, path) in gameFiles.OrderBy(kv => kv.Key, StringComparer.Ordinal))

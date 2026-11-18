@@ -18,6 +18,7 @@ namespace GoldBox.Core.Ecl;
 /// CALLs passed over run no script code (combat-format.md "CALL ids": $C01E steps and re-reads the square, $2C90
 /// redraws, $C018 re-reads the wall, $BA03 plays a sound).
 /// </para>
+/// <para>PoR v1.3 only: the cells, CALL ids and layout above are PoR's (<see cref="EclLayout"/>); only the PoR importer uses it.</para>
 /// </summary>
 public static class EclValueSets
 {

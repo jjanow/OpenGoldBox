@@ -64,7 +64,8 @@ public class PartyMenuScreenTests
         }
     }
 
-    private static Rig Start(uint seed, Action<PartyMenuFlow, CreationTables, BaseItemTable>? setup = null, string? saves = null)
+    private static Rig Start(uint seed, Action<PartyMenuFlow, CreationTables, BaseItemTable>? setup = null, string? saves = null,
+        string? word = null)
     {
         var dir = new PorGameDirectory(Dir()!);
         var art = PorViewArt.Load(dir);
@@ -85,6 +86,8 @@ public class PartyMenuScreenTests
             SaveGame = saves is null ? null : (l, party, loaded) => player.SaveAtPartyMenu(l, party, dir, loaded),
             SaveSlots = saves is null ? null : () => [.. "ABCDEFGHIJ".Where(l => File.Exists(Slot(l)))],
             LoadGame = saves is null ? null : (l, s) => rig!.Game = PorGame.LoadAtPartyMenu(dir, art, Slot(l), who, s),
+            Resources = player.Resources,
+            ProgramWord = () => word,
         };
         var host = new Host();
         var screen = new PartyMenuScreen(flow, runner, host, art.Font, player.Resources, new ClientArt(dir, art, new ScreenPalette(), PorArtChoice.Dos),
@@ -457,12 +460,12 @@ public class PartyMenuScreenTests
         Assert.Equal((before & 0xF0) | ((before + 1) & 0x0F), saved[IconEditor.Colours]);
     }
 
-    private static void AddHero(Rig r)
+    private static void AddHero(Rig r, int classChoice = 0)
     {
         var cc = new CharacterCreation(r.Tables, new TurboPascalRandom(5).Next);
         cc.PickRace(7);
         cc.PickGender(0);
-        cc.PickClass(cc.ClassChoices()[0]);
+        cc.PickClass(cc.ClassChoices()[classChoice]);
         cc.PickAlignment(cc.AlignmentChoices()[0]);
         cc.Roll(r.Items);
         cc.SetName("HERO");
@@ -550,5 +553,134 @@ public class PartyMenuScreenTests
         {
             saves.Delete(true);
         }
+    }
+
+    // ---- J and Train at the start-up menu (s24) ------------------------------------------------------------------
+
+    private static string Word() => new PorGameDirectory(Dir()!).Program()!.Text("Hall.Password")!;
+
+    /// <summary>Updates with no new input until the pending request is no longer a pause (the screen times it).</summary>
+    private static void WaitPause(Rig r)
+    {
+        for (int i = 0; i < 100 && r.Runner.Pending is DelayRequest; i++)
+        {
+            Thread.Sleep(20);
+            r.Input.Update(default, default, default, TimeSpan.Zero, _ => null);
+            r.Screen.Update(r.Input);
+        }
+    }
+
+    /// <summary>
+    /// DOSBox-X s24 (START with the program's word): J at the start-up menu shows the word's message on the bottom line
+    /// for game speed 1 × 225 ms and turns Train on; Train then raises a level-1 character with no gold or experience
+    /// checks (the page, the question, "Congratulations", the hit points), from the menu's generator.
+    /// </summary>
+    [Fact]
+    public void J_with_the_word_offers_train_and_train_raises_the_menus_character()
+    {
+        if (Dir() is null)
+            return;
+        using var r = Start(21, word: Word() + " MORE");
+        AddHero(r, classChoice: 1);              // a human fighter, 0 experience, a few gold
+        var hero = r.Flow.Party.Current!;
+        var menu = Assert.IsType<PartyMenuRequest>(r.Runner.Pending);
+        Assert.DoesNotContain(menu.Items, i => i.Item == PartyMenuItem.Train);
+
+        r.Key(Keys.J);
+        Assert.IsType<DelayRequest>(r.Runner.Pending);
+        Assert.Equal(TimeSpan.FromMilliseconds(225), ((DelayRequest)r.Runner.Pending!).Duration);
+        Assert.Equal((r.Flow.Hall.Message!.Value.Text, (byte)10), r.Flow.Hall.Message);
+        Assert.StartsWith("I UNDERSTAND", r.Flow.Hall.Message!.Value.Text);
+        WaitPause(r);
+        Assert.Null(r.Flow.Hall.Message);
+        menu = Assert.IsType<PartyMenuRequest>(r.Runner.Pending);
+        Assert.Contains(menu.Items, i => i.Item == PartyMenuItem.Train);
+        Assert.True(r.Flow.DebugFlag);
+
+        int goldBefore = Money.CharacterGold(hero);
+        int maxHp = hero[TrainingHall.MaxHp];
+        r.Key(Keys.T);
+        Assert.IsType<ChoiceRequest>(r.Runner.Pending);
+        var page = r.Flow.Hall.Page!;
+        Assert.Equal("HERO", page[0].Text);
+        Assert.Contains(page, l => l.Row == 5 && l.Text.Contains('2'));
+        r.Key(Keys.Y);
+        Assert.IsType<DelayRequest>(r.Runner.Pending);   // "Congratulations..."
+        WaitPause(r);
+        Assert.IsType<PartyMenuRequest>(r.Runner.Pending);
+        Assert.Equal(2, hero[TrainingHall.Levels + 2]);  // fighter level 2
+        Assert.True(hero[TrainingHall.MaxHp] > maxHp);
+        Assert.Equal(goldBefore, Money.CharacterGold(hero)); // no payment with the debug flag
+        Assert.Null(r.Flow.Hall.Page);
+
+        // The flag stays while the menu runs: Remove, then Add, and Train is offered again.
+        r.Key(Keys.R);
+        r.Key(Keys.A);
+        r.Key(Keys.Enter);
+        r.Key(Keys.Escape);
+        menu = Assert.IsType<PartyMenuRequest>(r.Runner.Pending);
+        Assert.Contains(menu.Items, i => i.Item == PartyMenuItem.Train);
+    }
+
+    [Fact]
+    public void J_with_another_word_or_none_does_nothing()
+    {
+        if (Dir() is null)
+            return;
+        foreach (var word in new string?[] { null, "OTHER", Word().ToLowerInvariant() })
+        {
+            using var r = Start(22, word: word);
+            AddHero(r);
+            r.Key(Keys.J);
+            var menu = Assert.IsType<PartyMenuRequest>(r.Runner.Pending);
+            Assert.DoesNotContain(menu.Items, i => i.Item == PartyMenuItem.Train);
+            Assert.False(r.Flow.DebugFlag);
+        }
+    }
+
+    /// <summary>
+    /// DOSBox-X s24: X then Right typed during J's message opened Modify (Right's scan code 0x4D read as 'M'); the pad's
+    /// left-stick press is J.
+    /// </summary>
+    [Fact]
+    public void Keys_typed_during_js_message_are_read_as_the_program_reads_them()
+    {
+        if (Dir() is null)
+            return;
+        using var r = Start(23, word: Word());
+        AddHero(r);
+        r.Input.Update(default, new GamePadState(default, default, new GamePadButtons(Buttons.LeftStick), default), default,
+            TimeSpan.Zero, _ => null);
+        r.Screen.Update(r.Input);
+        Assert.IsType<DelayRequest>(r.Runner.Pending);
+        r.Key(Keys.X);
+        r.Key(Keys.Right);
+        Assert.IsType<DelayRequest>(r.Runner.Pending);
+        WaitPause(r);
+        Assert.IsType<PartyMenuRequest>(r.Runner.Pending);
+        r.Input.Update(default, default, default, TimeSpan.Zero, _ => null);
+        r.Screen.Update(r.Input);                // the menu reads the waiting keys
+        Assert.IsType<ModifyRequest>(r.Runner.Pending);
+    }
+
+    /// <summary>A magic-user trained at the start-up menu picks a spell on the Learn list (the hall's 0x239D6 mode 4).</summary>
+    [Fact]
+    public void Train_at_the_start_up_menu_shows_the_learn_list()
+    {
+        if (Dir() is null)
+            return;
+        using var r = Start(24, word: Word());
+        AddHero(r, classChoice: 2);
+        var hero = r.Flow.Party.Current!;
+        Assert.Equal(1, hero[TrainingHall.MageLevel]);
+        r.Key(Keys.J);
+        WaitPause(r);
+        r.Key(Keys.T);
+        r.Key(Keys.Y);
+        WaitPause(r);
+        Assert.IsType<ListRequest>(r.Runner.Pending);
+        r.Key(Keys.Enter);                       // the highlighted row: the last spell
+        Assert.IsType<PartyMenuRequest>(r.Runner.Pending);
+        Assert.Equal(2, hero[TrainingHall.MageLevel]);
     }
 }

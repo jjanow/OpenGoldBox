@@ -87,7 +87,7 @@ text/<lang>.json               program and module text by key (section 13)
 audio/dos/pcsound.json         the program's PC-speaker / Tandy sound driver data (section 10a; optional)
 audio/<variant>/               further sound variants (Amiga: not yet; section 10a)
 transfer.json                  what characters bring in and take out (section 14)
-saves/                         shipped saves / premade characters (optional; section 15; PoR: engine saves a.json, j.json + the original files)
+saves/                         shipped saves / premade characters (optional; section 15; PoR: engine saves a.json, j.json)
 ```
 
 A module is a directory, or the same tree in a zip. File names are lower case, and ids are decimal with no padding.
@@ -168,7 +168,7 @@ The profile is C# (handlers) plus data in `src/GoldBox.Core/Ecl/Profiles/`. It i
 holds no game data. The module format only names the profile.
 
 Done (s17): `EclProfile` holds the table's rows as fields, and `EclProfiles` resolves the manifest's `vm` to one.
-`ecl-por-1.3` (`EclProfiles.Por13`) is the only profile. Its values are the constants the VM was written with, and a
+`ecl-por-1.3` (`EclProfiles.Por13`) was the only profile (SotSB: below). Its values are the constants the VM was written with, and a
 test checks that they match. The PoD and DQK columns above stay documentation until those VMs are built. Row by row:
 
 - Load address, prefix, size cap: `ScriptBase`, `ScriptPrefix`, `ScriptAreaSize` (plus `VectorCount`, `InitVector`).
@@ -196,6 +196,18 @@ describe what the `Por13` code does: `EclMemory` refuses a profile with another 
 callers that name none run PoR. `IPorContent.VmProfile` gives the content's profile: a DOS folder is `ecl-por-1.3`, and a
 module is its `vm` (section 4: its own or a dependency's; none fails with `ModuleHasNoVmException`). An unknown name
 fails when the module is opened (`UnknownEclProfileException`).
+
+Done (s24): `ecl-sotsb-1.3` (`EclProfiles.Sotsb13`), the SotSB column as data, for decoding only. It adds
+`EclReturnOnEmptyStack.Exits`, `EclCharacterView.Sotsb7C00Redirection` and `EclHandlerSet.Sotsb` (named, not
+written: `EclMemory` and `PorModule` refuse the profile with `EclProfileNotRunnableException`, which the Client
+reports like an unknown profile, so no SotSB script runs) and `ProgramExitGuardCell` (SotSB's PROGRAM 9 exits only
+while $4C38 = 0; null for PoR; `EclVm` reads it). Its opcode table is `EclOpcodes.Sotsb`: PoR's rows with CLOCK's second
+operand, 3E DUMP, 3F FINDSPECIAL, 40 DESTROYITEMS, 41 ADDEP, and no row for the 0x3C stub; the IF-skip counts are the
+program's chain (mis-skips 15, 25, 26, 2B, 34, 36). `EclDecoder` and `EclAnalysis` take a profile (default PoR), and
+`goldbox-tools ecl-check GAMEDIR --vm ecl-sotsb-1.3` and `tools/scripts/ecl.py … --vm sotsb` read a SotSB folder. The
+special cells, the redirection list into the 439-byte record and the new-game start (script 3 or 17) stay in
+`survey-sotsb.md` until the SotSB handlers are written. Banked kinds: `wallset`, `tile`, `treasureList`; monsters
+are always bank 1 (`MON1`) and the item and effect lists presumably too `[?]`, so they are not in the set.
 
 `EclVmPolicy` stays separate. It holds the `[?]` switches, which a test or a DOSBox check may change for one VM.
 A profile is shared and fixed.
@@ -379,6 +391,10 @@ For FRUA designs, and later for hand-made modules that don't want bytecode.
 - **Title painting (s18):** when the Amiga folder also holds disk A's `intro`, the importer decrunches it and writes
   the title painting as `art/amiga/intro/0/1` (320×200, the 16 colours the intro fades in, category `title`, sidecar
   without `paletteTable`; docs/re/por-art-formats.md §5). Without `intro` the overlay simply has no title.
+  Importer 0.7.8 (s24) adds the intro's eight credits panels as `art/amiga/intro/0/2`–`/9`, in the order the intro
+  shows them, each a whole 320×200 screen as it stands once faded in (the panel's sheet rows at their screen row,
+  index 0 elsewhere) with the 16 colours its fade reads; the rows and places are read from the intro's code
+  (`AmigaIntro.Panels`). The Client plays the Amiga intro from them (docs/re/start-menu.md §1a).
 - **Client (s18):** the art setting Original DOS / Best / Amiga (`--art dos|best|amiga`, settings key `"Art"`, the
   controls screen's ART row; default Best) goes through `IPorContent.Art`. Each asset's palette gets its own run of 16
   in a 256-entry screen palette (`ScreenPalette`; EGA stays 0–15), so DOS and Amiga art share a frame; the indices are
@@ -580,19 +596,20 @@ module; `a.json` … `j.json` in the Client's save folder).
   checks that no file the original names is left out). A slot letter other than the save's own renames the set: stems
   `CHRDAT<letter>n`, zeros after them, as the program's save writes them.
 - **Loading**: `PorGame.FromSave` takes an engine save (`.json`) or an original `SAVGAMx.DAT`. An original is
-  converted first, with its party files looked up next to it, then in the content's `saves/`. Both forms then load
-  through one path: engine save → `PorSaveGame` → the program's Load. A game from `saves/a.json` equals the game from
-  the folder's original files in VM state, party records, program variables, entry run and over a walk (A and J,
-  `PorModuleTests`). `PorArea.FromSave` and the capture replays still read original files directly.
+  converted first, with its party files looked up next to it, then in the content's save folder (a game folder's).
+  Both forms then load through one path: engine save → `PorSaveGame` → the program's Load. A game from `saves/a.json`
+  equals the game from the folder's original files in VM state, party records, program variables, entry run and over
+  a walk (A and J, `PorModuleTests`). `PorArea.FromSave` reads an original file directly. The capture replays take a
+  shipped save from the content through `PorShippedSave`: a game folder's original files or a module's `saves/x.json`.
 - **Client**: the camp's Save writes `x.json` into the player's save folder: the bytes the program's save builds,
   converted with the party in memory. `--save X` looks for, in order: the player's `x.json`, the player's
-  `SAVGAMX.DAT` (from earlier Clients), the module's `saves/x.json`, then the module's `saves/SAVGAMX.DAT`. `--save
-  FILE` takes either form.
+  `SAVGAMX.DAT` (from earlier Clients), then the content's `x.json` and `SAVGAMX.DAT` (a module has only the
+  first). `--save FILE` takes either form. The Load menu's highlight counts both forms as slots.
 - **Tools**: `goldbox-import save-export SAVE.json OUTDIR [SLOT]` writes the original files for the DOS game.
   `goldbox-import save-import SAVGAMx.DAT MODULEDIR OUT.json` converts an original save for a module.
-- The importer writes `saves/a.json` and `saves/j.json` after the manifest, and it still copies the original files
-  into `saves/`. The capture replays, `gbchar.py` and the DOSBox checks read those originals. They are redundant with
-  the engine saves (which rebuild them exactly) and can go once nothing reads them.
+- The importer writes `saves/a.json` and `saves/j.json` after the manifest. Since importer 0.7.8 it no longer
+  copies the original files into `saves/`: they are manifest inputs only, and the engine saves rebuild them exactly
+  (`PorRoundTrip` kind `ENGINE SAVE`). DOSBox-X checks and `gbchar.py` take the originals from the game folder.
 
 ## 16. What the PoR importer writes (mapping)
 
@@ -608,7 +625,7 @@ module; `a.json` … `j.json` in the Client's save folder).
 | every other DAX (`PIC`, `CPIC`, `HEAD`, `BODY`, `CHEAD`, `CBODY`, `SPRIT`, `COMSPR`, `DUNGCOM`, `WILDCOM`, `RANDCOM`, `BACPAC`, `SQRPACI`, `TITLE`, `ICON`, `FINAL5`) | `art/dos/<container>/<bank>/<id>.json` + `.png` |
 | Amiga `*.dax` (art files) | `art/amiga/<container>/0/<id>.json` + `.png`, palette from Amiga `program` (`--amiga`, §10) |
 | START.EXE / GAME.OVR tables | `rules/program.json`, the decoded `rules/*.json` (§12), `rules/overland.json` (+ `overland.column` in areas 25–27), `text/en.json` |
-| `SAVGAM?.DAT` + `CHRDAT*` | `saves/<slot>.json` (engine saves, §15) and `saves/` (the original files, copied) |
+| `SAVGAM?.DAT` + `CHRDAT*` | `saves/<slot>.json` (engine saves, §15; the original files are not copied since 0.7.8) |
 
 `ITEM<d>` and `MON<d>ITM` both use block ids per disk. **They collide** (checked by the importer on v1.3, s15): 11 ids
 on 5 disks are both, with different bytes every time: disk 1: 6, 9, 22; disk 2: 1, 2, 3, 5; disk 3: 51, 53; disk 4:
@@ -632,7 +649,7 @@ With `--amiga` (Amiga v1.0, s17): 508 Amiga pictures over 16 files (every pictur
    take only an `IPorContent`.
 2. `GoldBox.Importer` (CLI `goldbox-import por GAMEDIR OUTDIR [--amiga AMIGADIR]`): scripts, maps, records, item
    types first. Then art (DOS, then Amiga), rules tables, text, saves. **Done (s16; the Amiga overlay s17; the
-   overland `rules/overland.json` s18, importer 0.6 after the s18 merges; `audio/dos/pcsound.json` and new `PartyMsg`, `CombatMsg`, `Hall`, `End`, river texts s19, importer 0.7; the icon editor's size and hair / face words `PartyMsg.Icon*` s20, importer 0.7.1; HMENU's one-word swap `Msg.HmenuButton` / `Msg.HmenuEnter` s21, importer 0.7.2; the encounter menus, messages and parley attitudes `Msg.Encounter*`, `Msg.BothSidesWait`, `Msg.MonstersFlee`, `Msg.ParleyAttitudes` s21, importer 0.7.3; the introduction's credits `Intro.0`–`Intro.28` s22, importer 0.7.4; the Amiga party-icon colour pairs `art/amiga/icon-colours.json` s22, importer 0.7.5).** The importer and the round
+   overland `rules/overland.json` s18, importer 0.6 after the s18 merges; `audio/dos/pcsound.json` and new `PartyMsg`, `CombatMsg`, `Hall`, `End`, river texts s19, importer 0.7; the icon editor's size and hair / face words `PartyMsg.Icon*` s20, importer 0.7.1; HMENU's one-word swap `Msg.HmenuButton` / `Msg.HmenuEnter` s21, importer 0.7.2; the encounter menus, messages and parley attitudes `Msg.Encounter*`, `Msg.BothSidesWait`, `Msg.MonstersFlee`, `Msg.ParleyAttitudes` s21, importer 0.7.3; the introduction's credits `Intro.0`–`Intro.28` s22, importer 0.7.4; the Amiga party-icon colour pairs `art/amiga/icon-colours.json` s22, importer 0.7.5; the Amiga intro's credits panels `art/amiga/intro/0/2`–`/9` s24, importer 0.7.8).** The importer and the round
    trip live in `GoldBox.Data/Module/Por/` (the Client imports with them); the CLI stays in `GoldBox.Importer`.
 3. **Round-trip test:** for every raw resource, module → original block must be byte-identical to the DAX block. All
    existing real-data tests also pass with the Client and Core reading the module instead of the game folder.
@@ -656,8 +673,9 @@ With `--amiga` (Amiga v1.0, s17): 508 Amiga pictures over 16 files (every pictur
 6. The VM profile (§5.1). **Done (s17)** for PoR: `EclProfile` / `EclProfiles` in `src/GoldBox.Core/Ecl/Profiles/`,
    resolved from the manifest's `vm`. The VM takes its layout, opcode and IF-skip tables from it. A pure refactor:
    every test and every `ecl-compare` capture gives the same result as before.
-   SotSB surveyed (s18, `docs/re/survey-sotsb.md`): its profile would be PoR's VM with moved region bases, its own
-   tables and a redirection list as data (§5.1); not built.
+   SotSB surveyed (s18, `docs/re/survey-sotsb.md`). **Decode profile done (s24):** `ecl-sotsb-1.3`
+   (`EclProfiles.Sotsb13`) decodes every SotSB block (`ecl-check --vm ecl-sotsb-1.3`); its handlers and character
+   view are not written, so `EclMemory` refuses it (§5.1).
 7. Engine saves (§15). **Done (s18)** for PoR: `EngineSaveDocument` + `PorEngineSave`. The importer converts the
    shipped saves (`saves/a.json`, `saves/j.json`), and they write the 36 original files back byte for
    byte. `PorGame.FromSave` loads either form through one path. The Client's camp Save writes engine saves, and
@@ -702,8 +720,8 @@ With `--amiga` (Amiga v1.0, s17): 508 Amiga pictures over 16 files (every pictur
 - Settled (s18): the PoR overland tile table and special locations are in `rules/overland.json`, placed by areas
   25–27 (section 6). Open: what the special-location VM cells mean, and the tile file the view draws from.
 - Saves (section 15): a save from another module version is refused (s21), other content with the same version loads
-  with a note; the shipped
-  original save files are kept in `saves/` next to the engine saves until nothing reads them.
+  with a note. The shipped original save files are no longer copied into `saves/` (importer 0.7.8): the engine saves
+  replace them.
 - Areas: computed LOADFILES operands are listed when the code before them fixes them (s18; PoR 3, 5, 24); block 5's
   $9AD8 is the one left `[?]` (section 6).
 - Fields over raw: when an editor changes records, which wins (section 11).
