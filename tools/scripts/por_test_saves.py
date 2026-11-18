@@ -5,8 +5,8 @@
 
 Writes SAVGAMB..I.DAT into a scratch game copy (never a master; existing files of those slots are replaced), each
 being SAVGAMA.DAT with its script area (save offset 5121 = $9900) replaced: vectors 1-4 point at an EXIT at $991F,
-vector 0 (one step forward) at the test code at $9920. Vector 4 does not run LOADPIECES, so the program shows the
-saved wall sets while the Client shows an open view (only the 3D view differs). Slots (docs/re/start-menu.md §8,
+vector 0 (one step forward) at the test code at $9920. Vector 4 does not run LOADPIECES, so both the program and the
+Client (since s23) show the saved wall sets. Slots (docs/re/start-menu.md §8,
 training.md, combat-format.md, ecl-format.md "DAMAGE"):
 
     B  DAMAGE 0xE0, 1, 1, 200, 0: the whole party killed by the script (six lines, the wipe window)

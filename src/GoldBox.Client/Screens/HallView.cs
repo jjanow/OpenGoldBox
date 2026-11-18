@@ -165,7 +165,7 @@ public sealed class HallView
     {
         foreach (var layer in scene.Layers)
         {
-            if (pictures.Find("FINAL", layer.Block, scene.Disk, PorArtChoice.Dos) is not { Frames.Count: > 0 } img)
+            if (pictures.Find("FINAL", layer.Block, scene.Disk, PorArtChoice.Dos, anyDisk: true) is not { Frames.Count: > 0 } img)
                 continue;
             // Later frames of a FINAL block are XOR deltas against the first (loader 0x2E170, as PIC; DOSBox-X s22: the
             // spirit's frames drawn raw showed speckled colours and a black box).

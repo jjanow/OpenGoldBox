@@ -36,6 +36,12 @@ public sealed class FightKit
     public Func<byte>? AiKey { get; set; }
 
     /// <summary>
+    /// The program's Alt-X debugging switch works in the fights this kit builds (0x1638E: ParamStr(1) equals the word at
+    /// GAME.OVR 0x16374), asked when a fight is built; null = never (the original started without the word).
+    /// </summary>
+    public Func<bool>? AltXEnabled { get; set; }
+
+    /// <summary>
     /// The level seams of an effect engine: the race level limit (START 0x3AF7, <see cref="LevelStats.RaceLimitStops"/>)
     /// and, with <paramref name="tables"/>, the level stats 0x2AA87 (<see cref="LevelStats.Apply"/>).
     /// </summary>
@@ -64,12 +70,13 @@ public sealed class FightKit
         WireLevels(effects, LevelTables);
         // The fight start's key reads (START 0x8AB2 from 0xE402 and 0xDFC6): a waiting key is taken and dropped.
         _ = AiKey?.Invoke();
-        var ai = new MonsterAi(AiSteps, null, TurnUndead) { ReadKey = AiKey };
+        bool altX = AltXEnabled?.Invoke() == true;
+        var ai = new MonsterAi(AiSteps, null, TurnUndead) { ReadKey = AiKey, AltX = () => altX };
         // The View / Use screens (0x21AED / 0x21F32) when the chooser also answers them.
         screens ??= chooser is IItemScreenChooser itemChooser ? new FightItemScreens(itemChooser) : null;
         IFightController controller = chooser is null
             ? new AllQuickController(ai)
-            : new MenuController(chooser, ai, screens, TurnUndead);
+            : new MenuController(chooser, ai, screens, TurnUndead) { CheatEnabled = altX };
         var fight = new Fight(memory, encounter, Items, random, controller, map, effects)
         {
             Moves = new FightMoves(map),

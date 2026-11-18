@@ -136,7 +136,11 @@ Loading `SAVGAMx.DAT` (talonius `LoadGame`, DrEvil `ov17_1602`):
    character to the party. The stem is not rebuilt from the slot letter; a renamed set would still load. Missing
    `.SAV` files are skipped.
 3. Load the combat icons of each member; reload the current 3D map (`GEOn` block `map_id`) when the location type
-   is < 2, and the three wall sets from $4AFA..$4AFF; outdoors, load the wilderness icons instead.
+   is < 2, and the three wall sets from $4AFA..$4AFF; outdoors, load the wilderness icons instead. Program read
+   (s23, GAME.OVR 0x1FBEE–0x1FC86, location type ≤ 1): for i = 1..3 the cache DS:6AAE+4i := $4AF9+i (id) and
+   DS:6AB0+4i := $4AFC+i (slot), then LoadWallSet(id, slot) only where the id is not negative (a slot with a negative
+   id keeps what it held). This runs before vector 4, so an area whose vector 4 loads nothing shows the saved walls
+   (engine: `PorGame` load).
 
 Saving does the reverse: it writes the options and wall slots into the GBVM cells, writes `SAVGAMx.DAT` with name
 slot n = `CHRDATxn` for each member in party order, then each `CHRDATxn.SAV/.ITM/.SPC`. Old `.ITM`/`.SPC` files are

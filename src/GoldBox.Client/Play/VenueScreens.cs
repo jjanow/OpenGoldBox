@@ -263,7 +263,8 @@ public static class VenueScreens
             else menu.AddRange(["VIEW", "POOL"]);
             if (detect) menu.Add("DETECT");
             menu.Add("EXIT");
-            int i = t.Dialog.Menu(menu, cancel: menu.Count - 1, partySelect: true, memberLetters: MemberLetters);
+            // 0x659D passes the animate flag 1: the loot picture (PIC 1) animates while the menu waits.
+            int i = t.Dialog.Menu(menu, cancel: menu.Count - 1, partySelect: true, memberLetters: MemberLetters, animates: true);
             if (t.SelectMember(i))
                 continue;
             switch (menu[Math.Clamp(i, 0, menu.Count - 1)])
@@ -304,7 +305,7 @@ public static class VenueScreens
             bool money = t.PoolHasMoney, items = t.Treasure.Count > 0;
             if (money && items)
             {
-                int i = t.Dialog.Menu(["MONEY", "ITEMS", "EXIT"], t.Text[Msg.TakePrompt], cancel: 2);
+                int i = t.Dialog.Menu(["MONEY", "ITEMS", "EXIT"], t.Text[Msg.TakePrompt], cancel: 2, animates: true); // 0x630A: flag 1
                 if (i == 0) MoneyScreens.Take(t);
                 else if (i == 1) TakeItems(t);
                 else return;

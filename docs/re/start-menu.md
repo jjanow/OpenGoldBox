@@ -86,8 +86,10 @@ routine.
   at 3000 cycles Delay(3000) measured 3.0 s.
 - Tandy and CGA (DS:4A1E ≠ 1) skip the counter: no lightning. The generator draws (a timing-dependent number) come
   before the party menu's.
-- **Engine:** Core `Intro` (pages, waits, a key ends the whole intro, the counter and burst at `PassesPerMillisecond`
-  = 6, DOSBox-X at 3000 cycles), Client
+- **Engine:** Core `Intro` (pages, waits, a key ends the whole intro, the counter and burst). The loop runs at
+  `PassesPerMillisecond` = **40**, DOSBox-X's rate at 20000 cycles (first burst 0.83 s into the title), so the
+  lightning shows: one or two bursts per title (user decision s23: at 3000 cycles, 6 passes/ms, it never showed, which
+  counts as a bug; `PassesPerMillisecondAt3000Cycles` keeps the measured rate for tests). Client
   `IntroScreen`, shown at start-up over the party menu (not with `--save` / `--area`, which stand for the debug start
   that skips the intro and the code wheel). Pictures DOS TITLE 1 and 2 from the module (`art/dos/title`); register 1
   is drawn by recolouring index 1. Under Best / Amiga the title page shows the Amiga intro painting

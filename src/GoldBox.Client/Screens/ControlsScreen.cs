@@ -44,6 +44,9 @@ public sealed class ControlsScreen(TextFont font, IScreenHost host, ClientArt? a
         (GameAction.StepDownLeft, "FIGHT: DOWN-LEFT"),
         (GameAction.StepDownRight, "FIGHT: DOWN-RIGHT"),
         (GameAction.FightManual, "FIGHT: MANUAL"),
+        (GameAction.FightQuickMagic, "FIGHT: MAGIC ON/OFF"),
+        (GameAction.FightAllQuick, "FIGHT: ALL QUICK"),
+        (GameAction.FightAltX, "FIGHT: ALT-X"),
         (GameAction.HallJ, "HALL: J"),
     ];
 

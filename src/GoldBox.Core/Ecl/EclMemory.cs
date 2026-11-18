@@ -78,6 +78,14 @@ public sealed class EclMemory
     public bool FilesLoadedSinceSwitch { get; set; }
 
     /// <summary>
+    /// The view's redraw flags besides the picture's and sprite's (DS:84E0 / 84E3, <see cref="Game.EncounterState"/>):
+    /// DS:84E5 (backdrop: the script init 0x76AD and writes to $C059 / $C05F), DS:84E6 (position: writes to
+    /// $C04B–$C04D), DS:84E8 (sky: writes to $49FD / $49FE). Only CALL $2C90 clears them (0x3A88–0x3A92), after it
+    /// redraws the view and the position line. Not saved.
+    /// </summary>
+    public ViewRedraw ViewRedrawFlags { get; set; }
+
+    /// <summary>
     /// DS:49E2, the game speed 0 (fastest) … 9: DELAY waits speed × 225 ms (START 0x7E4E) and PRINT text speed × 10 ms
     /// per character (START 0x7782), both through the Crt-style Delay(ms) START 0xA69C. The new game sets 1 (0xE99A);
     /// Save copies it into $49FC (0x1FECE) and Load takes $49FC's low byte back (0x1F8F1); only then does $49FC change.
@@ -196,12 +204,21 @@ public sealed class EclMemory
         if (StoreCell(a, value))
         {
             if (a is 0x49FD or 0x49FE)
-                SkyCeilingWritten?.Invoke(a, value); // [?] extra handling in the writer not decoded
+            {
+                ViewRedrawFlags |= ViewRedraw.Sky; // 0x8182: DS:84E8 := 1
+                SkyCeilingWritten?.Invoke(a, value);
+            }
             if (a is >= Area6B00 and <= Area6B00End)
                 WriteSideEffects(a, value);
             return;
         }
         ushort old;
+        // The writer's redraw flags (0x814A): $C04B–$C04D set DS:84E6 (0x823F, 0x8258, 0x82A9), $C059 / $C05F DS:84E5
+        // (0x82BB, 0x82CD); CALL $2C90 clears them after its redraw.
+        if (a is 0xC04B or 0xC04C or 0xC04D)
+            ViewRedrawFlags |= ViewRedraw.Position;
+        else if (a is 0xC059 or 0xC05F)
+            ViewRedrawFlags |= ViewRedraw.Backdrop;
         switch (a)
         {
             case 0xC04B:
@@ -504,4 +521,17 @@ public sealed class EclMemory
     }
 
     private void Diag(string message) => Diagnostic?.Invoke(message);
+}
+
+/// <summary>The view redraw flags of <see cref="EclMemory.ViewRedrawFlags"/>.</summary>
+[Flags]
+public enum ViewRedraw : byte
+{
+    None = 0,
+    /// <summary>DS:84E5.</summary>
+    Backdrop = 1,
+    /// <summary>DS:84E6.</summary>
+    Position = 2,
+    /// <summary>DS:84E8.</summary>
+    Sky = 4,
 }

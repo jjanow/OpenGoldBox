@@ -67,10 +67,10 @@ public sealed class ActionInput(InputBindings bindings)
         _injected = false;
 
         foreach (var k in keys.GetPressedKeys())
-            if (_prevKeys.IsKeyUp(k))
+            if (_prevKeys.IsKeyUp(k) && !IsModifier(k))
             {
                 LastDevice = InputDevice.Keyboard;
-                _newInput ??= (InputDevice.Keyboard, k.ToString());
+                _newInput ??= (InputDevice.Keyboard, Modified(keys, k.ToString()));
             }
         if (pad.IsConnected)
             foreach (var b in AllButtons)
@@ -117,10 +117,37 @@ public sealed class ActionInput(InputBindings bindings)
         _prevMouse = mouse;
     }
 
+    private static bool IsModifier(Keys k) =>
+        k is Keys.LeftAlt or Keys.RightAlt or Keys.LeftControl or Keys.RightControl;
+
+    private static bool AltDown(KeyboardState keys) => keys.IsKeyDown(Keys.LeftAlt) || keys.IsKeyDown(Keys.RightAlt);
+    private static bool CtrlDown(KeyboardState keys) => keys.IsKeyDown(Keys.LeftControl) || keys.IsKeyDown(Keys.RightControl);
+
+    /// <summary>A key's binding name with the modifiers held: "Alt+M", "Ctrl+S", "Ctrl+Alt+X", or the bare name.</summary>
+    private static string Modified(KeyboardState keys, string name) =>
+        (CtrlDown(keys) ? "Ctrl+" : "") + (AltDown(keys) ? "Alt+" : "") + name;
+
+    /// <summary>
+    /// A key binding is down: "Alt+M" / "Ctrl+S" need exactly those modifiers held (the original's Alt-M, Ctrl-S), and a
+    /// bare key does not count while Alt or Ctrl is held, so Alt-M is not also M.
+    /// </summary>
+    internal static bool KeyDown(KeyboardState keys, string binding)
+    {
+        bool alt = false, ctrl = false;
+        var name = binding;
+        while (true)
+        {
+            if (name.StartsWith("Alt+", StringComparison.Ordinal)) { alt = true; name = name[4..]; }
+            else if (name.StartsWith("Ctrl+", StringComparison.Ordinal)) { ctrl = true; name = name[5..]; }
+            else break;
+        }
+        return Enum.TryParse<Keys>(name, out var k) && keys.IsKeyDown(k) && AltDown(keys) == alt && CtrlDown(keys) == ctrl;
+    }
+
     private bool IsDown(GameAction a, KeyboardState keys, GamePadState pad)
     {
         foreach (var name in Bindings.Keys(a))
-            if (Enum.TryParse<Keys>(name, out var k) && keys.IsKeyDown(k))
+            if (KeyDown(keys, name))
                 return true;
         if (pad.IsConnected)
             foreach (var name in Bindings.Buttons(a))
@@ -203,14 +230,20 @@ public sealed class ActionInput(InputBindings bindings)
     /// <summary>
     /// The AI's key check (GAME.OVR 0xBB81) on the logic thread while the screen waits: a waiting key is read (the
     /// buffer empties) and its code returned: <see cref="GameAction.FightManual"/> (space, the pad's right-stick press)
-    /// 0x20; 0 for any other key (taken, no effect) or none. [?] The check's Alt-M (scan 0x32) and Alt-X (0x2D) are not
-    /// mapped (the Client has no Alt keys); a click during a pause is dropped, so the mouse has no way to it.
+    /// 0x20, <see cref="GameAction.FightQuickMagic"/> (Alt-M) 0x32, <see cref="GameAction.FightAltX"/> (Alt-X) 0x2D; 0 for
+    /// any other key (taken, no effect) or none. A click during a pause is dropped, so the mouse has no way to it.
     /// </summary>
     public byte TakeAiKey()
     {
-        bool manual = _buffered?.Contains(GameAction.FightManual) == true;
+        var keys = _buffered;
         Discard();
-        return manual ? (byte)0x20 : (byte)0;
+        if (keys is null)
+            return 0;
+        // GetKey keeps the last key; an Alt key reads as 0 then its scan code: Alt-M 0x32, Alt-X 0x2D.
+        return keys.Contains(GameAction.FightManual) ? (byte)0x20
+            : keys.Contains(GameAction.FightQuickMagic) ? (byte)0x32
+            : keys.Contains(GameAction.FightAltX) ? (byte)0x2D
+            : (byte)0;
     }
 
     /// <summary>A pause may end early this frame (QoL <see cref="SkipPauses"/> on and Confirm pressed or a click made).</summary>

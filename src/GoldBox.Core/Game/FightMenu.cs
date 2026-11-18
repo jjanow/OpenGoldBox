@@ -247,6 +247,26 @@ public sealed class FightMenu
         return e;
     }
 
+    /// <summary>
+    /// 0x1638E with the start word (ParamStr(1) equal to its copy at GAME.OVR 0x16374, the hall's J word): after its
+    /// message (0x1637A, START 0x2233), every hostile creature (0x10E = 1) leaves play with status 6 and its map byte
+    /// cleared (DS:5F2A), every creature's actions end (START 0x31D7), and the map is redrawn. Called by Alt-X in the
+    /// menu and by X in the AI's key check (0xBB81).
+    /// </summary>
+    public static void GodsIntervene(Fight fight)
+    {
+        foreach (var x in fight.List)
+        {
+            if (x[FightRules.Hostile] == 1)
+            {
+                x[FightRules.InPlay] = 0;
+                x[FightRules.Status] = (byte)CreatureStatus.Dead;
+                fight.Map?.Remove(x); // the program clears the icon's map byte (DS:5F2A)
+            }
+            fight.EndActions(x);
+        }
+    }
+
     /// <summary>Runs one command of the main menu (0x9BA1–0x9DC0). Returns "done".</summary>
     public bool Perform(FightCommand cmd)
     {
@@ -302,16 +322,7 @@ public sealed class FightMenu
                     return false;
                 }
                 Notice(FightNotice.GodsIntervene);
-                foreach (var x in Fight.List)
-                {
-                    if (x[FightRules.Hostile] == 1)
-                    {
-                        x[FightRules.InPlay] = 0;
-                        x[FightRules.Status] = (byte)CreatureStatus.Dead;
-                        Fight.Map?.Remove(x); // the program clears the icon's map byte (DS:5F2A)
-                    }
-                    Fight.EndActions(x);
-                }
+                GodsIntervene(Fight);
                 return true;
             default: // Alt-R: accepted, nothing happens
                 return false;

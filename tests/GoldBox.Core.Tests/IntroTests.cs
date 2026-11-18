@@ -75,7 +75,7 @@ public class IntroTests
     [Fact]
     public void Lightning_bursts_come_from_the_counter_and_can_outlast_the_title()
     {
-        var intro = new Intro(false, true, true, true, Max);     // the title from 0 ms
+        var intro = new Intro(false, true, true, true, Max, Intro.PassesPerMillisecondAt3000Cycles);     // the title from 0 ms
         Assert.Equal(IntroStep.Title, intro.Step);
         intro.Advance(Ms(0));
         // 3 a pass: above 50000 after 16667 passes of 1666 ticks (1/6 ms, truncated) = 2776.7222 ms.
@@ -107,7 +107,7 @@ public class IntroTests
     {
         // At 6 passes a millisecond even the fastest counter (3 a pass) bursts only once in the title: 2776.72 ms to
         // 4976.72 ms (4 flashes); the next would need another 2.8 s, so the title ends on the clock at 5 s.
-        var intro = new Intro(false, true, true, false, Max);
+        var intro = new Intro(false, true, true, false, Max, Intro.PassesPerMillisecondAt3000Cycles);
         intro.Advance(Ms(0));
         intro.Advance(Ms(4976));
         Assert.Equal(IntroStep.Title, intro.Step);
@@ -117,6 +117,31 @@ public class IntroTests
         intro.Advance(Ms(5000));
         Assert.Equal(IntroStep.Done, intro.Step);
         Assert.Equal(4, intro.FlashesShown);
+    }
+
+    [Fact]
+    public void Lightning_shows_in_the_title_at_the_engine_rate()
+    {
+        // 40 passes a millisecond: at the slowest counter that still averages (1.5 a pass, Random(4) cycling 0..3) the
+        // first burst comes after 33334 passes = 833 ms, well inside the title's 5 seconds; at 3000 cycles it does not.
+        int k = 0;
+        int Cycle(int n) => n == 4 ? k++ % 4 : 0;
+        var intro = new Intro(false, true, true, false, Cycle);
+        intro.Advance(Ms(0));
+        intro.Advance(Ms(800));
+        Assert.Equal(0, intro.FlashesShown);
+        intro.Advance(Ms(900));
+        Assert.Equal(2, intro.FlashesShown);
+        Assert.NotNull(intro.FlashColour(Ms(900)));
+        intro.Advance(Ms(5000));
+        Assert.True(intro.FlashesShown >= 4, $"{intro.FlashesShown} flashes");
+
+        k = 0;
+        var slow = new Intro(false, true, true, false, Cycle, Intro.PassesPerMillisecondAt3000Cycles);
+        slow.Advance(Ms(0));
+        slow.Advance(Ms(5000));
+        Assert.Equal(IntroStep.Done, slow.Step);
+        Assert.Equal(0, slow.FlashesShown);
     }
 
     [Fact]

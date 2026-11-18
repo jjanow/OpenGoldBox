@@ -133,6 +133,43 @@ public class KeyBufferTests
         Assert.Equal(0, i.TakeAiKey());
     }
 
+    [Fact]
+    public void Alt_keys_are_their_own_bindings_and_reach_the_AI_key_check()
+    {
+        var i = new ActionInput(InputBindings.Defaults());
+        Frame(i);
+        Frame(i, Keys.LeftAlt, Keys.M);
+        Assert.True(i.Pressed(GameAction.FightQuickMagic));
+        Assert.Equal((InputDevice.Keyboard, "Alt+M"), i.NewInput);   // not the hotkey M
+        Frame(i);
+        Frame(i, Keys.M);
+        Assert.False(i.Pressed(GameAction.FightQuickMagic));
+        Assert.Equal((InputDevice.Keyboard, "M"), i.NewInput);
+        Frame(i);
+        Frame(i, Keys.RightAlt, Keys.X);
+        i.ReadingKeys(false);
+        Assert.Equal(0x2D, i.TakeAiKey());                           // Alt-X: scan code 0x2D (0xBB81 → 0x1638E)
+        Frame(i);
+        Frame(i, Keys.LeftAlt, Keys.M);
+        i.ReadingKeys(false);
+        Assert.Equal(0x32, i.TakeAiKey());                           // Alt-M: 0x32
+        Frame(i);
+        Frame(i, Keys.LeftAlt, Keys.Q);
+        i.ReadingKeys(false);
+        Assert.Equal(0, i.TakeAiKey());                              // Alt-Q: menu only
+        Assert.Equal("ALT-M", PromptLabels.Key("Alt+M"));
+    }
+
+    [Fact]
+    public void The_triggers_toggle_magic_and_all_quick_on_the_pad()
+    {
+        var i = new ActionInput(InputBindings.Defaults());
+        Assert.Contains("LeftTrigger", i.Bindings.Buttons(GameAction.FightQuickMagic));
+        Assert.Contains("RightTrigger", i.Bindings.Buttons(GameAction.FightAllQuick));
+        PadFrame(i, Buttons.LeftTrigger);
+        Assert.True(i.Pressed(GameAction.FightQuickMagic));
+    }
+
     /// <summary>The explore screen hands the fights its game builds the key check (0xBB81) on its action layer.</summary>
     [Fact]
     public void The_screen_wires_the_fights_key_check_to_its_buffer()

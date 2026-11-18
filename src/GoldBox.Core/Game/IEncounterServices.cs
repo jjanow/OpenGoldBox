@@ -39,6 +39,8 @@ public interface IEncounterUi
     void ShowPicture(byte picture, byte? head);
     /// <summary>Back to the normal view (PICTURE 255, SPRITEOFF).</summary>
     void RestoreView();
+    /// <summary>CALL $2C90's redraw (0x3A7E–0x3A83): the view and the position line (START 0x34AB) drawn again.</summary>
+    void ViewRedrawn() { }
     /// <summary>
     /// The encounter menu: show <paramref name="text"/> (null = none) and return the item picked, 0–3. Throw
     /// <see cref="EclAwaitingInput"/> to end the run where the game waits.
@@ -101,6 +103,7 @@ public sealed class ScriptedEncounterUi(Queue<ushort>? choices = null) : IEncoun
     public void ShowEncounter(byte sprite, byte picture, int distance) => Calls.Add($"ShowEncounter {sprite} {picture} {distance}");
     public void ShowPicture(byte picture, byte? head) => Calls.Add($"ShowPicture {picture} {head?.ToString() ?? "-"}");
     public void RestoreView() => Calls.Add("RestoreView");
+    public void ViewRedrawn() => Calls.Add("ViewRedrawn");
     public int ChooseEncounterAction(EncounterMenuKind kind, string? text, int distance)
     {
         Calls.Add($"EncounterMenu {kind} {distance}");

@@ -336,6 +336,16 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
             : new ViewPicture(ViewPictureKind.Picture, picture, null, 0, memory().Disk);
     }
 
+    /// <summary>How often CALL $2C90 redrew the view and the position line (0x3A83); the explore screen follows it.</summary>
+    public int PositionLineDraws => _positionLineDraws;
+    private int _positionLineDraws;
+
+    public void ViewRedrawn()
+    {
+        PositionLineErased = false;
+        Interlocked.Increment(ref _positionLineDraws);
+    }
+
     public void RestoreView()
     {
         ViewOverlay = null;

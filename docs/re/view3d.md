@@ -301,9 +301,9 @@ frame acts on nothing; the first frame of a key read (a menu, a key wait, the re
 no new press of its own gets the kept key. Pad buttons count as keys; mouse clicks during a pause are dropped. A
 fight's build reads the buffer once and drops the key (0xE402's reads), and the AI's key check reads it at every AI
 turn (Core `FightKit.AiKey` → `MonsterAi.ReadKey`, `ActionInput.TakeAiKey`): the action `FightManual` (space, the
-pad's right-stick press) puts the party back under the player's control, any other key is taken with no effect.
-`[?]` Alt-M / Alt-X (scan codes 0x32 / 0x2D after a 0) are not mapped (no Alt keys in the Client); the mouse has no
-way to it (clicks during a pause are dropped). Enter does not end a pause. The Client shows script text at once (no typing
+pad's right-stick press) puts the party back under the player's control, `FightQuickMagic` (Alt-M, left trigger)
+reads as 0x32 and `FightAltX` (Alt-X, left-stick press) as 0x2D (s23), any other key is taken with no effect. The
+mouse has no way to them during a pause (clicks are dropped). Enter does not end a pause. The Client shows script text at once (no typing
 time), so pauses are the only busy time it has. QoL
 `SkipPauses` (settings, off = original): Enter or a click ends a pause, and keys pressed during it are dropped (the
 Client's behaviour before s22).
@@ -337,7 +337,12 @@ to two digits), then " camping" (DS:49F3 = 2) or " search" ($6DCA bit 0). In Kob
 command line highlights the item whose hotkey is the last letter key read (after loading slot C: CAST).
 **When it is drawn (s21):** only at fixed points: a turn or a member pick in the command routine (GAME.OVR 0x17266,
 0x173D9), after the step or its bump (0x17707, 0x17734), the camp (0x197F5, rest 0x1804A), the full redraw of
-interface states 2–4 (START 0x3379; state 1 and 6 do not draw it) and ECL CALL (0x3A15). Each DAMAGE line blanks
+interface states 2–4 (START 0x3379; state 1 and 6 do not draw it) and ECL CALL $2C90 when it redraws (0x3A83,
+s23: with DS:4431 set and one of the redraw flags DS:84E0 picture, 84E3 sprite, 84E5 backdrop (script init 0x76AD,
+writes to $C059/$C05F), 84E6 position (writes to $C04B–$C04D), 84E8 sky (writes to $49FD/$49FE) up; only that CALL
+clears 84E5/84E6/84E8; Core `EclMemory.ViewRedrawFlags`). The Home / End pick on the command line (0x173BF: 0x23819,
+the party list 0x173D0, the line 0x173D9) runs no command; the Client does the same (also a click on a name; on the
+pad the triggers, since its shoulders are Look / Encamp on this line and the commands are checked first). Each DAMAGE line blanks
 cells (17, 1)–(38, 15) before the party list is drawn again (GAME.OVR 0x96D0), which takes the position line off
 until the next of those points (DOSBox-X s22; ecl-format.md "DAMAGE"). A command whose script
 switches skips the step, so the line keeps the old square until the next command (DOSBox-X: slums → New Phlan shows

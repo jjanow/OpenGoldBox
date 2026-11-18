@@ -45,8 +45,8 @@ with the pad or the mouse); its first word is used, as ParamStr(1). J in the hal
 the files' word, sets the cheat and shows the message as above; without the game files J does nothing. J has no entry
 on screen in the original; the Client binds it as the action `HallJ` (key J, the pad's left-stick press, rebindable on
 the controls screen) and a click on the hall's prompt (bottom line) is J for the mouse. `[?]` The start-up party menu
-(the same routine) does not take J in the Client yet (its Train would need the hall's Train on the menu's party), and
-Alt-X does not read the word yet (Core's `FightMenu.CheatEnabled` stays off).
+(the same routine) does not take J in the Client yet (its Train would need the hall's Train on the menu's party).
+Alt-X in a fight reads the word since s23 (combat-menu.md).
 
 Engine (s20): the Client's hall (`HallScreens.Run`) runs Train, View, Save, Begin and Exit itself; Create, Drop, Modify,
 Add and Remove are the party menu's (`PartyMenuFlow` through `HallHooks`, on the game's party and generator; the

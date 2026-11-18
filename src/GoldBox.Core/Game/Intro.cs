@@ -24,7 +24,8 @@ public sealed record IntroLine(int Column, int Row, byte Colour, int Text);
 /// The lightning (0x7E2–0x8AE): each pass of the title's wait loop adds Random(4) to a counter; above 50000 the counter
 /// is reset and a burst of Random(3) + 2 flashes runs (each: register 1 := 9, 11, 15, 11, 9 for 150, 100, 50, 100, 150
 /// ms, then 1). Keys and the clock are only looked at after a burst, so a burst can run past the 5 seconds. How many
-/// passes the loop makes per millisecond depends on the machine: <see cref="PassesPerMillisecond"/> (DOSBox-X at 3000 cycles).
+/// passes the loop makes per millisecond depends on the machine: <see cref="PassesPerMillisecond"/> (DOSBox-X at 20000
+/// cycles, so the lightning shows; at 3000 cycles it never came within the title).
 /// </para>
 /// </summary>
 public sealed class Intro
@@ -51,7 +52,14 @@ public sealed class Intro
     /// 16h and INT 21h calls; at 3000 cycles none came in the title's 5 seconds, as the average of 5.6 s predicts). On
     /// a faster machine the bursts come sooner; the original has no fixed rate.
     /// </summary>
-    public const int PassesPerMillisecond = 6;
+    public const int PassesPerMillisecondAt3000Cycles = 6;
+
+    /// <summary>
+    /// The engine's rate (user decision s23: the lightning must show): the loop as DOSBox-X ran it at 20000 cycles, where
+    /// the first burst came 0.83 s into the title (33333 passes on average at 1.5 a pass). The title then shows one or
+    /// two bursts in its 5 seconds; at <see cref="PassesPerMillisecondAt3000Cycles"/> it shows none.
+    /// </summary>
+    public const int PassesPerMillisecond = 40;
 
     /// <summary>The credits page's two windows (START 03F1:02E8: left, top, right, bottom inside the frame; style 0, no title).</summary>
     public static readonly IReadOnlyList<(int Left, int Top, int Right, int Bottom)> CreditWindows = [(1, 1, 38, 3), (1, 5, 38, 23)];
@@ -73,10 +81,10 @@ public sealed class Intro
     /// <summary>The number of distinct credit texts (<c>Intro.0</c> … <c>Intro.28</c>).</summary>
     public const int CreditTexts = 29;
 
-    private static readonly long PassTicks = TimeSpan.TicksPerMillisecond / PassesPerMillisecond;
 
     private readonly bool _logo, _title, _flashes, _credits;
     private readonly Func<int, int> _random;
+    private readonly long _passTicks;
     private TimeSpan? _stepStart;
     private TimeSpan _passTime;
     private int _counter;
@@ -90,8 +98,12 @@ public sealed class Intro
     /// <param name="credits">The credits' texts are there.</param>
     /// <param name="random">Random(n): 0 … n − 1. The program draws from the game's generator; the Client gives the
     /// intro its own (how many draws the original makes depends on the machine's speed).</param>
-    public Intro(bool logo, bool title, bool flashes, bool credits, Func<int, int> random)
+    /// <param name="passesPerMillisecond">The loop's rate (default <see cref="PassesPerMillisecond"/>).</param>
+    public Intro(bool logo, bool title, bool flashes, bool credits, Func<int, int> random,
+        int passesPerMillisecond = PassesPerMillisecond)
     {
+        ArgumentOutOfRangeException.ThrowIfLessThan(passesPerMillisecond, 1);
+        _passTicks = TimeSpan.TicksPerMillisecond / passesPerMillisecond;
         _logo = logo;
         _title = title;
         _flashes = flashes;
@@ -189,8 +201,8 @@ public sealed class Intro
                     return true;
                 }
             }
-            // A pass every 1/6 ms; the last one before the end lands on it (the clock test is only that precise).
-            var step = TimeSpan.FromTicks(PassTicks);
+            // A pass every 1/rate ms; the last one before the end lands on it (the clock test is only that precise).
+            var step = TimeSpan.FromTicks(_passTicks);
             if (_passTime < end && _passTime + step > end)
                 step = end - _passTime;
             if (_passTime + step > now)

@@ -517,7 +517,24 @@ public class EncounterHostTests
             .Op(EclOpcodes.Exit));
         rig.Memory.FilesLoadedSinceSwitch = filesLoaded;
         rig.Run();
-        Assert.Equal(filesLoaded ? ["ShowPicture 7 -", "RestoreView"] : ["ShowPicture 7 -"], rig.Ui.Calls);
+        Assert.Equal(filesLoaded ? ["ShowPicture 7 -", "RestoreView", "ViewRedrawn"] : ["ShowPicture 7 -"], rig.Ui.Calls);
+    }
+
+    [Fact]
+    public void Call_2C90_redraws_after_a_position_write_once()
+    {
+        // 0x3A54–0x3A9C: DS:84E6 (set by the write to $C04B, 0x823F) is enough for the redraw, which draws the position
+        // line (0x3A83) and clears the flags, so a second CALL $2C90 redraws nothing.
+        var rig = new Rig(new EclAsm()
+            .Op(EclOpcodes.Save, Imm8(3), Mem(0xC04B))
+            .Op(EclOpcodes.Call, Mem(0x2C90))
+            .Op(EclOpcodes.Call, Mem(0x2C90))
+            .Op(EclOpcodes.Exit));
+        rig.Memory.FilesLoadedSinceSwitch = true;
+        rig.Memory.ViewRedrawFlags = ViewRedraw.None;
+        rig.Run();
+        Assert.Equal(["ViewRedrawn"], rig.Ui.Calls);
+        Assert.Equal(ViewRedraw.None, rig.Memory.ViewRedrawFlags);
     }
 
     // ---- Real data ---------------------------------------------------------------------------------------------

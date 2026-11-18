@@ -106,7 +106,8 @@ copy (the list is in the script). The same folder serves both sides: DOSBox-X lo
 letter), the Client gets `--game GAMEDIR --save X` (its module is imported from that folder), so both run the same
 step. Compare screens as EGA indices: reduce the DOSBox-X shot (640×400 under the menu bar) and the Client's (3 ×
 320×200) to 320×200 colour indices and count differing pixels per text row; the Client's help lines and, with these
-saves, the 3D view (vector 4 loads no wall sets, see the script) are the expected differences.
+saves, nothing else: vector 4 loads no wall sets, and both sides show the saved ones (the Client re-reads them since
+s23, Load 0x1FBEE).
 
 - **Timing.** Use the script's default 3000 cycles for anything timed: Turbo Pascal's Delay is calibrated by a loop
   at start-up, and at `cycles=max` Delay(3000) took about 0.3 s; at 3000 cycles it measured 3.0 s. The intro's

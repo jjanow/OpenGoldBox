@@ -15,12 +15,13 @@ public sealed class Dialog(Func<PlayerRequest, object?> ask, TextWindow text)
 
     /// <summary>A menu on the bottom line; the answer is the item index, or a <see cref="ChoiceRequest"/> member answer.</summary>
     public int Menu(IReadOnlyList<string> items, string? prompt = null, int? cancel = null, bool partySelect = false,
-        string? memberLetters = null) =>
+        string? memberLetters = null, bool animates = false) =>
         ask(new ChoiceRequest(null, items, false, cancel)
         {
             MenuPrompt = prompt?.TrimEnd(), // the program's prompts carry a trailing space; the screen adds one
             PartySelect = partySelect,
             MemberLetters = memberLetters,
+            Animates = animates, // the menu routine's flag [bp+0xA]: the picture window's animation runs while it waits
         }) is int i ? i : cancel ?? 0;
 
     /// <summary>A vertical list in the text window under <paramref name="prompt"/>; the answer is the index.</summary>

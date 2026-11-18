@@ -436,6 +436,26 @@ public class FightMenuTests
         Assert.Equal(0, s.Fight.Record(hero).InitiativeValue);
     }
 
+    [Fact]
+    public void Alt_X_in_an_AI_turn_removes_the_hostiles_only_with_the_word()
+    {
+        // 0xBB81: scan 0x2D calls 0x1638E; without the word nothing happens (no refusal in the AI path).
+        var hero = Creature("H");
+        var foe = Creature("G", hostile: true);
+        var s = Make([(hero, 1, 1), (foe, 5, 5)]);
+        var said = new List<AiMessage>();
+        bool word = false;
+        var ai = new MonsterAi([]) { ReadKey = () => 0x2D, AltX = () => word, Message = (_, m) => said.Add(m) };
+        Assert.False(ai.CheckKeystroke(s.Fight, hero));
+        Assert.Equal(1, foe[FightRules.InPlay]);
+        Assert.Empty(said);
+        word = true;
+        Assert.False(ai.CheckKeystroke(s.Fight, hero));
+        Assert.Equal(0, foe[FightRules.InPlay]);
+        Assert.Equal((byte)CreatureStatus.Dead, foe[FightRules.Status]);
+        Assert.Equal([AiMessage.GodsIntervene], said);
+    }
+
     // ---- Move ------------------------------------------------------------------------------------------------------
 
     [Fact]

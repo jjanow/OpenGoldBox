@@ -203,6 +203,9 @@ public static class PorTextCatalog
         ["CombatMsg.MagicOn"] = 0x9AFC,
         ["CombatMsg.MagicOff"] = 0x9B05,
         ["CombatMsg.DoesNotWork"] = 0x9B0F,
+        // Alt-X's routine 0x1638E: its copy of the start word (compared with ParamStr(1)) and its message.
+        ["Fight.Password"] = 0x16374,
+        ["CombatMsg.GodsIntervene"] = 0x1637A,
         ["CombatMsg.TeammateDying"] = 0xA05F,
         ["CombatMsg.ContinueBattle"] = 0xA076,
         ["CombatMsg.MoveLeft"] = 0xA1BB,

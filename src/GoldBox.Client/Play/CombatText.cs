@@ -9,6 +9,8 @@ public enum CombatMsg
     MenuMove, MenuViewAim, MenuUse, MenuCast, MenuTurn, MenuQuickDone,
     // Alt-M, Alt-X (0x9B21); end of round (0xA087).
     MagicOn, MagicOff, DoesNotWork, TeammateDying, ContinueBattle,
+    // Alt-X's message (0x1638E).
+    GodsIntervene,
     // Move (0xA1E6), attack by moving (0xA54C).
     MoveLeft, Flee, Blocked, NotWithThatWeapon,
     // Done menu (0xA64C), bandage (0xA806), speed menu (0xA8FD).
@@ -60,6 +62,7 @@ public sealed class CombatText
         [CombatMsg.MagicOn] = "AUTO MAGIC ON",
         [CombatMsg.MagicOff] = "AUTO MAGIC OFF",
         [CombatMsg.DoesNotWork] = "NOT ALLOWED",
+        [CombatMsg.GodsIntervene] = "ALT-X: HOSTILES REMOVED",
         [CombatMsg.TeammateDying] = "A PARTY MEMBER IS DYING",
         [CombatMsg.ContinueBattle] = "FIGHT ON:",
         [CombatMsg.MoveLeft] = "MOVE, MOVES LEFT: ",

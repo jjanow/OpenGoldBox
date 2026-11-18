@@ -84,4 +84,28 @@ public class PictureAnimationTests
         int changed = Enumerable.Range(0, 88 * 88).Count(i => composed.Items[0][i] != frames[0].Items[0][i]);
         Assert.Equal(676, changed);   // the flames: DOSBox-X's two frames differ in 676 pixels
     }
+    [Fact]
+    public void A_picture_on_another_disk_only_is_not_drawn()
+    {
+        // PICTURE (0x159C) loads from PIC<disk> of the current disk only; a block that is not there draws nothing, the
+        // window keeps the view (DOSBox-X s22). The Client knows the art exists, so it shows no stand-in either.
+        var d = Environment.GetEnvironmentVariable("GOLDBOX_POR_DIR");
+        if (string.IsNullOrWhiteSpace(d) || !Directory.Exists(d))
+            return;
+        var content = new PorGameDirectory(d);
+        var (id, on, off) = (from i in Enumerable.Range(0, 256)
+                             from a in Enumerable.Range(1, 8)
+                             from b in Enumerable.Range(1, 8)
+                             where content.Picture($"PIC{a}", i) is not null && content.Picture($"PIC{b}", i) is null
+                             select (i, a, b)).First();
+        var pictures = new ViewPictures(content);
+        Assert.NotNull(pictures.Find("PIC", id, on));
+        Assert.Null(pictures.Find("PIC", id, off));
+        Assert.NotNull(pictures.Find("PIC", id, off, anyDisk: true));
+        var v = new ViewPicture(ViewPictureKind.Picture, id, null, 0, off);
+        var f = new Core.Explore.IndexedFrame(320, 200);
+        Assert.False(pictures.Draw(f, 0, 0, v));
+        Assert.True(pictures.Exists(v));
+        Assert.False(pictures.Exists(new ViewPicture(ViewPictureKind.Picture, 999, null, 0, off)));
+    }
 }

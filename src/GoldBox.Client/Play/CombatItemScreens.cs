@@ -126,6 +126,7 @@ public sealed partial class CombatChooser
         var word = m switch
         {
             AiMessage.FleesInPanic => CombatMsg.FleesInPanic,
+            AiMessage.GodsIntervene => CombatMsg.GodsIntervene,
             AiMessage.ForcedToFlee => CombatMsg.ForcedToFlee,
             AiMessage.Surrenders => CombatMsg.Surrenders,
             AiMessage.QuickMagicOn => CombatMsg.AiMagicOn,

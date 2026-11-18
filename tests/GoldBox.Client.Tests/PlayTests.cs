@@ -165,6 +165,56 @@ public class ExploreScreenTests
     }
 
     [Fact]
+    public void Home_and_end_on_the_command_line_pick_the_member_and_redraw_the_position_line()
+    {
+        if (Dir() is null)
+            return;
+        var r = Start();
+        Settle(r);
+        var party = r.Game.Memory.Party!;
+        int before = party.CurrentIndex;
+        r.Player.PositionLineErased = true;                 // as a DAMAGE line leaves it
+        Press(r, GameAction.NextMember);                    // 0x173BF: the pick, then 0x173D9 draws the line
+        Assert.Equal((before + 1) % party.Members.Count, party.CurrentIndex);
+        Assert.False(r.Player.PositionLineErased);
+        Assert.Null(r.Runner.Pending);
+        Press(r, GameAction.PreviousMember);
+        Assert.Equal(before, party.CurrentIndex);
+    }
+
+    private static void Pad(Rig r, Buttons b)
+    {
+        r.Input.Update(default, default, default, TimeSpan.Zero, _ => null);
+        r.Input.Update(default, new GamePadState(default, default, new GamePadButtons(b), default), default, TimeSpan.Zero, _ => null);
+        r.Screen.Update(r.Input);
+    }
+
+    [Fact]
+    public void The_pads_shoulders_stay_look_and_encamp_and_the_triggers_pick_the_member()
+    {
+        // The shoulders are bound to Look / Encamp and to the member keys; on the command line the commands win.
+        if (Dir() is null)
+            return;
+        var r = Start();
+        Settle(r);
+        var party = r.Game.Memory.Party!;
+        int before = party.CurrentIndex;
+        long t0 = GameClock.TotalMinutes(r.Game.Memory);
+        Pad(r, Buttons.RightShoulder);                      // Look: 10 minutes, no pick
+        Settle(r);
+        Assert.Equal(before, party.CurrentIndex);
+        Assert.True(GameClock.TotalMinutes(r.Game.Memory) > t0);
+        Pad(r, Buttons.RightTrigger);                       // the next member
+        Assert.Equal((before + 1) % party.Members.Count, party.CurrentIndex);
+        Pad(r, Buttons.LeftTrigger);
+        Assert.Equal(before, party.CurrentIndex);
+        Pad(r, Buttons.LeftShoulder);                       // Encamp: the camp menu, no pick
+        Assert.NotNull(r.Runner.Pending);
+        Assert.Equal(before, party.CurrentIndex);
+        Settle(r);
+    }
+
+    [Fact]
     public void Walks_to_the_door_and_the_door_menu_waits_for_the_player()
     {
         if (Dir() is null)

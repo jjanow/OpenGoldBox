@@ -100,7 +100,13 @@ public sealed class ExploreScreen : IScreen
         // The AI's key check (0xBB81) takes a key waiting from the AI turn's pauses (the logic thread runs only while
         // this screen's Update waits for it).
         if (game.Kit is { } kit)
+        {
             kit.AiKey = () => _keys?.TakeAiKey() ?? 0;
+            // Alt-X (0x1638E) works when the start word equals the program's copy of the debugging word (0x16374).
+            var program = game.Content.Program();
+            kit.AltXEnabled = () => program?.Text("Fight.Password") is { Length: > 0 } word
+                && HallScreens.ParamStr1(player.ProgramWord) == word;
+        }
         _commands = game.Art.Program.ExploreCommands is { Count: > 0 } c
             ? [.. c.Select(w => w.ToUpperInvariant())]
             : ["AREA", "CAST", "VIEW", "ENCAMP", "SEARCH", "LOOK"];
@@ -300,6 +306,13 @@ public sealed class ExploreScreen : IScreen
             if (vx >= 59) return GameAction.TurnRight;
             return vy >= 59 ? GameAction.TurnAround : GameAction.Forward;
         }
+        if (col >= 17 && row >= 4 && _game.Memory.Party is { } party && row - 4 < Math.Min(8, party.Members.Count))
+        {
+            // A click on a name: the pick as Home / End would reach it (mouse stand-in for 0x173BF).
+            party.CurrentIndex = row - 4;
+            PositionLineDrawn();
+            return null;
+        }
         if (row == MenuRow && WordAt(Commands, col) is { } cmd)
             return CommandAction(Commands[cmd]);
         if (row == HelpRow + 1 && _player.Text.IsEmpty)
@@ -497,6 +510,7 @@ public sealed class ExploreScreen : IScreen
             else if (input.Pressed(GameAction.Look)) Run(AreaCommand.Look);
             else if (input.Pressed(GameAction.Encamp)) Run(AreaCommand.Encamp);
             else if (OverlandUi.Travel(input) is { } travel) Run(travel);
+            else PickMember(input);
             return;
         }
         if (input.Pressed(GameAction.AreaMap)) Run(AreaCommand.AreaMap);
@@ -507,6 +521,23 @@ public sealed class ExploreScreen : IScreen
         else if (input.Pressed(GameAction.TurnRight)) Run(AreaCommand.TurnRight);
         else if (input.Pressed(GameAction.TurnAround)) Run(AreaCommand.TurnAround);
         else if (input.Pressed(GameAction.Forward)) Run(AreaCommand.Forward);
+        else PickMember(input);
+    }
+
+    /// <summary>
+    /// Home / End on the command line (0x173BF): the member pick 0x23819, the party list and the position line drawn
+    /// again (0x173D0, 0x173D9); no command runs. Also on the overland's line (the same routine). The commands go
+    /// first: the pad's shoulders are Look / Encamp here (its triggers pick the member).
+    /// </summary>
+    private void PickMember(ActionInput input)
+    {
+        if (!input.Pressed(GameAction.PreviousMember) && !input.Pressed(GameAction.NextMember))
+            return;
+        if (_game.Memory.Party is { } party)
+        {
+            GoldBox.Core.Game.PartyMenu.Select(party, input.Pressed(GameAction.NextMember) ? 1 : -1);
+            PositionLineDrawn();
+        }
     }
 
     /// <summary>
@@ -844,18 +875,35 @@ public sealed class ExploreScreen : IScreen
     };
 
     private string? _staleLine, _lineAtCommand;
+    private int _positionLineDrawsSeen;
+
+    /// <summary>
+    /// The program drew the position line now (START 0x34AB at a member pick 0x173D9 or a CALL $2C90 redraw 0x3A83):
+    /// it shows the party's square again, whatever a script switch or a DAMAGE line left.
+    /// </summary>
+    private void PositionLineDrawn()
+    {
+        _player.PositionLineErased = false;
+        _staleLine = null;
+        _lineAtCommand = null;
+    }
     private int _scriptAtCommand = int.MinValue;
 
     /// <summary>
     /// The position line on screen. The program draws it (START 0x34AB) only at fixed points: after a turn or a
     /// member pick in the command routine (GAME.OVR 0x17266, 0x173D9), after the step or its bump (0x17707, 0x17734),
     /// in the camp (0x197F5, rest 0x1804A), the full redraw of interface states 2–4 (START 0x3379; state 1 does not
-    /// draw it) and ECL CALL (0x3A15); read s21. A command whose script switches (an edge exit, NEWECL) skips the
+    /// draw it) and ECL CALL $2C90 when it redraws the view (0x3A83, <see cref="ClientPlayer.ViewRedrawn"/>); read s21. A command whose script switches (an edge exit, NEWECL) skips the
     /// step, so the line keeps the old square until the next command (DOSBox-X s21: walking east off the slums at
     /// 15,4 into script 0 still shows "15,4 E"). Encounters and menus in the new area's entry leave it as well.
     /// </summary>
     private string ShownStatusLine()
     {
+        if (_player.PositionLineDraws != _positionLineDrawsSeen)
+        {
+            _positionLineDrawsSeen = _player.PositionLineDraws;
+            PositionLineDrawn();
+        }
         if (_staleLine is null && _lineAtCommand is not null && _game.Vm.CurrentScript != _scriptAtCommand)
             _staleLine = _lineAtCommand;
         return _staleLine ?? StatusLine(_game, _player.Camping);
@@ -921,6 +969,10 @@ public sealed class ExploreScreen : IScreen
         else if (ShownPicture is { } picture && _art.Pictures.Draw(f, ViewX, ViewY, picture, _anim.Frame))
         {
             // the encounter picture, portrait or sprite in the chosen art (ViewPictures)
+        }
+        else if (ShownPicture is { } elsewhere && _art.Pictures.Exists(elsewhere))
+        {
+            // On another disk only: the program's loader finds no block and draws nothing (DOSBox-X s22), the view stays.
         }
         else if (_player.ViewOverlay is { } lines)
         {

@@ -209,6 +209,7 @@ public sealed class EclVm
         Array.Clear(Flags);
         Memory.SpecialWriteValues[0xC059] = 0x41;
         Memory.SpecialWriteValues[0xC05F] = 0x09;
+        Memory.ViewRedrawFlags |= ViewRedraw.Backdrop; // 0x76AD: DS:84E5 := 1
         Memory.Write(0x6DE1, 255);
         Memory.Write(0x6DD2, 0);
         Memory.Write(0x6DD3, 0);

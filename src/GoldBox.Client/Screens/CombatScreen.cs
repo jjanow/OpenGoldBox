@@ -145,6 +145,11 @@ public sealed class CombatScreen
                     _selected = i;
                     return GameAction.Confirm;
                 }
+                if (row == StatusRow && IsMainMenu(c) && WordAt(AltWords, col - AltWordsStart) is { } alt)
+                {
+                    Answer(AltAnswers[alt]);
+                    return null;
+                }
                 if (_view.Mode == CombatMode.Aim && SquareAt(click.X, click.Y) is { } at && _view.Fight?.Map?.At(at.X, at.Y) is not null)
                     Answer(new AimPick(at.X, at.Y));
                 return null;
@@ -333,6 +338,19 @@ public sealed class CombatScreen
         {
             answer = ci;
             return true;
+        }
+        // The main menu's Alt keys (0x9FF3–0xA057), accepted whatever entries are shown.
+        if (_view.Mode == CombatMode.Menu && c.MenuPrompt is null)
+        {
+            int? alt = input.Pressed(GameAction.FightQuickMagic) ? CombatChooser.AnswerQuickMagic
+                : input.Pressed(GameAction.FightAllQuick) ? CombatChooser.AnswerAllQuick
+                : input.Pressed(GameAction.FightAltX) ? CombatChooser.AnswerAltX
+                : null;
+            if (alt is { } a)
+            {
+                answer = a;
+                return true;
+            }
         }
         // Aim: the pad's shoulders (keyboard Home / End) are Prev / Next, the first two entries after the prompt.
         if (_view.Mode == CombatMode.Aim && n >= 2)
@@ -897,12 +915,29 @@ public sealed class CombatScreen
                 }
                 if (_view.Mode == CombatMode.Aim && input.LastDevice == InputDevice.Gamepad)
                     Text(f, 23, StatusRow, Fit("LB/RB: PREV/NEXT", 17), Chrome.Grey);
+                if (IsMainMenu(c) && input.LastDevice != InputDevice.Keyboard)
+                    Text(f, 0, StatusRow, Fit(AltHint(input), 40), Chrome.Grey);
                 break;
             }
             case KeyRequest:
                 Text(f, 0, MenuRow, input.LastDevice == InputDevice.Gamepad ? "PRESS A" : "PRESS A KEY", PromptColour);
                 break;
         }
+    }
+
+    private bool IsMainMenu(ChoiceRequest c) => _view.Mode == CombatMode.Menu && c.MenuPrompt is null;
+
+    /// <summary>The main menu's Alt keys on row 23 for the pad (their buttons) and the mouse (words to click).</summary>
+    private static readonly string[] AltWords = ["MAGIC", "ALL-QUICK", "ALT-X"];
+    private const int AltWordsStart = 5;
+    private static readonly int[] AltAnswers = [CombatChooser.AnswerQuickMagic, CombatChooser.AnswerAllQuick, CombatChooser.AnswerAltX];
+
+    private static string AltHint(ActionInput input)
+    {
+        if (input.LastDevice == InputDevice.Mouse)
+            return "ALT: " + string.Join(' ', AltWords);
+        string L(GameAction a) => PromptLabels.For(input.Bindings, a, InputDevice.Gamepad);
+        return $"{L(GameAction.FightQuickMagic)} MAGIC {L(GameAction.FightAllQuick)} ALL QUICK {L(GameAction.FightAltX)} ALT-X";
     }
 
     /// <summary>How to move on the pad or with the mouse (the keyboard uses the original's keypad keys).</summary>

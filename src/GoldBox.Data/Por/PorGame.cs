@@ -195,7 +195,19 @@ public sealed class PorGame
         g.Vm.SetCurrentScript(sg.ScriptId, sg.Disk);
         // Load game (0x1FBB3–0x1FBC4) re-reads map $49C5 before vector 4 when DS:49FA (the save's location type) < 2.
         if (g.Memory.ViewMode < 2)
+        {
             g.Loop.LoadMap(g.Memory.Read(0x49C5));
+            // 0x1FBEE–0x1FC86 (location type ≤ 1): for i = 1..3 the cache DS:6AAE+4i := $4AF9+i (id), DS:6AB0+4i :=
+            // $4AFC+i (slot), and LoadWallSet(id, slot) when the id is not negative; a slot whose id is negative keeps
+            // what it held. So an area whose vector 4 loads no wall sets still shows the saved walls (DOSBox-X s22).
+            for (int i = 1; i <= 3; i++)
+            {
+                short id = (short)g.Memory.Read((ushort)(0x4AF9 + i));
+                int slot = g.Memory.Read((ushort)(0x4AFC + i)) & 0xFF;
+                if (id >= 0)
+                    g.AreaHost.LoadWallSet(slot, id & 0xFF);
+            }
+        }
         return g;
     }
 

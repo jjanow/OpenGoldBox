@@ -77,7 +77,14 @@ Alt-M (0x32); other extended keys become 0 and are ignored (0x9FF3–0xA057, Pas
 | space | — | every creature in the list with 0x84 < 0x80 (not an NPC) gets 0x10F = 0; not done |
 | Alt-Q | 0xAA32 for all | this creature's initiative = 20; every creature in the list becomes computer-controlled as by Q; done. The creature is picked again at once (initiative 20), the turn makes it 19 and the AI acts |
 | Alt-R | — | accepted, does nothing |
-| Alt-X | 0x1638E | a debugging switch: only when the program was started with a particular command-line word (ParamStr(1) compared with the word at the unit's CS:0x3B79, a copy of the hall's J word, training.md), every hostile creature (0x10E = 1) gets in play 0 and status 6 and every creature's actions end; done. Otherwise a refusal message, not done |
+| Alt-X | 0x1638E | a debugging switch: only when the program was started with a particular command-line word (ParamStr(1) compared with the word at GAME.OVR 0x16374, a byte-identical copy of the hall's J word, training.md; read s23), its message (0x1637A, START 0x2233), every hostile creature (0x10E = 1) gets in play 0 and status 6 and every creature's actions end, the map redrawn; done. Otherwise 0x1638E returns 0 and the menu shows the refusal (0x9B0F), not done. The AI's key check (0xBB81) calls the same routine on scan 0x2D and ignores its result (no refusal there) |
+
+Client (s23): the Alt keys are actions with modifier bindings (`Alt+M`, `Alt+Q`, `Alt+X`; the bindings file takes
+"Alt+" / "Ctrl+" prefixes, and a bare key does not count while Alt or Ctrl is held): `FightQuickMagic` (left
+trigger), `FightAllQuick` (right trigger), `FightAltX` (left-stick press, the hall J button); with the mouse or pad,
+row 23 shows them under the main menu ("ALT: MAGIC ALL-QUICK ALT-X", click a word). Alt-X works when the start word
+(`--param`, the controls screen's START WORD) equals the program's word (Core `FightKit.AltXEnabled`). Alt-R is not
+offered (it does nothing).
 
 **Done menu** (0xA64C), loop until Exit / Escape or done:
 

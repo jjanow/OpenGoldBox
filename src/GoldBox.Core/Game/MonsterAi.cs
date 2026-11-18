@@ -7,6 +7,8 @@ public enum AiMessage
 {
     /// <summary>0xACA6: a creature fleeing on morale (+0x14 set, +0x10 not).</summary>
     FleesInPanic,
+    /// <summary>0x1638E's message (GAME.OVR 0x1637A) when Alt-X works in an AI turn.</summary>
+    GodsIntervene,
     /// <summary>0xBCD5: a creature made to flee by an effect (combat record +0x10).</summary>
     ForcedToFlee,
     /// <summary>0xBE19: a creature that can neither stand nor outrun its enemies gives up (0x2BDF0).</summary>
@@ -62,8 +64,12 @@ public sealed class MonsterAi : IFightController
     public IFightController? Menu { get; }
     /// <summary>0xBB81: the key the player pressed during an AI turn (BIOS scan code), 0 for none. Null = no keyboard.</summary>
     public Func<byte>? ReadKey { get; set; }
-    /// <summary>Key 0x2D (X) in an AI turn calls 0x1638E [?]; the caller's hook.</summary>
-    public Action? AltX { get; set; }
+    /// <summary>
+    /// Key 0x2D (Alt-X) in an AI turn calls 0x1638E: true when the start word matches (the program's debugging word;
+    /// then <see cref="FightMenu.GodsIntervene"/> runs after its message), false: nothing (the AI path prints no
+    /// refusal; 0x1638E's result is not used). Null = never.
+    /// </summary>
+    public Func<bool>? AltX { get; set; }
     /// <summary>Messages for the screen.</summary>
     public Action<EclCharacter, AiMessage>? Message { get; set; }
     /// <summary>0x2AEEA for items with byte 0x3E &gt; 0x7F when the AI readies (false) or unreadies (true) them [?].</summary>
@@ -182,7 +188,11 @@ public sealed class MonsterAi : IFightController
                 }
                 return false;
             case 0x2D:
-                AltX?.Invoke();
+                if (AltX?.Invoke() == true)
+                {
+                    Message?.Invoke(c, AiMessage.GodsIntervene);
+                    FightMenu.GodsIntervene(f);
+                }
                 return false;
             default:
                 return false;

@@ -629,6 +629,12 @@ public sealed partial class CombatChooser(Func<PlayerRequest, object?> ask, Comb
         };
     }
 
+    /// <summary>
+    /// Answers of the main menu's request beyond its entries: the keys the menu takes whether or not anything is shown
+    /// (0x9FF3–0xA057): Alt-M, Alt-Q, Alt-X (space and Alt-R are not offered: space is the AI turn's key, Alt-R does nothing).
+    /// </summary>
+    public const int AnswerQuickMagic = -10, AnswerAllQuick = -11, AnswerAltX = -12;
+
     public FightCommand Choose(FightMenu menu, IReadOnlyList<FightCommand> entries)
     {
         View.Page = null;
@@ -636,6 +642,12 @@ public sealed partial class CombatChooser(Func<PlayerRequest, object?> ask, Comb
         _goal = null;
         var words = entries.Select(Word).ToList();
         int i = Choose(CombatMode.Menu, null, words);
+        switch (i)
+        {
+            case AnswerQuickMagic: return FightCommand.ToggleQuickMagic;
+            case AnswerAllQuick: return FightCommand.AllQuick;
+            case AnswerAltX: return FightCommand.GodsIntervene;
+        }
         var cmd = entries[Math.Clamp(i, 0, entries.Count - 1)];
         // View (0x21AED) and Use (0x21F32) run as FightItemScreens, asking this chooser (CombatItemScreens.cs).
         _menu = menu;
@@ -863,6 +875,7 @@ public sealed partial class CombatChooser(Func<PlayerRequest, object?> ask, Comb
             FightNotice.MagicOn => t[CombatMsg.MagicOn],
             FightNotice.MagicOff => t[CombatMsg.MagicOff],
             FightNotice.DoesNotWork => t[CombatMsg.DoesNotWork],
+            FightNotice.GodsIntervene => t[CombatMsg.GodsIntervene],
             FightNotice.Blocked => t[CombatMsg.Blocked],
             FightNotice.NotWithThatWeapon => t[CombatMsg.NotWithThatWeapon],
             FightNotice.Bandaged => t[CombatMsg.IsBandaged],

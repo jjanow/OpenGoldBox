@@ -23,7 +23,8 @@ public class InputBindingsTests
         var b = InputBindings.Defaults();
         foreach (var a in Enum.GetValues<GameAction>())
         {
-            Assert.All(b.Keys(a), k => Assert.True(Enum.TryParse<Keys>(k, out _), k));
+            // A key may carry modifiers ("Alt+M", "Ctrl+S"); the rest is a MonoGame key name.
+            Assert.All(b.Keys(a), k => Assert.True(Enum.TryParse<Keys>(k.Replace("Ctrl+", "").Replace("Alt+", ""), out _), k));
             Assert.All(b.Buttons(a), p => Assert.True(Enum.TryParse<Buttons>(p, out _), p));
         }
     }

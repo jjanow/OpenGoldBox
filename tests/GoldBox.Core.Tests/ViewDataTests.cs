@@ -283,6 +283,42 @@ public class OtherAreaViewTests
     }
 }
 
+/// <summary>Load (0x1FBEE–0x1FC86) re-reads the saved wall sets before vector 4 (s23).</summary>
+public class LoadWallSetTests
+{
+    private sealed class NoDoors : IAreaUi
+    {
+        public GoldBox.Core.Doors.DoorAction? ChooseDoorAction(GoldBox.Core.Doors.DoorBarrier b, IReadOnlyList<GoldBox.Core.Doors.DoorAction> c) => null;
+        public void Bump() { }
+        public void Message(AreaMessage m) { }
+        public bool Camp() => false;
+    }
+
+    [PorFact]
+    public void A_load_whose_vector_4_loads_no_walls_keeps_the_saved_ones()
+    {
+        // SAVGAMA's script area with every vector at an EXIT (as tools/scripts/por_test_saves.py writes slots B–I):
+        // DOSBox-X shows the saved walls (2, 4, 1 at $4AFA–$4AFC), not an open view.
+        var dir = PorData.Open();
+        var savePath = dir.Find("SAVGAMA.DAT")!;
+        var save = File.ReadAllBytes(savePath);
+        var area = save.AsSpan(PorSaveGame.OffScript, GoldBox.Core.Ecl.EclLayout.AreaSize);
+        area.Clear();
+        for (int v = 0; v < 5; v++)
+        {
+            area[4 * v] = 1;
+            area[4 * v + 1] = 1;
+            area[4 * v + 2] = 0x1F;
+            area[4 * v + 3] = 0x99;
+        }
+        var art = PorViewArt.Load(dir);
+        var player = new PorPlayer(new GoldBox.Core.Ecl.ScriptedEclHost { StopWhenInputMissing = true },
+            new GoldBox.Core.Game.ScriptedEncounterUi { StopWhenInputMissing = true }, new GoldBox.Core.Game.RecordingCombatRunner(), new NoDoors());
+        PorGame.FromSave(dir, art, save, Path.GetDirectoryName(savePath)!, player, 0);
+        Assert.Equal([2, 4, 1], art.Walls.SetIds.Select(i => i ?? -1));
+    }
+}
+
 /// <summary>Entering every area script with a fresh VM (the Client's --area start), on the player's files.</summary>
 public class PorAreaEntryTests
 {

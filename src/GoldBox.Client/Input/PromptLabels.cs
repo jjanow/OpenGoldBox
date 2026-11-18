@@ -8,6 +8,8 @@ public static class PromptLabels
 {
     public static string Key(string name) => name switch
     {
+        _ when name.StartsWith("Alt+", StringComparison.Ordinal) => "ALT-" + Key(name[4..]),
+        _ when name.StartsWith("Ctrl+", StringComparison.Ordinal) => "CTRL-" + Key(name[5..]),
         "Up" => "UP",
         "Down" => "DOWN",
         "Left" => "LEFT",

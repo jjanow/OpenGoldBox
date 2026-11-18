@@ -295,6 +295,7 @@ public class VenueTests
         var (t, s) = Context(new Script(4, 1), Party(c), loot);
         VenueScreens.LootMenu(t);
         Assert.Equal(["VIEW", "TAKE", "POOL", "DETECT", "EXIT"], Assert.IsType<ChoiceRequest>(s.Asked[0]).Items);
+        Assert.True(((ChoiceRequest)s.Asked[0]).Animates);       // 0x659D: animate flag 1 (the loot picture moves)
         Assert.Single(loot);                             // left behind after "no"
         Assert.Equal(0, s.Left);
     }

@@ -60,15 +60,18 @@ public class IntroScreenTests
         Assert.Equal(0, f[0, 0]);
         Assert.Equal(1, f[1, 0]);
 
-        // The first burst (2776.72 ms into the title at 6 passes a millisecond): register 1 shows 9; index 0 stays.
-        now = TimeSpan.FromSeconds(5) + TimeSpan.FromMilliseconds(2800);
+        // The first burst (416.675 ms into the title at 40 passes a millisecond, 3 a pass): register 1 shows 9; index 0 stays.
+        now = TimeSpan.FromSeconds(5) + TimeSpan.FromMilliseconds(420);
         screen.Update(input);
         screen.Draw(f, input);
         Assert.Equal(0, f[0, 0]);
         Assert.Equal(9, f[1, 0]);
 
-        // The title ends on the clock after the burst, then the credits.
+        // The second burst (3033.35 ms to 5233.35 ms) holds the title past its 5 seconds; then the credits.
         now = TimeSpan.FromSeconds(10);
+        screen.Update(input);
+        Assert.Equal(IntroStep.Title, screen.Step);
+        now = TimeSpan.FromSeconds(10.3);
         screen.Update(input);
         Assert.Equal(IntroStep.Credits, screen.Step);
         screen.Draw(f, input);

@@ -56,6 +56,13 @@ public enum GameAction
     /// <summary>Combat: during a monster's turn, the party back under the player's control (the original's space, read
     /// by the AI's key check 0xBB81).</summary>
     FightManual,
+    /// <summary>Combat: quick fighters use magic or not (the original's Alt-M, in the menu 0x9B21 and the AI's key check
+    /// 0xBB81).</summary>
+    FightQuickMagic,
+    /// <summary>Combat: every fighter to Quick, initiative 20 (the original's Alt-Q, menu only).</summary>
+    FightAllQuick,
+    /// <summary>Combat: the program's Alt-X debugging switch (0x1638E): works only with the start word (as the hall's J).</summary>
+    FightAltX,
 }
 
 /// <summary>The input device a binding or an input event belongs to.</summary>
@@ -102,8 +109,10 @@ public sealed class InputBindings
         b.Set(GameAction.Confirm, ["Enter"], ["A"]);
         b.Set(GameAction.Cancel, ["Escape"], ["B"]);
         // The shoulders are Look / Encamp while exploring; those screens never ask for both at once.
-        b.Set(GameAction.PreviousMember, ["Home"], ["LeftShoulder"]);
-        b.Set(GameAction.NextMember, ["End"], ["RightShoulder"]);
+        // On the explore line the shoulders stay Look / Encamp; the triggers pick the member there (in a fight they are
+        // Alt-M / Alt-Q, which the menu checks first).
+        b.Set(GameAction.PreviousMember, ["Home"], ["LeftShoulder", "LeftTrigger"]);
+        b.Set(GameAction.NextMember, ["End"], ["RightShoulder", "RightTrigger"]);
         // Combat diagonals: the original's keypad (Home, PgUp, End, PgDn; the digits 7, 9, 1, 3). The pad steps
         // diagonally with the left stick or D-pad held between two directions, or with the right stick turned 45°
         // (up = up-right, right = down-right, down = down-left, left = up-left). Home / End double as the member keys,
@@ -115,6 +124,10 @@ public sealed class InputBindings
         // The hall's J has no entry on screen: the pad presses the left stick (the mouse clicks the prompt).
         b.Set(GameAction.HallJ, ["J"], ["LeftStick"]);
         b.Set(GameAction.FightManual, ["Space"], ["RightStick"]);
+        // The fight's Alt keys: the triggers for Alt-M / Alt-Q; Alt-X shares the hall's J button (both test the start word).
+        b.Set(GameAction.FightQuickMagic, ["Alt+M"], ["LeftTrigger"]);
+        b.Set(GameAction.FightAllQuick, ["Alt+Q"], ["RightTrigger"]);
+        b.Set(GameAction.FightAltX, ["Alt+X"], ["LeftStick"]);
         return b;
     }
 

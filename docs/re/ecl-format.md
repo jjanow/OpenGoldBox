@@ -361,7 +361,10 @@ a 1d10 picks 34–38, 91–94 → 73, 95–97 → 93, 98–100 → 77; 48 and 49
 written to a.
 
 **PICTURE v** (0x159C): v ≠ 255 shows `PIC` block v when $6DE1 = 255, else head $6DE1 + body v (0x79E4); outdoors the
-window is cleared first. v = 255 redraws the view if a picture or the sprite is shown. Display only; no VM cell.
+window is cleared first. v = 255 redraws the view if a picture or the sprite is shown. Display only; no VM cell. The
+block is read from `PIC<disk>` (0x3D0:2A into DS:6ABE, drawn at cell (3, 3) by 0x3D0:25) of the current disk only:
+a block that file lacks draws nothing and the window keeps what it showed (DOSBox-X s22; Client `ViewPictures.Find`
+since s23, also for HEAD/BODY/SPRIT).
 
 **SPRITEOFF** (0x37E8): if the sprite is shown (DS:84E3), redraw the view and clear DS:84E3 and DS:84E0.
 

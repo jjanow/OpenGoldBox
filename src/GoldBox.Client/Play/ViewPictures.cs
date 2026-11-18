@@ -42,7 +42,7 @@ public sealed class ViewPictures
     public const int AmigaHeadX = 16;
 
     private readonly IPorContent? _content;
-    private readonly Dictionary<(string, int, int), PorArtImage?> _cache = [];
+    private readonly Dictionary<(string, int, int, int), PorArtImage?> _cache = [];
     private PorArtChoice _choice;
     private Func<byte[], int>? _paletteBase;
 
@@ -66,24 +66,45 @@ public sealed class ViewPictures
     }
 
     /// <summary>
-    /// The block in the chosen art from the file of <paramref name="disk"/>, else from the first disk that has it (the
-    /// disks hold copies; the Amiga files serve every disk), or null.
+    /// The block in the chosen art from the file of <paramref name="disk"/> (disks 1–8: the program opens only the
+    /// current disk's <c>PIC&lt;disk&gt;</c> / <c>HEAD</c> / <c>BODY</c> / <c>SPRIT</c>; a block that is not there draws
+    /// nothing, PICTURE 0x159C → 0x3D0:2A, DOSBox-X s22), or null. The DOS block on that disk decides; the variant's
+    /// art (the Amiga files serve every disk) is drawn in its place. With <paramref name="anyDisk"/> (the end game's
+    /// FINAL, whose disk is the scene's), or a disk outside 1–8 (a hand-made module's), the first disk that has it serves.
     /// </summary>
-    public PorArtImage? Find(string kind, int id, int disk, PorArtChoice? choice = null)
+    public PorArtImage? Find(string kind, int id, int disk, PorArtChoice? choice = null, bool anyDisk = false)
     {
         var c = choice ?? _choice;
         lock (_cache)
         {
-            if (_cache.TryGetValue((kind, id, (int)c), out var hit))
+            var key = (kind, id, (int)c, anyDisk ? -1 : disk);
+            if (_cache.TryGetValue(key, out var hit))
                 return hit;
             PorArtImage? img = null;
             if (_content is not null)
-                foreach (int d in new[] { disk }.Concat(Enumerable.Range(1, 8)))
-                    if (d is >= 1 and <= 8 && (img = _content.Art($"{kind}{d}", id, c)) is not null)
+                foreach (int d in anyDisk || disk is < 1 or > 8 ? new[] { disk }.Concat(Enumerable.Range(1, 8)) : [disk])
+                    if (d is >= 1 and <= 8 && _content.Picture($"{kind}{d}", id) is not null
+                        && (img = _content.Art($"{kind}{d}", id, c)) is not null)
                         break;
-            _cache[(kind, id, (int)c)] = img;
+            _cache[key] = img;
             return img;
         }
+    }
+
+    /// <summary>
+    /// True when the art of <paramref name="v"/> is on some disk, though perhaps not on <see cref="ViewPicture.Disk"/>
+    /// (the window then shows nothing new, as the program does); false when the content lacks it altogether (the Client's
+    /// stand-in text shows instead).
+    /// </summary>
+    public bool Exists(ViewPicture v)
+    {
+        bool Any(string kind, int id) => Find(kind, id, v.Disk, PorArtChoice.Dos, anyDisk: true) is not null;
+        return v.Kind switch
+        {
+            ViewPictureKind.Picture => Any("PIC", v.Id),
+            ViewPictureKind.Portrait => Any("HEAD", v.Head ?? 0) && Any("BODY", v.Id),
+            _ => Any("SPRIT", v.Id),
+        };
     }
 
     /// <summary>

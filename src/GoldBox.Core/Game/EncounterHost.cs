@@ -330,13 +330,18 @@ public sealed class EncounterHost : IEclHost
                 // last NEWECL) and a redraw flag up, the view is redrawn and the flags cleared; of the flags, the
                 // picture (DS:84E0) and sprite (DS:84E3) ones take the picture off the view (DOSBox-X s21: the Tyr
                 // temple's "then you must leave" moves the party back with $C04B/$C04C and CALL $2C90, and the 3D view
-                // replaces the priest). The other flags (84E5/84E6/84E8) only redraw what the view shows anyway.
+                // replaces the priest). The other flags (84E5 backdrop, 84E6 position, 84E8 sky) redraw what the view
+                // shows anyway; every redraw also draws the position line (0x3A83 → START 0x34AB).
                 Memory.Position.EventByte = EventByteHere();
-                if (Memory.FilesLoadedSinceSwitch && (State.PictureShown || State.SpriteShown))
+                if (Memory.FilesLoadedSinceSwitch
+                    && (State.PictureShown || State.SpriteShown || Memory.ViewRedrawFlags != ViewRedraw.None))
                 {
-                    Ui.RestoreView();
+                    if (State.PictureShown || State.SpriteShown)
+                        Ui.RestoreView();
                     State.PictureShown = false;
                     State.SpriteShown = false;
+                    Memory.ViewRedrawFlags = ViewRedraw.None;
+                    Ui.ViewRedrawn();
                 }
                 Inner.Call(routine);
                 break;
