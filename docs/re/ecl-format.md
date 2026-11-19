@@ -527,7 +527,37 @@ roll per item (RandSeed).
   the text box (ECL5 block 4 $A45E: rows 17 and 19). Client: `ClientPlayer.DrawGlyphs` (text-box rows into
   `ClientPlayer.Text`, which a later clear removes; picture-window rows into `ViewGlyphs`, drawn over CLEARBOX's blank
   of cells (1, 1)–(15, 15)); test `RuneTextTests` runs both uses from the game's scripts and checks the pixels against
-  8X8D1 block 201. `[?]` Glyphs on rows 16, 23 and 24 (no v1.3 use) are not drawn.
+  8X8D1 block 201.
+  **Outside the box and the window (P, s30; no v1.3 use, the 12 lines all land in rows 17–22 or cells 1–15 of the
+  window):** the glyph routine draws any cell up to column 39 and row 24, so a line can run over the frame. Reachable:
+  rows 23 and 24 (a PROTECT at row 22 moves the cursor to 23, the next to 24, the one after to 25, not drawn) and, in
+  the cleared window, a line longer than 14 glyphs from (2, 5) runs over the frame column 16 into the party list's side
+  (columns 17–39). Row 16 is never reached: with CLEARBOX standing every line whose cursor is below row 13 starts again
+  at (2, 5), and without it the cursor stays in the text rows. What draws over them: row 24 by the next menu (0x2CC8C
+  draws its prompt and words, then blanks the rest of the row to column 39, 0x2CC16–0x2CC41), message (START 0x2233
+  clears the row) or key prompt (START 0x7C85, also the text routine's page prompt at 0x7A26: 0x767B blanks the row's
+  40 cells first, 0x7CAB); cells 0–16 of rows 0–16 by EXIT's window redraw (START 0x41F8 for (1, 1)–(15, 15) draws
+  the frame one cell outside); the text box's clear (0x7E63 on the box) does not reach row 23. Client:
+  `ClientPlayer.ScreenGlyphs`, drawn last by `ExploreScreen`, row 24 cleared when a menu, key or text prompt or the
+  command line comes (`BottomRowDrawn`), the window's frame cells by EXIT (`TextHome`); tests in `RuneTextTests`.
+  `[?]` When the program draws the other frame cells and the party list again (a full redraw, START 0x3379, or the
+  party list 00BA:0767) is not followed: the Client keeps those glyphs until the next area command.
+  **Amiga** `[?]`: the Amiga's 8x8d.dax holds the wall sets only (no block 201), so its text font is elsewhere; the
+  Client draws the DOS font's runes under every art set. To settle it: find the Amiga program's PROTECT handler (ECL
+  0x3C) and the glyph routine it calls, read whether the byte is taken as a raw glyph number there too and which font
+  it indexes (and whether that font has glyphs 65–139 at all), then see ECL4 block 21's parchment in an Amiga
+  emulator run.
+  **D** (s30, DOSBox-X frame by frame, save A on disk 2 with this tool's own script: PRINTCLR, CLEARBOX,
+  the three glyph lines of ECL4 block 21 copied into the script area with PRINTRET between, PRINTCLR, a one-word
+  HMENU): CLEARBOX blanks cells (1, 1)–(15, 15) (the view's box too), the runes land at (2, 5), (1, 7), (1, 9), the
+  text box below unchanged: the Client's frame at the menu equal but for its own help hint; after the answer EXIT
+  draws the blank window with its frame and the (3, 3)–(13, 13) box, then the 3D view, then the command line (~0.2 s of
+  drawing, no Delay; the Client goes to the last frame, equal). **Other rows** (s30): row 16 is out of reach (with
+  DS:84DE set a line above 13 is sent to (2, 5); without it the cursor starts at 17). PRINTCLR, six PRINTRETs and
+  PROTECT put a line on **row 23**, over the text box's bottom frame (glyph cells drawn whole), and it **stays after
+  EXIT** (DOSBox-X); the next PROTECT went to row 24 from the column the first ended on and was gone under the
+  HMENU before any frame showed it. Both agree with the program reading above: the Client keeps row 23 in `ClientPlayer.ScreenGlyphs` past EXIT
+  and removes a row-24 line with the next menu.
 
 **CALL $C018** (0x3AFA): only when DS:49FA = 1, the wall type ahead DS:6AB0 ($C04E) is read again (0x2ED72 at
 x, y, facing). DS:49FA (view mode = the save's location type) is 1 at a new game (0xE9C3) and is set by 0x3EFA

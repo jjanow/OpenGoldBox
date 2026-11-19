@@ -230,4 +230,107 @@ public class HandlerMessageTests
         Assert.StartsWith("fly ", r.Log[1]);
         Assert.Single(r.Log, e => e == "Breathes A");
     }
+
+    // ---- s30: revive 0x2C753, put-out-of-play 0x2BDF0, handler texts once raised as Other -----------------------
+
+    [PorFact]
+    public void A_wild_boar_gets_back_up_once_then_falls_dead_when_its_borrowed_time_ends()
+    {
+        // MON6SPC / MON8SPC block 120 (the wild boar) carries 0x63 permanently, the only source of 0x63 (s30). Handler 99
+        // (0x1138B, trigger 0x0D) on a dying creature: 0x2C753 with 6 − combat +0x0E HP (its message), 0x5F for 1d4 + 1
+        // minutes (1d4 after the revive), then its own record goes. Handler 95 (0x1126B) when 0x5F ends: 0xECB3 status 6.
+        var r = Setup(new Script(2), 0x63, 11);
+        r.A[FightRules.InPlay] = 0;
+        r.A[FightRules.Hp] = 0;
+        r.A[FightRules.Status] = 5;
+        r.Fx.Trigger(FightRules.TriggerHpZero, r.A, r.Fight.State);
+        Assert.Equal(["Revived A"], r.Log);
+        Assert.Equal((0, 1, 6), (r.A[FightRules.Status], r.A[FightRules.InPlay], r.A[FightRules.Hp]));
+        Assert.Null(EffectHandlers.FindEffect(r.A, 0x63));
+        var borrowed = EffectHandlers.FindEffect(r.A, 0x5F)!;
+        Assert.Equal(4, borrowed[1] | borrowed[2] << 8); // Random(4) = 2 → 1d4 = 3, + 1
+        Assert.Equal(1, borrowed[4]);
+
+        r.Log.Clear();
+        r.Fx.RemoveEffect(r.A, 0x5F, borrowed); // the effect timeout (0x23DCC → 0x2AF10, removal runs the handler)
+        Assert.Equal(["FallsDead A", "StatusDone A"], r.Log);
+        Assert.Equal((6, 0), (r.A[FightRules.Status], r.A[FightRules.InPlay]));
+    }
+
+    [PorFact]
+    public void Handler_103_shows_its_escape_text_before_the_creature_leaves_play_and_the_map()
+    {
+        // 0x1151A → 0x2BDF0(creature, 3, its text): the message (0x2BE47) before in play 0 and status 3; HP kept for
+        // status 3; the icon leaves the map (0x30C65…0x30ADA).
+        var r = Setup(new Script(), 0x67, 11);
+        var map = (CombatMap)r.Fight.Geometry!;
+        int inPlayAtMessage = -1;
+        r.Fx.Event += (c, e) => { if (e == EffectEvent.Escapes) inPlayAtMessage = c[FightRules.InPlay]; };
+        r.Fx.TriggerEffect(r.A, 0x67);
+        Assert.Equal(["EscapeView A", "Escapes A"], r.Log);
+        Assert.Equal(1, inPlayAtMessage);
+        Assert.Equal((3, 0, 20), (r.A[FightRules.Status], r.A[FightRules.InPlay], r.A[FightRules.Hp]));
+        Assert.Equal(0, map.SlotSize(map.Slot(r.A)));
+
+        r = Setup(new Script(), 0x67, 11); // out of play already: the handler's view only, no text (0x2BE0C)
+        r.A[FightRules.InPlay] = 0;
+        r.Fx.TriggerEffect(r.A, 0x67);
+        Assert.Equal(["EscapeView A"], r.Log);
+    }
+
+    [PorFact]
+    public void Readying_gauntlets_or_a_boulder_shows_the_item_handlers_texts()
+    {
+        // 0x2250A runs the item's handler 0x3E through 0x2AEEA (FightKit wires it, s30). 131 (0x11BB2): the text only when
+        // 0x2C046 raised the Strength; 135 (0x11D8F): Strength below 19 → unreadied and START 0x1693's text.
+        var r = Setup(new Script(), 0x01, 11);
+        r.A[EffectHandlers.Str] = 12;
+        var gauntlets = new byte[63];
+        gauntlets[0x3E] = 131;
+        r.Fx.CallHandler(131, r.A, gauntlets, false);
+        Assert.Equal(["Stronger A"], r.Log);
+        Assert.NotNull(EffectHandlers.FindEffect(r.A, 0x26));
+        r.Log.Clear();
+        r.A[EffectHandlers.Str] = 19;
+        r.Fx.CallHandler(131, r.A, gauntlets, false); // above 18/00: 0x2C046 refuses, no text
+        Assert.Empty(r.Log);
+
+        var boulder = new byte[63];
+        boulder[0x3E] = 135;
+        boulder[0x34] = 1;
+        r.B[EffectHandlers.Str] = 18;
+        r.Fx.CallHandler(135, r.B, boulder, false);
+        Assert.Equal(["NeedsGiantStrength B"], r.Log);
+        Assert.Equal(0, boulder[0x34]);
+    }
+
+    [PorFact]
+    public void A_vampire_downed_by_damage_does_not_escape_since_103_runs_after_it_left_play()
+    {
+        // MON4SPC block 23 (the vampire) carries 103 (0x67) permanently, run by trigger 0x0D (HP reached 0), which every
+        // drop path calls after in play is 0: 0x2BDF0 returns at 0x2BE0C, the creature stays down (s30).
+        var r = Setup(new Script(), 0x67, 11);
+        r.Log.Clear();
+        r.Fx.NonWeaponDamage(r.A, 30, 0, false);
+        Assert.Equal(["NonWeaponDamage A", "GoesDown A", "EscapeView A", "GoesDownDone A"], r.Log);
+        Assert.NotEqual(3, r.A[FightRules.Status]);
+        Assert.Equal(0, r.A[FightRules.InPlay]);
+    }
+
+    [PorFact]
+    public void Rot_touch_and_a_hold_name_the_target_with_their_own_events()
+    {
+        // Handler 87 (0x11047): rot and its stages added to the last target, then its text on the target (0x110E0).
+        var r = Setup(new Script(0), 0x57, 11);
+        r.Fx.TriggerEffect(r.A, 0x57);
+        Assert.Equal(["Diseased B"], r.Log);
+        r.Log.Clear();
+        r.Fx.TriggerEffect(r.A, 0x57); // already rotting: nothing
+        Assert.Empty(r.Log);
+
+        // Handler 77 (0x10590): a target with Strength below 19 is held; the text names it (DS:6826, 0x10629).
+        r = Setup(new Script(), 0x4D, 11);
+        r.Fx.TriggerEffect(r.A, 0x4D);
+        Assert.Equal(["HeldFast B"], r.Log);
+    }
 }

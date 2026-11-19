@@ -314,6 +314,44 @@ public class CombatScreenGameTests
     }
 
     [Fact]
+    public void The_downed_picture_is_drawn_on_the_ground_not_over_the_icon()
+    {
+        // DOSBox-X s30 (a scorpion's poisoned hit killing Rhiannon): COMSPR 11's see-through pixels show the ground,
+        // not the creature's icon under it (s29's "3 skull pixels" black in the Client).
+        if (Dir() is null)
+            return;
+        var r = ToFight();
+        var v = r.Player.FightView;
+        var me = v.Current!;
+        var map = (CombatMap)v.Fight!.Map!;
+        var (x, y) = map.Position(me);
+        v.Cursor = null;
+        byte[] Cell()
+        {
+            var f = new IndexedFrame(320, 200);
+            r.Screen.Draw(f, r.Input);
+            int x0 = CombatScreen.MapX + (x - v.ViewX) * 24, y0 = CombatScreen.MapY + (y - v.ViewY) * 24;
+            var cell = new byte[24 * 24];
+            for (int j = 0; j < 24; j++)
+                for (int i = 0; i < 24; i++)
+                    cell[j * 24 + i] = f[x0 + i, y0 + j];
+            return cell;
+        }
+        v.HitMarker = (x, y);
+        var withIcon = Cell();
+        map.SetSlotSize(map.Slot(me), 0); // the same square with no creature
+        var bare = Cell();
+        Assert.Equal(bare, withIcon);
+        // COMSPR 11's colour-0 pixels are drawn (grey on screen, colour 8 after the combat palette swap), not see-through.
+        var skull = new CombatArt(new PorGameDirectory(Dir()!)).Sprite(CombatArt.HitMarker)!;
+        for (int j = 0; j < 24; j++)
+            for (int i = 0; i < 24; i++)
+                if (skull.Pixels[j * skull.Width + i] == 0)
+                    Assert.Equal(8, withIcon[j * 24 + i]);
+        v.HitMarker = null;
+    }
+
+    [Fact]
     public void The_fight_shows_the_programs_menu_and_plays_to_the_end_on_the_screen()
     {
         if (Dir() is null)

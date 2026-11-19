@@ -120,6 +120,13 @@ public sealed class FightState
     public Action<AttackMessage, bool>? AttackEnd { get; set; }
 
     /// <summary>
+    /// Display hook (no game state): the flee 0x13465's message (read s30), with whether the creature got away. Away:
+    /// 0x2BDF0's message (0x319D2(creature, 3, 0), then START 0x16EC(creature, its text CS:0C4F, row 10, pause 1)), called
+    /// while the creature is still in play and on the map. Not away: START 0x1693 with CS:0C58 (row 24, the pause).
+    /// </summary>
+    public Action<EclCharacter, bool>? FleeMessage { get; set; }
+
+    /// <summary>
     /// Display hook (no game state): the moving icon START 0x25C9 (a missile's, a spell's or a bolt's flight, a gaze or
     /// breath, the aim cursor's Next / Prev), called where the program calls it: the missiles and casts inside their
     /// resident sound bracket, the effect handlers and the aim with none. A front end animates it there.

@@ -186,6 +186,7 @@ public sealed class ExploreScreen : IScreen
         {
             _player.PositionLineErased = false;
             _player.ForgetPagePrompt(); // the command line is drawn again over the bottom row
+            _player.CommandRedrawn(); // [?] PROTECT's glyphs on the frame go with the redraw (ClientPlayer.ScreenGlyphs)
             _staleLine = null;
             _lineAtCommand = StatusLine(_game, _player.Camping);
             _scriptAtCommand = _game.Vm.CurrentScript;
@@ -567,6 +568,10 @@ public sealed class ExploreScreen : IScreen
         if (ReferenceEquals(request, _shown))
             return;
         _shown = request;
+        // Row 24 is drawn again by a menu (0x2CC8C fills the row), a message, a prompt or the command line once the run
+        // ends: PROTECT's glyphs there are gone (P, s30).
+        if (request is ChoiceRequest or KeyRequest or TextRequest or DelayRequest { BottomLine: not null })
+            _player.BottomRowDrawn();
         _selected = 0;
         _typed = "";
         _hasClickAnswer = false;
@@ -619,7 +624,7 @@ public sealed class ExploreScreen : IScreen
                 _highlight.Index = !cancelled && reply is { Value: int i } && i >= 0 && i < h.Items.Count ? i : _selected;
                 break;
             case ListRequest l:
-                _highlight.Index = !cancelled && reply is { Value: ListAnswer { Action: var a } } && a >= 0 && a < l.Actions.Count
+                _highlight.Index = !cancelled && l.Paging is null && reply is { Value: ListAnswer { Action: var a } } && a >= 0 && a < l.Actions.Count
                     ? a
                     : _list.SelectedAction;
                 break;
@@ -761,6 +766,11 @@ public sealed class ExploreScreen : IScreen
             _list.Draw(f, font, page, input);
             return;
         }
+        if (_player.PageUnder is { } under)
+        {
+            DrawOverPage(f, font, under, pending, input);
+            return;
+        }
         if (_player.Hall is { } hall)
         {
             _hall.Draw(f, font, hall, _game.Memory.Party, pending, _selected, input);
@@ -844,6 +854,57 @@ public sealed class ExploreScreen : IScreen
             Chrome.Text(f, font, 0, MenuRow, Fit(KeyPrompt(k, input), 40), KeyColour(k));
         else if (pending is DelayRequest { BottomLine: { } bline })
             Chrome.Text(f, font, 0, MenuRow, Fit(bline.Text, 40), bline.Colour);
+
+        if (pending is null && !_runner.Busy)
+            _player.BottomRowDrawn(); // the run ended: the command line is on row 24 again
+        // PROTECT's glyphs outside the text box and the picture window (frame rows 16 / 23, row 24; P s30): drawn over
+        // whatever is there, a glyph cell whole (black behind it), until something draws there again.
+        foreach (var (c, r, g) in _player.ScreenGlyphs)
+        {
+            Chrome.Clear(f, c, r, 1);
+            Chrome.Text(f, font, c, r, g.ToString(), Chrome.White);
+        }
+    }
+
+    /// <summary>
+    /// A list page left under the text box (<see cref="ClientPlayer.PageUnder"/>; the camp's Cast, 0x17D28 / 0x17D39,
+    /// P s30 and DOSBox-X s29): the page as it was, the box's frame (one cell outside (1, 17)–(38, 22): rows 16 and 23,
+    /// columns 0 and 39) over it with the inside blanked, the box's text, and on row 24 the list's menu line unless
+    /// something else is asked there.
+    /// </summary>
+    private void DrawOverPage(IndexedFrame f, TextFont font, ListRequest under, PlayerRequest? pending, ActionInput input)
+    {
+        _list.Draw(f, font, under, input);
+        for (int r = TextWindow.Top; r <= TextWindow.Bottom; r++)
+            Chrome.Clear(f, TextWindow.Left, r, TextWindow.Right - TextWindow.Left + 1);
+        Chrome.Box(f, TextWindow.Left - 1, TextWindow.Top - 1, TextWindow.Right + 1, TextWindow.Bottom + 1);
+        switch (pending)
+        {
+            case ChoiceRequest { Vertical: true } v:
+                DrawVertical(f, font, v);
+                break;
+            default:
+                DrawTextWindow(f, font);
+                break;
+        }
+        if (pending is ChoiceRequest { Vertical: false } h)
+        {
+            Chrome.Clear(f, 0, MenuRow, 40);
+            int start = MenuStart(h);
+            if (h.MenuPrompt is { Length: > 0 } mp)
+                Chrome.Text(f, font, 0, MenuRow, mp, MenuPromptColour);
+            DrawLine(f, font, h.Items, _selected, start, h.HotkeyOf);
+        }
+        else if (pending is KeyRequest k)
+        {
+            Chrome.Clear(f, 0, MenuRow, 40);
+            Chrome.Text(f, font, 0, MenuRow, Fit(KeyPrompt(k, input), 40), KeyColour(k));
+        }
+        else if (pending is DelayRequest { BottomLine: { } bline })
+        {
+            Chrome.Clear(f, 0, MenuRow, 40);
+            Chrome.Text(f, font, 0, MenuRow, Fit(bline.Text, 40), bline.Colour);
+        }
     }
 
     private static byte KeyColour(KeyRequest k) => k.Colour ?? (k.AsMenu ? Chrome.White : MenuPromptColour);

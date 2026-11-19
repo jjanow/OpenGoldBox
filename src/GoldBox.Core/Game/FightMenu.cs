@@ -364,8 +364,7 @@ public sealed class FightMenu
             switch (cmd)
             {
                 case DoneCommand.Guard:
-                    Fight.Guard(c);
-                    Notice(FightNotice.Guarding, c);
+                    Fight.Guard(c); // its message through Fight.Guarded (START 0x3226)
                     return true;
                 case DoneCommand.Delay:
                     Fight.Delay(c);

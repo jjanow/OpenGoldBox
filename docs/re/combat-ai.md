@@ -88,8 +88,17 @@ No draws.
   and 0x2BEF4. Back in morale, START 0x31D7 is called again (0xBE3C) whatever the creature's state, and its result
   (always 1) ends the turn. 0x2BDF0 is the shared status-change routine (also behind other status texts, PLAN (1)).
 - Client: `CombatChooser.AiSays` → `Say` (START 0x16EC with the pause) for all three, the surrender first scrolls
-  (`StatusChangeScroll`). Core `MonsterAi.Surrender` checks in play before raising the message. Not seen in
-  DOSBox-X.
+  (`StatusChangeScroll`). Core `MonsterAi.Surrender` checks in play before raising the message.
+- **D** (s30, DOSBox-X frame by frame, combat-menu.md "s30 DOSBox-X checks"): save A with $6DC6 = 0 (limit 100) and
+  monster records at half HP in the copied `MON2CHA.DAX` (side HP % 50 from the placement): goblin guards (Int 10,
+  movement 6) and aides (Int 14, movement 12; they surrendered, so their movement after the fight start's recalculation was below
+  the party's fastest `[?]` not read from a state) surrendered
+  at their first turn, each with the message typed from row 10 and the pause, then the continue-battle question
+  (opens on No; No ends the fight); two spectres (movement 30) showed the panic message, stepped away (Bakshi's attack
+  of opportunity on the way) and ended with the guard message (0xBB0F → START 0x3226). Client frames equal: 99 of 100
+  and 129 of 130 after the fixes there (the misses: the Client's help lines). A charmed monster is steady: the charm handler's 100 in DS:6825 is what the
+  check reads (Core had kept a second cell; fixed s30).
+- Not checked: the forced-flee message (turn undead's +0x10).
 
 ## Targets — P
 

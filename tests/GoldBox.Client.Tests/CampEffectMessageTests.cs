@@ -33,7 +33,7 @@ public class CampEffectMessageTests
         public int Left => _answers.Count;
     }
 
-    private static CampContext Camp(Script s, TextWindow w, EclCharacter member, byte speed)
+    private static CampContext Camp(Script s, TextWindow w, EclCharacter member, byte speed, Action<ListRequest?>? pageUnder = null)
     {
         var p = new EclParty();
         p.Members.Add(member);
@@ -46,6 +46,7 @@ public class CampEffectMessageTests
             Pool = new uint[7],
             Treasure = [],
             Random = n => 0,
+            ShowPageUnder = pageUnder ?? (_ => { }),
         };
         var m = new EclMemory { Party = p, GameSpeed = speed };
         m.Write(EclPartyRules.PartySizeCell, 1);
@@ -116,5 +117,46 @@ public class CampEffectMessageTests
         VenueScreens.Camp(Camp(s, w, Member(), speed: 0), null);
         Assert.Equal(0, s.Left);
         Assert.Empty(s.Delays);
+    }
+
+    [Fact]
+    public void The_spell_list_page_stays_under_the_cast_and_comes_back_afresh()
+    {
+        // 0x17D15–0x17D52 (P, s30; DOSBox-X s29): the text box's frame over the spell list, the cast's messages in it,
+        // then the position word −1, so the next list is drawn anew (first row, top 0).
+        var w = new TextWindow();
+        ListRequest? under = null;
+        var seenUnder = new List<ListRequest?>();
+        var lists = new List<ListRequest>();
+        var s = new Script(w, 2, 0, new ListAnswer(0, 1), null, 5, 5);
+        var c = Camp(s, w, Member(), speed: 2, pageUnder: p => under = p);
+        var t = c.Trade;
+        var dialog = new Dialog(r =>
+        {
+            if (r is DelayRequest)
+                seenUnder.Add(under);
+            if (r is ListRequest l)
+            {
+                Assert.Null(under); // a new list is never drawn over a kept page
+                lists.Add(l);
+            }
+            return s.Ask(r);
+        }, w);
+        var camp = new CampContext
+        {
+            Trade = new TradeContext
+            {
+                Dialog = dialog, Text = t.Text, Party = t.Party, Pool = t.Pool, Treasure = t.Treasure, Random = t.Random,
+                ShowPageUnder = t.ShowPageUnder,
+            },
+            State = c.State, Spells = c.Spells, Rest = c.Rest, Memory = c.Memory, Cast = c.Cast,
+        };
+        VenueScreens.Camp(camp, null);
+        Assert.Equal(0, s.Left);
+        Assert.Equal(2, seenUnder.Count);
+        Assert.All(seenUnder, p => Assert.Same(lists[0], p)); // the cast message and the effect message over the page
+        Assert.Null(under);
+        Assert.NotNull(lists[0].Paging);
+        Assert.Equal(SpellLists.FirstRow, lists[0].FirstRow);
     }
 }

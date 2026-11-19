@@ -566,6 +566,9 @@ public sealed class MonsterAi : IFightController
         if (done)
             return;
         rec[CombatRecord.Facing] = newDir; // 0x31232
+        // 0x31232 draws the cell again before the attacks of opportunity (DOSBox-X s30: a fleeing spectre's cursor box
+        // gone before Bakshi's free attack). [?] Its frame argument here is not read; the Client only drops the box.
+        f.State.Posed?.Invoke(c);
         f.Moves.Step(f, c, newDir);
         if (c[FightRules.InPlay] == 0)
             f.EndActions(c);

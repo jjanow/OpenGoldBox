@@ -225,6 +225,9 @@ away when no enemy is in sight (count targets, range 255); else when the fastest
 0x1291E shr 1, list order) is slower than the creature's movement shr 1, or as fast and **1d2 = 1** (the only draw).
 Away: 0x2BDF0 with status 3: in play 0, status 3, HP kept (other statuses get HP 0), icon off the map, actions end, the
 dropped-on-down effects go (0x2BEF4); a message otherwise. Actions end either way. Team counts are not lowered here.
+Messages (read s30, P): away, 0x2BDF0's own (0x319D2(creature, 3, 0), START 0x16EC from row 10 with the pause, CS:0C4F
+of unit 0x127FB) before the status change and the map removal; not away, START 0x1693 (row 24) with CS:0C58
+(spells-effects.md "Revive and put out of play"). Core `FightState.FleeMessage`, Client `CombatChooser.FleeMessage`.
 
 ## Placement (0xDFC6) — P, E, D
 

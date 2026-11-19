@@ -21,10 +21,47 @@ public sealed class CampContext
     public Action? Quit { get; init; }
     /// <summary>The icon editor 0x1D1AC on a character (Alter Icon), or null when the Client has none.</summary>
     public Action<EclCharacter>? EditIcon { get; init; }
+    /// <summary>The camp's effect engine (the rest's effect timeout and healing, Cast), whose handler messages the camp
+    /// shows (<see cref="OutsideEffectMessages"/>); null in tests that need none.</summary>
+    public EffectHandlers? Effects { get; init; }
+    /// <summary>The sound cues (CreatureDowned's body cue outside a fight), or null for none.</summary>
+    public Action<GoldBox.Core.Sound.SoundCue>? Cue { get; init; }
+
+    /// <summary>The handler messages outside a fight on the camp's text window; <paramref name="resting"/> is DS:6DDA.</summary>
+    public OutsideEffectMessages OutsideMessages(bool resting) =>
+        new(Dialog.Text, Dialog.Ask, () => Memory.GameSpeed, Resources.CombatTexts, () => resting, Cue);
 
     public Dialog Dialog => Trade.Dialog;
     public GameText Text => Trade.Text;
     public EclParty Party => Trade.Party;
+
+    /// <summary>The spell list page last asked (null when the last list was empty).</summary>
+    internal ListRequest? LastPage { get; set; }
+}
+
+/// <summary>Where a spell list was left: the highlighted row and the window's top (the caller's position word, DS:6B29).</summary>
+public sealed class ListPlace
+{
+    public int Row { get; set; }
+    public int Top { get; set; }
+}
+
+/// <summary>The spell list 0x239D6 → 0x270A2 → the list routine 0x2D669 (P, s30; combat-menu.md "Spell lists' Next / Prev").</summary>
+public static class SpellLists
+{
+    /// <summary>The window's first row (0x270A2 passes y0 = 5).</summary>
+    public const int FirstRow = 5;
+
+    /// <summary>
+    /// The window: rows 5–22 (y1 = 0x16), Memorize's rows 5–15 (y1 = 0x0F, 0x2713C); the Next / Prev words before the
+    /// Exit (or, in Learn, which has no Exit, after its word). The list routine's own words (GAME.OVR 0x2D657 / 0x2D65D)
+    /// read the same as the aim menu's first two, which the Client already has from the program (<see cref="CombatMsg.AimNextPrevManual"/>).
+    /// </summary>
+    public static ListPaging Paging(CombatText text, bool memorize, int wordsAt)
+    {
+        var w = text.Words(CombatMsg.AimNextPrevManual);
+        return new ListPaging(w.ElementAtOrDefault(0) ?? "NEXT", w.ElementAtOrDefault(1) ?? "PREV", memorize ? 11 : 18, wordsAt);
+    }
 }
 
 /// <summary>
@@ -186,9 +223,23 @@ public static class CampScreens
     /// <summary>The camp's (and Magic's) Rest: <see cref="CampRest.RestForPreparation"/> with the screens below.</summary>
     public static bool Rest(CampContext c)
     {
-        bool interrupted = c.Rest.RestForPreparation(new RestUi(c));
-        c.Dialog.Text.Clear();
-        return interrupted;
+        // The rest's effect timeout (handlers 22, 57, … through 0x2AF10) and healing (0x2C647 → handler 0x4E → 0x2C753)
+        // show their handler messages while the loop runs: DS:6DDA = 1, so START 0x16EC uses rows 18–22 (s30).
+        var shown = c.OutsideMessages(resting: true);
+        void OnEffect(EclCharacter t, EffectEvent e) => shown.Show(t, e, c.Effects);
+        if (c.Effects is { } fx)
+            fx.Event += OnEffect;
+        try
+        {
+            bool interrupted = c.Rest.RestForPreparation(new RestUi(c));
+            c.Dialog.Text.Clear();
+            return interrupted;
+        }
+        finally
+        {
+            if (c.Effects is { } fx2)
+                fx2.Event -= OnEffect;
+        }
     }
 
     /// <summary>The rest loop's screens: the rest-time line and menu, the key poll, the messages.</summary>
@@ -371,11 +422,16 @@ public static class CampScreens
     /// <summary>
     /// The spell list page (the list builder and its menu): the name and the list's words on the first line, level headings as
     /// labels, a pending spell marked with an asterisk. <paramref name="action"/> null = display only (Exit). Returns the spell
-    /// picked, 0 for none, and whether the list had rows.
+    /// picked, 0 for none, and whether the list had rows. The rows are the list routine 0x2D669's window (P, s30;
+    /// 0x270A2): rows 5–22, Memorize's 5–15 (its slot lines go below), with Next / Prev on the menu line
+    /// (<see cref="ListPaging"/>). <paramref name="place"/> keeps the highlighted row and the window's top between calls,
+    /// as Memorize and Scribe keep their position word (0x181B3, 0x18404: −1 once before their loop); Cast sets it to −1
+    /// before each list (0x17CDC, 0x17D52), so its list starts afresh.
     /// </summary>
     private static (int Spell, bool NotEmpty) SpellPage(CampContext c, CampSpells.ListKind kind, Msg? action,
-        IReadOnlyList<ListLine>? extra = null)
+        IReadOnlyList<ListLine>? extra = null, ListPlace? place = null)
     {
+        c.LastPage = null;
         if (c.Party.Current is not { } who)
             return (0, false);
         var list = c.Spells.List(who, kind, it => c.Resources.ItemSlot(it));
@@ -409,11 +465,18 @@ public static class CampScreens
         if (extra is not null)
             lines.AddRange(extra);
         string[] actions = action is { } m ? [c.Text[m], "EXIT"] : ["EXIT"];
-        var a = c.Dialog.Page(new ListRequest(lines, rows, actions, actions.Length - 1, FirstRow: lines.Count + 1)
+        var request = new ListRequest(lines, rows, actions, actions.Length - 1, FirstRow: SpellLists.FirstRow)
         {
             Labels = labels,
             RowActions = new HashSet<int> { 0 },
-        });
+            Paging = SpellLists.Paging(c.Resources.CombatTexts, memorize: action == Msg.MemoriseAction, wordsAt: actions.Length - 1),
+            Selected = place?.Row ?? 0,
+            Top = place?.Top ?? 0,
+        };
+        c.LastPage = request;
+        var a = c.Dialog.Page(request);
+        if (place is not null)
+            (place.Row, place.Top) = (Math.Max(0, a.Row), a.Top);
         if (action is null || a.Action != 0 || a.Row < 0 || a.Row >= ids.Count || labels.Contains(a.Row))
             return (0, true);
         return (ids[a.Row], true);
@@ -438,7 +501,19 @@ public static class CampScreens
                     Say(c, who, c.Text[Msg.NoSpellsMemorised]);
                 return;
             }
-            CastOne(c, who, spell);
+            // 0x17D15–0x17D52 (P, s30): the text box's frame (03F1:0000 around (1, 17)–(38, 22)) is drawn over the
+            // spell list and its inside blanked (03F1:0137), the spell is cast (0x27C38) with its messages in the box,
+            // then the position word goes back to −1, so the next list draws its page afresh (0x239D6 / 0x270A2 draw
+            // the window and title only for a position below 0). Row 24 keeps the list's menu line (DOSBox-X s29).
+            c.Trade.ShowPageUnder(c.LastPage);
+            try
+            {
+                CastOne(c, who, spell);
+            }
+            finally
+            {
+                c.Trade.ShowPageUnder(null);
+            }
         }
     }
 
@@ -479,6 +554,7 @@ public static class CampScreens
             c.Dialog.Ask(new DelayRequest(TimeSpan.FromMilliseconds(225 * c.Memory.GameSpeed)));
         w.ClearRect(TextWindow.Left, TextWindow.Top + 1, TextWindow.Right, TextWindow.Bottom);
         var heard = new List<string>();
+        var shown = c.OutsideMessages(resting: false);
         void OnSpell(EclCharacter t, int s, EffectEvent e) => heard.Add(t.Name.ToUpperInvariant() + ": " + e.ToString().ToUpperInvariant());
         void OnEffect(EclCharacter t, EffectEvent e)
         {
@@ -487,9 +563,13 @@ public static class CampScreens
                 EffectMessage(c, t, Cut40(c.Resources.CombatTexts.Effect(key)));
             else if (e == EffectEvent.Unaffected)
                 EffectMessage(c, t, c.Resources.CombatTexts[CombatMsg.Unaffected]);
-            else if (e is EffectEvent.StatusDone or EffectEvent.GoesDownDone or EffectEvent.DamageDone)
+            else if (shown.Show(t, e, cast.Spells.Effects))
             {
-                // The ends of 0xECB3 and 0x2C44A (pause and clear) carry no text of their own.
+                // The handlers' own messages (0xECB3's callers and end, the revive 0x2C753, …): START 0x16EC's camp branch.
+            }
+            else if (e is EffectEvent.GoesDownDone or EffectEvent.DamageDone)
+            {
+                // The end of 0x2C44A (pause and clear) carries no text of its own.
             }
             else
                 heard.Add(t.Name.ToUpperInvariant() + ": " + e.ToString().ToUpperInvariant());
@@ -571,6 +651,7 @@ public static class CampScreens
                 done = true;
         }
         bool shown = false;
+        var place = new ListPlace(); // 0x181B3: the position word −1 once, kept through the loop
         while (!done)
         {
             if (!CampSpells.HasSlots(who))
@@ -579,7 +660,7 @@ public static class CampScreens
                 break;
             }
             shown = true;
-            var (spell, _) = SpellPage(c, CampSpells.ListKind.SpellBook, Msg.MemoriseAction, SlotLines(c, who));
+            var (spell, _) = SpellPage(c, CampSpells.ListKind.SpellBook, Msg.MemoriseAction, SlotLines(c, who), place);
             if (spell == 0)
                 break;
             c.Spells.MarkMemorise(who, spell);
@@ -627,9 +708,10 @@ public static class CampScreens
                 done = true;
         }
         bool shown = false;
+        var place = new ListPlace(); // 0x18404: the position word −1 once, kept through the loop
         while (!done)
         {
-            var (spell, notEmpty) = SpellPage(c, CampSpells.ListKind.OnScrolls, Msg.ScribeAction);
+            var (spell, notEmpty) = SpellPage(c, CampSpells.ListKind.OnScrolls, Msg.ScribeAction, place: place);
             if (spell == 0)
             {
                 if (!notEmpty)

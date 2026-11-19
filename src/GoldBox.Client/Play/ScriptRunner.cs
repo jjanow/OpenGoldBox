@@ -115,10 +115,29 @@ public sealed record ListRequest(IReadOnlyList<ListLine> Lines, IReadOnlyList<st
     /// (0x2D669), whose menu starts on <see cref="SelectedAction"/> and leaves the shared highlight where it ends.
     /// </summary>
     public bool SharedHighlight { get; init; }
+
+    /// <summary>The list routine 0x2D669's window and its Next / Prev words (null: the Client's scrolling list).</summary>
+    public ListPaging? Paging { get; init; }
+
+    /// <summary>With <see cref="Paging"/>: the window's first row on entry (DS:6B29, kept by a caller that keeps its row).</summary>
+    public int Top { get; init; }
 }
 
-/// <summary>The action picked on a <see cref="ListRequest"/> (or a member switch) and the row it applies to.</summary>
-public sealed record ListAnswer(int Action, int Row);
+/// <summary>
+/// The item list routine 0x2D669's window (P, s30; combat-menu.md "Spell lists' Next / Prev"): <paramref name="Rows"/>
+/// list rows (its y1 − y0 + 1) shown from the window's top (DS:6B29). The menu line is the caller's word, then
+/// <paramref name="Next"/> when rows remain below the window (count − rows &gt; top), <paramref name="Prev"/> when the top
+/// is past the leading labels, then Exit: the words go in at <paramref name="WordsAt"/> of the request's actions. Next /
+/// Prev move the window by the rows (clamped to count − rows and 0), the highlight keeping its place in the window;
+/// Up / Down move the highlight inside the window, wrapping there (0x2D594), and skip labels (0x2D3D2).
+/// </summary>
+public sealed record ListPaging(string Next, string Prev, int Rows, int WordsAt);
+
+/// <summary>
+/// The action picked on a <see cref="ListRequest"/> (or a member switch) and the row it applies to; with paging, the
+/// window's top as it was left (<see cref="ListRequest.Top"/>).
+/// </summary>
+public sealed record ListAnswer(int Action, int Row, int Top = 0);
 
 /// <summary>A line typed by the player: digits only when <paramref name="Numeric"/>. The answer is the string.</summary>
 public sealed record TextRequest(string Prompt, bool Numeric, int MaxLength) : PlayerRequest;

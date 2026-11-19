@@ -192,7 +192,11 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
     public void TextHome()
     {
         if (_glyphsInWindow)
+        {
             ViewGlyphs = [];
+            // The window (1, 1)–(15, 15) is drawn with its frame, cells 0–16 of rows 0 and 16 and columns 0 and 16.
+            ScreenGlyphs = [.. ScreenGlyphs.Where(g => g.Col > 16 || g.Row > 16)];
+        }
         _glyphsInWindow = false;
         _windowCleared = false;
         Text.Home();
@@ -211,13 +215,34 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
     public (int Col, int Row, char Glyph)[] ViewGlyphs { get; private set; } = [];
 
     /// <summary>
+    /// Glyph cells PROTECT drew outside the text box (rows 17–22, columns 1–39) and the picture window (cells 1–15):
+    /// the frame rows 16 and 23, the frame columns, the party list's side of rows 0–15, and row 24 (P, s30; no v1.3
+    /// script draws there). They are pixels in the program: they stay until something draws over them. Row 24: the
+    /// next menu (0x2CC8C fills the row from its line's end to column 39 with blanks, 0x2CC16–0x2CC41), message (START
+    /// 0x2233 clears the row) or prompt (<see cref="BottomRowDrawn"/>); cells 0–16 of rows 0–16: EXIT's window redraw
+    /// (<see cref="TextHome"/>). [?] When the program draws the other frame cells again (a full-screen redraw, START
+    /// 0x3379) is not followed: the Client keeps them until the next area command (<see cref="CommandRedrawn"/>).
+    /// </summary>
+    public (int Col, int Row, char Glyph)[] ScreenGlyphs { get; private set; } = [];
+
+    /// <summary>Something was drawn on row 24 (a menu, a message, a prompt): the glyphs there are gone.</summary>
+    public void BottomRowDrawn()
+    {
+        if (ScreenGlyphs.Any(g => g.Row == 24))
+            ScreenGlyphs = [.. ScreenGlyphs.Where(g => g.Row != 24)];
+    }
+
+    /// <summary>An area command's redraw: the glyphs left on the frame and the bottom row are gone ([?] see <see cref="ScreenGlyphs"/>).</summary>
+    public void CommandRedrawn() => ScreenGlyphs = [];
+
+    /// <summary>
     /// PROTECT (GAME.OVR 0x3BC3): one line of raw glyphs at the text cursor DS:5E24 / 5E25. When CLEARBOX ran
     /// (DS:84DE) and the row is above 13, the cursor first goes to column 2, row 5 (inside the cleared window) and
     /// DS:84E2 := 1. Each glyph is drawn through the glyph routine with its flag clear (START 0x726F: the byte is the
     /// glyph number in the text font, colour 15; columns above 39 or rows above 24 are not drawn) and the column moves
     /// on; at the end the row goes down one, the column stays (an empty line moves the row too). The glyphs go into the
-    /// text box when the cursor is in rows 17–22 (a later clear of the box removes them) and into the picture window
-    /// in rows 1–15. [?] Rows 16, 23 and 24 (no script puts runes there) are not drawn.
+    /// text box when the cursor is in rows 17–22 (a later clear of the box removes them), into the picture window
+    /// in rows 1–15 and anywhere else into <see cref="ScreenGlyphs"/> (rows 16, 23, 24 and the frame; P, s30).
     /// </summary>
     public void DrawGlyphs(ushort address, IReadOnlyList<byte> glyphs)
     {
@@ -228,22 +253,29 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
             _glyphsInWindow = true;
         }
         var inWindow = new List<(int, int, char)>(ViewGlyphs);
+        var elsewhere = new List<(int, int, char)>(ScreenGlyphs);
         foreach (var g in glyphs)
         {
             char ch = TextFont.RawGlyph(g);
             if (col <= 39 && row <= 24)
             {
-                if (row is >= TextWindow.Top and <= TextWindow.Bottom)
+                if (row is >= TextWindow.Top and <= TextWindow.Bottom && col >= TextWindow.Left)
                     Text.Put(row, col, ch.ToString(), 15);
                 else if (row is >= 1 and <= 15 && col is >= 1 and <= 15)
                 {
                     inWindow.RemoveAll(c => c.Item1 == col && c.Item2 == row);
                     inWindow.Add((col, row, ch));
                 }
+                else
+                {
+                    elsewhere.RemoveAll(c => c.Item1 == col && c.Item2 == row);
+                    elsewhere.Add((col, row, ch));
+                }
             }
             col = (col + 1) & 0xFF; // DS:5E24 is a byte
         }
         ViewGlyphs = [.. inWindow];
+        ScreenGlyphs = [.. elsewhere];
         Text.MoveTo(col, row + 1);
     }
 
@@ -606,6 +638,7 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
         {
             Interface = null;
             Window = null;
+            WindowAfterFight = false;
             ViewOverlay = null; // [?] as after the shop: the area display is drawn again after the loot step
         }
     }
@@ -724,6 +757,12 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
     public IReadOnlyList<WindowLine>? Window { get; set; }
 
     /// <summary>
+    /// A list page left on the screen under the text box (<see cref="TradeContext.ShowPageUnder"/>: the camp's spell list
+    /// while a cast runs, P + D s29/s30), or null.
+    /// </summary>
+    public ListRequest? PageUnder { get; set; }
+
+    /// <summary>
     /// The window came up over the combat screen (the party-destroyed page): row 24 shows nothing while its text types
     /// (DOSBox-X s29), unlike the DAMAGE wipe's window over the area screen, whose command line stays.
     /// </summary>
@@ -733,7 +772,7 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
     public Venue? Interface { get; private set; }
 
     /// <summary>The context of the money and item screens on <paramref name="state"/>'s pool and treasure list.</summary>
-    private TradeContext? Trade(EncounterState? state)
+    internal TradeContext? Trade(EncounterState? state)
     {
         if (memory().Party is not { } party)
             return null;
@@ -741,7 +780,20 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
         return new TradeContext
         {
             Dialog = Dialog,
-            ShowWindow = w => Window = w,
+            ShowWindow = w =>
+            {
+                Window = w;
+                if (w is null)
+                    WindowAfterFight = false;
+            },
+            TypesInto = box =>
+            {
+                // The NPC share window comes at the same point of 0x6AA5 as the party-destroyed one (after the removal,
+                // before 0x6BAF): row 24 shows nothing while it types (as DOSBox-X showed for that one, s29).
+                WindowAfterFight = true;
+                TypesInto(box);
+            },
+            ShowPageUnder = p => PageUnder = p,
             Text = Resources.Texts,
             Party = party,
             Pool = state?.Money ?? new uint[7],
@@ -844,6 +896,22 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
         return effects;
     }
 
+    private readonly HashSet<GoldBox.Data.Por.PorGame> _effectsShown = [];
+
+    /// <summary>
+    /// Shows the handler messages of the game's effect engine outside a fight (<see cref="GoldBox.Data.Por.PorGame.OutsideEffects"/>:
+    /// the effect timeout after each clock advance while exploring, read s30) on the area's text window, START 0x16EC's
+    /// out-of-fight layout with DS:6DDA = 0 (<see cref="OutsideEffectMessages"/>). Once per game.
+    /// </summary>
+    public void ShowOutsideEffects(GoldBox.Data.Por.PorGame g)
+    {
+        if (!_effectsShown.Add(g))
+            return;
+        var shown = new OutsideEffectMessages(Text, runner.Ask, () => memory().GameSpeed, Resources.CombatTexts, () => false,
+            cue => Sound.Cue(cue));
+        g.OutsideEffects.Event += (c, e) => shown.Show(c, e, g.OutsideEffects);
+    }
+
     /// <summary>Where the camp's Save writes (the player's save folder; the game folder is never written).</summary>
     public string? SaveFolder { get; set; }
 
@@ -901,6 +969,8 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
             Quit = Quit,
             // On the overland the editor's end reloads icon slots 11 and 12 (0x1D84A), one of them a marker slot.
             EditIcon = IconEditor is { } edit ? c => { edit(c); game?.Loop.IconEditorDone(); } : null,
+            Effects = effects,
+            Cue = cue => Sound.Cue(cue),
         };
     }
 

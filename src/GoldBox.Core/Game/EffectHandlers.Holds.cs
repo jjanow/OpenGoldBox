@@ -107,7 +107,7 @@ public sealed partial class EffectHandlers
                 c[0x116] = 2;
                 c[0x118] = 4;
                 c[0x113] = 0;
-                Emit(c, EffectEvent.Other);
+                Emit(c, EffectEvent.Rakes); // 0x16240: START 0x16EC(creature, CS:39C9, row 10, pause 1)
                 MakeAttack(c, o, false);
                 FightRules.EndActions(rec);
                 return;
@@ -140,7 +140,7 @@ public sealed partial class EffectHandlers
                 AddEffect(c, 0x4A, 0, (byte)SlotOf(o), true);
                 AddEffect(o, 0x3A, 0, 0xFF, false);
                 CallHandler(0x3A, o, null, false);
-                Emit(o, EffectEvent.Other);
+                Emit(o, EffectEvent.HeldFast); // 0x10629: START 0x16EC(DS:6826, CS:1928, row 10, pause 1)
                 return;
             }
             case 81: // 0x10705 fear aura (fight start)
@@ -193,7 +193,7 @@ public sealed partial class EffectHandlers
         var cloud = Clouds.FirstOrDefault(k => ReferenceEquals(k.Caster, c) && k.Index == n);
         if (cloud is null)
             return;
-        Emit(c, EffectEvent.Other);
+        Emit(c, EffectEvent.AirClears); // 0xF9A4: START 0x1693 (row 24) with CS:0CA8
         var map = Map;
         if (map is null)
             Diag("[?] stinking cloud cells need the combat map");
@@ -270,7 +270,7 @@ public sealed partial class EffectHandlers
                 rec[CombatRecord.Turned] = 1;
             return;
         }
-        Emit(c, EffectEvent.Other);
+        Emit(c, EffectEvent.SucksBlood); // 0x10485: START 0x16EC(creature, CS:175E, row 10, pause 1)
         byte d = DamageDiceRoll(1, 4);
         F.DamageFlags = 0;
         NonWeaponDamage(o, d, 0, false);
@@ -303,9 +303,9 @@ public sealed partial class EffectHandlers
             bool saved = SavingThrow(p, 4, 0);
             sbyte hd = (sbyte)p[0x73];
             if (hd is >= 0 and <= 3)
-                AddEffectWithMessage(p, 0x34, 0, 0x0C, false, 1, saved, EffectEvent.Other, EffectTexts.FearParalysis); // 0x10794
+                AddEffectWithMessage(p, 0x34, 0, 0x0C, false, 1, saved, EffectEvent.EffectGained, EffectTexts.FearParalysis); // 0x10794
             else if (hd is 4 or 5)
-                AddEffectWithMessage(p, 0x02, 0, 0x0C, false, 1, saved, EffectEvent.Other, EffectTexts.FearWeakened); // 0x107CB
+                AddEffectWithMessage(p, 0x02, 0, 0x0C, false, 1, saved, EffectEvent.EffectGained, EffectTexts.FearWeakened); // 0x107CB
         }
     }
 
@@ -329,7 +329,7 @@ public sealed partial class EffectHandlers
                 mod += 2;
             bool saved = SavingThrow(p, 0, mod);
             ushort minutes = Dice(1, 4);
-            AddEffectWithMessage(p, 0x34, minutes, 0x0C, false, 1, saved, EffectEvent.Other, EffectTexts.AuraParalysis); // 0x108C7
+            AddEffectWithMessage(p, 0x34, minutes, 0x0C, false, 1, saved, EffectEvent.EffectGained, EffectTexts.AuraParalysis); // 0x108C7
         }
     }
 

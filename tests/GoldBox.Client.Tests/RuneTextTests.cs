@@ -16,7 +16,7 @@ namespace GoldBox.Client.Tests;
 /// </summary>
 public class RuneTextTests
 {
-    private sealed record Rig(ExploreScreen Screen, PorGame Game, ClientPlayer Player, PorGameDirectory Dir, ActionInput Input);
+    private sealed record Rig(ExploreScreen Screen, PorGame Game, ClientPlayer Player, PorGameDirectory Dir, ActionInput Input, ScriptRunner Runner);
 
     private static Rig Start()
     {
@@ -26,7 +26,7 @@ public class RuneTextTests
         var player = TestRig.Player(runner, () => game!.Memory);
         player.Resources = ClientResources.Load(dir);
         game = PorGame.FromSave(dir, PorViewArt.Load(dir), dir.Find("SAVGAMA.DAT")!, new PorPlayer(player, player, player, player), 7);
-        return new Rig(new ExploreScreen(game, player, runner, new TestRig.NoHost()), game, player, dir, new ActionInput(InputBindings.Defaults()));
+        return new Rig(new ExploreScreen(game, player, runner, new TestRig.NoHost()), game, player, dir, new ActionInput(InputBindings.Defaults()), runner);
     }
 
     /// <summary>Runs <paramref name="steps"/> instructions of ECL<paramref name="file"/> block <paramref name="block"/> from <paramref name="pc"/> with the Client as host.</summary>
@@ -134,6 +134,99 @@ public class RuneTextTests
                 AssertGlyphCell(f, font, start + i, row, line[i]);
             }
         }
+    }
+
+    [Fact]
+    public void Glyph_lines_below_the_text_box_land_on_rows_23_and_24_until_drawn_over()
+    {
+        // P, s30 (no v1.3 script does this): PROTECT draws at the cursor on any row up to 24 and column up to 39 (START
+        // 0x726F); past row 22 the lines go over the box's bottom frame (row 23) and the bottom row (24).
+        if (TestRig.PorDir() is null)
+            return;
+        var r = Start();
+        r.Game.Memory.GameSpeed = 2;
+        r.Player.Text.MoveTo(5, 22);
+        byte[] line = [66, 67, 68];
+        r.Runner.Start(() =>
+        {
+            r.Player.DrawGlyphs(0, line); // row 22: in the text box
+            r.Player.DrawGlyphs(0, line); // row 23
+            r.Player.DrawGlyphs(0, line); // row 24
+            r.Player.DrawGlyphs(0, line); // row 25: not drawn
+            r.Player.Delay();             // the script goes on: a DELAY, nothing on row 24
+            r.Runner.Ask(new KeyRequest()); // then something that writes row 24 (a key prompt)
+        });
+        Assert.IsType<DelayRequest>(r.Runner.Pending);
+        Assert.Equal((17, 26), (r.Player.Text.Column, r.Player.Text.Row)); // the column runs on: 5, 8, 11, 14, 17
+        Assert.Equal([23, 24], r.Player.ScreenGlyphs.Select(g => g.Row).Distinct().Order());
+        var f = new IndexedFrame(320, 200);
+        r.Screen.Update(r.Input);
+        r.Screen.Draw(f, r.Input);
+        var font = FontData(r);
+        foreach (int row in new[] { 22, 23, 24 })
+            for (int i = 0; i < line.Length; i++)
+                AssertGlyphCell(f, font, 5 + 3 * (row - 22) + i, row, line[i]);
+        // The key prompt is drawn on row 24 (as a menu or a message would be): the glyphs there are gone; the frame
+        // row keeps its own until a redraw.
+        r.Runner.Answer(null);
+        Assert.IsType<KeyRequest>(r.Runner.Pending);
+        r.Screen.Update(r.Input);
+        Assert.Equal([23], r.Player.ScreenGlyphs.Select(g => g.Row).Distinct());
+        r.Runner.Answer(null);
+        r.Player.CommandRedrawn();
+        Assert.Empty(r.Player.ScreenGlyphs);
+        r.Runner.Dispose();
+    }
+
+    [Fact]
+    public void A_long_line_in_the_cleared_window_runs_over_its_frame_into_the_party_list_side()
+    {
+        // P, s30: from (2, 5) a 20-glyph line fills columns 2–15, the window's frame column 16 and 17–21 beside it.
+        // EXIT's redraw of the window (1, 1)–(15, 15) with its frame takes columns 0–16 back; the rest stays [?] until
+        // the Client's next command redraw.
+        if (TestRig.PorDir() is null)
+            return;
+        var r = Start();
+        r.Player.Print("A", clearFirst: true);
+        r.Player.ClearBox();
+        r.Player.DrawGlyphs(0, [.. Enumerable.Repeat((byte)66, 20)]);
+        Assert.Equal(14, r.Player.ViewGlyphs.Length);
+        Assert.Equal([16, 17, 18, 19, 20, 21], r.Player.ScreenGlyphs.Select(g => g.Col).Order());
+        Assert.All(r.Player.ScreenGlyphs, g => Assert.Equal(5, g.Row));
+        // A line with the cursor below row 13 goes back to (2, 5) while CLEARBOX stands (PROTECT 0x3BC3), so in the window
+        // no line reaches rows 14–16 (row 16, the frame row, takes a glyph only from the text-box side: never).
+        r.Player.Text.MoveTo(1, 14);
+        r.Player.DrawGlyphs(0, [67]);
+        Assert.Contains((2, 5, TextFont.RawGlyph(67)), r.Player.ViewGlyphs);
+        r.Player.TextHome(); // EXIT with DS:84E2 set: the window (1, 1)–(15, 15) and its frame drawn again
+        Assert.Empty(r.Player.ViewGlyphs);
+        Assert.Equal([17, 18, 19, 20, 21], r.Player.ScreenGlyphs.Select(g => g.Col).Order());
+    }
+}
+
+/// <summary>PROTECT on row 23 (DOSBox-X s30: a PRINTCLR, six PRINTRETs, then PROTECT).</summary>
+public class RuneEdgeRowTests
+{
+    [Fact]
+    public void A_glyph_line_on_row_23_goes_over_the_frame_and_stays_after_exit()
+    {
+        var memory = new EclMemory { TypesText = false };
+        using var runner = new ScriptRunner();
+        var player = new ClientPlayer(runner, () => memory);
+        runner.Start(() =>
+        {
+            player.Print("ROWS.", true);
+            for (int i = 0; i < 6; i++)
+                player.PrintReturn();
+            player.DrawGlyphs(0x9E00, [0x56, 0x57, 0x6B]);
+            player.TextHome(); // EXIT
+        });
+        for (int guard = 0; runner.Pending is not null && guard < 200; guard++)
+            runner.Answer(null);
+        Assert.Equal([(1, 23), (2, 23), (3, 23)], player.ScreenGlyphs.Select(g => (g.Col, g.Row)));
+        Assert.Empty(player.ViewGlyphs);
+        player.CommandRedrawn();
+        Assert.Empty(player.ScreenGlyphs);
     }
 }
 

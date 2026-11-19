@@ -61,7 +61,7 @@ public class EffectHandlersTests
         f.AttackRoll = 10;
         fx.Trigger(FightRules.TriggerAttackRollAttacker, c, f);
         Assert.Equal(11, f.AttackRoll);
-        Assert.Equal(5, fx.Cells.Morale);
+        Assert.Equal(5, f.Morale);
     }
 
     [Fact]

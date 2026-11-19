@@ -126,7 +126,7 @@ jewellery, the next record words; values from the class-name bytes). A zero valu
 **Learn list (mode 4, 0x275B4)**: spells 1..56 whose slot byte 0xB1 + 3·class + level (table DS:31FA bytes 0, 1) is
 above 0 and not known. The page title is the name with a possessive, the spells word and the list words; the only
 action is Learn; Escape shows it again. With an empty list the routine returns 0 and Train writes byte 0x32 + 0 — the
-**maximum HP** — := 1 (E). `[?]` the first highlighted row (DOSBox-X showed the last one; the Client starts there).
+**maximum HP** — := 1 (E). The first highlighted row (DOSBox-X showed the last one) is the list routine's entry rule: row 0 is a heading, so the highlight steps up past it and wraps to the window's last row (P, s30; combat-menu.md "Spell lists' Next / Prev"; the Client derives it there).
 
 **E**: 900 generated characters (`program-v1.3/training.json`): record bytes, refusal, RandSeed, Learn list, halts.
 **D** (`dosbox-v1.3/training_hall`): thieves' hall (mask 116) refusing the dwarf fighter with the cap; the halfling

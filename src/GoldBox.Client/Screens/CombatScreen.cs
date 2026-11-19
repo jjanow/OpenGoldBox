@@ -433,7 +433,7 @@ public sealed class CombatScreen
                 Highlight.Index = chosen && answer is ListAnswer { Action: var a } && a >= 0 && a < pr.Entries.Count ? a : _selected;
                 break;
             case ListRequest l:
-                Highlight.Index = chosen && answer is ListAnswer { Action: var la } && la >= 0 && la < l.Actions.Count
+                Highlight.Index = chosen && l.Paging is null && answer is ListAnswer { Action: var la } && la >= 0 && la < l.Actions.Count
                     ? la
                     : _list.SelectedAction;
                 break;
@@ -832,7 +832,12 @@ public sealed class CombatScreen
             CombatArt.Draw(f, pic, px, py, Mirrored(c), clip);
         }
         if (_view.HitMarker is { } hm && _art.Sprite(CombatArt.HitMarker) is { } skull)
-            CombatArt.Draw(f, skull, MapX + (hm.X - _view.ViewX) * Square, MapY + (hm.Y - _view.ViewY) * Square, false, clip);
+        {
+            int hx = MapX + (hm.X - _view.ViewX) * Square, hy = MapY + (hm.Y - _view.ViewY) * Square;
+            // The whole picture, colour 0 included (DOSBox-X s30: the skull's three colour-0 pixels show colour 0 —
+            // grey under the combat palette — whatever lies under them; s29's "3 skull pixels").
+            CombatArt.Draw(f, skull, hx, hy, false, clip, opaque: true);
+        }
         if (_view.Flash is { } fl && _art.Sprite(fl.Sprite) is { } flash)
             CombatArt.Draw(f, flash, MapX + (fl.X - _view.ViewX) * Square, MapY + (fl.Y - _view.ViewY) * Square, fl.Mirror, clip);
         // The moving icon (START 0x25C9) at its position in thirds of a square (8 px): 0x464:0xD71 draws it into the view

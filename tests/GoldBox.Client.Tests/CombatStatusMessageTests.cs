@@ -252,4 +252,64 @@ public class CombatStatusMessageTests
         Assert.True(r.MessageAreaClear);
         r.Chooser.Detach(fight);
     }
+
+    // ---- s30: the revive, put-out-of-play and handler texts once raised as Other ----------------------------------
+
+    private static readonly CombatMsg[] S30Ids =
+    [
+        CombatMsg.StatusRevivedEnemy, CombatMsg.StatusRevived, CombatMsg.StatusEscapes, CombatMsg.HandlerDiseased,
+        CombatMsg.HandlerRakes, CombatMsg.HandlerHeldFast, CombatMsg.HandlerSucksBlood, CombatMsg.HandlerStronger,
+        CombatMsg.HandlerAirClears, CombatMsg.HandlerNeedsGiantStrength,
+    ];
+
+    [Fact]
+    public void The_s30_texts_come_from_the_game_files()
+    {
+        if (Dir() is not { } dir)
+            return;
+        var t = new CombatText(new PorGameDirectory(dir).Program());
+        var ours = new CombatText();
+        Assert.All(S30Ids, m => Assert.False(string.IsNullOrWhiteSpace(t[m])));
+        Assert.All(S30Ids, m => Assert.NotEqual(ours[m], t[m]));
+        Assert.NotEqual(t[CombatMsg.StatusRevivedEnemy], t[CombatMsg.StatusRevived]);
+    }
+
+    [Fact]
+    public void A_revive_and_the_handler_texts_show_from_row_10_with_the_pause_and_row_24_texts_on_the_bottom_line()
+    {
+        // 0x2C753: START 0x16EC(creature, its text by 0x10E, row 10, pause 1); handler 87: the same on the target;
+        // handler 40: START 0x1693 (row 24, the pause).
+        if (Dir() is not { } dir)
+            return;
+        var r = new Rig(dir);
+        var boar = Creature("Boar", 1);
+        r.Chooser.EffectMessage(boar, EffectEvent.Revived);
+        var hero = Creature("Hero", 0);
+        r.Chooser.EffectMessage(hero, EffectEvent.Diseased);
+        r.Chooser.EffectMessage(hero, EffectEvent.AirClears);
+        Assert.Equal([225, 225, 225], r.Pauses.Select(p => p.Ms));
+        Assert.Equal("BOAR", Rig.Row(r.Pauses[0].Rows, 10));
+        Assert.Equal(Rig.Flat(r.T(CombatMsg.StatusRevivedEnemy)), Rig.Join(r.Pauses[0].Rows, 11, 13));
+        Assert.Equal("HERO", Rig.Row(r.Pauses[1].Rows, 10));
+        Assert.Equal(Rig.Flat(r.T(CombatMsg.HandlerDiseased)), Rig.Join(r.Pauses[1].Rows, 11, 13));
+        Assert.True(r.MessageAreaClear);
+        Assert.Null(r.View.PageMessage);
+    }
+
+    [Fact]
+    public void The_flee_shows_got_away_in_the_panel_and_a_blocked_escape_on_row_24()
+    {
+        if (Dir() is not { } dir)
+            return;
+        var r = new Rig(dir);
+        var hero = Creature("Hero", 0);
+        r.Chooser.FleeMessage(hero, false); // START 0x1693: row 24 only, the panel untouched
+        r.Chooser.FleeMessage(hero, true);
+        Assert.Equal([225, 225], r.Pauses.Select(p => p.Ms));
+        Assert.Equal("HERO", Rig.Row(r.Pauses[1].Rows, 10));
+        Assert.Equal(r.T(CombatMsg.GotAway), Rig.Row(r.Pauses[1].Rows, 11));
+        Assert.Equal("", Rig.Row(r.Pauses[0].Rows, 10));
+        Assert.True(r.MessageAreaClear);
+        Assert.Null(r.View.PageMessage);
+    }
 }

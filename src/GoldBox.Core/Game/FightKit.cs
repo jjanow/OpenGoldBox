@@ -73,9 +73,12 @@ public sealed class FightKit
         // The fight start's key reads (START 0x8AB2 from 0xE402 and 0xDFC6): a waiting key is taken and dropped.
         _ = AiKey?.Invoke();
         bool altX = AltXEnabled?.Invoke() == true;
-        var ai = new MonsterAi(AiSteps, null, TurnUndead) { ReadKey = AiKey, AltX = () => altX };
+        // Ready / unready of an item with 0x3E > 0x7F runs its handler through 0x2AEEA (0x2250A; s30: handlers 131 and
+        // 135 show their texts, 128… add the item's effect).
+        void ItemHandler(EclCharacter c, byte[] item, bool removed) => effects.CallHandler(item[0x3E], c, item, removed);
+        var ai = new MonsterAi(AiSteps, null, TurnUndead) { ReadKey = AiKey, AltX = () => altX, ItemHandler = ItemHandler };
         // The View / Use screens (0x21AED / 0x21F32) when the chooser also answers them.
-        screens ??= chooser is IItemScreenChooser itemChooser ? new FightItemScreens(itemChooser) : null;
+        screens ??= chooser is IItemScreenChooser itemChooser ? new FightItemScreens(itemChooser, ItemHandler) : null;
         IFightController controller = chooser is null
             ? new AllQuickController(ai)
             : new MenuController(chooser, ai, screens, TurnUndead) { CheatEnabled = altX };

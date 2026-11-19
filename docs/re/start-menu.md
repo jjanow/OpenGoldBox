@@ -216,6 +216,9 @@ members from row 4, the current one white, the others cyan), then the entries fr
 column 2, the rest green from column 3. The entries are DS:0619 + 42·i (a 40-byte name, then the enabled byte at
 +41); their hotkeys are the DS:05F0 string, entry i at character 2·i (twelve: the last is a debug key). The menu is the
 horizontal menu routine 0x2CC8C with the prompt key `PartyMsg.ChooseFunction` and the hotkeys drawn black (not seen).
+Nothing on the party menu types (P, s30): no routine under it (Create, Modify, Drop, Add, Save, Exit, View's page,
+Spells, Trade, money Drop) reaches the text routine 0x77F8; its texts are fixed-cell (START 0x76B6, the menu routine,
+row-24 messages START 0x2233). Only View → Items types its Drop question and refusal (view3d.md "Typing state").
 
 Enabled bytes (0x19B2D–0x19BA3), `PartyMenu.Enabled`:
 

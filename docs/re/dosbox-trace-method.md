@@ -250,3 +250,31 @@ The s13 captures (fixtures README: `fight_casts`, `fight_mirror`, `fight_undead`
   A vampire fight (85 s, 695 Client frames) ended with 682 equal, an ankheg fight 512 of 519, Tyranithraxus 577 of
   587, a basilisk 253 of 260; the rest are listed as `[?]` where they are
   documented (combat-menu.md "s29 DOSBox-X checks").
+
+## The frame tool (s30)
+
+s29's poller and grabber were not kept; s30 wrote them as `tools/scripts/fight_frames.py` (no game data in it):
+
+- `grab :N dosbox|client OUT.npz --font GAME/8X8D1.DAX --step RE=KEYS … --rule RE=KEYS … --presses N --tail S`: every
+  distinct frame of the window as 320 × 200 EGA indices (nearest of the 16 colours; DOSBox-X's 640 × 417 window is
+  640 × 400 under a 17-pixel menu bar, halved; the Client's window divided by its scale) with its time, ~600–1800
+  grabs a second on Xvfb. Keys go by XTEST only while the screen has been still 0.4 s and the state (panel row 1 and
+  row 24, read with the game's own font, a lit word in brackets) has passed through another state since the last
+  press: row 24 keeps the last menu through pauses, and a second key there would be eaten by the AI's key check
+  (0xBB81) and desynchronise the sides. `--step` entries are used once each in order, `--rule` whenever no step
+  matches; both sides stop after the same number of presses plus a tail.
+- `until`, `seed` (RandSeed DS:4428 into a state's `Memory`), `ocr` (rows of every frame), `compare` (each Client
+  frame looked up among DOSBox-X's as exact pixels; the misses with the nearest DOSBox-X frame and the box of
+  differing pixels, PNGs with `--report`), `png`.
+- A run: boot DOSBox-X (`dosbox_xvfb.sh`, 3000 cycles), `until` the start menu (a, Return), L, the slot; F12+S, `seed`,
+  F12+L at once; `grab`. Then the Client with `--game` the same scratch folder, `--save A --seed` the same value and
+  the same `grab` arguments, then `compare`. Use a fresh `CLIENT_HOME` after a change to the importer's text
+  catalog (the module cache is keyed by the importer version).
+- Test saves (`tools/scripts/fight_save.py BASE OUT CODEHEX` with `--mon`, `--hp`, `--spells`, `--monpatch`, `--data`,
+  `--char`, `--vm`): save A's script area with vector 0 = the code under test (CLRMON; LOADMON …; COMBAT, ENCMENU or PRINT
+  before it, CLEARBOX / PROTECT data in the script area); monster records changed in the scratch copy's
+  `MON2CHA.DAX` (blocks re-packed with the DOS RLE; the game loaded them) for low HP; VM cells such as $6DC6 written
+  straight into the save (offset 2049 + 2 × (address − $6B00)): a script SAVE #0 → [$6DC6] before CLRMON hung
+  DOSBox-X at the step (not looked into `[?]`). Party saves vs. poison (CHRDAT 0x6D) set to 21 so a poisoned hit lands.
+- Calibration: the s29 orc fight (MON2 4 × 4, all Done / Quit) gave 102 of 105 Client frames equal (the Client's help
+  lines and two AI panel frames), as s29.

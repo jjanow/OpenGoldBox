@@ -13,9 +13,11 @@ public sealed partial class CombatChooser
     /// The moving icon START 0x25C9 (read s25; docs/re/combat-menu.md "Moving icon"), as the program runs it:
     /// <list type="bullet">
     /// <item>The path is the line 0x2FCF2 / 0x2FE1E from (from × 3) to (to × 3) in thirds of a square; each step stores
-    /// its direction (DS:25C0 by the step, +0x19 of the line record), and the failing last step stores the last
-    /// direction again; fewer than 2 entries: nothing. The walk reads entry 1 first, so the first step's direction is
-    /// skipped and the last one repeated (a quirk of the program).</item>
+    /// its direction (DS:25C0 by the step, +0x19 of the line record); the failing last call (0x2FF4A with no step
+    /// taken) stores DS:25C0's centre entry, no step; fewer than 2 entries: nothing. The walk reads entry 1 first, so
+    /// the first step's direction is skipped and the last pass draws again where the one before it was, one third
+    /// short of the target (a quirk of the program; DOSBox-X s30: two pictures there, then the end frame on the
+    /// target).</item>
     /// <item>The view: both ends in view → redrawn where it is; else when both distances are at most 6 it is centred on
     /// the midpoint; else it stays and follows the icon (ScrollView(…, 255) each time).</item>
     /// <item>Each position: when the delay is above 0 (or, with 0, the position is on a whole square on either axis) the
@@ -41,8 +43,7 @@ public sealed partial class CombatChooser
         {
             int px = line.Cx, py = line.Cy;
             bool more = line.Next();
-            if (more)
-                dir = Direction(line.Cx - px, line.Cy - py);
+            dir = more ? Direction(line.Cx - px, line.Cy - py) : CombatTables.Center;
             path.Add(dir);
             if (!more)
                 break;

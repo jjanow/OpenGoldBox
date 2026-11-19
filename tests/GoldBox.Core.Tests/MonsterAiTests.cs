@@ -170,9 +170,12 @@ public class MonsterAiTests
         map.Place(gob, 5, 5);
         map.Place(a, 5, 9);
         map.Place(Creature(1), 5, 6); // an ally blocks straight ahead (offset 8 ≡ 0)
+        int posedAtStep = -1;
+        fight.State.Posed = c => { if (posedAtStep < 0) posedAtStep = map.Steps.Count; }; // 0x31232 before the step's attacks of opportunity
         new MonsterAi(Steps).Turn(fight, gob);
         // Row 4: attempt 1 = 8 (south, blocked: occupied), attempt 2 = +1 → 5 (SW).
         Assert.Equal((gob, 5), map.Steps[0]);
+        Assert.Equal(0, posedAtStep);
     }
 
     [Fact]
@@ -265,6 +268,48 @@ public class MonsterAiTests
             }
             Assert.Equal(0, fight.Record(gob)[CombatRecord.Movement]); // actions ended either way (0xBE36)
         }
+    }
+
+    [Fact]
+    public void A_charmed_monster_is_steady_through_the_charm_handlers_morale()
+    {
+        // 0xBC97 with 0x84 = 0xFF (m = 0) runs trigger 0x11; the charm handler 11 (0xF05B) writes 100 into DS:6825,
+        // which the check then reads: steady, no flight (DOSBox-X s30: a charmed orc at 4 / 5 HP fought on; the Client
+        // used to show the panic message because the handler wrote a cell the check did not read).
+        var orc = Creature(0, hp: 5);
+        orc[CombatRules.Npc] = 0xFF;
+        orc[FightRules.Hp] = 4;
+        orc[FightRules.Movement] = 9;
+        var enemy = Creature(1);
+        enemy[FightRules.Movement] = 9;
+        var memory = new EclMemory { Party = new EclParty { CurrentIndex = 0 } };
+        memory.Party.Members.AddRange([orc, enemy]);
+        var map = new TestFightMap();
+        var list = new[] { orc, enemy };
+        var fx = new EffectHandlers(new Script().Next) { List = () => list };
+        var fight = new Fight(memory, new EncounterState(), new BaseItemTable([]), new Script().Next,
+            new EndActionsController(), map, fx) { Moves = map };
+        FightRules.CountTeams(list, fight.State);
+        map.Place(orc, 5, 5);
+        map.Place(enemy, 5, 6);
+        EffectHandlers.AddEffect(orc, 0x0B, 0, 0x20, false); // charm already applied (param bit 5)
+        Assert.False(new MonsterAi(Steps).CheckMorale(fight, orc));
+        Assert.Equal(0, fight.Record(orc)[MonsterAi.Fleeing]);
+        Assert.Equal(100, fight.State.Morale);
+    }
+
+    [Fact]
+    public void The_ais_finish_guards_with_the_guard_message()
+    {
+        // 0xBB0F → START 0x3226: actions end, +7 = 1 and its message (DOSBox-X s30: a fleeing spectre's turn ended
+        // with the guard word on row 24).
+        var gob = Creature(1);
+        var (fight, _) = Setup(new Script(), Creature(0), gob);
+        var guarded = new List<EclCharacter>();
+        fight.Guarded = guarded.Add;
+        Assert.True(MonsterAi.FinishRound(fight, gob));
+        Assert.Equal(1, fight.Record(gob)[CombatRecord.Guarding]);
+        Assert.Same(gob, Assert.Single(guarded));
     }
 
     [Fact]

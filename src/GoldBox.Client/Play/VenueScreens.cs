@@ -203,8 +203,11 @@ public static class VenueScreens
         {
             // 0x695E (DOSBox-X s22): a full-screen window (START 03F1:02E8 with 1, 1, 38, 22, empty title); each NPC
             // through the text routine in the box (5, 5 + 2k)–(34, 22), colour 10, cleared first; then the press-enter
-            // text as a white menu of the menu routine (as after the summary).
+            // text as a white menu of the menu routine (as after the summary). The text routine (START 0x77F8 at
+            // 0x69F0, P s30) types while DS:4A00 is set: the value the fight began with, as 0x6BAF sets it only after
+            // the loot step.
             var box = new TextWindow(1, 1, 38, 22);
+            t.TypesInto(box);
             int k = 0;
             foreach (var npc in npcsTakingShare)
             {
@@ -226,6 +229,8 @@ public static class VenueScreens
     /// hostile creature that did not flee was in the list (DS:443A) or in a duel (DS:84D4): the duel lost (no winner,
     /// DS:84DA = 0) or won, else the party won; otherwise the party fled (DS:443B) or found treasure (no monsters).
     /// The experience line names the duelist in a duel, else each character. DOSBox-X s21: the slums' kobolds.
+    /// Every line is a fixed-cell string (START 0709:0626 = 0x76B6, glyph by glyph with no DS:4A00 test) and the key
+    /// is the menu routine's (P s30), so the summary never types.
     /// </summary>
     public static void Summary(TradeContext t, AfterCombatOutcome outcome, bool duel)
     {

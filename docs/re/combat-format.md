@@ -281,7 +281,9 @@ each okay NPC with 0x85 ≠ 0 as taking its share, and waits for a key.
 for the k-th such NPC (k from 0) the name and the share text through the text routine in the box (5, 5 + 2k)–(34, 22),
 colour 10, cleared first (so each starts at column 5 on rows 5, 7, 9, … and wraps at column 34); then the press-enter
 text through the menu routine (03C5:002A) with colours 15, 15, 15, as after the summary (white, the shared cell back
-to the first). DOSBox-X: a test save whose step runs ADDNPC 73 (a gnoll, share 7), TREASURE 100 copper and COMBAT
+to the first). The lines go through START 0x77F8 (0x69F0), so they type while DS:4A00 is set, which here is the value
+the fight began with (0x6BAF sets it later); the summary's lines are fixed-cell START 0x76B6 and never type (P, s30;
+view3d.md "Typing state"). DOSBox-X: a test save whose step runs ADDNPC 73 (a gnoll, share 7), TREASURE 100 copper and COMBAT
 with no monsters; the gnoll's line wraps after the fifth word. Then the summary (found treasure), then the loot
 screen with the gnoll in the party list (cyan). The Client's three screens equal DOSBox-X pixel for pixel apart from
 its help lines (`VenueScreens.Loot`; before s22 it printed into the text window over the loot screen).

@@ -93,7 +93,7 @@ public sealed partial class EffectHandlers
                     return;
                 AddEffect(o, 0x32, 0x3840, 0xFF, true);
                 AddEffect(o, 0x39, 0xA8C0, (byte)(Dice(1, 6) * 16 + 0x0F), true);
-                Emit(o, EffectEvent.Other);
+                Emit(o, EffectEvent.Diseased); // 0x110E0: START 0x16EC(target, CS:23E0, row 10, pause 1)
                 return;
             }
             case 89: // 0x110EB Displacement: round counter 0 and attack roll 0 (the fight start): param AND 0x0F; else
@@ -177,9 +177,11 @@ public sealed partial class EffectHandlers
                 if (!Revive(c, c[HpMax]))
                     AddEffectIfNoLock(c, 0x66, param, 1);
                 return;
-            case 103: // 0x1151A: byte 4 cleared, (map redraw 0x319D2 [?]), out of play with status 3 (0x2BDF0)
+            case 103: // 0x1151A: byte 4 cleared, 0x319D2(creature, 3, 0) (the view, done again by 0x2BDF0), out of play
+                      // with status 3 and its text CS:28A5 (0x2BDF0)
                 node![4] = 0;
-                PutOutOfPlay(c, 3);
+                Emit(c, EffectEvent.EscapeView);
+                PutOutOfPlay(c, 3, EffectEvent.Escapes);
                 return;
             case 104: // 0x1155C: missile dodge with 60 % (0xFC07)
                 DodgeMissile(c, 0x3C);
@@ -336,7 +338,7 @@ public sealed partial class EffectHandlers
                 if (!removed && c[Str] < 0x13)
                 {
                     node![0x34] = 0;
-                    Emit(c, EffectEvent.Other);
+                    Emit(c, EffectEvent.NeedsGiantStrength); // 0x11DCA: START 0x1693 (row 24) with CS:311B
                 }
                 return;
             case 137: // 0x11DD5: removed → effect 0x17 removed
@@ -403,8 +405,9 @@ public sealed partial class EffectHandlers
     }
 
     /// <summary>
-    /// 0x2C753: when the creature's square takes it (0x317E1, <see cref="PutBackOnSquare"/>), status 0, in play, HP =
-    /// <paramref name="hp"/>; (in a fight the icon is redrawn, 0x319D2; a message by side) and the teams are counted
+    /// 0x2C753 (read s30): when the creature's square takes it (0x317E1, <see cref="PutBackOnSquare"/>), status 0, in
+    /// play, HP = <paramref name="hp"/>; then <see cref="EffectEvent.Revived"/> (in a fight 0x319D2(creature, 3, 0), then
+    /// START 0x16EC(creature, text, row 10, pause 1), the text by the hostile byte 0x10E) and the teams are counted
     /// (START 0x2F7B). True then.
     /// </summary>
     public bool Revive(EclCharacter c, byte hp)
@@ -414,24 +417,29 @@ public sealed partial class EffectHandlers
         c[Status] = 0;
         c[InPlay] = 1;
         c[Hp] = hp;
-        Emit(c, EffectEvent.StatusChange);
+        Emit(c, EffectEvent.Revived);
         FightRules.CountTeams(List(), F);
         return true;
     }
 
     /// <summary>
-    /// 0x2BDF0 for a creature in play: (map work), out of play, status <paramref name="status"/>, HP 0 unless the status
-    /// is 3 (fled), actions end (START 0x31D7, which returns true) and so its DS:0C14 effects go (0x2BEF4).
+    /// 0x2BDF0 (read s30) for a creature in play: the caller's message <paramref name="message"/> (0x319D2(creature, 3, 0),
+    /// then START 0x16EC(creature, text, row 10, pause 1)), out of play, status <paramref name="status"/>, HP 0 unless the
+    /// status is 3 (fled); its icon leaves the map (0x30C65, START 0x464:0x1B52, DS:5F2A + 4·slot = 0, 0x30ADA:
+    /// <see cref="CombatMap.TakeOff"/>), actions end (START 0x31D7, which returns true) and so its DS:0C14 effects go
+    /// (0x2BEF4). Nothing at all (the message included) for a creature out of play (0x2BE0C).
     /// </summary>
-    private void PutOutOfPlay(EclCharacter c, byte status)
+    private void PutOutOfPlay(EclCharacter c, byte status, EffectEvent message)
     {
         if (c[InPlay] == 0)
             return;
-        Emit(c, EffectEvent.StatusChange);
+        Emit(c, message);
         c[InPlay] = 0;
         c[Status] = status;
         if (c[Status] != 3)
             c[Hp] = 0;
+        if (InCombat)
+            Map?.TakeOff(c);
         FightRules.EndActions(F.Record(c));
         RemoveEffectsHp0(c);
     }
@@ -530,8 +538,9 @@ public sealed partial class EffectHandlers
             }
             return;
         }
+        // 0x11C81–0x11CD8: only when 0x2C046 raised it; in a fight DS:49F3 = 2 around START 0x16EC (row 10, pause 1).
         if (RaiseStrength(c, 0x12, 0x64, out byte code))
-            Emit(c, EffectEvent.Other);
+            Emit(c, EffectEvent.Stronger);
         ItemFlag = 1;
         AddEffect(c, 0x26, 0, code, true);
     }

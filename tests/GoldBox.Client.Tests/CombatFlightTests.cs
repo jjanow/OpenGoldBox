@@ -28,8 +28,10 @@ public class CombatFlightTests
     {
         var r = new Rig();
         r.Chooser.Flight(FlightAnimation.Spell(1, 1, 4, 1));
-        // The line (3, 3) → (12, 3): 9 steps, 10 path entries; the walk draws on 3..12, then once more on the target.
-        Assert.Equal([3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 12], r.Draws.Select(d => d.Icon.Cx));
+        // The line (3, 3) → (12, 3): 9 steps, 10 path entries, the last one no step (0x2FF4A stores DS:25C0's centre
+        // entry on the failing call); the walk skips entry 0, so it draws on 3..11 and once more on 11, then the end
+        // frame on the target (DOSBox-X s30, Charm Person's flight: two pictures one third short, then the target).
+        Assert.Equal([3, 4, 5, 6, 7, 8, 9, 10, 11, 11, 12], r.Draws.Select(d => d.Icon.Cx));
         Assert.All(r.Draws, d => Assert.Equal((30, 3, 0, 0), (d.Ms, d.Icon.Cy, d.ViewX, d.ViewY)));
         // 0x257E's frames: first, first mirrored, second (+128) mirrored, second; the frame advances per drawing.
         Assert.Equal([(5, false), (5, true), (133, true), (133, false), (5, false)],

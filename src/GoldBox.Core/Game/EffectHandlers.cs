@@ -30,8 +30,6 @@ public interface IFightTerrain
 public enum EffectEvent
 {
     StartsTraining, Silenced, LostImage, Coughing, Ages, Weakens, ParalysisFailed,
-    /// <summary>A creature put back on its square (0x2C753) or out of play (0x2BDF0); not 0xECB3's (see below).</summary>
-    StatusChange,
     GainsItem, Unaffected, EffectGained, CastingLost, NonWeaponDamage, MissileDodged, Hardier,
     FearsDragon, Charmed, Healed, SpellCast, SpellAborted, BeginsCasting, Other,
     /// <summary>Non-weapon damage put the creature out of play (0x2C44A: the "goes down" / dying / killed message).</summary>
@@ -93,6 +91,42 @@ public enum EffectEvent
     Breathes,
     /// <summary>Handler 121 (0x118D9): the acid breath, row 10, with the pause.</summary>
     SpitsAcid,
+    // s30: the revive and put-out-of-play routines and the handler texts that were raised as Other (docs/re/
+    // spells-effects.md "Status changes" and "Handler messages").
+    /// <summary>
+    /// 0x2C753 (callers: handlers 78, 99, 102, Animate Dead 0x291CE), raised once the creature is back in play: in a fight
+    /// 0x319D2(creature, 3, 0) first, then START 0x16EC(creature, text, row 10, pause 1); the text by the hostile byte
+    /// 0x10E (1: CS:1848 of unit 0x2AEEA, else CS:185C); then the team count (START 0x2F7B).
+    /// </summary>
+    Revived,
+    /// <summary>
+    /// Handler 103's own 0x319D2(creature, 3, 0) (0x11534: the view on the creature, no cursor box), every time it runs,
+    /// before 0x2BDF0. On its trigger (class 0x0D, the creature already out of play) 0x2BDF0 then does nothing, so this
+    /// view is all that shows.
+    /// </summary>
+    EscapeView,
+    /// <summary>
+    /// Handler 103 (0x1151A → 0x2BDF0, status 3, text CS:28A5) for a creature still in play: 0x319D2 and START
+    /// 0x16EC(row 10, pause 1).
+    /// </summary>
+    Escapes,
+    /// <summary>Handler 87 (0x110E0, text CS:23E0): the last target, START 0x16EC from row 10 with the pause.</summary>
+    Diseased,
+    /// <summary>Handler 73 (0x16240, text CS:39C9 of unit 0x127FB): the raker, row 10, with the pause.</summary>
+    Rakes,
+    /// <summary>Handler 77 (0x10629, text CS:1928): the held target, row 10, with the pause.</summary>
+    HeldFast,
+    /// <summary>Handler 75 (0x10485, text CS:175E): the drinker, row 10, with the pause.</summary>
+    SucksBlood,
+    /// <summary>
+    /// Handler 131 (0x11CB1 / 0x11CD8, text CS:2F4B): the wearer, row 10, with the pause. In a fight the handler sets
+    /// DS:49F3 = 2 around the call, so START 0x16EC draws the text-window layout (not the panel).
+    /// </summary>
+    Stronger,
+    /// <summary>Handler 40 (0xF9A4, text CS:0CA8): START 0x1693, row 24 in green with the pause; no creature.</summary>
+    AirClears,
+    /// <summary>Handler 135 (0x11DCA, text CS:311B): START 0x1693, row 24 in green with the pause.</summary>
+    NeedsGiantStrength,
 }
 
 /// <summary>The data-segment cells the effect handlers read and write besides those in <see cref="FightState"/>.</summary>
@@ -102,8 +136,8 @@ public sealed class EffectCells
     public byte SaveRoll { get; set; }
     /// <summary>DS:6817: the effect being added (0x2C540); an immunity handler (class 9) clears it.</summary>
     public byte PendingEffect { get; set; }
-    /// <summary>DS:6825: morale being checked (class 17).</summary>
-    public byte Morale { get; set; }
+    // DS:6825 (morale being checked, class 17) is FightState.Morale: the morale check 0xBC97 reads what the handlers
+    // (Bless, Curse, Charm) wrote there.
     /// <summary>DS:681B: the spell being cast (0 none).</summary>
     public byte Spell { get; set; }
     /// <summary>DS:6820: the spell has several targets.</summary>
@@ -585,7 +619,7 @@ public sealed partial class EffectHandlers : IFightEffects
         else
         {
             ushort minutes = (ushort)(Dice(1, 4) + 1);
-            AddEffectWithMessage(c, 0x1F, minutes, 0xFF, false, 0, saved, EffectEvent.Other, EffectTexts.Nausea); // text 0x2BB1A
+            AddEffectWithMessage(c, 0x1F, minutes, 0xFF, false, 0, saved, EffectEvent.EffectGained, EffectTexts.Nausea); // text 0x2BB1A
             CallHandler(0x1F, c, FindEffect(c, 0x1F), false);
         }
     }

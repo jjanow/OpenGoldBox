@@ -263,6 +263,57 @@ public class CampPlayTests
     }
 
     [Fact]
+    public void A_camp_cast_keeps_the_spell_list_under_the_text_box()
+    {
+        // 0x17D15–0x17D39 (P, s30; DOSBox-X s29): the box's frame is drawn over the spell list and its inside blanked;
+        // the list's title stays above it and row 24 keeps the list's menu line while the cast's messages show.
+        if (Dir() is null)
+            return;
+        var tmp = Directory.CreateTempSubdirectory("goldbox-camp-");
+        try
+        {
+            var r = Start(saveDir: tmp.FullName);
+            var who = r.Game.Memory.Party!.Current!;
+            for (int i = 0; i < 21; i++)
+                who[0x17 + i] = 0;
+            who[0x17] = 1; // one memorised spell
+            Press(r, GameAction.Encamp);
+            Key(r, Keys.M);
+            Key(r, Keys.C);
+            var list = Assert.IsType<ListRequest>(r.Runner.Pending);
+            Assert.NotNull(list.Paging);
+            var f = new IndexedFrame(320, 200);
+            r.Screen.Draw(f, r.Input);
+            var title = Row(f, 0);
+            var menuLine = Row(f, 24);
+            Key(r, Keys.Enter);                                    // the highlighted spell (row 1 after its heading)
+            for (int guard = 0; r.Runner.Pending is not DelayRequest && r.Runner.Pending is not null && guard < 10; guard++)
+                Key(r, Keys.Enter);                                // a target question, if the spell asks one
+            Assert.Same(list, r.Player.PageUnder);
+            var g = new IndexedFrame(320, 200);
+            r.Screen.Draw(g, r.Input);
+            Assert.Equal(title, Row(g, 0));                         // the page's title row is still there
+            if (r.Runner.Pending is DelayRequest { BottomLine: null })
+                Assert.Equal(menuLine, Row(g, 24));                 // and its menu line on row 24
+            Assert.NotEqual(Row(f, 16), Row(g, 16));                // the box's top frame row over the list
+            r.Runner.Dispose();
+        }
+        finally
+        {
+            tmp.Delete(recursive: true);
+        }
+    }
+
+    private static byte[] Row(IndexedFrame f, int row)
+    {
+        var px = new byte[320 * 8];
+        for (int y = 0; y < 8; y++)
+            for (int x = 0; x < 320; x++)
+                px[y * 320 + x] = f[x, row * 8 + y];
+        return px;
+    }
+
+    [Fact]
     public void Alter_order_by_pad_actions_moves_the_member()
     {
         if (Dir() is null)

@@ -89,6 +89,12 @@ public sealed class Fight
     public Action<EclCharacter>? TurnStarted { get; set; }
 
     /// <summary>
+    /// Display hook (no game state): after an acting creature's turn, 0x99FD redraws the cell at its square
+    /// (0x9AD9–0x9AF1: 0x3E0:0x34 with its x and y), so a cursor box there goes.
+    /// </summary>
+    public Action<EclCharacter>? TurnEnded { get; set; }
+
+    /// <summary>
     /// Display hook (no game state): called at the end of <see cref="MakeAttack"/> with the attacker, the defender, the
     /// outcome and the defender's hit points before the attack. Draws nothing and changes nothing.
     /// </summary>
@@ -196,6 +202,7 @@ public sealed class Fight
                 Diagnostics.Add($"controller left {c.Name} with initiative {rec.InitiativeValue}; actions ended");
                 FightRules.EndActions(rec);
             }
+            TurnEnded?.Invoke(c);
         }
     }
 
@@ -224,12 +231,27 @@ public sealed class Fight
     /// <summary>START 0x31D7.</summary>
     public void EndActions(EclCharacter c) => FightRules.EndActions(Record(c));
 
-    /// <summary>Done menu, Guard (START 0x3200 area): actions end and +7 = 1.</summary>
+    /// <summary>
+    /// Guard (START 0x3226; the Done menu's Guard and the AI's finish 0xBB0F): actions end and +7 = 1, then its
+    /// message (the word at START CS:0x321D through the nested 0x2233; DOSBox-X s30: on row 24 at once, cleared after
+    /// the game-speed pause), shown through <see cref="Guarded"/>.
+    /// </summary>
     public void Guard(EclCharacter c)
     {
         FightRules.EndActions(Record(c));
         Record(c)[CombatRecord.Guarding] = 1;
+        Guarded?.Invoke(c);
     }
+
+    /// <summary>
+    /// Display hook (no game state): the status panel START 0x1583 drawn for a creature outside the turn start, e.g.
+    /// the mover's again after each attack of opportunity (0x13429; DOSBox-X s30: a fleeing spectre's panel back after
+    /// Bakshi's free attack).
+    /// </summary>
+    public Action<EclCharacter>? PanelShown { get; set; }
+
+    /// <summary>Display hook (no game state): START 0x3226's message after a creature guards.</summary>
+    public Action<EclCharacter>? Guarded { get; set; }
 
     /// <summary>Done menu, Delay: initiative 1 (acts again after everyone else this round).</summary>
     public void Delay(EclCharacter c)

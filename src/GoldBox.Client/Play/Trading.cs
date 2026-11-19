@@ -29,6 +29,18 @@ public sealed class TradeContext
 
     /// <summary>Shows a full-screen window over the screen (null closes it).</summary>
     public Action<IReadOnlyList<WindowLine>?> ShowWindow { get; init; } = _ => { };
+
+    /// <summary>
+    /// A full-screen window's text goes through the text routine START 0x77F8 (the NPC share window, 0x69F0): the
+    /// window is shown as it grows and types while DS:4A00 is set (<see cref="ClientPlayer"/>'s typing). Unset: at once.
+    /// </summary>
+    public Action<TextWindow> TypesInto { get; init; } = _ => { };
+
+    /// <summary>
+    /// A list page stays on the screen under the text box until the next page (the camp's Cast: 0x17D28 draws the box's
+    /// frame over the spell list and blanks its inside; row 24 keeps the list's menu line). Null takes it away.
+    /// </summary>
+    public Action<ListRequest?> ShowPageUnder { get; init; } = _ => { };
     public required GameText Text { get; init; }
     public required EclParty Party { get; init; }
     /// <summary>The pool: seven dwords (copper … jewellery).</summary>

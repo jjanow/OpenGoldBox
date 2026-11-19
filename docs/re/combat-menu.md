@@ -449,8 +449,39 @@ and Speed menus, an AI attack at game speed 9). Code: `src/GoldBox.Client/Screen
   0x2D9BE, on the cell as left. So: Items → U leaves the cell on Use (2nd), and an item's aim menu (0x1529B, 03C5:002A)
   opens on its 2nd entry, Prev; the abort question's No leaves it on the 2nd too. Client: `CombatScreen` sets and
   follows the cell as `ExploreScreen` does (yes/no to No, item lists and spell lists to the first entry, Left /
-  Right move it, the chosen entry stays, Escape leaves it). Not in DOSBox-X yet. `[?]` The spell lists' Next / Prev
-  (21 memorised slots against the window) are not drawn by the Client's list.
+  Right move it, the chosen entry stays, Escape leaves it). **D** (s30): an item's drop question opens on No, the
+  aim menu after Prev opens on Prev, the continue-battle question on No; frames equal ("s30 DOSBox-X checks").
+- **Spell lists' Next / Prev** (P, s30): the spell list 0x239D6(kind, action, var position, var not empty) builds
+  the list (0x275B4, kinds as camp.md "Spell lists"; 2 = a scroll's spells) and, for a position below 0, draws the
+  window and the title (name through START 0x1816, then the list's words with 0x76B6); 0x270A2(action, var position)
+  takes the action word (1 Cast, 2 Memorize, 3 Scribe, 4 Learn; 0 none: View's Spells and the camp's pending lists),
+  the choose-spell prompt (CS:003B) for actions 1–4 (its set CS:001B = {1..4}), Exit for every action but Learn, and the
+  window (1, 5)–(38, 22), Memorize's (1, 5)–(38, 15) (0x2713C; the slot lines go below). For a position below 0 it
+  draws the window (1, 3)–(38, y1) and sets the position 0. It calls 0x2D669 until the key is in its set CS:004A
+  (0, Enter, C, E, L, M, S). Callers: combat Cast 0x14C0F (kind 0, action 1, position −1 each time), View's Spells
+  0x21AED (0, 0), a scroll 0x22AC4 (2, 1), camp Cast 0x17CD2 (0, 1; −1 before each list), Memorize 0x1813B (5, 0
+  the pending list; 1, 2 the book, position −1 once before the loop, 0x181B3, then kept), Scribe 0x1838C (6, 0; 3, 3,
+  −1 once, 0x18404), the hall's Learn 0x1C32D (4, 4; −1 once at 0x1C8EB, the loop back to 0x1C8F0 keeps it).
+  **0x2D669** (rows R = y1 − y0 + 1: 18, Memorize 11; N = the entries, headings included; L = the leading entries
+  with +0x29 ≠ 0, the headings at the head; the window's top DS:6B29 is one global word, 1 after the start-up,
+  0xE9DA): on entry the top goes up to the position when below it, to 0 when past N; the position + 1, then one row
+  up (0x2D594(0): below the top → top + R − 1; past N − 1 → N − 1) and past headings upwards (0x2D3D2(0), at most R
+  steps, same wrapping). So a list whose row 0 is a heading starts on the window's last row, or the list's (the hall's
+  Learn: DOSBox-X showed the last row highlighted). Each pass: the menu line is the caller's word, then " Next" when
+  N − R > top, " Prev" when top > L, " Exit" with the flag (CS:0D88 / 0D8E / 0D94 of the unit: the words the aim menu
+  has too), through 0x2CC8C with keypad flag 1 (colours 13, 10, 15). Keys: N / P (only as shown entries' hotkeys) and
+  PgDn / PgUp (only while the word is shown) move the window by R (0x2D502: top + R, at most N − R; top − R, at least
+  0) with the highlight at the same place in it, then past headings in that direction; Home / End (keypad 7 / 1) move
+  the highlight up / down inside the window, wrapping there (down: past the window's last row or the list's → the
+  top); Escape, E, 0 → nothing; any other key (Enter, the action's letter) → the entry at the position, and the key.
+  The window never scrolls with the highlight. All its text is fixed-cell (START 0x76B6, the menu routine): nothing
+  types. Client: `ListRequest.Paging` / `ListPaging`, `ListPage` (the window, Next / Prev put before Exit, Up / Down
+  as Home / End), `SpellLists` (rows, words from `CombatMsg.AimNextPrevManual`; no importer change); used by the
+  combat Cast and View's Spells (now the memorised list with level headings, camp-only spells included: Core refuses
+  those after the pick), the camp's lists (Memorize / Scribe keep the row and top, `ListPlace`) and the hall's Learn;
+  tests `SpellListPagingTests`. Enter (decided, user, s30: as the program): the program's Enter always returns 13, which picks the row and ends the list (13 is in CS:004A; View's Spells, with no action, just ends), so a keyboard or pad Confirm with Next / Prev lit runs the first action word on the highlighted row (a click on the word still pages); PgDn / PgUp page while their word shows, and the pad pages with its shoulders / triggers (no original; no paging list picks a member). `[?]` The page's title and
+  slot-line layout stay the Client's; the scroll list (kind 2, three spells at most) never pages and keeps its own
+  layout; not seen in DOSBox-X.
 - **View scrolling** (read s19, 0x30F0E / 0x310D0): ScrollView(x, y, delta, dir) aims at (x, y) + one step in dir;
   the view's centre is (view x + 3, view y + 3); a point within delta of it on both axes leaves the view (delta 255:
   always rebuilt, band 0); else on each axis where the point is outside the band the centre steps to the point, x kept
@@ -478,7 +509,59 @@ and Speed menus, an AI attack at game speed 9). Code: `src/GoldBox.Client/Screen
   - `[?]` left: an AI creature's panel is drawn, cleared and drawn again at its turn's start (~50 ms in DOSBox-X;
     the Client draws it once); an attacker's pose went with a downed picture once (Thrender below the vampire) and
     stayed once (Bakshi beside it); 3 pixels of the downed picture (COMSPR 11, the skull's mouth) show the ground grey
-    in DOSBox-X and black in the Client.
+    in DOSBox-X and black in the Client. (s30: the panel's second draw read, the skull pixels fixed; see below.)
+- **s30 DOSBox-X checks** (method of s29, now kept as `tools/scripts/fight_frames.py`, dosbox-trace-method.md "s30";
+  save A on disk 2, seed 12345 on both sides; counts are Client frames equal to a DOSBox-X frame with every s30 fix in,
+  each Client side run again against the same DOSBox-X capture; the misses listed):
+  - **Darkstar's Sleep** (4 orcs, Next to Brother Sean, Target): 288 of 293 (98.3 %). The cast message, label, flight, the
+    sleep messages and the slept members equal. Fixed: a **spell's aim keeps the spell label on row 23** — 0x1529B
+    draws "Range = n" only in attack mode (0x152CD), Manual writes row 23 only in attack mode (0x15722 / 0x15768);
+    the Client had put the range line over the label. Left: the help lines before the step (the Client's own), the
+    spell list (Client's own page, `[?]` 0x239D6 not read), three AI panel frames (below; one of them a turn start's box under the half-drawn panel).
+  - **Charm Person** (Prev to an orc, Target) with Rhiannon's **Drop answered No** first: 259 of 261 (99.2 %) after two fixes.
+    The aim menu after Prev opens with **Prev lit**, the drop question opens on **No** and the Items menu comes back
+    after No; both equal. Fixed: the **charmed orc's morale** — the charm handler 11 writes 100 into DS:6825 for the
+    morale check 0xBC97 to read, but Core kept two cells (the handlers' and the check's): the charmed orc showed the
+    panic message and fled in the Client, fought on in DOSBox-X (Core `FightState.Morale` is now the one cell).
+    Fixed: the **flight's end** (moving icon, below). Left: the help lines and the spell list.
+  - **AI surrender and flee** (combat-ai.md "The messages on screen"): surrender 99 of 100 (the help lines; a cursor box
+    fixed: the turn's end redraws the creature's cell, 0x99FD 0x9AD9–0x9AF1, so no box under the last member
+    while the **continue-battle yes/no** is up; it opens on No and No ended the fight in both); flee 129 of 130 (the help lines) after
+    three fixes: the **guard message** (START 0x3226: its word at START CS:0x321D through the nested START 0x2233, read
+    s30: row 24 cleared, the word at column 0 in colour 10, PauseOnly, row 24 cleared; called from the Done menu at
+    GAME.OVR 0xA787 and the AI's finish at 0xBB5D; DOSBox-X: on row 24 for 0.906 s at speed 3, the PauseOnly's 675 ms
+    plus drawing time `[?]`; was "not located"), the
+    **stepping creature's cell redrawn by its facing** (0x31232 in 0xB3B2) before the attacks of opportunity (its
+    cursor box goes), and the **mover's panel drawn again after each attack of opportunity** (0x13418–0x13429, START
+    0x1583 while it is in play).
+  - The **AI panel's draw-clear-draw** (s29 `[?]`): read — the second draw is the weapon readying 0xBF8A's START
+    0x1583 at 0xC4D7, called when anything changed (`[bp−0x1D]`; always for a creature with no weapon and no
+    shield, as the orcs and spectres). In DOSBox-X at 3000 cycles the cleared panel stays ~50–70 ms (CPU time between
+    the clear and the redraw; no Delay). The Client draws the panel once; the frames that differ are the in-between
+    states DOSBox-X's refresh catches (panel half drawn under the old menu row). Not changed (machine time) `[?]`.
+  - **Poisoned hit** (four huge scorpions MON4 39, handler 64; seed 4242, chosen on the Client side): 234 of 235 (the help lines). A
+    scorpion's hit on Rhiannon, then the poisoned words and the killed words (handler 64's texts, typed from row 10
+    with their pauses), the downed picture and the pause: equal frame by frame. The one miss was s29's **3 skull
+    pixels**: COMSPR 11 is drawn whole, its three colour-0 pixels included (grey under the combat palette); the
+    Client drew colour 0 see-through, showing what lay under it (fixed, real-data test). The attacker's pose under a
+    downed picture (s29: kept once, gone once) not seen in s30 `[?]`. Set-up note: party saves written into CHRDAT 0x6D were back to the class values in DOSBox-X's
+    memory after Load (the Client kept the file's values): the original's Load recomputes saving throws `[?]` (routine
+    not read).
+  - **Fights entered through ENCMENU and after a PRINT** (this tool's own texts; ENCMENU sprite 4, distance 1,
+    close-up 4, every reaction 1, then COMBAT; or PRINT, COMBAT): the **panel's weapon name shows at once** in both
+    (DOSBox-X: the whole name in one frame on every member's panel), as read (DS:4A00 = 0 after ENCMENU's 0x32E0 and
+    PRINT's 0x17DC). Every fight frame equal but one AI panel frame (PRINT: 12 of 32 in all, ENCMENU: 15 of 37; every other miss is before
+    the fight, below, or the help lines). Before
+    the fight, outside combat `[?]`: (1) DOSBox-X keeps the area command line on row 24 while the step's script types
+    its PRINT / ENCMENU text (cleared only when ENCMENU draws its menu over it, or at the fight start); the Client
+    blanks row 24 during the typing (20 PRINT frames, explore screen; not changed here: the typing lane owns it).
+    (2) At distance 1, DOSBox-X drew SPRIT2 block 4's third frame (16 × 49) in the view; the Client a larger frame
+    with other colours (ViewPictures' "frame distance − 1" is from the art, `[?]`; $6DC1 not read from a state).
+  - The **cast's plain icon** at its facing (s29): equal again in both casts (Darkstar's Sleep and Charm Person); why
+    frame 1 is the plain icon there stays `[?]`. CLEARBOX and the runes: ecl-format.md "PROTECT" (s30).
+  - "A battle begins" (s29 `[?]`, DOSBox-X 3000 cycles only): on row 24 for 0.817 s (three boots: from the full line to
+    the cleared row), 0.75 s after the blank pause began; the PauseOnly at speed 3 is 675 ms, the rest presumably the
+    fight set-up's CPU time `[?]`.
 - **The panel's text** (read s19): START 0x16EC in a fight clears (23, row)–(38, 21), writes the name at (23, row)
   (START 0x23B6: out of play light red, hostile = 1 yellow, else cyan) and word-wraps the text into
   (23, row + 1)–(38, 21) in green through START 0x77F8 (the text window routine, `TextWindow`; break set DS:0D16 =
@@ -494,8 +577,8 @@ and Speed menus, an AI attack at game speed 9). Code: `src/GoldBox.Client/Screen
   "After combat"), the start-up 0xE974 1 (s29: 0xE974 is in the start-up 0xE600, next to 0xE965–0xE979, not in the fight
   start; s25 called it the fight start). Nothing in a fight writes it, so a fight's 0x77F8 texts type only when the
   fight begins with it set: after the start-up or a fight with no PRINT or ENCMENU since (a fight reached through
-  ENCMENU or after a PRINT shows its panel texts at once; P, s29; the s19 **D** typing in the panel fits a fight
-  entered so, not checked `[?]`). Fixed-cell strings (the name START 0x23B6, row 24 START 0x1693) never type. Client:
+  ENCMENU or after a PRINT shows its panel texts at once; P, s29; **D** s30: the weapon names at once in both; the
+  s19 **D** typing in the panel fits a fight entered by a step's COMBAT after a load). Fixed-cell strings (the name START 0x23B6, row 24 START 0x1693) never type. Client:
   `EclMemory.TypesText` (set by the VM's PRINT, `EncounterHost.EncounterMenu`, `AfterCombat.Finish`), read by the
   panel's `CombatChooser.Typing` and by `ClientPlayer.Text` (view3d.md "Text window").
 - **Attack messages** (read s19, 0x12AF4, called per hit and for the miss by 0x13C01: 0x13CBE helpless, 0x13F2E hit,
@@ -538,13 +621,17 @@ and Speed menus, an AI attack at game speed 9). Code: `src/GoldBox.Client/Screen
 - **AI turn** (read s19): 0x99FD shows the box and the panel; the AI (0xABCF) starts by clearing row 24 (0x2CFCA)
   and rows 10–21; each step (AiMoveStep) first writes 0xB396 + movement ÷ 2 + " " on row 24 in green, which stays
   until row 24 is written again. **D** (s19): 9, 6, 4, 3 under Brother Sean's steps.
-- **Not read `[?]`**: the spell list 0x239D6 (the Client: a full-screen list), the Guard message.
+- **Not read `[?]`**: the spell list page's title layout (its list window and menu line: "Spell lists' Next / Prev", s30), the Guard message.
 - **Moving icon** (read s25, P; START 0x25C9 = 0xBA:0x1A29, `retf 0x0C`; the Delays at 0x2884 / 0x2B4A are inside it):
   arguments x0, y0, x1, y1 (squares), frame count, delay (ms, passed to Delay as is: not the game speed). The sprite
   DS:6E36 is built before the call by START 0x257E(cell) (four frames: first picture, first mirrored, second mirrored,
   second) or by START 0x2432(cell, picture 0/1, slot, mirror). The path: line 0x2FCF2 / 0x2FE1E (stub 0x3DB:0x2A /
   0x2F) from (x0·3, y0·3) to (x1·3, y1·3), in thirds of a square (8 px); each step stores its direction (DS:25C0 by
-  (dx, dy), line record +0x19), the failing last step stores the last one again; under 2 entries nothing happens. View:
+  (dx, dy), line record +0x19); the failing last call stores DS:25C0's centre entry, no step (s30: 0x2FF4A–0x2FF67
+  writes +0x19 from the step it took, (0, 0) when none; s25 had read "the last one again"), so with the walk starting
+  at entry 1 the last pass draws again one third short of the target (**D** s30, Charm Person: two pictures there,
+  then the end frame on the target; this was s29's "one extra picture at a flight's last square"); under 2 entries
+  nothing happens. View:
   both ends in view (0x30E23) → ScrollView(centre, 255); else both |dx|, |dy| ≤ 6 → ScrollView(midpoint, 255) (fixed);
   else the view follows (ScrollView(current centre, 255)). Walk: position (x0 − view x)·3 + sub, …; drawn (0x464:0xD71
   frame, 0x464:0x1B52, Delay, background back) when delay > 0 or, with 0, the position is a whole square on an axis;
@@ -621,10 +708,11 @@ and Speed menus, an AI attack at game speed 9). Code: `src/GoldBox.Client/Screen
     breath 121 (13 positions, COMSPR 10's first picture) at the same positions in both. The aim cursor 0x15D02 (Next /
     Prev over party members, orcs off view): DOSBox-X draws the bare box at each whole square on the way, ~14 ms each
     (draw time, delay 0), then the candidate's square; the Client goes there in one update, so the passing box is not
-    seen `[U]` (the s27 decision covers picture frames with delay 0, not this flight). Every other frame of the aim
-    equal. One flight end `[?]`: at a gaze's and Hold Person's last square DOSBox-X showed a single picture where the
-    Client draws the walk's last position and then the end frame (one extra 45 / 30 ms picture; the code read,
-    START 0x27CF–0x2B80, draws both).
+    seen. **Decided (user, 2026-11-19, s30): the Client keeps the jump** (a deliberate difference; the s27 delay-0
+    rule covers picture frames only, and the spell, breath, gaze and missile flights still fly). Every other frame of the aim
+    equal. Flight end (s29 `[?]`, settled s30): the walk's last position is one third short of the target, drawn twice (the
+    path's last entry is no step), then the end frame on the target; the Client used to step onto the target first
+    (fixed, `CombatFlight`).
   - **D** (s27) messages around them in DOSBox-X: the breath message typed from row 10 under the panel, then the
     pause (~0.9 s at speed 4), rows cleared, then the flight; the gaze message typed with no pause before the flight;
     the reflect message on row 12 (typed, no pause) before the return flight; the stone message with the hit frames

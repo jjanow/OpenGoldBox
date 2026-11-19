@@ -23,6 +23,7 @@ public class CombatPanelTypingTests
         public readonly CombatChooser Chooser;
         public readonly Fight Fight;
         public readonly EclCharacter Me;
+        public readonly CombatMap Map;
 
         public Rig(bool typing)
         {
@@ -34,6 +35,7 @@ public class CombatPanelTypingTests
             }, View) { Typing = () => typing, Resources = () => new ClientResources { ItemWord = Word } };
             var map = new CombatMap(new CombatTables(new byte[64 * 4], new byte[64], new byte[16], new byte[16],
                 [7, 2, 3, 6], new byte[8], new byte[8], new byte[60]));
+            Map = map;
             Fight = new Fight(new EclMemory(), new EncounterState(),
                 new BaseItemTable(new byte[BaseItemTable.EntrySize * BaseItemTable.Count]), _ => 0, new Idle(), map);
             View.Fight = Fight;
@@ -90,5 +92,41 @@ public class CombatPanelTypingTests
         s.Me[CombatRules.AutoCombat] = 1;
         s.Chooser.TurnStarted(s.Me);
         Assert.DoesNotContain(s.Delays, d => d.Typed is not null);
+    }
+
+    [Fact]
+    public void A_spells_aim_leaves_row_23_with_the_spell_label()
+    {
+        // 0x1529B draws "Range = n" only in attack mode (0x152CD); Manual writes row 23 only in attack mode (0x15722,
+        // 0x15768). DOSBox-X s30 (Darkstar's Sleep): the cast's spell label stays on row 23 through the aim.
+        var r = new Rig(typing: false);
+        var menu = new FightMenu(r.Fight, r.Me, r.Chooser);
+        r.View.StatusLine = "SPELL:SLEEP";
+        r.Chooser.ChooseAim(menu, new AimView(r.Me, 0, 1, true) { Attack = false });
+        Assert.Equal("SPELL:SLEEP", r.View.StatusLine);
+        r.Chooser.ChooseManual(menu, new ManualView(0, 0, null, 3, 1, false, false) { LineReached = false });
+        Assert.Equal("SPELL:SLEEP", r.View.StatusLine);
+
+        // Attack mode: the range line, cleared by Manual when the line does not get through.
+        r.Chooser.ChooseAim(menu, new AimView(r.Me, 2, 1, true));
+        Assert.EndsWith("2", r.View.StatusLine);
+        r.Chooser.ChooseManual(menu, new ManualView(0, 0, null, 3, 1, false, true) { LineReached = false });
+        Assert.Null(r.View.StatusLine);
+    }
+
+    [Fact]
+    public void The_turns_end_takes_the_cursor_box_off_the_creatures_square()
+    {
+        // 0x99FD redraws the cell at the creature's square after its turn (0x9AD9–0x9AF1): DOSBox-X s30, no box under
+        // the last member while the continue-battle question is up.
+        var r = new Rig(typing: false);
+        r.Map.SetSlotCreature(1, r.Me);
+        r.Map.SetSlotPosition(1, 10, 10);
+        r.Map.SetSlotSize(1, 1);
+        Assert.True(r.Map.OnMap(r.Me));
+        r.Chooser.TurnStarted(r.Me);
+        Assert.Equal(r.Map.Position(r.Me), r.View.Cursor!.Value);
+        r.Chooser.TurnEnded(r.Me);
+        Assert.Null(r.View.Cursor);
     }
 }

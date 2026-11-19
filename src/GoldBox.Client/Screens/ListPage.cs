@@ -9,7 +9,8 @@ namespace GoldBox.Client.Screens;
 /// rows to pick from, the actions on the bottom line as the original's menus (hotkey letters), and a prompt line for
 /// the device in use. Keyboard: arrows pick rows and actions, Enter, Esc, the action letters, Home / End for the
 /// member. Pad: D-pad / stick, A, B, LB / RB. Mouse: point and click rows and actions, right click backs out, the
-/// prompt line's PREV / NEXT switch the member.
+/// prompt line's PREV / NEXT switch the member. With <see cref="ListRequest.Paging"/> the rows are the list routine
+/// 0x2D669's window, moved by its Next / Prev words (<see cref="ListPaging"/>).
 /// </summary>
 public sealed class ListPage
 {
@@ -37,7 +38,7 @@ public sealed class ListPage
         return cells;
     }
 
-    private static bool TwoLines(ListRequest r) => ActionCells(r.Actions) is var c && c.Count > 0 && c[0].Row != ActionRow;
+    private static bool TwoLines(ListRequest r) => ActionCells(Menu(r, r.Top).Words) is var c && c.Count > 0 && c[0].Row != ActionRow;
     private static int HintRow(ListRequest r) => TwoLines(r) ? ActionRow - 2 : ActionRow - 1;
     private static int LastListRow(ListRequest r) => HintRow(r) - 1;
 
@@ -46,7 +47,122 @@ public sealed class ListPage
     private ListAnswer? _clicked;
 
     public int SelectedRow => _row;
+
+    /// <summary>The highlighted menu entry, counted on the words shown (with paging, Next / Prev included).</summary>
     public int SelectedAction => _action;
+
+    /// <summary>The window's first row (DS:6B29 with paging).</summary>
+    public int Top => _top;
+
+    /// <summary>The words on the menu line now (with paging, Next / Prev where they apply).</summary>
+    public IReadOnlyList<string> ShownActions => _words;
+
+    // ---- The list routine 0x2D669's window (ListRequest.Paging; P, s30) --------------------------------------------
+
+    /// <summary>The words on the menu line now: the actions, with Next / Prev put in while they apply (0x2D7DC–0x2D889).</summary>
+    private List<string> _words = [];
+
+    /// <summary>For each word shown, the request's action index, or <see cref="NextWord"/> / <see cref="PrevWord"/>.</summary>
+    private List<int> _map = [];
+
+    private const int NextWord = -1, PrevWord = -2;
+
+    /// <summary>The menu line for a window at <paramref name="top"/>: Next when count − rows &gt; top, Prev when top &gt; the leading labels.</summary>
+    private static (List<string> Words, List<int> Map) Menu(ListRequest r, int top)
+    {
+        var words = new List<string>();
+        var map = new List<int>();
+        var p = r.Paging;
+        int at = p is null ? r.Actions.Count : Math.Clamp(p.WordsAt, 0, r.Actions.Count);
+        for (int i = 0; i <= r.Actions.Count; i++)
+        {
+            if (i == at && p is not null)
+            {
+                if (r.Rows.Count - p.Rows > top)
+                {
+                    words.Add(p.Next);
+                    map.Add(NextWord);
+                }
+                if (top > LeadingLabels(r))
+                {
+                    words.Add(p.Prev);
+                    map.Add(PrevWord);
+                }
+            }
+            if (i < r.Actions.Count)
+            {
+                words.Add(r.Actions[i]);
+                map.Add(i);
+            }
+        }
+        return (words, map);
+    }
+
+    /// <summary>The labels before the first pickable row (0x2D6FF: the entries with +0x29 ≠ 0 from the list's head).</summary>
+    private static int LeadingLabels(ListRequest r)
+    {
+        int n = 0;
+        while (n < r.Rows.Count && r.Labels.Contains(n))
+            n++;
+        return n;
+    }
+
+    private void Remenu(ListRequest r)
+    {
+        (_words, _map) = Menu(r, _top);
+        if (_action >= _words.Count)
+            _action = 0; // 0x2CCE5: a cell past the entries goes back to the first
+    }
+
+    /// <summary>0x2D594: the highlight one row down (up), wrapping inside the window, then past labels (0x2D3D2).</summary>
+    private void Step(ListRequest r, bool down)
+    {
+        Move(r, down);
+        SkipWindowLabels(r, down);
+    }
+
+    private void Move(ListRequest r, bool down)
+    {
+        int rows = r.Paging!.Rows, n = r.Rows.Count;
+        if (down)
+        {
+            _row++;
+            if (_top + rows - 1 < _row) _row = _top;
+            if (n - 1 < _row) _row = _top;
+        }
+        else
+        {
+            _row--;
+            if (_row < _top) _row = _top + rows - 1;
+            if (n - 1 < _row) _row = n - 1;
+        }
+    }
+
+    /// <summary>0x2D3D2: past label rows in the direction, at most a window's rows, with the same wrapping.</summary>
+    private void SkipWindowLabels(ListRequest r, bool down)
+    {
+        for (int k = 0; k < r.Paging!.Rows && r.Labels.Contains(_row); k++)
+            Move(r, down);
+    }
+
+    /// <summary>0x2D502: the window a page down (up), the highlight at the same place in it, then past labels.</summary>
+    private void Page(ListRequest r, bool down)
+    {
+        int rows = r.Paging!.Rows, n = r.Rows.Count, offset = _row - _top;
+        if (down)
+        {
+            _top += rows;
+            if (n - rows < _top) _top = n - rows;
+        }
+        else
+        {
+            _top -= rows;
+            if (_top < 0) _top = 0;
+        }
+        _row = _top + offset;
+        SkipWindowLabels(r, down);
+        Remenu(r);
+    }
 
     /// <summary>A new page starts on its first row (or the one it asks for) and its first action.</summary>
     public void Sync(ListRequest r)
@@ -54,27 +170,50 @@ public sealed class ListPage
         if (ReferenceEquals(r, _shown))
             return;
         _shown = r;
+        _clicked = null;
+        if (r.Paging is not null)
+        {
+            // 0x2D766–0x2D7A1: the top no further down than the highlight and not past the list; then the highlight one
+            // row down and up again (inside the window) and past labels upwards.
+            _row = Math.Max(0, r.Selected);
+            _top = Math.Max(0, r.Top);
+            if (_top > _row) _top = _row;
+            if (_top > r.Rows.Count) _top = 0;
+            if (r.Rows.Count > 0)
+            {
+                _row++;
+                Step(r, down: false);
+            }
+            _row = Math.Clamp(_row, 0, Math.Max(0, r.Rows.Count - 1));
+            _action = Math.Max(0, r.SelectedAction);
+            Remenu(r);
+            return;
+        }
         _row = Math.Clamp(r.Selected, 0, Math.Max(0, r.Rows.Count - 1));
         _row = SkipLabels(r, _row, 1);
         _action = Math.Clamp(r.SelectedAction, 0, Math.Max(0, r.Actions.Count - 1));
         _top = 0;
-        _clicked = null;
         Scroll(r);
+        Remenu(r);
     }
 
     /// <summary>The highlighted action of the page on screen (the shared menu highlight, set by the screen).</summary>
     public void SetAction(ListRequest r, int action)
     {
         Sync(r);
-        _action = Math.Clamp(action, 0, Math.Max(0, r.Actions.Count - 1));
+        _action = Math.Clamp(action, 0, Math.Max(0, _words.Count - 1));
     }
 
-    private static int FirstRow(ListRequest r) => Math.Max(r.FirstRow, r.Lines.Count + 1);
+    private static int FirstRow(ListRequest r) => r.Paging is not null ? r.FirstRow : Math.Max(r.FirstRow, r.Lines.Count + 1);
 
-    private static int Visible(ListRequest r) => Math.Max(1, Math.Min(r.VisibleRows, LastListRow(r) - FirstRow(r) + 1));
+    private static int Visible(ListRequest r) => r.Paging is { } p
+        ? Math.Max(1, p.Rows)
+        : Math.Max(1, Math.Min(r.VisibleRows, LastListRow(r) - FirstRow(r) + 1));
 
     private void Scroll(ListRequest r)
     {
+        if (r.Paging is not null)
+            return; // the window moves by Next / Prev only
         int v = Visible(r);
         if (_row < _top)
             _top = _row;
@@ -83,7 +222,52 @@ public sealed class ListPage
         _top = Math.Clamp(_top, 0, Math.Max(0, r.Rows.Count - v));
     }
 
-    private bool Usable(ListRequest r, int action) => Pickable(r) || !r.RowActions.Contains(action);
+    private static bool Usable(ListRequest r, int action) => Pickable(r) || !r.RowActions.Contains(action);
+
+    /// <summary>A shown word can be chosen: the page words always, an action that needs a row only with one.</summary>
+    private bool UsableWord(ListRequest r, int word) => word >= 0 && word < _map.Count && (_map[word] < 0 || Usable(r, _map[word]));
+
+    /// <summary>Runs shown word <paramref name="word"/>: Next / Prev page here (null), any other answers the request.</summary>
+    private ListAnswer? Choose(ListRequest r, int word)
+    {
+        _action = word;
+        switch (_map[word])
+        {
+            case NextWord:
+                Page(r, down: true);
+                return null;
+            case PrevWord:
+                Page(r, down: false);
+                return null;
+            default:
+                return Answer(_map[word], _row);
+        }
+    }
+
+    /// <summary>
+    /// The page keys of 0x2D669's window, each only while its word is shown: PgDn / PgUp (keypad 3 / 9; the pad's right
+    /// stick, as their step bindings), and on the pad the shoulders / triggers (no original; no paging list picks a member).
+    /// </summary>
+    private bool PageKeys(ListRequest r, ActionInput input)
+    {
+        bool pad = input.LastDevice == InputDevice.Gamepad;
+        bool down = input.Pressed(GameAction.StepDownRight) || (pad && input.Pressed(GameAction.NextMember));
+        bool up = input.Pressed(GameAction.StepUpRight) || (pad && input.Pressed(GameAction.PreviousMember));
+        if (down && _map.Contains(NextWord))
+        {
+            Page(r, down: true);
+            return true;
+        }
+        if (up && _map.Contains(PrevWord))
+        {
+            Page(r, down: false);
+            return true;
+        }
+        return false;
+    }
+
+    /// <summary>An answer; with paging it carries the window's top for the caller to keep.</summary>
+    private ListAnswer Answer(int action, int row) => new(action, row, _shown?.Paging is null ? 0 : _top);
 
     /// <summary>The list has a row that is not a label.</summary>
     private static bool Pickable(ListRequest r) => r.Rows.Count > r.Labels.Count;
@@ -108,24 +292,42 @@ public sealed class ListPage
             _clicked = null;
             return c;
         }
-        int n = r.Rows.Count, m = r.Actions.Count;
-        if (input.Pressed(GameAction.MenuUp) && n > 0) _row = SkipLabels(r, (_row + n - 1) % n, -1);
-        if (input.Pressed(GameAction.MenuDown) && n > 0) _row = SkipLabels(r, (_row + 1) % n, 1);
-        if (input.Pressed(GameAction.MenuLeft)) _action = (_action + m - 1) % m;
-        if (input.Pressed(GameAction.MenuRight)) _action = (_action + 1) % m;
+        int n = r.Rows.Count, m = _words.Count;
+        if (r.Paging is not null)
+        {
+            if (input.Pressed(GameAction.MenuUp) && n > 0) Step(r, down: false);
+            if (input.Pressed(GameAction.MenuDown) && n > 0) Step(r, down: true);
+        }
+        else
+        {
+            if (input.Pressed(GameAction.MenuUp) && n > 0) _row = SkipLabels(r, (_row + n - 1) % n, -1);
+            if (input.Pressed(GameAction.MenuDown) && n > 0) _row = SkipLabels(r, (_row + 1) % n, 1);
+        }
+        if (m > 0 && input.Pressed(GameAction.MenuLeft)) _action = (_action + m - 1) % m;
+        if (m > 0 && input.Pressed(GameAction.MenuRight)) _action = (_action + 1) % m;
         Scroll(r);
         if (r.PartySelect && input.Pressed(GameAction.PreviousMember))
-            return new ListAnswer(ChoiceRequest.PreviousMember, _row);
+            return Answer(ChoiceRequest.PreviousMember, _row);
         if (r.PartySelect && input.Pressed(GameAction.NextMember))
-            return new ListAnswer(ChoiceRequest.NextMember, _row);
-        if (input.Pressed(GameAction.Confirm) && Usable(r, _action))
-            return new ListAnswer(_action, _row);
+            return Answer(ChoiceRequest.NextMember, _row);
+        if (r.Paging is not null && PageKeys(r, input))
+            return null;
+        if (input.Pressed(GameAction.Confirm) && input.LastDevice != InputDevice.Mouse && r.Paging is not null && _action < _map.Count && _map[_action] < 0)
+        {
+            // The program's Enter returns 13 with the highlighted row (0x2D669: any key but the page words' hotkeys,
+            // PgUp / PgDn, Home / End and Escape / E / 0), which the callers take as the pick (CS:004A): Enter never
+            // runs a lit Next / Prev. Decided (user, s30): match it; the pad pages with its shoulders.
+            int first = _map.FindIndex(a => a >= 0);
+            return first >= 0 && UsableWord(r, first) ? Choose(r, first) : null;
+        }
+        if (input.Pressed(GameAction.Confirm) && UsableWord(r, _action))
+            return Choose(r, _action);
         if (input.Pressed(GameAction.Cancel) && r.CancelAction is { } ca)
-            return new ListAnswer(ca, _row);
+            return Answer(ca, _row);
         if (input.NewInput is (InputDevice.Keyboard, { Length: 1 } key))
             for (int i = 0; i < m; i++)
-                if (r.Actions[i].Length > 0 && r.Actions[i][0] == key[0] && Usable(r, i))
-                    return new ListAnswer(i, _row);
+                if (_words[i].Length > 0 && _words[i][0] == key[0] && UsableWord(r, i))
+                    return Choose(r, i);
         return null;
     }
 
@@ -135,7 +337,7 @@ public sealed class ListPage
         Sync(r);
         if (RowAt(r, row) is { } i && !r.Labels.Contains(i))
             _row = i;
-        else if (ActionAt(r, col, row) is { } a)
+        else if (ActionAt(col, row) is { } a)
             _action = a;
     }
 
@@ -151,21 +353,21 @@ public sealed class ListPage
             if (r.Labels.Contains(i))
                 return null;
             if (i == _row && Usable(r, 0))
-                _clicked = new ListAnswer(0, i);
+                _clicked = Answer(0, i);
             _row = i;
             return null;
         }
-        if (ActionAt(r, col, row) is { } a && Usable(r, a))
+        if (ActionAt(col, row) is { } a && UsableWord(r, a))
         {
-            _clicked = new ListAnswer(a, _row);
+            _clicked = Choose(r, a);
             return null;
         }
         if (row == HintRow(r) && r.PartySelect)
         {
             if (col < 6)
-                _clicked = new ListAnswer(ChoiceRequest.PreviousMember, _row);
+                _clicked = Answer(ChoiceRequest.PreviousMember, _row);
             else if (col >= 7 && col < 13)
-                _clicked = new ListAnswer(ChoiceRequest.NextMember, _row);
+                _clicked = Answer(ChoiceRequest.NextMember, _row);
         }
         return null;
     }
@@ -180,11 +382,11 @@ public sealed class ListPage
         return row >= first && row < first + v && i >= 0 && i < r.Rows.Count ? i : null;
     }
 
-    private static int? ActionAt(ListRequest r, int col, int row)
+    private int? ActionAt(int col, int row)
     {
-        var cells = ActionCells(r.Actions);
+        var cells = ActionCells(_words);
         for (int i = 0; i < cells.Count; i++)
-            if (cells[i].Row == row && col >= cells[i].Col && col < cells[i].Col + r.Actions[i].Length)
+            if (cells[i].Row == row && col >= cells[i].Col && col < cells[i].Col + _words[i].Length)
                 return i;
         return null;
     }
@@ -193,7 +395,8 @@ public sealed class ListPage
     {
         Sync(r);
         f.Clear(0);
-        for (int i = 0; i < r.Lines.Count && i <= LastListRow(r); i++)
+        int linesEnd = r.Paging is not null ? FirstRow(r) - 1 : LastListRow(r);
+        for (int i = 0; i < r.Lines.Count && i <= linesEnd; i++)
         {
             var l = r.Lines[i];
             Chrome.Text(f, font, l.Column, i, Fit(l.Text, 40 - l.Column), l.Colour);
@@ -212,18 +415,21 @@ public sealed class ListPage
             if (sel)
                 Chrome.Text(f, font, 0, first + k, ">", Chrome.Yellow);
         }
-        if (_top > 0)
+        if (r.Paging is null && _top > 0)
             Chrome.Text(f, font, 39, first, "^", Chrome.Yellow);
-        if (_top + v < r.Rows.Count)
+        if (r.Paging is null && _top + v < r.Rows.Count)
             Chrome.Text(f, font, 39, first + v - 1, "V", Chrome.Yellow);
 
-        var cells = ActionCells(r.Actions);
-        for (int i = 0; i < r.Actions.Count; i++)
+        var cells = ActionCells(_words);
+        for (int i = 0; i < _words.Count; i++)
         {
-            var w = r.Actions[i];
+            var w = _words[i];
+            if (w.Length == 0)
+                continue;
             var (col, row) = cells[i];
-            byte rest = !Usable(r, i) ? Chrome.Grey : i == _action ? Chrome.White : Chrome.Green;
-            Chrome.Text(f, font, col, row, w[..1], Usable(r, i) ? Chrome.White : Chrome.Grey);
+            bool usable = UsableWord(r, i);
+            byte rest = !usable ? Chrome.Grey : i == _action ? Chrome.White : Chrome.Green;
+            Chrome.Text(f, font, col, row, w[..1], usable ? Chrome.White : Chrome.Grey);
             Chrome.Text(f, font, col + 1, row, w[1..], rest);
         }
         Chrome.Text(f, font, 0, HintRow(r), Fit(Hint(r, input), 40), Chrome.Grey);
@@ -241,6 +447,8 @@ public sealed class ListPage
         string s = $"{pick} {L(GameAction.Confirm)} OK {L(GameAction.Cancel)} BACK";
         if (r.PartySelect)
             s += $" {L(GameAction.PreviousMember)}/{L(GameAction.NextMember)} WHO";
+        else if (r.Paging is not null && d == InputDevice.Gamepad)
+            s += $" {L(GameAction.PreviousMember)}/{L(GameAction.NextMember)} PAGE";
         return s;
     }
 

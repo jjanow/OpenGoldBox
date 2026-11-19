@@ -9,7 +9,7 @@ public enum CombatMsg
     // Main menu (0x9E6D): the entries' words.
     MenuMove, MenuViewAim, MenuUse, MenuCast, MenuTurn, MenuQuickDone,
     // Alt-M, Alt-X (0x9B21); end of round (0xA087).
-    MagicOn, MagicOff, DoesNotWork, TeammateDying, ContinueBattle,
+    MagicOn, MagicOff, DoesNotWork, TeammateDying, ContinueBattle, Guarding,
     // Alt-X's message (0x1638E).
     GodsIntervene,
     // Move (0xA1E6), attack by moving (0xA54C).
@@ -55,6 +55,10 @@ public enum CombatMsg
     // The messages before them: the poisoned hit (0x101F2), mummy rot 57 (0x1001F), the level drain (0x10DEC: the
     // drained words + "a level" or the count + the levels word).
     Poisoned, Rots, Drained, DrainedOneLevel, DrainedLevels,
+    // s30: the revive 0x2C753 (by the hostile byte: enemy, party side), handler 103's put-out-of-play (0x2BDF0), and the
+    // handler texts 87 (0x110E0), 73 (0x16240), 77 (0x10629), 75 (0x10485), 131 (0x11CB1), 40 (0xF9A4), 135 (0x11DCA).
+    StatusRevivedEnemy, StatusRevived, StatusEscapes, HandlerDiseased, HandlerRakes, HandlerHeldFast, HandlerSucksBlood,
+    HandlerStronger, HandlerAirClears, HandlerNeedsGiantStrength,
 }
 
 /// <summary>
@@ -78,6 +82,7 @@ public sealed class CombatText
         [CombatMsg.GodsIntervene] = "ALT-X: HOSTILES REMOVED",
         [CombatMsg.TeammateDying] = "A PARTY MEMBER IS DYING",
         [CombatMsg.ContinueBattle] = "FIGHT ON:",
+        [CombatMsg.Guarding] = "ON GUARD",
         [CombatMsg.MoveLeft] = "MOVE, MOVES LEFT: ",
         [CombatMsg.Flee] = "RUN AWAY:",
         [CombatMsg.Blocked] = "CAN'T GO THERE",
@@ -199,6 +204,16 @@ public sealed class CombatText
         [CombatMsg.Drained] = "LOSES ",
         [CombatMsg.DrainedOneLevel] = "ONE LEVEL",
         [CombatMsg.DrainedLevels] = " LVLS",
+        [CombatMsg.StatusRevivedEnemy] = "RISES AND SMIRKS",
+        [CombatMsg.StatusRevived] = "STANDS AGAIN",
+        [CombatMsg.StatusEscapes] = "BECOMES MIST AND FLEES",
+        [CombatMsg.HandlerDiseased] = "IS SICKENED",
+        [CombatMsg.HandlerRakes] = "CLAWS AGAIN",
+        [CombatMsg.HandlerHeldFast] = "IS GRIPPED",
+        [CombatMsg.HandlerSucksBlood] = "DRINKS BLOOD",
+        [CombatMsg.HandlerStronger] = "GAINS MIGHT",
+        [CombatMsg.HandlerAirClears] = "THE CLOUD THINS",
+        [CombatMsg.HandlerNeedsGiantStrength] = "NEEDS A GIANT'S MIGHT",
     };
 
     /// <summary>START.EXE strings (offsets in the unpacked image, PorProgram.Image), read before the status panel 0x1583.</summary>

@@ -179,6 +179,8 @@ public sealed class FightMoves(CombatMap map) : IFightMoves
                 var saved = a.Other;
                 fight.MakeAttack(attacker, c, fromBehind: true);
                 a.Other = saved;
+                if (c[FightRules.InPlay] != 0)
+                    fight.PanelShown?.Invoke(c); // 0x13418–0x13429: START 0x1583 for the mover still in play
                 break;
             }
         }
@@ -220,8 +222,8 @@ public sealed class FightMoves(CombatMap map) : IFightMoves
     /// 0x13465, the flee (the menu's yes to the flee question at the arena edge; the AI's own choice): away when no
     /// enemy is in sight (<see cref="CombatMap.CountTargets"/> with range 255), else when the fastest enemy in play
     /// (0x15103: movement 0x1291E shr 1) is slower than the creature's own movement shr 1, or as fast and 1d2 = 1 (the
-    /// one draw). Away: put out of play with status 3, fled (0x2BDF0: its icon leaves the map, in play 0, status 3, HP
-    /// kept; actions end; its dropped-on-down effects go, 0x2BEF4). Not away: a message. Either way the actions end
+    /// one draw). Away: put out of play with status 3, fled (0x2BDF0: its message first, <see cref="FightState.FleeMessage"/>; its icon leaves the map, in play 0, status
+    /// 3, HP kept; actions end; its dropped-on-down effects go, 0x2BEF4). Not away: START 0x1693's message (same hook). Either way the actions end
     /// (START 0x31D7). Returns whether it got away. The team counts are not lowered here (they are recounted).
     /// </summary>
     public bool Flee(Fight fight, EclCharacter c)
@@ -239,6 +241,10 @@ public sealed class FightMoves(CombatMap map) : IFightMoves
             else if (enemy == own && FightRules.Dice(fight.Random, 1, 2) == 1)
                 away = true;
         }
+        // 0x134CE–0x13502: away → 0x2BDF0(creature, 3, CS:0C4F), whose message comes before the status change (nothing
+        // at all for a creature already out of play, 0x2BE0C); else the message routine START 0x1693 with CS:0C58.
+        if (!away || c[FightRules.InPlay] != 0)
+            fight.State.FleeMessage?.Invoke(c, away);
         if (away)
             PutOutOfPlay(fight, c, CreatureStatus.Fled);
         FightRules.EndActions(fight.Record(c));

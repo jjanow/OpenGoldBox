@@ -24,11 +24,11 @@ public sealed partial class EffectHandlers
         switch (id)
         {
             case 1: // 0xED68 Bless: morale + 5, attack + 1
-                Cells.Morale = (byte)(Cells.Morale + 5);
+                F.Morale = (byte)(F.Morale + 5);
                 F.AttackRoll++;
                 return;
             case 2: // 0xED78 Curse: morale − 5 (not below 0), attack − 1
-                Cells.Morale = Cells.Morale < 5 ? (byte)0 : (byte)(Cells.Morale - 5);
+                F.Morale = F.Morale < 5 ? (byte)0 : (byte)(F.Morale - 5);
                 F.AttackRoll--;
                 return;
             case 3: // 0xED96: against the creature last attacked when it is undead (0x9F = 4): attack + 2, damage + 2
@@ -382,7 +382,7 @@ public sealed partial class EffectHandlers
             rec.Other = null;
             FightRules.CountTeams(List(), F);
         }
-        Cells.Morale = 100;
+        F.Morale = 100; // DS:6825, the value the morale check 0xBC97 tests after trigger 0x11
     }
 
     /// <summary>

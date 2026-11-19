@@ -168,9 +168,16 @@ with the Client, every distinct frame): the spell list page stays up and the tex
 17 (the redraw of START 0x16EC's camp branch); the cast message shows the caster's name (cyan) and the casts word
 (green) on row 19, the spell's name on row 20, drawn at once (not typed), then the game-speed pause (0.9 s) and the
 box cleared, no key; then for each member the name on row 18 and the blessed words typed from row 19, the pause, the
-rows cleared, as read. The Client now matches those rows (`CampScreens.CastOne`, test `CampEffectMessageTests`); it
-still returns to the camp screen under the box instead of keeping the spell page and its menu row
-("Choose spell: Cast Exit" stays on row 24 in DOSBox-X) `[?]` (the Client's spell list is its own page).
+rows cleared, as read. The Client now matches those rows (`CampScreens.CastOne`, test `CampEffectMessageTests`).
+**Read s30 (P):** after a pick Cast 0x17CD2 draws the text box's frame (03F1:0000 around (1, 17)–(38, 22), style 0:
+rows 16 and 23, columns 0 and 39) over the page, blanks its inside (03F1:0137 = START 0x4047), casts (0x27C38), then
+sets its position word to −1 (0x17D52), so the next 0x239D6 draws the window and title again and the list starts on
+its first page (combat-menu.md "Spell lists' Next / Prev"). Nothing between clears row 24, so the list's menu line
+stays. Client: the page stays under the box while the cast runs (`TradeContext.ShowPageUnder` →
+`ClientPlayer.PageUnder`, drawn by `ExploreScreen.DrawOverPage`: the page, the frame, the box's text, row 24 kept
+unless a key prompt or menu takes it), then the list comes back afresh (tests `CampEffectMessageTests`,
+`CampPlayTests.A_camp_cast_keeps_the_spell_list_under_the_text_box`). `[?]` The page itself is the Client's layout
+(title rows, no choose-spell prompt before the menu on row 24).
 
 **Memorize (0x1813B)**: the check; the pending list (type 5) first: when not empty, the keep question 0x180F0 — No
 clears the pending slots (0x1798A), Yes ends here. Then until done: no slot byte at all (0x17DD5: cleric or

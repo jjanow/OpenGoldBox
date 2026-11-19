@@ -79,6 +79,40 @@ public sealed partial class CombatChooser
     private string SpellLabel(int spell) =>
         (SpellName(spell) ?? "SPELL " + spell.ToString(CultureInfo.InvariantCulture)).ToUpperInvariant();
 
+    /// <summary>
+    /// The memorised list (0x239D6 kind 0, as the camp's: camp.md "Spell lists"): each slot 0x17–0x2B with a byte
+    /// 1..0x7F in slot order, every one (camp-only spells too: 0x14C0F refuses those after the pick), a level heading
+    /// (a label) before a spell whose level differs from the one before. Ids: 0 on a heading.
+    /// </summary>
+    private (List<string> Rows, List<int> Ids, HashSet<int> Labels) MemorisedList(EclCharacter c, Fight? fight)
+    {
+        var table = (fight?.Spells as FightSpells)?.Table;
+        var rows = new List<string>();
+        var ids = new List<int>();
+        var labels = new HashSet<int>();
+        int last = 0;
+        for (int i = 0; i < FightItemScreens.SpellSlots; i++)
+        {
+            int s = c[FightItemScreens.Spells + i];
+            if (s is 0 or >= 0x80)
+                continue;
+            int level = table is { } t && s <= 67 ? t[s].Level : 0;
+            if (level != last)
+            {
+                labels.Add(rows.Count);
+                rows.Add((Resources().LevelName(level) ?? "LEVEL " + level.ToString(CultureInfo.InvariantCulture)).ToUpperInvariant());
+                ids.Add(0);
+                last = level;
+            }
+            rows.Add("  " + SpellLabel(s));
+            ids.Add(s);
+        }
+        return (rows, ids, labels);
+    }
+
+    /// <summary>The spell list's paging (0x270A2: rows 5–22) for a menu line of <paramref name="actions"/> ending in Exit.</summary>
+    private ListPaging SpellPaging(int actions) => SpellLists.Paging(Text, memorize: false, wordsAt: actions - 1);
+
     // ---- Messages of the fight (display hooks) ----------------------------------------------------------------------
 
     /// <summary>
@@ -237,16 +271,19 @@ public sealed partial class CombatChooser
     }
 
     /// <summary>
-    /// The memorised spells (0x239D6 in show mode) as a list page. [?] The program's spell list layout is not read
-    /// (the Client's spell list layout, as the combat Cast).
+    /// The memorised spells (0x239D6 kind 0, action 0: no prompt, no action word) as a list page: the memorised list
+    /// in the list routine's window with Next / Prev and Exit (P, s30). [?] The page's title layout is the Client's.
     /// </summary>
     private void ShowMemorised(EclCharacter c)
     {
-        var rows = Enumerable.Range(FightItemScreens.Spells, FightItemScreens.SpellSlots)
-            .Select(i => c[i] & 0x7F).Where(s => s > 0).Select(SpellLabel).ToList();
+        var (rows, _, labels) = MemorisedList(c, View.Fight);
         View.Page = null;
         View.Mode = CombatMode.Spell;
-        Ask(new ListRequest([new ListLine(Name(c), NameColour(c))], rows, [ViewWord(ViewEntry.Exit)], 0));
+        Ask(new ListRequest([new ListLine(Name(c), NameColour(c))], rows, [ViewWord(ViewEntry.Exit)], 0, FirstRow: SpellLists.FirstRow)
+        {
+            Labels = labels,
+            Paging = SpellPaging(1),
+        });
     }
 
     // ---- Items (0x21F32) --------------------------------------------------------------------------------------------

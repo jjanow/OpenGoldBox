@@ -288,8 +288,8 @@ public static class HallScreens
 
     /// <summary>
     /// The Learn list (0x239D6 mode 4): "NAME'S SPELLS TO CHOOSE FROM", level headings, the spells; the only action is
-    /// Learn and the list comes back until a spell is chosen (Escape does not leave). [?] The first highlighted row
-    /// (DOSBox-X showed the last one).
+    /// Learn and the list comes back until a spell is chosen (Escape does not leave). The first highlighted row
+    /// is the list routine's entry rule (row 0 a heading → the window's last row; DOSBox-X showed the last one).
     /// </summary>
     private static int Learn(HallTrainer h, EclCharacter who, IReadOnlyList<int> spells)
     {
@@ -311,15 +311,22 @@ public static class HallScreens
             ids.Add(s);
         }
         string title = who.Name.ToUpperInvariant() + "'S " + h.Resources.Texts[Msg.SpellsWord] + h.Text["Hall.ToChooseFrom"].ToUpperInvariant();
+        int row = 0, top = 0; // 0x1C8EB: the position word −1 once; the loop (back to 0x1C8F0) keeps it
         while (true)
         {
+            // 0x270A2 action 4 gives no Exit, so Next / Prev follow the Learn word. The first highlight comes from the
+            // list routine's entry (P, s30): row 0 is a heading, so the highlight steps up past it and wraps to the
+            // window's last row (or the list's), which is what DOSBox-X showed.
             var a = h.Ask(new ListRequest([new ListLine(title, 11, 1)], rows,
-                [h.Text["Hall.Learn"].ToUpperInvariant()], null, FirstRow: 3)
+                [h.Text["Hall.Learn"].ToUpperInvariant()], null, FirstRow: SpellLists.FirstRow)
             {
                 Labels = labels,
                 RowActions = new HashSet<int> { 0 },
-                Selected = rows.Count - 1,
+                Paging = SpellLists.Paging(h.Resources.CombatTexts, memorize: false, wordsAt: 1),
+                Selected = row,
+                Top = top,
             }) as ListAnswer ?? new ListAnswer(-1, 0);
+            (row, top) = (Math.Max(0, a.Row), a.Top);
             if (a.Action == 0 && a.Row >= 0 && a.Row < ids.Count && ids[a.Row] != 0)
                 return ids[a.Row];
         }

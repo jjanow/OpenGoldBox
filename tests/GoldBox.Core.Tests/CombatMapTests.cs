@@ -161,7 +161,10 @@ public class CombatMapTests
         }
         mover[0x111] = 60;
         var a = fight.Record(fight.List[1]);
+        var panels = new List<EclCharacter>();
+        fight.PanelShown = panels.Add; // 0x13429: the mover's panel again after the free attack (DOSBox-X s30)
         Assert.Equal(Game.StepResult.Moved, moves.Step(fight, mover, 6));
+        Assert.Same(mover, Assert.Single(panels));
         Assert.Equal(1, a[CombatRecord.MadeAttack]); // A attacked (the attack routine sets +8)
         Assert.Equal(0, fight.Record(fight.List[2])[CombatRecord.MadeAttack]);
         Assert.Equal(0, fight.Record(mover)[CombatRecord.FlankCount]); // no 0x13FF1 note, and a move clears it anyway
@@ -224,6 +227,27 @@ public class CombatMapTests
         var r3 = new TurboPascalRandom(7);
         Assert.False(mv3.Flee(new Fight(f3.Memory, f3.Encounter, f3.Items, r3.Next, f3.Controller, m3), f3.List[0]));
         Assert.Equal(0, r3.Draws);
+    }
+
+    [Fact]
+    public void The_flee_shows_its_message_while_the_creature_is_still_on_the_map()
+    {
+        // 0x134CE–0x13502 (s30): away → 0x2BDF0's message before the status change and the map removal; not away →
+        // START 0x1693's message.
+        var (fight, map, moves) = Setup((10, 10, 0, 1), (20, 10, 1, 1));
+        map.Arena[15, 10] = 2;
+        var c = fight.List[0];
+        var seen = new List<(bool Away, int InPlay, bool OnMap)>();
+        fight.State.FleeMessage = (x, away) => seen.Add((away, x[FightRules.InPlay], map.OnMap(x)));
+        Assert.True(moves.Flee(fight, c));
+        Assert.Equal([(true, 1, true)], seen);
+
+        var (f3, m3, mv3) = Setup((10, 10, 0, 1), (20, 10, 1, 1));
+        f3.List[1][FightRules.Movement] = 13; // a faster enemy: not away
+        seen.Clear();
+        f3.State.FleeMessage = (x, away) => seen.Add((away, x[FightRules.InPlay], m3.OnMap(x)));
+        Assert.False(mv3.Flee(f3, f3.List[0]));
+        Assert.Equal([(false, 1, true)], seen);
     }
 
     [Fact]

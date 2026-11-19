@@ -337,6 +337,19 @@ public static class PorTextCatalog
         ["CombatMsg.StatusDeadForever"] = 0x10D56,
         ["CombatMsg.StatusDrainKilled"] = 0x10D73,
         ["CombatMsg.StatusFallsDead"] = 0x11260,
+        // s30: 0x2C753's two texts (CS:1848 / CS:185C of unit 0x2AEEA), handler 103's (CS:28A5 of 0xEC5B), and the handler
+        // texts 87 (CS:23E0), 77 (CS:1928), 75 (CS:175E), 131 (CS:2F4B), 40 (CS:0CA8), 135 (CS:311B) of unit 0xEC5B and 73
+        // (CS:39C9 of unit 0x127FB).
+        ["CombatMsg.StatusRevivedEnemy"] = 0x2C732,
+        ["CombatMsg.StatusRevived"] = 0x2C746,
+        ["CombatMsg.StatusEscapes"] = 0x11500,
+        ["CombatMsg.HandlerDiseased"] = 0x1103B,
+        ["CombatMsg.HandlerRakes"] = 0x161C4,
+        ["CombatMsg.HandlerHeldFast"] = 0x10583,
+        ["CombatMsg.HandlerSucksBlood"] = 0x103B9,
+        ["CombatMsg.HandlerStronger"] = 0x11BA6,
+        ["CombatMsg.HandlerAirClears"] = 0xF903,
+        ["CombatMsg.HandlerNeedsGiantStrength"] = 0x11D76,
         // The effect messages, 0x2C540's text argument (Core EffectTexts; docs/re/spells-effects.md "Effect messages"):
         // the strings just before the spell routines that pass them (the resolution 0x278DB's callers) and the handlers.
         ["EffectMsg.Blessed"] = 0x2801C,
@@ -486,6 +499,7 @@ public static class PorTextCatalog
         ["CombatMsg.PanelHitpoints"] = 0x156B,
         ["CombatMsg.PanelAc"] = 0x1575,
         ["CombatMsg.PanelHelpless"] = 0x1578,
+        ["CombatMsg.Guarding"] = 0x321D, // START 0x3226's message (s30)
     };
 
     /// <summary>A Pascal string of printable characters at an offset of the unpacked START.EXE image, or null.</summary>

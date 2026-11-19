@@ -205,13 +205,17 @@ public sealed partial class CombatChooser(Func<PlayerRequest, object?> ask, Comb
         if (fight.Controller is MenuController mc)
             mc.GameSpeed = View.Speed;
         fight.TurnStarted = TurnStarted;
+        fight.TurnEnded = TurnEnded;
         fight.AttackStarting = AttackStarting;
         fight.AttackMade = AttackMade;
         fight.State.AttackMessage = AttackMessage;
         fight.State.AttackEnd = AttackEnd;
+        fight.State.FleeMessage = FleeMessage;
         fight.State.Flight = Flight;
         fight.State.Posed = Posed;
         fight.PartyMemberDying = () => PageSay(Text[CombatMsg.TeammateDying]); // 0xA134 (DOSBox-X s29: row 24, pause)
+        fight.PanelShown = c => ShowPanel(c);
+        fight.Guarded = _ => PageSay(Text[CombatMsg.Guarding]); // START 0x3226 (DOSBox-X s30: row 24, pause, cleared)
         fight.Moves = new ShownMoves(fight.Moves, Stepping, Stepped);
         if (fight.Spells is FightSpells spells)
         {
@@ -263,13 +267,17 @@ public sealed partial class CombatChooser(Func<PlayerRequest, object?> ask, Comb
         if (fight.Controller is MenuController mc)
             View.Speed = mc.GameSpeed;
         fight.TurnStarted = null;
+        fight.TurnEnded = null;
         fight.AttackStarting = null;
         fight.AttackMade = null;
         fight.State.AttackMessage = null;
         fight.State.AttackEnd = null;
+        fight.State.FleeMessage = null;
         fight.State.Flight = null;
         fight.State.Posed = null;
         fight.PartyMemberDying = null;
+        fight.Guarded = null;
+        fight.PanelShown = null;
         if (fight.Spells is FightSpells spells)
         {
             spells.Announce = null;
@@ -404,6 +412,16 @@ public sealed partial class CombatChooser(Func<PlayerRequest, object?> ask, Comb
             View.Row24Written();
             ClearMessageWindow();
         }
+    }
+
+    /// <summary>
+    /// The turn's end (0x99FD, 0x9AD9–0x9AF1): the cell at the creature's square is drawn again, so its cursor box goes
+    /// (DOSBox-X s30: no box under the last member when the continue-battle question comes).
+    /// </summary>
+    internal void TurnEnded(EclCharacter c)
+    {
+        if (Square(c) is { } sq && View.Cursor == sq)
+            View.Cursor = null;
     }
 
     /// <summary>
@@ -741,7 +759,79 @@ public sealed partial class CombatChooser(Func<PlayerRequest, object?> ask, Comb
             case EffectEvent.SpitsAcid:
                 HandlerMessage(c, t[CombatMsg.HandlerSpitsAcid], CombatView.MessageTop, true);
                 break;
+            // s30 (docs/re/spells-effects.md "Status changes", "Handler messages").
+            case EffectEvent.Revived:
+                // 0x2C7A3–0x2C804: 0x319D2(creature, 3, 0), then START 0x16EC(row 10, pause 1); the text by 0x10E.
+                StatusChangeScroll(c);
+                Say(c, t[c[FightRules.Hostile] == 1 ? CombatMsg.StatusRevivedEnemy : CombatMsg.StatusRevived]);
+                break;
+            case EffectEvent.EscapeView:
+                StatusChangeScroll(c); // 0x11534
+                break;
+            case EffectEvent.Escapes:
+                // 0x11534 and 0x2BE31: 0x319D2(creature, 3, 0) (twice), then START 0x16EC(row 10, pause 1); the icon
+                // leaves the map after the message (Core).
+                StatusChangeScroll(c);
+                Say(c, t[CombatMsg.StatusEscapes]);
+                break;
+            case EffectEvent.Diseased:
+                HandlerMessage(c, t[CombatMsg.HandlerDiseased], CombatView.MessageTop, true);
+                break;
+            case EffectEvent.Rakes:
+                HandlerMessage(c, t[CombatMsg.HandlerRakes], CombatView.MessageTop, true);
+                break;
+            case EffectEvent.HeldFast:
+                HandlerMessage(c, t[CombatMsg.HandlerHeldFast], CombatView.MessageTop, true);
+                break;
+            case EffectEvent.SucksBlood:
+                HandlerMessage(c, t[CombatMsg.HandlerSucksBlood], CombatView.MessageTop, true);
+                break;
+            case EffectEvent.Stronger:
+                PageTextWindow(c, t[CombatMsg.HandlerStronger]);
+                break;
+            case EffectEvent.AirClears:
+                PageSay(t[CombatMsg.HandlerAirClears]);
+                break;
+            case EffectEvent.NeedsGiantStrength:
+                PageSay(t[CombatMsg.HandlerNeedsGiantStrength]);
+                break;
         }
+    }
+
+    /// <summary>
+    /// The flee 0x13465's message (read s30): away, 0x2BDF0's (0x319D2(creature, 3, 0), then START 0x16EC(creature, the
+    /// got-away words, row 10, pause 1)) before the icon leaves the map; not away, the message routine START 0x1693 with
+    /// the escape-blocked words (row 24, the pause).
+    /// </summary>
+    internal void FleeMessage(EclCharacter c, bool away)
+    {
+        if (!away)
+        {
+            PageSay(Text[CombatMsg.EscapeBlocked]);
+            return;
+        }
+        StatusChangeScroll(c);
+        Say(c, Text[CombatMsg.GotAway]);
+    }
+
+    /// <summary>
+    /// Handler 131's message in a fight (0x11C8A–0x11CB6): DS:49F3 = 2 around START 0x16EC(creature, text, row 10, pause
+    /// 1), so the out-of-fight layout is drawn over the Items page: the name at (1, 18), the text from (1, 19) in green,
+    /// the pause, rows 18–22 cleared. [?] The text box frame (03F1:0000) and the clear of (1, 17)–(38, 22) before it are
+    /// not drawn on the page; not seen in DOSBox-X. Without a page, the panel's row 10 is used instead.
+    /// </summary>
+    private void PageTextWindow(EclCharacter c, string text)
+    {
+        if (View.Page is not { } page)
+        {
+            Say(c, text);
+            return;
+        }
+        int before = page.Texts.Count;
+        page.Texts.Add((1, 18, Name(c), NameColour(c)));
+        page.Texts.Add((1, 19, text.Length > 38 ? text[..38] : text, 10));
+        Pause(MessageMs);
+        page.Texts.RemoveRange(before, page.Texts.Count - before);
     }
 
     /// <summary>
@@ -978,9 +1068,11 @@ public sealed partial class CombatChooser(Func<PlayerRequest, object?> ask, Comb
         View.Current = menu.Creature;
         // 0x154xx: 0x319D2(candidate, 3, cursor on), then the panel shows it (START 0x1583).
         Centered(c, 3, true);
-        // DOSBox-X s29: the new range is on row 23 before the panel (its weapon typing) comes.
+        // DOSBox-X s29: the new range is on row 23 before the panel (its weapon typing) comes. Only in attack mode
+        // (0x152CD tests the mode): a spell's aim leaves row 23 alone, so the cast's spell label stays (DOSBox-X s30).
         View.Mode = CombatMode.Aim;
-        View.StatusLine = Text[CombatMsg.Range] + aim.Distance.ToString(CultureInfo.InvariantCulture);
+        if (aim.Attack)
+            View.StatusLine = Text[CombatMsg.Range] + aim.Distance.ToString(CultureInfo.InvariantCulture);
         ShowPanel(c);
         while (true)
         {
@@ -1053,9 +1145,12 @@ public sealed partial class CombatChooser(Func<PlayerRequest, object?> ask, Comb
         // 0x1566C: ScrollView(cursor square, 3, its direction) with the cursor flag on and size 1; Core has already
         // moved the square, so the band test runs on it.
         View.Scroll(view.X, view.Y, 3, CombatTables.Center, 1);
-        View.StatusLine = view.Attack && view.LineReached
-            ? Text[CombatMsg.Range] + view.Distance.ToString(CultureInfo.InvariantCulture)
-            : null;
+        // 0x15722 / 0x15768: in attack mode "Range = n" when the line got through, else row 23 cleared; outside
+        // attack mode row 23 is not written (a spell's label stays).
+        if (view.Attack)
+            View.StatusLine = view.LineReached
+                ? Text[CombatMsg.Range] + view.Distance.ToString(CultureInfo.InvariantCulture)
+                : null;
         if (_cursorGoal is { } g)
         {
             if (++_cursorSteps <= CombatArena.Width && StepToward((view.X, view.Y), g) is { } d)
@@ -1104,21 +1199,26 @@ public sealed partial class CombatChooser(Func<PlayerRequest, object?> ask, Comb
 
     public int? ChooseSpell(FightMenu menu, IReadOnlyList<int> castable)
     {
-        if (castable.Count == 0)
+        // 0x14C0F → 0x239D6 (kind 0, action 1 Cast; P, s30): the memorised list, every memorised spell with level
+        // headings (a camp-only one is refused after the pick, FightMenu.Cast), in the list routine's window (rows 5–22)
+        // with Next / Prev before Exit. An empty list returns at once (0x2D69C). [?] The title layout is the Client's.
+        var (rows, ids, labels) = MemorisedList(menu.Creature, menu.Fight);
+        if (ids.All(s => s == 0))
             return null;
         View.Mode = CombatMode.Spell;
-        var rows = castable.Select(s => (SpellName(s) ?? "SPELL " + s.ToString(CultureInfo.InvariantCulture)).ToUpperInvariant()).ToList();
         string cast = Word(FightCommand.Cast), exit = Text.Words(CombatMsg.AimCenterExit).ElementAtOrDefault(1) ?? "EXIT";
-        // [?] The spell list 0x239D6 is not read: a full-screen list of the castable spells (our layout).
-        var req = new ListRequest([new ListLine(Name(menu.Creature), NameColour(menu.Creature))], rows, [cast, exit], 1)
+        var req = new ListRequest([new ListLine(Name(menu.Creature), NameColour(menu.Creature))], rows, [cast, exit], 1,
+            FirstRow: SpellLists.FirstRow)
         {
             RowActions = new HashSet<int> { 0 },
+            Labels = labels,
+            Paging = SpellPaging(2),
         };
         var a = ask(req) as ListAnswer;
         View.Mode = CombatMode.Menu;
-        if (a is null || a.Action != 0 || a.Row < 0 || a.Row >= castable.Count)
+        if (a is null || a.Action != 0 || a.Row < 0 || a.Row >= ids.Count || ids[a.Row] == 0)
             return null;
-        int spell = castable[a.Row];
+        int spell = ids[a.Row];
         // 0x27C38 shows the cast message before its target pick; the Core menu aims first and casts after, so a spell
         // cast now is announced here (before the aim) and its Announce call is skipped. A begun spell is announced
         // when it goes off, after its aim [?].
@@ -1153,7 +1253,6 @@ public sealed partial class CombatChooser(Func<PlayerRequest, object?> ask, Comb
             FightNotice.Blocked => t[CombatMsg.Blocked],
             FightNotice.NotWithThatWeapon => t[CombatMsg.NotWithThatWeapon],
             FightNotice.Bandaged => t[CombatMsg.IsBandaged],
-            FightNotice.Guarding => "", // [?] the Guard message (START 0x3226) is not located
             FightNotice.Sweeps => t[CombatMsg.Sweeps],
             FightNotice.TurnsUndead => t[CombatMsg.TurnsUndead],
             FightNotice.Turned => t[CombatMsg.IsTurned],

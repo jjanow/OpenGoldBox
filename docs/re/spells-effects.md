@@ -195,10 +195,10 @@ the program's data; `PorSpellData.Names` reads them from the player's program.
 | 4 | 0xEDDA | (message) effect 7 for 43200 minutes, param 255, removal on |
 | 7 | 0xEE8E | Con + 1; at ≥ 20 adds 0x3E (60 min, removal on) and stops. From Con 15: gain = (max HP − rolled HP 0xB1) ÷ Σ per class level (fighter: level × (Con − 15); others level × 2 above 15, level at 15; 0 → 1); Con < 17 or fighter levels → max HP and HP + gain |
 | 12/38 | 0xF115 | Enlarge / Strength: param > 0x7F nothing; Str/Exc from the record's code (0x2BFF7: ≤ 101 → 18/(code − 1), else code − 100); the best other 12/38 record takes the current code (0x2BFCE) and the creature takes that best value |
-| 78 | 0x10634 | revive with current HP (0x2C753); failing, re-add 0x4E for 1 minute (lock) |
+| 78 | 0x10634 | revive with current HP (0x2C753, its message: "Revive" below); failing, re-add 0x4E for 1 minute (lock) |
 | 79 | 0x10674 | element 9; target takes 2d10 non-weapon damage (count to 681C) |
 | 80 | 0x106A7 | element 0x10; target takes 1d4 |
-| 87 | 0x11047 | target without rot gets 0x32 (14400 min) and 0x39 (43200 min, param 1d6 × 16 + 15), removal on (1d6) |
+| 87 | 0x11047 | target without rot gets 0x32 (14400 min) and 0x39 (43200 min, param 1d6 × 16 + 15), removal on (1d6); then its text on the target (s30, "Handler messages") |
 | 89 | 0x110EB | round 0 and attack roll 0 → param AND 0x0F; else first attack (bit 4 clear) → attack roll − 1, bit 4 set |
 | 90 / 97 | 0x11134 / 0x112E5 | save type 0 resp. 4 or 2 → save + Constitution bonus (4–6: 1, 7–10: 2, 11–13: 3, 14–17: 4, 18–20: 5; else an uninitialised byte `[?]`) |
 | 91 | 0x111B1 | spell 15 → nullified (message); else element bit 2 → nullified |
@@ -207,11 +207,11 @@ the program's data; `PorSpellData.Names` reads them from the player's program.
 | 95 | 0x1126B | byte 4 cleared; in play → dies |
 | 96, 119, 123 | 0x112A6, 0x117D8, 0x119E3 | need magic / silver weapons: damage 0 (or ÷ 2 for silver in 123) by the missile's plus and word 0x31 |
 | 98 | 0x1135B | HP + 3, at most max |
-| 99 | 0x1138B | dying with +0x0E < 6 → n = 6 − it; unconscious → 6; revive with n HP → 0x5F for 1d4 + 1 min, then this record removed (1d4 after the revive) |
+| 99 | 0x1138B | dying with +0x0E < 6 → n = 6 − it; unconscious → 6; revive with n HP → 0x5F for 1d4 + 1 min, then this record removed (1d4 after the revive). Carried only by the wild boar (MON6SPC / MON8SPC block 120, permanent, s30) |
 | 100 | 0x11434 | element bits 0 and 4 clear → 0x66 for 3d6 minutes (removal on) |
 | 101 | 0x1146F | no 0x62 and no 0x3B → 0x3B for 3 minutes (removal on) |
 | 102 | 0x114C1 | revive with max HP; failing, re-add 0x66 for 1 minute (lock) |
-| 103 | 0x1151A | byte 4 cleared; out of play, status 3 (0x2BDF0) |
+| 103 | 0x1151A | byte 4 cleared; 0x319D2(creature, 3, 0); out of play, status 3, with its own text (0x2BDF0, s30: "Revive and put out of play") |
 | 104 | 0x1155C | missile dodge 60 % |
 | 105/106 | 0x115D1 / 0x115DF | magic resistance: chance = p − 5 × (11 − casting level of DS:681B), byte (p = 50 / 15); with DS:6817 ≠ 0 or element bit 3, 1d100 ≤ chance → nullified |
 | 107 | 0x115ED | 1d100 ≤ 90 → sleep and charm nullified |
@@ -225,7 +225,7 @@ the program's data; `PorSpellData.Names` reads them from the player's program.
 | 128–130, 133, 134, 136, 138, 139 | 0x11B35 | item ready → effect 0x3D of the item (permanent, param 12) and its handler; unready → that effect removed |
 | 131 | 0x11BB2 | gauntlets: raise to 18/00 (0x2C046), DS:6821 = 1, effect 0x26 with the returned code |
 | 132 | 0x11D00 | wrong alignment → unreadied, element 8, non-weapon damage 0x3D ÷ 16 |
-| 135 | 0x11D8F | Str < 19 → unreadied |
+| 135 | 0x11D8F | Str < 19 → unreadied, its text through START 0x1693 (row 24; s30) |
 | 137 | 0x11DD5 | removed → effect 0x17 removed |
 | 40 | 0xF91E | (only as a removal call) the caster's cloud numbered param ÷ 16 (first match in DS:6DBB); none → nothing. (Message) each clouded cell gets 0x1F when a body (DS:66D6 + 7k, k ≤ DS:6715, pointer set) lies on it, else the terrain it covered; the node is unlinked and freed; every remaining cloud's cells are set to 0x1E again |
 | 73 | 0x161CD | rake: DS:6823 = 2 hits in phase 1 and the last target in play → combat +4 = 2, 0x114 = 2, 0x116 = 2, 0x118 = 4, 0x113 = 0 (two 2d4 attacks in phase 2), message, MakeAttack (0x1407F, defender turns), actions end |
@@ -331,6 +331,25 @@ the moving icon that follows until the next 0x16EC call clears its rows; with it
 | 84 charm gaze | 0x10B7F | gazer | 0x10ABE (CS:1E63) | 10 | no |
 | 88 lightning breath | 0x2A147 | breather | 0x2A0E7 (CS:30CF of the spell unit) | 10 | yes |
 | 121 acid breath | 0x118E9 | breather | 0x1186C (CS:2C11) | 10 | yes |
+| 87 rot touch (s30) | 0x110E0 | target (DS:6826) | 0x1103B (CS:23E0) | 10 | yes |
+| 77 hold (s30) | 0x10629 | target (DS:6826) | 0x10583 (CS:1928) | 10 | yes |
+| 75 blood drain (s30) | 0x10485 | drinker | 0x103B9 (CS:175E) | 10 | yes |
+| 73 rake (s30) | 0x16240 | raker | 0x161C4 (CS:39C9 of unit 0x127FB) | 10 | yes |
+| 131 gauntlets (s30) | 0x11CB1 / 0x11CD8 | wearer | 0x11BA6 (CS:2F4B) | 10 | yes; only when 0x2C046 raised the Strength; in a fight the handler sets DS:49F3 = 2 around the call (0x11C91 / 0x11CB6), so the text-window layout is drawn over the Items page |
+| 40 cloud ends (s30) | 0xF9A4 | — | 0xF903 (CS:0CA8) | START 0x1693: row 24, green | yes |
+| 135 too weak (s30) | 0x11DCA | — | 0x11D76 (CS:311B) | START 0x1693: row 24, green | yes |
+
+s30 (P): those seven were raised as `EffectEvent.Other` and not shown; now `Diseased`, `HeldFast`, `SucksBlood`,
+`Rakes`, `Stronger`, `AirClears`, `NeedsGiantStrength` with the texts `CombatMsg.Handler*` (catalog entries added; the
+importer copies texts, so they reach a module only after an importer bump). Client: the panel from row 10 with the pause
+(`CombatChooser.HandlerMessage`), row 24 for 40 and 135 (`PageSay`); 131 in a fight puts the name on row 18 and the text
+on row 19 of the Items page during the pause (`PageTextWindow`; `[?]` the frame and the clear of rows 17–22 over the
+page are not drawn). Item handlers in a fight: Ready / unready (0x2250A, the menu's Items page and the AI's) now runs
+the item's handler 0x3E through 0x2AEEA (`FightKit` wires `FightItemScreens` and `MonsterAi.ItemHandler`, s30; before,
+nothing ran). Outside a fight the Client has no Ready yet (`CharacterView` TODO), so 131 / 135 there are `[?]`. `[?]` None seen in DOSBox-X. Still `EffectEvent.Other` (spell
+routines, not handlers; texts not mapped): 13 Reduce's and the removal 0x2BF6B's messages (FightSpells.cs), Enlarge's
+and spell 59's raise messages, 34 Stinking Cloud's, 37 Cure Blindness, 35 Strength's raise, 39/58 Cure Disease
+(0x292A2), 44 Remove Curse (0x29558, two), Restoration's (FightSpells.Routines.cs) `[?]`.
 
 0xECB3 shows its text for every caller (row 10, no pause flag), before its dead / stone / gone test; every caller's
 text is mapped (s29, "Status changes"). Code: Core `EffectEvent.Gazes`, `GazeReflected`, `Stoned`,
@@ -379,18 +398,52 @@ the map removal; `Poisoned`, `Rots`, `Drained` (count `EffectHandlers.DrainCount
 `GoesDownDone`; the attack routine calls `FightState.AttackMessage` after the damage and `FightState.AttackEnd` after
 `FightRules.DropDefender`. Texts `PorTextCatalog` `CombatMsg.Status*`, `Poisoned`, `Rots`, `Drained*` (importer
 0.7.18); Client `CombatChooser.EffectMessage` / `StatusMessage` / `AttackEnd`. `[?]` Not compared with DOSBox-X.
-`[?]` Outside a fight (handlers 22, 32, 57, 95 from the clock's effect timeout, e.g. resting) the Client's camp does
-not show these (START 0x16EC's camp layout, camp.md "Cast"; CreatureDowned's sound and pause; START 0x0767).
+**Outside a fight** (read s30, P): handlers 22, 32 and 57 run from the clock's effect timeout 0x23DCC (a step, Look,
+CLOCK while exploring; the camp's rest), and 95 cannot (above). START 0x16EC's out-of-fight branch (0x22F7) ignores the
+row: with DS:6DDA = 1 (set by the rest loop 0x24A66 at 0x24AE2, cleared at 0x24C20 and at the start-up 0xE9E3; no other
+writer) r = 18, else r = 17 and the text box frame is drawn again (03F1:0000); (1, r)–(38, 22) cleared, the name on row
+r + 1, the text word-wrapped from row r + 2 in green; with the pause flag PauseOnly and START 0x2383 = (1, 18)–(38, 22)
+cleared. 0xECB3's text has no pause flag, so it stays; its end outside a fight: CreatureDowned's out-of-fight branch
+(0x31554 set auto-stop 0, 0x31560 the body cue DS:261E, 0x31569 PauseOnly, then 0x317D2) when still out of play,
+PauseOnly (0xED44), START 0x17E3 (rows 18–22) and START 0x0767 (DS:5D92: the party list). Handler 57's rot words and the
+drain words pass the pause flag. Client (s30): `OutsideEffectMessages` on the camp's text window during the rest (DS:6DDA
+= 1: rows 18–22, the rest-time line on row 17 kept) and Cast, and on the area's text window for the exploring clock
+(`ClientPlayer.ShowOutsideEffects`, hooked on `PorGame.OutsideEffects`); the party list is drawn from memory every frame,
+so it shows the new status before 0x0767 would `[?]` (one pause early). `[?]` Not seen in DOSBox-X.
 `[?]` A creature dropped twice in one call chain (0xECB3's end inside 0x2BEF4 of an attack): 0x3154B's early exit
 (0x31571–0x315A3 compares the body entry DS:70C7 × 7 + DS:66D6 eight times) not settled; the Client shows the downed
 picture again.
+
+**Revive and put out of play** (read s30, P). **0x2C753** (creature, HP): 0x317E1 on its square (no → returns 0);
+status 0, in play 1, HP; in a fight 0x319D2(creature, 3, 0) (the view, no cursor box); the text by the hostile byte
+0x10E (1: CS:1848 = GAME.OVR 0x2C732, else CS:185C = 0x2C746, both in unit 0x2AEEA) through START 0x16EC(creature,
+text, row 10, pause 1): the pause and the clear; then the team count START 0x2F7B (00BA:23DB); returns 1. Callers:
+handler 78 (0x10649), 99 (0x113E6), 102 (0x114D5), Animate Dead (0x291CE; the hostile byte is the caster's by then, so
+a party caster's zombie gets the party-side text). Outside a fight the same text in the text-window layout: a rest's
+healing reaches it through handler 0x4E (78) for an unconscious member. Core: `EffectEvent.Revived`; Client: the view,
+then `Say` (row 10, pause); `OutsideEffectMessages` outside. **0x2BDF0** (creature, status, text): nothing at all when
+out of play (0x2BE0C); slot 0x31399; 0x319D2(creature, 3, 0); START 0x16EC(creature, text, 10, 1); in play 0, status,
+HP 0 unless status 3; 0x30C65(slot, 0, 0), START 0x464:0x1B52, DS:5F2A + 4 × slot = 0, 0x30ADA (the icon off the map,
+the map redrawn); START 0x31D7 (actions end) → 0x2BEF4. Three callers: the AI's surrender 0xBE31 (status 4; s29,
+`AiMessage.Surrenders`), handler 103 0x11551 (status 3, CS:28A5 = 0x11500; it clears its byte 4 and calls 0x319D2
+itself first, 0x11534, whatever follows; Core `EffectEvent.EscapeView` then `Escapes`, the map removal now in
+`EffectHandlers.PutOutOfPlay`). 103 is carried only by the vampire (MON4SPC block 23, permanent, removal off) and runs
+only from trigger 0x0D, which every drop path (0xECB3, 0x2C44A, the attack's drop) calls after in play is 0: so
+0x2BDF0 returns at 0x2BE0C, the vampire stays down (dead or dying) and only the view moves; the escape text can show
+only for a creature still in play (none on the program's paths, as read) — `HandlerMessageTests.A_vampire_downed_…`;
+`[?]` not seen in DOSBox-X; the flee 0x134EC (status 3, CS:0C4F
+= 0x1344A, "away"); the flee's other branch (0x134F3) shows CS:0C58 = 0x13453 through START 0x1693 (row 24), then both
+end the actions (0x1350D). Core `FightState.FleeMessage` (raised before the status change), Client
+`CombatChooser.FleeMessage`. `[?]` None seen in DOSBox-X.
 
 Where to see each (for the DOSBox-X check; monsters from the MON*SPC sets, s27's way of loading another disk's
 monsters: dosbox-trace-method.md "Monsters of another disk"):
 - 83 stone and the poisoned hit 64: the s27 medusa (MON5 49: 0x53 gaze and 0x40 poison); basilisk MON2 / MON5 26
   for the gaze alone. A party member's failed save shows the gaze, the stone text and two pauses.
 - 64 / 65 / 66 / 70 poisoned hit: giant snake MON5 / MON6 60 and wyvern MON8 121 (64), poisonous frog MON4 38 (65),
-  large scorpion MON4 18 (66), huge scorpion MON4 39 (64), phase spider MON8 116 (70).
+  large scorpion MON4 18 (66), huge scorpion MON4 39 (64), phase spider MON8 116 (70). **D** (s30): four huge
+  scorpions on save A, seed 4242: Rhiannon's failed save, the poisoned and killed texts, the downed picture, equal
+  frame by frame (combat-menu.md "s30 DOSBox-X checks").
 - 85 / 86 level drain: wight MON4 20, wraith MON4 21 (85); spectre MON2 / MON4 17, vampire MON4 23 / 105, Ferran
   Martinez MON4 19 (86). The dead-forever branches need a target with hit dice 0x73 < 2 or an animated one (a party
   member's Animate Dead zombie).
@@ -400,8 +453,14 @@ monsters: dosbox-trace-method.md "Monsters of another disk"):
   long enough for a minute to pass.
 - 22: Slow Poison (26) on a member killed by a poisoned hit (0x37; the routine sets HP 0 → 1 and runs handler 0x4E):
   when its effect 0x16 ends with the poison still on, the member dies again with this text.
-- 95: carried after handler 99's revive (0x63, 1d4 + 1 minutes; no MON*SPC monster carries 0x5F or 0x63) `[?]`
-  where 0x63 comes from.
+- 95: carried after handler 99's revive (0x5F for 1d4 + 1 minutes). **Effect 0x63's source (read s30, P)**: the wild
+  boar, MON6SPC.DAX and MON8SPC.DAX block 120, carries 0x63 permanently (param 255, removal off); no other MON*SPC
+  record, no CHRDAT*.SPC, no item (all 681 records: worn-item codes give only 3, 61, 82/240, 89, 38) and no code: every
+  writer of the effect list was checked (45 far calls to 0x2BD3C / 0x2C540, their 3 near calls inside unit 0x2AEEA, the
+  8 callers of 0xEC7A, the spell resolution's id column DS:3204 + 16 × spell, the item handler's byte 0x3D). So the
+  chain is the boar's: downed (trigger 0x0D) → 99 puts it back with 6 HP and its revive message, adds 0x5F and drops
+  0x63; when 0x5F ends (a minute passing at the end of a round) 95 kills it (0xECB3, its text). Outside a fight 95 cannot
+  run (monsters leave with the fight). Core test: `HandlerMessageTests.A_wild_boar_gets_back_up_once_…`.
 
 **Routines**:
 

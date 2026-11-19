@@ -278,9 +278,31 @@ EXIT: (1, 17), no clear).
    0x77F8 text (the camp's messages, a shop's, the fight panel's, the party-destroyed message) types only while the
    flag stands: after the start-up or a fight, until the next PRINT or ENCMENU. Client: `EclMemory.TypesText` (not
    saved, start value 1), read by `ClientPlayer.Text` (every text through the explore screen's text window, camp
-   included), the fight panel and the party-destroyed / party-killed windows; our own notices never type. `[?]` Not
-   followed: the summary, NPC-share and loot screens (their own windows) and the status panel's weapon name show at
-   once; the party menu's texts (the flag is 1 there after the start-up) are not typed.
+   included), the fight panel and the party-destroyed / party-killed windows; our own notices never type.
+   **Which windows type (P, s30**; every far call to 0x77F8 in START.EXE and GAME.OVR listed, then each routine's
+   callees followed for a path to it): the text routine's callers are START 0x1583 (the status panel), START 0x228C
+   (= 00BA:16EC, the panel / camp message) and in GAME.OVR PRINT 0x174F, 0x1C4E, ENCMENU 0x2C3E, DAMAGE 0x34BB and
+   its line 0x959F, 0x4636, the temple 0x5280, the loot menu 0x644B, the NPC share 0x6866, the after-combat 0x6AA5
+   (party destroyed), the shop 0x7212, the attack text 0x12AF4 and the View unit's Items 0x21F32 (its 0x21DAA,
+   0x22D28 Sell, 0x22F8C Id: box (1, 21)–(38, 22), colour 14). So:
+   - **NPC share** (0x695E, the line at 0x69F0): types while the flag stands. It runs before 0x6BAF, so it has the
+     value the fight began with. Client: `TradeContext.TypesInto` (the window grows as it types; row 24 stays blank
+     meanwhile, following the party-destroyed window's DOSBox-X s29 check at the same point of 0x6AA5, not a new
+     DOSBox-X check).
+   - **Loot**: the menu (0x659D, 0x2CC8C) never types; the Exit question's two texts (0x666C clear + colour 10,
+     0x6693 colour 15, box (1, 17)–(38, 22)) type while it stands; its Yes / No is the menu helper 0x8B57 (002B:0061),
+     no 0x77F8. The Take, Pool, Share, coin and item lists (0x62B6, 0x6184, 0x25191, 0x252C3, 0x25974, 0x2D669) reach
+     no 0x77F8; their messages are row-24 START 0x2233 (= 00BA:1693) strings.
+   - **Summary** (0x5E94): every line is START 0x76B6 (0709:0626: one 0x726F per character, no 0x4A00 test), the
+     key the menu routine: never typed (the Client shows it at once; `AfterCombatTypingTests`).
+   - **Party menu** (0x19AE0 with Create 0x19EEB, Modify 0x1BA1E, Drop 0x1B8B6, Add 0x1C9EC, 0x19D9C, 0x19E0E) and
+     View's page (0x21084), Spells (0x239D6 → 0x270A2 → 0x2D669), Trade 0x23190, money Drop 0x234E1 / 0x21547:
+     no path to 0x77F8, so never typed (row-24 messages through START 0x2233, the rest START 0x76B6 and the menu
+     routine). Only View → Items (0x21F32) types: its Drop question (0x223FC) and the refusal of 0x21DAA (0x21E53),
+     in (1, 21)–(38, 22) colour 14, while the flag stands (1 at the start-up party menu, 0 in the training hall
+     after a PRINT). The Client's party-menu Items commands other than Sell / Id are not built (our notice); Sell / Id
+     (shop) go through the explore text box, which follows the flag, but at rows 17–22, not the program's 21–22 `[?]`.
+   The status panel's weapon name types (s29, `CombatChooser.Typing`).
 5. After the string a cursor past x1 goes to column x0 of the next row.
 The window never scrolls. Code: `GoldBox.Client.Play.TextWindow`.
 
@@ -288,7 +310,8 @@ CLEARBOX (0x385A) blanks the picture window (1, 1)–(15, 15), not this box; `[?
 again is not read (the Client keeps it blank until the next command). The clear (START 0x7E63 on cells 1–15) takes
 the view's own box (cells 2 and 14) too, which EXIT draws again only after a PROTECT went into the window
 (ecl-format.md "PROTECT"); since s29 the Client blanks all of cells 1–15 in the 3D view as well (before: the 88 × 88
-view only) and draws PROTECT's runes there. `[?]` Not seen in DOSBox-X.
+view only) and draws PROTECT's runes there. **D** (s30): DOSBox-X blanks the same cells and the Client's frame is equal
+(ecl-format.md "PROTECT").
 
 ## Keys while the program is busy (START 0x89E9; program read s22) — P
 
