@@ -335,8 +335,10 @@ is cut by the fight's first sound.
   50 Hz. Client: with the module's Amiga data and sound not off, the Amiga intro (Best / Amiga) starts song 1 and
   stops it when it ends (`ClientAudio.PlaySong`), after the intro's closing 3 s (`intro` hunk 1 Delays 150 ticks
   before returning; the program reaches PlaySong(0) at hunk 10 +0x59A after Execute returns, s27). Departure: on the
-  Amiga the song also plays through hunk 25 +0x12A8 (called between Execute and +0x59A: buffer allocations and more, not
-  read further); the Client stops it at the end of the 3 s. Not hooked yet: the camp (1), the battle (2), name and icon accepted
+  Amiga the song also plays through hunk 25 +0x12A8 (called between Execute and +0x59A; read s28: the Amiga's copy of
+  DOS's start-up 0xE600, allocations, start values and the start-up loads with the loading message on row 24,
+  start-menu.md §1a "After the intro"; no sound call but the out-of-memory quit, hunk 1 +0x6E), so it stops after the disk time `[?]`; the Client, whose
+  loads take no time, stops it at the end of the 3 s. Not hooked yet: the camp (1), the battle (2), name and icon accepted
   (3), the party killed (5); the effect player and the rule that an effect ends the music.
 
 ## 6. Open `[?]`

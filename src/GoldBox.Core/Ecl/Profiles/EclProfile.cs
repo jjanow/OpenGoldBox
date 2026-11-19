@@ -50,7 +50,7 @@ public enum EclCharacterView
     Por6B00Redirection,
     /// <summary>
     /// SotSB: PoR's redirection scheme at $7C00 into the 439-byte record (reader OVR 0x9830, writer OVR 0x9D20;
-    /// docs/re/survey-sotsb.md §3.3). The case list is not modelled yet `[?]`.
+    /// docs/re/survey-sotsb.md §3.3). The case list is code in <see cref="EclMemory"/>.
     /// </summary>
     Sotsb7C00Redirection,
 }
@@ -61,11 +61,49 @@ public enum EclHandlerSet
     /// <summary>PoR v1.3: <c>EclVm.Execute</c> and the reader/writer of <see cref="EclMemory"/>.</summary>
     Por13,
     /// <summary>
-    /// SotSB v1.00–v1.30 (docs/re/survey-sotsb.md §3.5): PoR's handlers plus RETURN-exits, two-operand CLOCK, the 0x3C
-    /// stub, opcodes 3E–41 and SotSB's CALL / PROGRAM ids. Not implemented: <see cref="EclMemory"/> refuses it, so a
-    /// SotSB profile decodes (<see cref="EclDecoder"/>, <see cref="EclAnalysis"/>) but does not run.
+    /// SotSB v1.00–v1.30 (docs/re/survey-sotsb.md §3.5, §10): PoR's handlers plus RETURN-exits, two-operand CLOCK,
+    /// the 0x3C stub (no row), opcodes 3E–41, SotSB's NEWECL, LOADFILES/LOADPIECES, LOADCHAR, SURPRISE cell and
+    /// PROGRAM ids, the moved cells (<see cref="EclProfile.Cells"/>) and the $7C00 character view. The opcodes that
+    /// work on PoR record offsets and were not re-read for the 439-byte record (PARTYSTR, PSURPRISE, CHKPARTY, ROB,
+    /// DAMAGE, SPELL, ADDNPC) go to the host `[?]`.
     /// </summary>
     Sotsb,
+}
+
+/// <summary>
+/// The fixed VM cells the handlers and the script init use (they move with the regions from dialect to dialect).
+/// Docs: ecl-format.md (PoR), survey-sotsb.md §10 (SotSB, each with its GAME.OVR offset).
+/// </summary>
+public sealed class EclCells
+{
+    /// <summary>NEWECL stores the old script id here (PoR $49F2; SotSB $4BF2, OVR 0x184E).</summary>
+    public required ushort OldScriptId { get; init; }
+    /// <summary>The 3D-view flag LOADFILES tests (PoR $49E6; SotSB $4BE6, OVR 0x18F9).</summary>
+    public required ushort ViewFlag { get; init; }
+    /// <summary>LOADFILES stores the map id here (PoR $49C5; SotSB $4BC5, OVR 0x190E).</summary>
+    public required ushort MapId { get; init; }
+    /// <summary>LOADFILES clears this after a map load (PoR $6DC9; SotSB $7EC9, OVR 0x1922).</summary>
+    public required ushort MapLoadedClear { get; init; }
+    /// <summary>LOADPIECES' slot flags (PoR $49E7, $49E8; SotSB $4BE7, $4BE8 and a third, $4BE9, OVR 0x1947–0x196B).</summary>
+    public required IReadOnlyList<ushort> WallFlags { get; init; }
+    /// <summary>The party size (PoR $6E3E; SotSB $7F3E, character-view read case 0x33E).</summary>
+    public required ushort PartySize { get; init; }
+    /// <summary>
+    /// Where SURPRISE writes its result (PoR $6DCB; SotSB writes the constant $02CB through the writer, OVR 0x2658,
+    /// which is no region cell and no special write case: the result is lost).
+    /// </summary>
+    public required ushort SurpriseResult { get; init; }
+    /// <summary>The script init's fixed writes, in program order (PoR 0x7689; SotSB OVR 0x9291–0x92B8).</summary>
+    public required IReadOnlyList<(ushort Cell, ushort Value)> InitWrites { get; init; }
+    /// <summary>The script init sets <see cref="ViewFlag"/> to 1 after the vectors (PoR yes; SotSB no, OVR 0x922C).</summary>
+    public required bool InitSetsViewFlag { get; init; }
+    /// <summary>
+    /// Ranges the script init zeroes unless a save is being loaded (PoR $4A00–$4A1F, $6E79–$6E82; SotSB $4C00–$4C1F,
+    /// $7F79–$7F82, OVR 0x9332–0x937A).
+    /// </summary>
+    public required IReadOnlyList<(ushort First, ushort Last)> InitClears { get; init; }
+    /// <summary>First cell of the character view (PoR $6B00; SotSB $7C00).</summary>
+    public required ushort CharacterView { get; init; }
 }
 
 /// <summary>
@@ -114,6 +152,12 @@ public sealed class EclProfile
 
     public required EclCharacterView CharacterView { get; init; }
     public required EclHandlerSet Handlers { get; init; }
+
+    /// <summary>The fixed cells the handlers use.</summary>
+    public required EclCells Cells { get; init; }
+
+    /// <summary>Size of a character / monster record (PoR 285; SotSB 439).</summary>
+    public required int RecordSize { get; init; }
 
     /// <summary>Whether a save stores the script bytes (else the script is reloaded by id).</summary>
     public required bool ScriptBytesSaved { get; init; }

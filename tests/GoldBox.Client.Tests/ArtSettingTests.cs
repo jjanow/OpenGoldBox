@@ -230,8 +230,8 @@ public class ArtSettingTests
         Assert.Equal(b + 3, art.Party(member, false)!.Pixels[0]);
 
         member[CombatArt.IconSize] = 1;
-        member[CombatArt.IconColours + 3] = 0xC5;                // EGA 5 has no pen [?]: the DOS icon
-        Assert.Equal(1, art.Party(member, false)!.Pixels[300]);
+        member[CombatArt.IconColours + 3] = 0xC5;                // EGA 5: the nearest table-3 pen, 6 (user, s28)
+        Assert.Equal(b + 6, art.Party(member, false)!.Pixels[300]);
         member[CombatArt.IconColours + 3] = 0xC4;
         art.UseArt(PorArtChoice.Dos, palette.Base);              // Original DOS: the DOS icon
         Assert.Equal(1, art.Party(member, false)!.Pixels[300]);

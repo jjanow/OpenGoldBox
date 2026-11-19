@@ -168,8 +168,12 @@ public class PorAmigaArtTests(ITestOutputHelper output)
             Assert.Equal(PorAmigaArt.IconPen(4), map[PorAmigaArt.IconPen(1)!.Value]);
             Assert.Equal(PorAmigaArt.IconPen(9), map[PorAmigaArt.IconPen(9)!.Value]);
         }
-        Assert.Null(PorAmigaArt.AmigaIconColours([0x95, 0xA2, 0xB3, 0xC4, 0xE6, 0xF7], Pairs(_ => true)));   // EGA 5 [?]
-        Assert.Null(PorAmigaArt.AmigaIconColours([0xD1, 0xA2, 0xB3, 0xC4, 0xE6, 0xF7], Pairs(_ => true)));   // EGA 13 [?]
+        // EGA 5 and 13: the nearest table-3 pens, 6 and 7 (user, s28).
+        var p = Pairs(_ => true);
+        var m5 = PorAmigaArt.IconColourMap(PorAmigaArt.AmigaIconColours([0x95, 0xA2, 0xB3, 0xC4, 0xE6, 0xF7], p)!, p);
+        Assert.Equal(6, m5[PorAmigaArt.IconPen(1)!.Value]);
+        var m13 = PorAmigaArt.IconColourMap(PorAmigaArt.AmigaIconColours([0xD1, 0xA2, 0xB3, 0xC4, 0xE6, 0xF7], p)!, p);
+        Assert.Equal(7, m13[PorAmigaArt.IconPen(9)!.Value]);
         var wrong = Pairs(_ => true);
         (wrong[0], wrong[1]) = (wrong[1], wrong[0]);
         Assert.False(PorAmigaArt.IconPairsAgree(wrong));
@@ -223,6 +227,16 @@ public class PorAmigaArtTests(ITestOutputHelper output)
             seen++;
         }
         Assert.Equal(13, seen);                                   // 1–4, 6–12, 14, 15
+    }
+
+    /// <summary>EGA 5 and 13 (no pen in the art, table 3 has no magenta): the nearest table-3 pen by RGB (user, s28).</summary>
+    [PorAmigaFact]
+    public void Ega_5_and_13_take_the_nearest_table_3_pen()
+    {
+        var table3 = PorAmigaArt.Palettes(File.ReadAllBytes(PorAmigaArt.Locate(PorAmigaData.Dir!).Program))[3];
+        var ega = GoldBox.Data.Module.IndexedPng.EgaPalette;
+        foreach (int e in new[] { 5, 13 })
+            Assert.Equal(PorAmigaArt.IconPen(e), PorAmigaArt.NearestIconPen(table3, ega[3 * e], ega[3 * e + 1], ega[3 * e + 2]));
     }
 
     // ---- the player's files ----
@@ -303,12 +317,10 @@ public class PorAmigaArtTests(ITestOutputHelper output)
         }
     }
 
-    [PorAmigaFact]
+    [PorAmigaIntroFact]                                           // skipped, naming the file, without disk A's intro
     public void The_intro_panels_are_read_from_its_code()
     {
-        if (PorAmigaArt.LocateIntro(PorAmigaData.Dir!) is not { } path)
-            return;                                               // the intro is optional
-        var intro = File.ReadAllBytes(path);
+        var intro = File.ReadAllBytes(PorAmigaData.Intro!);
         // hunk 4 +0x1A … +0x1E8: sheet row, screen row, rows, and the second fade for the logo panel only
         Assert.Equal([new AmigaIntro.Panel(93, 30, 48, false), new AmigaIntro.Panel(455, 60, 16, false),
             new AmigaIntro.Panel(398, 30, 56, false), new AmigaIntro.Panel(474, 60, 19, false),

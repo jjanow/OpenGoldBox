@@ -121,12 +121,12 @@ public static class EclOpcodes
         // here. [?] at run time (assumed to hang like an unhandled opcode; not run in DOSBox). No script uses it.
         t[Protect] = null;
         // New rows. 3E–40 from Curse (names from the program's debug list, OVR 0x431CE), 41 new in SotSB.
-        // DUMP (0x424F): PC + 1, then drops the current character [?] details.
+        // DUMP (0x424F): PC + 1, then the current character is removed from the party (OVR 0x20E40, survey §10.4).
         t[Dump] = new EclOpcodeInfo(Dump, "DUMP", [], EclVariadic.None, 0, P);
         // FIND SPECIAL (0x4282): "=" if the current character has effect v, else "≠".
         t[FindSpecial] = new EclOpcodeInfo(FindSpecial, "FINDSPECIAL", ["effect"], EclVariadic.None, 1, P);
         // DESTROY ITEMS (0x42D3): every member's items whose byte +0x2E equals the operand are removed (readied ones
-        // unreadied first). [?] which item field +0x2E is.
+        // unreadied first). +0x2E is the byte FINDITEM tests (the item type [?], as in PoR).
         t[DestroyItems] = new EclOpcodeInfo(DestroyItems, "DESTROYITEMS", ["item_type"], EclVariadic.None, 1, P);
         // ADD EP (0x43FF): o1 = 0 current character, else every member; o2 = amount, split over the member's classes.
         t[AddEp] = new EclOpcodeInfo(AddEp, "ADDEP", ["who", "amount"], EclVariadic.None, 2, P);

@@ -61,22 +61,38 @@ public sealed class AmigaIntroSequence
     public static readonly TimeSpan FadeStepTime = Frame * 2;
 
     /// <summary>
-    /// [?] The clear and the blit between the wait and the fade in: the blit waits for beam line 240 (+0x528) after a
-    /// whole-screen blitter clear (16,000 words) begun on line 128, so the fade's first pass comes on line 128 two
-    /// frames after the wait's last. Two frames rests on blitter speeds (about 2 colour clocks a word), not on the
-    /// program; it would be one frame if the clear ended before line 240.
+    /// The clear and the blit between a panel's wait and its fade in (s28, docs/re/start-menu.md §1a): the clear
+    /// (+0x7EE, D only, 16,000 words) starts on line 128 and the CPU waits for it (+0x822 polls BBUSY); at the HRM's two
+    /// blitter cycles a word it needs 32,000 colour clocks, over 141 lines, so it ends past line 240 of that frame and
+    /// long before line 240 of the next. The blit (+0x512) waits for line 240 (+0x528); it must end by about line 103
+    /// (the fade's first colour step takes some 25 lines before its first pass on line 128), which every panel up to
+    /// 110 rows does, so the fade's first pass comes two frames after the wait's last. The screen stays black
+    /// throughout (the colours are still those of the last fade out, or the copper list's black at the start).
+    /// [?] Page 1 (two clears, +0xE and +0x14) and page 5 (146 rows) take a third frame if sprite DMA runs; two here.
     /// </summary>
     public static readonly TimeSpan SetupTime = Frame * 2;
+
+    /// <summary>
+    /// The title's set-up (+0x680, 200 rows, 16,000 words, 32,000 blitter cycles): from line 240 to about line 103 at
+    /// most 33,504 slots are free of refresh, audio (song 1) and bitplane fetches (30,688 with sprite DMA), and the CPU
+    /// polls BBUSY from chip memory (hunk 4 is MEMF_CHIP) with BLTPRI off (the system default; nothing found setting
+    /// it), so the blitter gets three slots in four (25,128): the fade starts a frame later than a panel's. It would
+    /// fit only with BLTPRI on and no sprite DMA. [?] From the HRM's DMA rules, not measured.
+    /// </summary>
+    public static readonly TimeSpan TitleSetupTime = Frame * 3;
 
     /// <summary>Intro hunk 1: <c>pea $96.w</c>, <c>Delay</c> (dos.library ticks, 50 a second).</summary>
     public static readonly TimeSpan ClosingTime = TimeSpan.FromSeconds(150 / 50.0);
 
-    /// <summary>When a page's fade in starts, from the start of its wait.</summary>
+    /// <summary>When a panel's fade in starts, from the start of its wait.</summary>
     public static TimeSpan FadeInStart => GapTime + SetupTime;
+
+    /// <summary>When the title's fade in starts, from the start of its wait (a frame after a panel's).</summary>
+    public static TimeSpan TitleFadeInStart => GapTime + TitleSetupTime;
 
     private static TimeSpan FadeTime => FadeStepTime * FadeSteps;
 
-    /// <summary>A whole page but the title: wait, set-up, fade in, hold, fade out.</summary>
+    /// <summary>A whole panel page (every page but the title): wait, set-up, fade in, hold, fade out.</summary>
     public static TimeSpan PageTime => FadeInStart + FadeTime + HoldTime + FadeTime;
 
     private readonly int _pages;
@@ -120,7 +136,7 @@ public sealed class AmigaIntroSequence
         _start ??= now;
         var t = now - _start.Value;
         // The pages end after the title's hold, or where a key is first seen in a wait or hold.
-        var end = PageTime * (_pages - 1) + FadeInStart + FadeTime + HoldTime;
+        var end = PageTime * (_pages - 1) + TitleFadeInStart + FadeTime + HoldTime;
         if (_keyAt is { } k && SeenAt(k) < end)
             end = SeenAt(k);
         if (t >= end)
@@ -132,32 +148,36 @@ public sealed class AmigaIntroSequence
         int p = (int)Math.Min(_pages - 1, t.Ticks / PageTime.Ticks);
         var inPage = t - PageTime * p;
         Page = p;
-        (Phase, Divisor) = Locate(inPage);
+        (Phase, Divisor) = Locate(inPage, FadeStartOf(p));
     }
 
-    private static (AmigaIntroPhase, int) Locate(TimeSpan inPage)
+    /// <summary>The fade in's start within page <paramref name="p"/>: the title (the last page) has a longer set-up.</summary>
+    private TimeSpan FadeStartOf(long p) => p == _pages - 1 ? TitleFadeInStart : FadeInStart;
+
+    private static (AmigaIntroPhase, int) Locate(TimeSpan inPage, TimeSpan fadeIn)
     {
         if (inPage < GapTime)
             return (AmigaIntroPhase.Gap, FadeSteps);
-        if (inPage < FadeInStart)
+        if (inPage < fadeIn)
             return (AmigaIntroPhase.Setup, FadeSteps);
-        if (inPage < FadeInStart + FadeTime)
-            return (AmigaIntroPhase.FadeIn, FadeSteps - (int)((inPage - FadeInStart).Ticks / FadeStepTime.Ticks));
-        if (inPage < FadeInStart + FadeTime + HoldTime)
+        if (inPage < fadeIn + FadeTime)
+            return (AmigaIntroPhase.FadeIn, FadeSteps - (int)((inPage - fadeIn).Ticks / FadeStepTime.Ticks));
+        if (inPage < fadeIn + FadeTime + HoldTime)
             return (AmigaIntroPhase.Hold, 1);
-        return (AmigaIntroPhase.FadeOut, 1 + (int)((inPage - FadeInStart - FadeTime - HoldTime).Ticks / FadeStepTime.Ticks));
+        return (AmigaIntroPhase.FadeOut, 1 + (int)((inPage - fadeIn - FadeTime - HoldTime).Ticks / FadeStepTime.Ticks));
     }
 
     /// <summary>When a key that came at <paramref name="k"/> is seen: at once in a wait or hold, else at the next one.</summary>
-    private static TimeSpan SeenAt(TimeSpan k)
+    private TimeSpan SeenAt(TimeSpan k)
     {
-        long p = k.Ticks / PageTime.Ticks;
+        long p = Math.Min(_pages - 1, k.Ticks / PageTime.Ticks);
         var pageStart = PageTime * p;
         var inPage = k - pageStart;
-        return Locate(inPage).Item1 switch
+        var fadeIn = FadeStartOf(p);
+        return Locate(inPage, fadeIn).Item1 switch
         {
             AmigaIntroPhase.Gap or AmigaIntroPhase.Hold => k,
-            AmigaIntroPhase.Setup or AmigaIntroPhase.FadeIn => pageStart + FadeInStart + FadeTime,
+            AmigaIntroPhase.Setup or AmigaIntroPhase.FadeIn => pageStart + fadeIn + FadeTime,
             _ => pageStart + PageTime,
         };
     }

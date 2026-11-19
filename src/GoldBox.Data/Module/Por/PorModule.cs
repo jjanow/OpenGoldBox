@@ -48,7 +48,7 @@ public sealed class PorModule : IPorContent
 
     /// <exception cref="UnknownEclProfileException">The manifest names a VM profile the engine does not have.</exception>
     /// <exception cref="ModuleHasNoVmException">No module in the chain names a <c>vm</c>: PoR content is ECL scripts.</exception>
-    /// <exception cref="EclProfileNotRunnableException">The profile is one the engine only decodes (SotSB).</exception>
+    /// <exception cref="EclProfileNotRunnableException">The profile is not PoR's (SotSB runs in the headless VM only).</exception>
     public PorModule(ModuleResolver modules)
     {
         Modules = modules;

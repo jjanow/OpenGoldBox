@@ -10,11 +10,12 @@ public sealed class UnknownEclProfileException(string name)
 }
 
 /// <summary>
-/// A VM profile the engine knows but cannot run: its handler set is not written (SotSB: decoding only).
+/// A VM profile the engine knows but a game host cannot run: the PoR module host (<c>PorModule</c>) and its
+/// encounter, combat and rules code are PoR's; the SotSB handler set runs only in the headless VM so far.
 /// </summary>
 public sealed class EclProfileNotRunnableException(EclProfile profile)
-    : NotSupportedException($"VM profile {profile.Name}: handler set {profile.Handlers} is not implemented " +
-                            "(this engine decodes its scripts but does not run them)")
+    : NotSupportedException($"VM profile {profile.Name}: handler set {profile.Handlers} runs in the headless VM " +
+                            "only; this game host plays Pool of Radiance (ecl-por-1.3) modules")
 {
     public EclProfile Profile { get; } = profile;
 }
@@ -71,6 +72,21 @@ public static class EclProfiles
         ProgramIdsThatExit = new HashSet<ushort> { 9 }.ToFrozenSet(), // camp (0x3B56), then EXIT (0x3BBC)
         CharacterView = EclCharacterView.Por6B00Redirection,
         Handlers = EclHandlerSet.Por13,
+        Cells = new EclCells
+        {
+            OldScriptId = 0x49F2,
+            ViewFlag = 0x49E6,
+            MapId = 0x49C5,
+            MapLoadedClear = 0x6DC9,
+            WallFlags = [0x49E7, 0x49E8],
+            PartySize = 0x6E3E,
+            SurpriseResult = 0x6DCB,
+            InitWrites = [(0x6DE1, 255), (0x6DD2, 0), (0x6DD3, 0), (0x49E5, 0)],
+            InitSetsViewFlag = true,
+            InitClears = [(0x4A00, 0x4A1F), (0x6E79, 0x6E82)],
+            CharacterView = 0x6B00,
+        },
+        RecordSize = 0x11D,
         ScriptBytesSaved = true,
         DiskCell = 0x6E12, // DS:5376
         BankedKinds = new HashSet<string> { "wallset", "monster", "itemList", "treasureList", "effectList" }.ToFrozenSet(),
@@ -82,8 +98,8 @@ public static class EclProfiles
     /// <summary>
     /// Secret of the Silver Blades DOS v1.30 (docs/re/survey-sotsb.md; the same VM in v1.00, v1.10, v1.20 and the 1992
     /// WizardWorks "v1.3"). PoR's VM with the regions moved, its own opcode and IF-skip tables, RETURN-exits and other
-    /// CALL / PROGRAM ids. Decoding only: its handler set is not implemented, so <see cref="EclMemory"/> refuses it.
-    /// Offsets are SotSB v1.30 GAME.OVR file offsets.
+    /// CALL / PROGRAM ids, the cells of <see cref="EclCells"/> and the $7C00 character view. Offsets are SotSB v1.30
+    /// GAME.OVR file offsets.
     /// </summary>
     public static EclProfile Sotsb13 { get; } = new()
     {
@@ -108,25 +124,41 @@ public static class EclProfiles
         UnmappedRead = EclUnmappedRead.StackResidue,           // reader OVR 0xA1DD sets nothing, as PoR
         Opcodes = EclOpcodes.Sotsb,
         ReturnOnEmptyStack = EclReturnOnEmptyStack.Exits,      // OVR 0x170A → EXIT 0x0C0B
-        // CALL OVR 0x3FD1 compares field − 0x7FFF; the raw field values are listed.
+        // CALL OVR 0x3FD1 compares field − 0x7FFF; the raw field values are listed (survey-sotsb.md §10.4).
         CallIds = new Dictionary<ushort, string>
         {
-            [0x2DCB] = "view refresh",
-            [0x6803] = "[?]",
-            [0xB203] = "sound",
-            [0xC018] = "wall ahead read again [?] (PoR's meaning, not re-read)",
-            [0xC01E] = "one square forward",
+            [0x2DCB] = "view refresh (event byte and wall ahead read again, redraw when a flag is set)",
+            [0x6803] = "next frame of an animation table (DS:89F2 / 89F4 / 89F5) [?]",
+            [0xB203] = "sound picked by $03DE (8 or 10)",
+            [0xC018] = "wall ahead read again, only while $4BE6 = 0 (OVR 0x40C7)",
+            [0xC01E] = "one square forward (OVR 0xAD2B)",
         }.ToFrozenDictionary(),
         // PROGRAM OVR 0x41A1.
         ProgramIds = new Dictionary<ushort, string>
         {
-            [0] = "program routine OVR 0x41E5 (training hall as in PoR [?])",
+            [0] = "program routine OVR 0x1D73D via 0x41EA (training hall as in PoR [?], not read)",
             [9] = "camp",
         }.ToFrozenDictionary(),
         ProgramIdsThatExit = new HashSet<ushort> { 9 }.ToFrozenSet(),
         ProgramExitGuardCell = 0x4C38, // OVR 0x422E: EXIT only when $4C38 = 0
         CharacterView = EclCharacterView.Sotsb7C00Redirection,
         Handlers = EclHandlerSet.Sotsb,
+        // survey-sotsb.md §10: every cell read from the handler that uses it.
+        Cells = new EclCells
+        {
+            OldScriptId = 0x4BF2,      // NEWECL OVR 0x184E
+            ViewFlag = 0x4BE6,         // LOADFILES OVR 0x18F9
+            MapId = 0x4BC5,            // OVR 0x190E
+            MapLoadedClear = 0x7EC9,   // OVR 0x1922
+            WallFlags = [0x4BE7, 0x4BE8, 0x4BE9], // LOADPIECES OVR 0x1947, 0x1956, 0x1965
+            PartySize = 0x7F3E,        // character view case 0x33E (OVR 0x9CFD)
+            SurpriseResult = 0x02CB,   // SURPRISE OVR 0x2658: a constant with no region base (lost)
+            InitWrites = [(0x7EE1, 255), (0x7ED2, 0), (0x7ED3, 0), (0x4BE5, 0)], // script init OVR 0x9291–0x92B8
+            InitSetsViewFlag = false,  // no $4BE6 write in OVR 0x922C
+            InitClears = [(0x4C00, 0x4C1F), (0x7F79, 0x7F82)],
+            CharacterView = 0x7C00,
+        },
+        RecordSize = 0x1B7,
         ScriptBytesSaved = false, // reloaded by id from $4BF2
         DiskCell = 0x7F12,        // case 0x312 of the character view (PoR $6E12)
         // ECL, GEO, WALLDEF, 8X8D and ITEM keep the disk digit (DS:7420); monsters are always MON1 (OVR 0x25BDA).
@@ -142,8 +174,8 @@ public static class EclProfiles
     };
 
     /// <summary>
-    /// The profile of code that names none (a DOS game folder, <c>new EclMemory()</c>): the engine runs PoR v1.3 only so
-    /// far (<see cref="Sotsb13"/> decodes but does not run). A module without <c>vm</c> does not get it (<see cref="ForVm"/>).
+    /// The profile of code that names none (a DOS game folder, <c>new EclMemory()</c>): PoR v1.3. A module without
+    /// <c>vm</c> does not get it (<see cref="ForVm"/>).
     /// </summary>
     public static EclProfile Default => Por13;
 

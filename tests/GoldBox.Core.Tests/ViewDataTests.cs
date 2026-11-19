@@ -314,6 +314,58 @@ public class OtherAreaViewTests
         var game = PorGame.FromSave(dir, PorViewArt.Load(dir), save, Path.GetDirectoryName(savePath)!, player, 0);
         Assert.Equal(view, Hash(game.RenderView(false)));
     }
+
+    /// <summary>
+    /// Valjevo Castle (ECL5 blocks 3–7, GEO5 maps 3–7; s28): save A placed with <c>save-area</c>, saved wall sets
+    /// 24/–/1 and $49E7 = $49E8 = 1 (block 6's init sets both before its LOADPIECES 24, 25, 1, so slots 1–2 get the
+    /// two-block set 24 and slot 3 set 1; without them the game would ask for WALLDEF5 block 25, which does not exist).
+    /// Block 3's vector 4 picks map 3 or 5 by the facing ($9C24); blocks 4, 5 and 7 load no wall set (the saved ones
+    /// show) and block 5 loads no map (Load re-reads map $49C5, here 3–6: the hedge maze). Each loaded from the main
+    /// menu in DOSBox-X (MACHINE=ega): 0 differing pixels in all 13 views and after one step west at 4: 8,7 W.
+    /// </summary>
+    public static TheoryData<int, int, int, int, int, string, string> Valjevo() => new()
+    {
+        { 6, 0, 1, 8, Facing.North, "f5b42ed4986d828a2994a3a2af4f2d43ca4b517f3a1348aece1ec3f86424092b", "" },
+        { 6, 0, 5, 8, Facing.East, "f3b1cfcce1d245d7fa61845da466e047891db8c595cc04df446ec0de6bd2bc29", "" },
+        { 4, 0, 14, 10, Facing.North, "20f321f883cb6fd4a466ce96c2bf0b8677cc35c8c0bd94cc1a4370f3495b97c5", "" },
+        { 4, 0, 8, 7, Facing.West, "180c81ec68ff3bdcfd7fdf467135c7ac5147a05011013c7c5c0ac6e7754475a0",
+            "8512e79ddaedd6dcf8f27edc46fc0d8a8c4f62923fcb208a6f035a677b59bd9a" },
+        { 3, 0, 1, 9, Facing.West, "2df21bf318e4147c2950a1579121885e5a904bc130fd5f4458841518250b1523", "" },
+        { 3, 0, 13, 7, Facing.East, "ca0d9f6d9d1b5608df9c3f34cac1af834dbf28bde66dbb5ecaafc6e79f1509bc", "" },
+        { 5, 3, 8, 8, Facing.North, "e643305ed447d89866d4f7b2e46ea008575b3f667480f75da5a4e1ee912e5806", "" },
+        { 5, 4, 6, 10, Facing.South, "af67db3f0633a78228498bcf39fd0c785b2a5544683d30b473053c88ea4da84a", "" },
+        { 5, 5, 5, 6, Facing.East, "4c578fe395bae93daa3ba8b5f18885b2050774711471e0f12e6a8ffb8f906ee6", "" },
+        { 5, 6, 9, 7, Facing.West, "206a569c2170ec424bb6ba0f2f3cb05bfc8c1508d6cf60bb10867ff5862e1996", "" },
+        { 7, 0, 2, 5, Facing.South, "7c9b144182a42938c96838c624878042265a3915f7268c9e879b769459bdfbdd", "" },
+        { 7, 0, 7, 9, Facing.North, "52d6f4ecb2612fc3a5d96b7c62b20a63361b3519064027b7b94648dd7d211cac", "" },
+        { 7, 0, 10, 5, Facing.West, "d1462fe9e40c03dafd2d86ec513cd42df1c6e56996362e45b943d521c04ad4b7", "" },
+    };
+
+    [PorTheory]
+    [MemberData(nameof(Valjevo))]
+    public void Valjevo_views_match_dosbox(int script, int map, int x, int y, int facing, string view, string step)
+    {
+        var dir = PorData.Open();
+        var savePath = dir.Find("SAVGAMA.DAT")!;
+        var save = PorSaveGame.PlaceInArea(File.ReadAllBytes(savePath), dir, script, x, y, facing, 0, [24, -1, 1]);
+        void Cell(int addr, int v) => save[PorSaveGame.Off4900 + 2 * (addr - 0x4900)] = (byte)v;
+        Cell(0x49E7, 1);
+        Cell(0x49E8, 1);
+        if (map != 0)
+            Cell(0x49C5, map);
+        var art = PorViewArt.Load(dir);
+        var area = PorArea.FromSave(dir, art, save, Path.GetDirectoryName(savePath)!);
+        Assert.Empty(art.Diagnostics);
+        Assert.Equal(view, Hash(area.RenderView(art, false)));
+        var player = new PorPlayer(new GoldBox.Core.Ecl.ScriptedEclHost { StopWhenInputMissing = true },
+            new GoldBox.Core.Game.ScriptedEncounterUi { StopWhenInputMissing = true }, new GoldBox.Core.Game.RecordingCombatRunner(), new NoDoors());
+        var game = PorGame.FromSave(dir, PorViewArt.Load(dir), save, Path.GetDirectoryName(savePath)!, player, 0);
+        Assert.Equal(view, Hash(game.RenderView(false)));
+        if (step.Length == 0)
+            return;
+        game.Loop.Execute(AreaCommand.Forward);
+        Assert.Equal(step, Hash(game.RenderView(false)));
+    }
 }
 
 /// <summary>Load (0x1FBEE–0x1FC86) re-reads the saved wall sets before vector 4 (s23).</summary>

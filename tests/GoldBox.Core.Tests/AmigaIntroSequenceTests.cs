@@ -33,8 +33,12 @@ public class AmigaIntroSequenceTests
         Assert.Equal((0, AmigaIntroPhase.FadeOut, 1), At(s, In + Fade + AmigaIntroSequence.HoldTime));
         Assert.Equal((0, AmigaIntroPhase.FadeOut, 16), At(s, Page - Eps));
         Assert.Equal((1, AmigaIntroPhase.Gap, 16), At(s, Page));
-        // the last page (the title) has no fade out: the closing black screen, then the end
-        var end = Page * 2 + In + Fade + AmigaIntroSequence.HoldTime;
+        // the last page (the title): a set-up one frame longer, no fade out; the closing black screen, then the end
+        var title = AmigaIntroSequence.TitleFadeInStart;
+        Assert.Equal((2, AmigaIntroPhase.Setup, 16), At(s, Page * 2 + In));
+        Assert.Equal((2, AmigaIntroPhase.FadeIn, 16), At(s, Page * 2 + title));
+        Assert.Equal((2, AmigaIntroPhase.FadeIn, 15), At(s, Page * 2 + title + step));
+        var end = Page * 2 + title + Fade + AmigaIntroSequence.HoldTime;
         Assert.Equal((2, AmigaIntroPhase.Hold, 1), At(s, end - Eps));
         Assert.Equal(AmigaIntroPhase.Closing, At(s, end).Item2);
         Assert.Equal(16, s.Divisor);
@@ -84,6 +88,28 @@ public class AmigaIntroSequenceTests
     }
 
     [Fact]
+    public void A_button_in_the_titles_longer_set_up_is_seen_at_its_hold()
+    {
+        var s = new AmigaIntroSequence(2);
+        s.Advance(TimeSpan.Zero);
+        var k = Page + In;                                                        // a panel would be fading in here
+        s.Key(k);
+        Assert.Equal((1, AmigaIntroPhase.Setup, 16), (s.Page, s.Phase, s.Divisor));
+        var hold = Page + AmigaIntroSequence.TitleFadeInStart + Fade;
+        s.Advance(hold - Eps);
+        Assert.Equal(AmigaIntroPhase.FadeIn, s.Phase);
+        s.Advance(hold);
+        Assert.Equal(AmigaIntroPhase.Closing, s.Phase);
+        s.Advance(hold + Close);
+        Assert.Equal(AmigaIntroPhase.Done, s.Phase);
+
+        var one = new AmigaIntroSequence(1);                                      // the title alone
+        one.Advance(TimeSpan.Zero);
+        Assert.Equal(AmigaIntroPhase.Setup, At(one, In).Item2);
+        Assert.Equal(AmigaIntroPhase.Hold, At(one, AmigaIntroSequence.TitleFadeInStart + Fade).Item2);
+    }
+
+    [Fact]
     public void Fades_divide_each_component_and_the_timing_is_the_documented_one()
     {
         Assert.Equal(0, AmigaIntroSequence.Faded(15, 16));
@@ -96,7 +122,8 @@ public class AmigaIntroSequenceTests
         Assert.Equal(5013, AmigaIntroSequence.HoldTime.TotalMilliseconds, 0);   // 1001 passes, 250.25 frames
         Assert.Equal(406, AmigaIntroSequence.GapTime.TotalMilliseconds, 0);     // 81 passes, 20.25 frames
         Assert.Equal(AmigaIntroSequence.Frame * 2, AmigaIntroSequence.FadeStepTime);
-        Assert.Equal(AmigaIntroSequence.Frame * 2, AmigaIntroSequence.SetupTime); // [?]
+        Assert.Equal(AmigaIntroSequence.Frame * 2, AmigaIntroSequence.SetupTime);      // panels (page 1: [?])
+        Assert.Equal(AmigaIntroSequence.Frame * 3, AmigaIntroSequence.TitleSetupTime); // the 16,000-word blit
         Assert.Equal(TimeSpan.FromSeconds(3), AmigaIntroSequence.ClosingTime);    // Delay(150), 50 ticks a second
     }
 }

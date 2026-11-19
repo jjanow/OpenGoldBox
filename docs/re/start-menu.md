@@ -18,7 +18,9 @@ START's main program (image 0x00F6): start-up 0xE600; unless the first argument 
 
 - **Start-up 0xE600** allocates and zeroes the VM zones, sets the party square DS:6AAD/6AAE/6AAF := 15, 1, 6 (west),
   the disk byte DS:5376 := 1, the game speed DS:49E2 := 1, the location type DS:49F9/49FA := 1, the party lists
-  DS:5D92/5D96 := nil, $6E3E := 0, DS:6B1C := 0xFF and others (0xE965–0xEA30).
+  DS:5D92/5D96 := nil, $6E3E := 0, DS:6B1C := 0xFF and others (0xE965–0xEA30), then loads the start-up art and
+  ITEMS with the loading message (GAME.OVR 0xE5D4) on row 24 (the Amiga does this after its intro: §1a, "After the
+  intro"; the Client draws the message on neither).
 - **The party menu 0x19AE0** sets DS:5376 := 3 (the character disk) and DS:49F3 := 0, then loops (section 2). Begin
   sets DS:49F3 := 4 and returns; Load returns when a game was loaded (DS:49F8 := 1).
 - **The game loop 0x403E** takes the script id from VM $49F2 (the zone the start-up zeroed: 0 on a new game). With
@@ -136,13 +138,34 @@ of returns during that one line each frame. The poll loop is 42 cycles (`move.w 
 - Fade pass: `jsr` 20, the poll 60 with `rts`, `dbra` 10 = 90 cycles, no CIA: five or six on the line, so a step's 9
   passes span **two frames** whatever the phase; the colour arithmetic of a step (16 colours, three `divu`) takes
   some 25 lines, after line 128, so the next step's passes start on the next frame's line 128. A fade = 32 frames.
-- Set-up between the gap and the fade: a whole-screen blitter clear begun on line 128 (16,000 words, two clears
-  before the first page), then the blit waits for line 240; at about 2 colour clocks a blitter word the clear ends
-  past line 240, so the fade's first pass comes two frames after the gap's last `[?]` (blitter speed, not the
-  program; one frame if the clear were faster).
+- **Set-up between the gap and the fade (s28, P from the code and the HRM's DMA rules; no emulator run).** What shows:
+  black. The clear and the blit write the planes while the copper colours are still the last fade-out's (all
+  components divided by 16) or, before the first page, the copper list's black table; nothing reads input. The
+  Client draws the page with the black palette, which looks the same. Duration: the clear (+0x7EE: BLTCON0 $0100,
+  D only, BLTSIZE $C814 = 800 rows × 20 words) is waited for by the CPU (+0x822 polls DMACONR BBUSY); the blit
+  (+0x512 panels, +0x680 title) waits for line 240 (+0x528 / +0x696), then blits plane by plane (BLTCON0 $09F0, A → D),
+  waiting for BBUSY after each. At the HRM's two blitter cycles a word a clear needs 32,000 colour clocks (> 141
+  lines), so begun on line 128 it ends past line 240 of that frame and well before line 240 of the next: the blit
+  starts on line 240 one frame after the gap's last pass. The fade then computes its first step's colours (some 25
+  lines, s27) before its first pass, so the blit must end by about line 103 for that pass to come on the next line
+  128, **two frames** after the gap's last. From line 240 to line 103 (176 lines, 39,952 colour clocks) refresh (4 a
+  line), audio (4 a line, song 1 playing) and the 4-plane fetches on lines 240–243 and 44–102 (80 a line) leave
+  33,504 slots, 30,688 if sprite DMA runs (16 a line). The CPU polls BBUSY from chip memory (hunk 4 is MEMF_CHIP in
+  the hunk header) and BLTPRI is the system default, off (nothing found setting it: the only DMACON writes are hunk 4
+  +0x280, $8380, and the program's audio ones), so it takes one slot after every three blitter cycles (A → D has no
+  idle cycle): the blitter gets 25,128, or 23,016 with sprites. Panels: the 16- to 110-row ones (≤ 17,600 cycles)
+  take two frames; the 146-row AD&D logo page (page 5, 23,360 cycles) takes two without sprite DMA and three with it
+  `[?]`. The **title** (200 rows, 16,000 words, 32,000 cycles) misses either way, and would fit only with BLTPRI on
+  and no sprite DMA: its fade starts **three frames** after its gap (Core `AmigaIntroSequence.TitleSetupTime`; `[?]`
+  derived from the HRM's DMA rules, not measured). Page 1 has two clears (hunk 4 +0xE, +0x14, 64,000 cycles from
+  line 128): they end before the next frame's line 240 only if the intro's frames fetch no sprites and the blitter's
+  idle cycles need no free slot, so page 1 takes two or three frames `[?]`. The Client gives every panel two (pages 1
+  and 5 off by at most one frame, 20 ms). Not measured (DOSBox-X has no Amiga; a cycle-exact Amiga emulator would
+  settle sprite DMA and the idle cycles).
 - PAL: frame 313 × 227 colour clocks at 3,546,895 Hz = 20.03 ms; a panel page ≈ 20.25 + 2 + 32 + 250.25 + 32
-  frames ≈ 6.7 s, all nine ≈ 60 s plus the 3 s close. NTSC (7.16 MHz, 455-cycle lines) gives the same frame counts
-  at 16.72 ms (hold ≈ 4.2 s); the Client uses PAL, as its Amiga music does. The 3 s close is real time on both.
+  frames (the title 20.25 + 3 + 32 + 250.25) ≈ 6.7 s, all nine ≈ 60 s plus the 3 s close. NTSC (7.16 MHz, 455-cycle lines) gives the same frame counts
+  at 16.72 ms (hold ≈ 4.2 s), except the set-ups: a 263-line frame leaves 151 lines from line 240 to the next line
+  128, so more pages would take a third frame `[?]`; the Client uses PAL, as its Amiga music does. The 3 s close is real time on both.
 - `[?]` A faster CPU (68020+, accelerator) gives more passes a frame and so shorter gaps and holds (a fade step stays
   two frames only while 5–8 passes fit a line); an interrupt landing on line 128 (keyboard, CIA timers; the music is
   a vertical-blank server, at the frame's top) would remove passes. The intro's own copper list only sets pointers
@@ -156,6 +179,35 @@ black (the reserved run made black) with song 1 still playing, then stops the so
 pad button or click also counts (full controller support), and one that comes during a fade or set-up ends the
 pages at the next wait or hold (the Amiga reads the button's level only then); nothing skips the closing 3 s (the
 Amiga reads nothing then).
+
+**After the intro: hunk 25 +0x12A8 (read s28, P; no emulator run).** The program calls it right after `intro`
+returns (hunk 10 +0x594) and before PlaySong(0) (+0x59A), so song 1 plays on through it. It is the Amiga's copy of
+DOS's start-up 0xE600 (§1), moved after the intro: the same seven allocations (0x800, 0x800, 0x400, 0x1E00, 0x588,
+0x924, 0x400), the same zeroed zones and start values (0x9900 at hunk 32 +0xB4 = DS:49ED, 0xE8 / 0xDB = DS:6F69 /
+6F68, the square 15, 1, 6 at hunk 32 +0x176F, the speed 1 at +0xA8), the same loads (8X8D 0xC9 into the 0x588
+buffer, hunk 25 +0xD9C; blocks 0xCA → slot 4 and 0xCB → slot 0, hunk 22 +0x1616 as DOS 0x428:0x25; sqrpaci 1 and 2;
+COMSPR 0–11 into slots 13–24 and 12 into 25, hunk 22 +0x193A; then `pooldata:ITEMS`, read from byte 2, 0x800 bytes),
+then two routines that only fill jump tables (hunk 22 +0x5074, hunk 7 +0x3282: no calls, no drawing). The disk
+prefix `poolgame:` (hunk 31 +0x18EA) is saved, emptied for the loads and put back.
+- **Visible: the loading message** (hunk 26 +0x184, the same text as DOS GAME.OVR 0xE5D4). Row 24 is cleared
+  (hunk 19 +0x58A8 → hunk 25 +0x197A: SetAPen 0, RectFill of the text cells (0, 24)–(39, 24); DOS calls 0x3C5:0x2F
+  at the same points, presumably the same clear, not read),
+  then the message is drawn at column 0, row 24 by the text routine hunk 25 +0xC3C with colour 24: SetDrMd JAM2,
+  Move(8·x, 8·y + 6), SetAPen 24, Text; then Move one pixel right, SetAPen 25, SetDrMd JAM1, Text again (a colour
+  under 16 would become pen 16 + c − c mod 2 and the next one). Pens 24 and 25 are interface colours (registers
+  16–31, loaded once from hunk 2 +0, §4 of por-art-formats.md), not black, so the message shows on the black screen
+  the code wheel left. After the loads row 24 is cleared again (+0x16BE), then the routine returns and the music
+  stops. How long the message stays up is the floppy's load time `[?]` (no code timing). DOS draws the same message
+  through 0x709:0x626 at column 0, row 24, colour 10 (0xEA5E–0xEA76; that routine's arguments as in combat-map.md
+  "Start messages") at start-up, before the intro, and calls 0x3C5:0x2F again after its loads (0xEBD0).
+- **Input:** the loaders flush the window's IDCMP queue (hunk 25 +0xA08: GetMsg/ReplyMsg until empty; called by
+  hunk 25 +0, hunk 22 +0x1616 and +0x193A), so keys typed during the intro and its closing 3 s are thrown away during the
+  loads (the last flush is in the COMSPR loads; the ITEMS read comes after it). `pooldata:ITEMS` is opened by hunk 10 +0, which on failure asks for the data disk (hunk 26 +0x1CA;
+  hunk 25 +0xE78 clears row 24, writes a line at column 1, row 24 and waits for input through +0xA38; hunk 25 +0xEC6
+  goes through Intuition): not reached with both disks in.
+- **Client:** no change. Its loads take no time, so neither platform's loading message is drawn (a departure: the
+  originals show it for the disk time); `AmigaIntroScreen` swallows every input until it hands over, as the flush
+  does, and stops song 1 at the end of the closing 3 s, which is where the Amiga stops it with no load time.
 
 ## 2. The party menu (0x19AE0)
 

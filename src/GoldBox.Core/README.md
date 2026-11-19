@@ -134,6 +134,18 @@ dotnet run --project src/GoldBox.Tools -- ecl-compare GAMEDIR [FIXTURES] [--capt
 
 Set `GOLDBOX_POR_DIR` to a folder holding your own PoR v1.3 files (`ECL1.DAX`–`ECL8.DAX`, `SAVGAMA.DAT`,
 `SAVGAMJ.DAT`, `CHRDATA1-6.*`), outside the repo. Traces of the real game contain its text: keep them out of the repo.
+Extra files in that folder are fine: the tests that pin the importer's totals (`PorModuleTests`) import a copy holding
+only the v1.3 release's files (`PorData.ReleaseDir`), so the test saves B–I of `tools/scripts/por_test_saves.py`
+(and the `FINAL2.DAX` it adds) or a played game's saves don't change them.
+
+The Amiga tests also need `GOLDBOX_POR_AMIGA_DIR`: the unpacked disks with `program` and `intro` from disk A and the
+`.dax` files from disk B (found as the importer finds them: any case, up to three folders deep). A folder without
+`program` or `pic.dax` skips the Amiga tests, one without `intro` skips the intro tests, each with a reason naming
+the missing file (`PorAmigaData`, `[PorAmigaIntroFact]`).
+
+`tests/GoldBox.Client.Tests` reads the same variables. Build new rigs from `Support/TestRig.cs`: `TestRig.Player`
+makes a `ClientPlayer` with `TypesText` off, so a rig that steps through scripts gets PRINT's text at once instead of
+one typing delay per character (the Client itself keeps typing on, as the program does).
 
 ## Doors (`Doors/`)
 

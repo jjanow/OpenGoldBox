@@ -151,6 +151,8 @@ public sealed class ScriptedEclHost : IEclHost
         WallSetLoaded?.Invoke(slot, set);
     }
     public void Clock(ushort minutes) => Log($"Clock {minutes}");
+    public void AdvanceClock(byte amount, byte unit) => Log($"AdvanceClock {amount} {unit}");
+    public void ExperienceMessage(string? memberName) => Log($"ExperienceMessage {memberName ?? "(party)"}");
     public void Call(ushort routine) => Log($"Call {routine:X4}");
     public void Program(ushort program) => Log($"Program {program}");
     public void Protect(ushort address) => Log($"Protect {address:X4}");

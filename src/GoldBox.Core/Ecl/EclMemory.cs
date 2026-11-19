@@ -18,9 +18,11 @@ public sealed class EclPartyPosition
 
 /// <summary>
 /// The VM address space (docs/re/ecl-format.md "VM memory map"): three 16-bit cell areas, the 8-bit script area and
-/// the special addresses. Reads take their width from the region, never from the operand type. $6B00-area reads go
-/// through the redirection list (routine 0x7C8F) first; writes always store the cell, then apply the side effects
-/// (routine 0x7F47).
+/// the special addresses. Reads take their width from the region, never from the operand type. Character-view reads
+/// ($6B00 area in PoR, $7C00 in SotSB) go through the redirection list (PoR routine 0x7C8F, SotSB OVR 0x9830) first;
+/// writes always store the cell, then apply the side effects (PoR 0x7F47, SotSB OVR 0x9D20). The areas and the
+/// dialect's cases come from the <see cref="Profile"/>: the members named after PoR's areas (<see cref="Cells4900"/>
+/// …) hold the same-role area of another dialect (SotSB: $4B00, $7C00, $7A00).
 /// </summary>
 public sealed class EclMemory
 {
@@ -38,10 +40,13 @@ public sealed class EclMemory
     /// <summary>Special addresses with a write case that does nothing (writer 0x814A): $00FB, $00FC, $00B1, $D022.</summary>
     public static readonly ushort[] SpecialNoOpWrites = [0x00FB, 0x00FC, 0x00B1, 0xD022];
 
-    private readonly ushort[] _cells4900 = new ushort[1024];
-    private readonly ushort[] _cells6B00 = new ushort[1024];
-    private readonly ushort[] _cells9700 = new ushort[512];
-    private readonly byte[] _script = new byte[EclLayout.AreaSize];
+    private readonly ushort[] _cells4900;
+    private readonly ushort[] _cells6B00;
+    private readonly ushort[] _cells9700;
+    private readonly byte[] _script;
+    /// <summary>The areas by role (PoR / SotSB): globals $4900 / $4B00, character view $6B00 / $7C00, $9700 / $7A00, script.</summary>
+    private readonly EclMemoryRegion _globals, _view, _third, _scriptRegion;
+    private readonly bool _sotsb;
 
     public EclVmPolicy Policy { get; }
     public EclPartyPosition Position { get; } = new();
@@ -151,16 +156,52 @@ public sealed class EclMemory
     {
         Policy = policy ?? EclVmPolicy.Default;
         Profile = profile ?? EclProfiles.Default;
-        if (Profile.Handlers != EclHandlerSet.Por13)
-            throw new EclProfileNotRunnableException(Profile);
+        _sotsb = Profile.Handlers == EclHandlerSet.Sotsb;
+        var words = Profile.Regions.Where(r => r.CellBits == 16).ToList();
+        static bool In(EclMemoryRegion r, ushort a) => a >= r.Start && a <= r.End;
+        _view = words.Single(r => In(r, Profile.Cells.CharacterView));
+        _globals = words.Single(r => In(r, Profile.Cells.ViewFlag));
+        _third = words.Single(r => r != _view && r != _globals);
+        _scriptRegion = Profile.Regions.Single(r => r.CellBits == 8);
+        _cells4900 = new ushort[_globals.Cells];
+        _cells6B00 = new ushort[_view.Cells];
+        _cells9700 = new ushort[_third.Cells];
+        _script = new byte[Profile.ScriptAreaSize];
     }
 
     public Span<byte> ScriptArea => _script;
+    /// <summary>The globals area: PoR $4900–$4CFF, SotSB $4B00–$4EFF.</summary>
     public Span<ushort> Cells4900 => _cells4900;
+    /// <summary>The character-view area: PoR $6B00–$6EFF, SotSB $7C00–$7FFF.</summary>
     public Span<ushort> Cells6B00 => _cells6B00;
+    /// <summary>The third word area: PoR $9700–$98FF, SotSB $7A00–$7BFF.</summary>
     public Span<ushort> Cells9700 => _cells9700;
 
-    /// <summary>Region name of an address: "4900", "6B00", "9700", "script" or "special".</summary>
+    /// <summary>
+    /// SotSB DS:67E7, the game mode, and DS:67E8, the mode before it: a write to $4BE6 that changes its value sets the
+    /// mode to 4 and keeps the old one (writer OVR 0x9F68). [?] The other writers and the start value were not read
+    /// (survey-sotsb.md §2). PoR has no such write case.
+    /// </summary>
+    public byte GameMode { get; set; }
+    /// <summary>SotSB DS:67E8: see <see cref="GameMode"/>.</summary>
+    public byte PreviousGameMode { get; set; }
+
+    /// <summary>
+    /// SotSB DS:A4D1: set by LOADCHAR when the list has no member v, cleared when it has (also cleared at OVR 0x3E01,
+    /// in ADDNPC). While set, a read of $7D00 gives 0 (OVR 0x9B40).
+    /// </summary>
+    public bool MemberMissing { get; set; }
+
+    /// <summary>Region name of an address in this memory's profile ("4B00", "7C00", "script", … or "special").</summary>
+    public string Region(ushort a)
+    {
+        foreach (var r in Profile.Regions)
+            if (a >= r.Start && a <= r.End)
+                return r.Name;
+        return "special";
+    }
+
+    /// <summary>PoR region name of an address: "4900", "6B00", "9700", "script" or "special" (<see cref="Region"/> for any profile).</summary>
     public static string RegionOf(ushort a) => a switch
     {
         >= Area4900 and <= Area4900End => "4900",
@@ -171,30 +212,39 @@ public sealed class EclMemory
     };
 
     /// <summary>
-    /// Script byte at VM address <paramref name="address"/> as the interpreter fetches code: offset A − $9900
-    /// (buffer + (A + 0x6700) mod 0x10000). Null when the offset is outside the 7680-byte area.
+    /// Script byte at VM address <paramref name="address"/> as the interpreter fetches code: offset A − base
+    /// (PoR: buffer + (A + 0x6700) mod 0x10000; SotSB: buffer + A − 0x8000). Null when the offset is outside the area.
     /// </summary>
     public byte? FetchCode(int address)
     {
-        int off = (address + 0x6700) & 0xFFFF;
+        int off = (address - Profile.ScriptBase) & 0xFFFF;
         return off < _script.Length ? _script[off] : null;
     }
 
-    /// <summary>The stored cell (or script byte) without redirection; null for special addresses.</summary>
-    public ushort? Cell(ushort a) => a switch
-    {
-        >= Area4900 and <= Area4900End => _cells4900[a - Area4900],
-        >= Area6B00 and <= Area6B00End => _cells6B00[a - Area6B00],
-        >= Area9700 and <= Area9700End => _cells9700[a - Area9700],
-        >= EclLayout.Base and <= EclLayout.End => _script[a - EclLayout.Base],
-        _ => null,
-    };
+    private bool InView(ushort a) => a >= _view.Start && a <= _view.End;
 
-    /// <summary>VM read (GAME.OVR 0x82DF).</summary>
+    /// <summary>The stored cell (or script byte) without redirection; null for special addresses.</summary>
+    public ushort? Cell(ushort a)
+    {
+        if (a >= _globals.Start && a <= _globals.End)
+            return _cells4900[a - _globals.Start];
+        if (InView(a))
+            return _cells6B00[a - _view.Start];
+        if (a >= _third.Start && a <= _third.End)
+            return _cells9700[a - _third.Start];
+        if (a >= _scriptRegion.Start && a <= _scriptRegion.End)
+            return _script[a - _scriptRegion.Start];
+        return null;
+    }
+
+    /// <summary>VM read (PoR GAME.OVR 0x82DF; SotSB OVR 0xA0F1).</summary>
     public ushort Read(ushort a)
     {
-        if (a is >= Area6B00 and <= Area6B00End && TryRedirectRead(a, out var r))
+        if (InView(a) && (_sotsb ? TryRedirectReadSotsb(a, out var r) : TryRedirectRead(a, out r)))
             return r;
+        // SotSB OVR 0xA10C: a read of $4BEA gives the facing byte DS:89D9 instead of the cell.
+        if (_sotsb && a == 0x4BEA)
+            return Position.Facing;
         if (Cell(a) is { } c)
             return c;
         switch (a)
@@ -202,13 +252,18 @@ public sealed class EclMemory
             // P (reader 0x82DF): x and y are both sign-extended bytes (DS:6AAD / DS:6AAE).
             case 0xC04B: return (ushort)(sbyte)Position.X;
             case 0xC04C: return (ushort)(sbyte)Position.Y;
-            case 0xC04D: return (ushort)(Position.Facing / 2);
+            // SotSB OVR 0xA20C: the raw facing while $4BE6 = 0, facing / 2 otherwise; PoR always halves it.
+            case 0xC04D:
+                return _sotsb && _cells4900[Profile.Cells.ViewFlag - _globals.Start] == 0
+                    ? Position.Facing
+                    : (ushort)(Position.Facing / 2);
             case 0xC04E: return Position.WallAhead;
             case 0xC04F: return Position.EventByte;
             // P: the 8-way facing byte DS:6AAF (0, 2, 4, 6), unsigned.
             case 0x033D: return Position.Facing;
             // P: DS:6F6E / DS:6F6A / DS:6F6C, which no program code writes (DOSBox: 0, also after a
-            // script wrote these addresses). Their writes are ignored.
+            // script wrote these addresses). Their writes are ignored. SotSB: DS:8F52 / 8F4E / 8F50 (OVR 0xA1AC),
+            // which no byte of GAME.OVR or START.EXE writes either; 0 as in PoR [?] (not run).
             case 0x00B1 or 0x00FB or 0x00FC: return 0;
         }
         return UndefinedRead(a == 0x035F || a == 0xC059
@@ -224,18 +279,33 @@ public sealed class EclMemory
         return v;
     }
 
-    /// <summary>VM write (GAME.OVR 0x814A). Writes to unlisted special addresses are ignored (P) and logged.</summary>
+    /// <summary>
+    /// VM write (PoR GAME.OVR 0x814A; SotSB OVR 0x9F3A, the same special cases). Writes to unlisted special addresses
+    /// are ignored (P) and logged.
+    /// </summary>
     public void Write(ushort a, ushort value)
     {
+        if (_sotsb && a == Profile.Cells.ViewFlag && _cells4900[a - _globals.Start] != value)
+        {
+            // OVR 0x9F68: a changed $4BE6 keeps the game mode in DS:67E8 and sets DS:67E7 = 4 (before the store).
+            PreviousGameMode = GameMode;
+            GameMode = 4;
+        }
         if (StoreCell(a, value))
         {
-            if (a is 0x49FD or 0x49FE)
+            int sky = _globals.Start + 0xFD; // PoR $49FD/$49FE, SotSB $4BFD/$4BFE
+            if (a == sky || a == sky + 1)
             {
-                ViewRedrawFlags |= ViewRedraw.Sky; // 0x8182: DS:84E8 := 1
+                ViewRedrawFlags |= ViewRedraw.Sky; // PoR 0x8182: DS:84E8 := 1; SotSB OVR 0x9F61: DS:A4CE := 1
                 SkyCeilingWritten?.Invoke(a, value);
             }
-            if (a is >= Area6B00 and <= Area6B00End)
-                WriteSideEffects(a, value);
+            if (InView(a))
+            {
+                if (_sotsb)
+                    WriteSideEffectsSotsb(a, value);
+                else
+                    WriteSideEffects(a, value);
+            }
             return;
         }
         ushort old;
@@ -281,29 +351,34 @@ public sealed class EclMemory
     private bool StoreCell(ushort a, ushort value)
     {
         ushort old;
-        switch (a)
+        if (a >= _globals.Start && a <= _globals.End)
         {
-            case >= Area4900 and <= Area4900End:
-                old = _cells4900[a - Area4900];
-                _cells4900[a - Area4900] = value;
-                Written?.Invoke(new EclMemoryWrite(a, "4900", old, value));
-                return true;
-            case >= Area6B00 and <= Area6B00End:
-                old = _cells6B00[a - Area6B00];
-                _cells6B00[a - Area6B00] = value;
-                Written?.Invoke(new EclMemoryWrite(a, "6B00", old, value));
-                return true;
-            case >= Area9700 and <= Area9700End:
-                old = _cells9700[a - Area9700];
-                _cells9700[a - Area9700] = value;
-                Written?.Invoke(new EclMemoryWrite(a, "9700", old, value));
-                return true;
-            case >= EclLayout.Base and <= EclLayout.End:
-                // P: the 16-bit result goes through the writer and a script-area destination keeps the low byte.
-                old = _script[a - EclLayout.Base];
-                _script[a - EclLayout.Base] = (byte)value;
-                Written?.Invoke(new EclMemoryWrite(a, "script", old, (byte)value));
-                return true;
+            old = _cells4900[a - _globals.Start];
+            _cells4900[a - _globals.Start] = value;
+            Written?.Invoke(new EclMemoryWrite(a, _globals.Name, old, value));
+            return true;
+        }
+        if (InView(a))
+        {
+            old = _cells6B00[a - _view.Start];
+            _cells6B00[a - _view.Start] = value;
+            Written?.Invoke(new EclMemoryWrite(a, _view.Name, old, value));
+            return true;
+        }
+        if (a >= _third.Start && a <= _third.End)
+        {
+            old = _cells9700[a - _third.Start];
+            _cells9700[a - _third.Start] = value;
+            Written?.Invoke(new EclMemoryWrite(a, _third.Name, old, value));
+            return true;
+        }
+        if (a >= _scriptRegion.Start && a <= _scriptRegion.End)
+        {
+            // P: the 16-bit result goes through the writer and a script-area destination keeps the low byte.
+            old = _script[a - _scriptRegion.Start];
+            _script[a - _scriptRegion.Start] = (byte)value;
+            Written?.Invoke(new EclMemoryWrite(a, "script", old, (byte)value));
+            return true;
         }
         return false;
     }
@@ -462,19 +537,215 @@ public sealed class EclMemory
         Written?.Invoke(new EclMemoryWrite(a, "char", old, value));
     }
 
+    private void SetRecordWord(EclCharacter c, ushort a, int field, ushort value)
+    {
+        var old = c.Word(field);
+        c.SetWord(field, value);
+        Written?.Invoke(new EclMemoryWrite(a, "char", old, value));
+    }
+
+    // -----------------------------------------------------------------------------------------------------------------
+    // SotSB $7C00-area redirection (survey-sotsb.md §10.2: reader OVR 0x9830, writer OVR 0x9D20)
+    // -----------------------------------------------------------------------------------------------------------------
+
+    /// <summary>
+    /// SotSB reader cases (OVR 0x9830), by offset from $7C00. Each case reads the current character's record (the
+    /// pointer DS:7D38); a case with no value set reads stack residue. An offset with no case reads the cell.
+    /// </summary>
+    private bool TryRedirectReadSotsb(ushort a, out ushort v)
+    {
+        v = 0;
+        int k = a - _view.Start;
+        switch (k)
+        {
+            case 0x312: // OVR 0x9CEE: the disk byte DS:7420
+                v = Disk;
+                return true;
+            case 0x33E: // OVR 0x9CFD: the cell $7F3E itself, read through the area pointer
+                return false;
+            case 0x2B1 or 0x2B4:
+            {
+                // OVR 0x9C1F → 0x97CF: list members passed before the current record (the list length when it is
+                // not listed or nil), as a byte.
+                var p = Party;
+                if (p is null)
+                {
+                    CurrentCharacter(a);
+                    return false;
+                }
+                v = (byte)(p.Current is not null ? p.CurrentIndex : p.Members.Count);
+                return true;
+            }
+            case 0x10D: // OVR 0x9BEB: the case is there, but no value is set
+                v = UndefinedRead($"read of ${a:X4}: the reader has a case for it but sets no value (stack residue)");
+                return true;
+            case 0x100 when MemberMissing: // OVR 0x9B40: DS:A4D1 set by LOADCHAR → 0
+                v = 0;
+                return true;
+        }
+        bool record = k is 0x15 or 0x18 or 0x19 or 0x72 or 0x73 or 0x76 or 0x9B or 0xA0 or (>= 0xA5 and <= 0xAC) or 0xB8
+            or 0xBB or 0xBD or 0xBF or 0xC1 or 0xC3 or 0xC5 or 0xC9 or 0xCA or 0xCB or 0xCC or 0xCF or 0xD0 or 0xD6
+            or 0xD8 or 0xF7 or 0xF9 or 0x100 or 0x10C or 0x119 or 0x11B or 0x2CF;
+        if (!record)
+            return false;
+        var c = CurrentCharacter(a);
+        if (c is null)
+            return false;
+        v = k switch
+        {
+            0x15 => c[0x13],
+            0x18 => c[0x19],
+            0x19 => c[0x1B],
+            0x72 => (ushort)(sbyte)c[0x6B],
+            0x73 => (ushort)(sbyte)c[0x6C],
+            0x76 => c[0x70],
+            0x9B => c[0xE9],
+            0xA0 => (ushort)(sbyte)c[0xEE],
+            >= 0xA5 and <= 0xAC => c[0xF3 + (k - 0xA5)], // OVR 0x98FA: record 0xF2 + (k − 0xA4)
+            0xB8 => c[0xFF],
+            0xBB or 0xBD or 0xBF or 0xC1 or 0xC3 or 0xC5 => c.Word(0x103 + (k - 0xBB)),
+            // OVR 0x99A9–0x9AE4: flag · record a + record b, signed bytes, 16-bit result.
+            0xC9 => SotsbLevelPair(c, 0x11D, 0x116),
+            0xCA => SotsbLevelPair(c, 0x118, 0x111),
+            0xCB => SotsbLevelPair(c, 0x11E, 0x117),
+            0xCC => SotsbLevelPair(c, 0x11A, 0x113),
+            0xCF => SotsbLevelPair(c, 0x11B, 0x114),
+            0xD0 => SotsbLevelPair(c, 0x11C, 0x115),
+            0xD6 => (ushort)(sbyte)c[0x11F],
+            0xD8 => (ushort)(sbyte)c[0x120],
+            0xF7 => c.Word(0x14E),
+            0xF9 => c[0x150],
+            // OVR 0x9B4E: record 0x1A6 mapped; any other value 0.
+            0x100 => c[0x1A6] switch { 0 => 1, 3 => 6, 4 => 5, 5 => 4, 6 => 3, 7 => 7, 8 => 2, _ => 0 },
+            // OVR 0x9BB1: as PoR's $6C0C, from record 0x1A8 / 0x1A9.
+            0x10C => (ushort)(c[0x1A8] == 0 && c[0x1A9] != 0 ? 0x80 : c[0x1A8] == 1 ? 0x81 : 0),
+            0x119 => c[0x1B5],
+            0x11B => c[0x1B6],
+            _ => SotsbAgeTable(a, c), // 0x2CF
+        };
+        return true;
+    }
+
+    /// <summary>
+    /// OVR 0x9C59: PoR's $6DCF table, keyed by record 0x1B; a value outside 3–25 leaves the result unset (residue).
+    /// </summary>
+    private ushort SotsbAgeTable(ushort a, EclCharacter c)
+    {
+        int? t = c[0x1B] switch
+        {
+            3 => 0, 4 => 5, 5 => 10, 6 => 15, 7 => 20, >= 8 and <= 12 => 25, 13 => 30, 14 => 35, 15 => 40,
+            16 => 50, 17 => 55, >= 18 and <= 25 => 60, _ => null,
+        };
+        return t is { } x
+            ? (ushort)x
+            : UndefinedRead($"read of ${a:X4} for record 0x1B = {c[0x1B]}: the table sets no value (stack residue)");
+    }
+
+    /// <summary>
+    /// The level pairs of $7CC9–$7CD0 (OVR 0x99A9): <see cref="SotsbSecondClassActive"/> (0 or 1) × record
+    /// <paramref name="flagged"/> + record <paramref name="plain"/>, all signed bytes.
+    /// </summary>
+    private static ushort SotsbLevelPair(EclCharacter c, int flagged, int plain) =>
+        (ushort)(SotsbSecondClassActive(c) * (sbyte)c[flagged] + (sbyte)c[plain]);
+
+    /// <summary>
+    /// OVR 0x3CBB6: 1 when 0x3CB44's level is greater than record 0xEF (signed bytes), else 0. 0x3CB44: when record
+    /// 0x6B is 6, the first non-zero of record 0x111–0x116 (record 0x117 when all six are 0), else 0. [?] Meaning
+    /// (presumably a dual-class human whose new class has passed the old one); the record layout was not read.
+    /// </summary>
+    public static int SotsbSecondClassActive(EclCharacter c)
+    {
+        int level = 0;
+        if (c[0x6B] == 6)
+        {
+            int i = 0;
+            while (i < 6 && c[0x111 + i] == 0)
+                i++;
+            level = (sbyte)c[0x111 + i];
+        }
+        return level > (sbyte)c[0xEF] ? 1 : 0;
+    }
+
+    /// <summary>SotSB writer cases (OVR 0x9D20), after the cell is stored. Record cases write the current character.</summary>
+    private void WriteSideEffectsSotsb(ushort a, ushort value)
+    {
+        int k = a - _view.Start;
+        switch (k)
+        {
+            case 0:
+                if (value == 0)
+                    Ds84D3 = true; // OVR 0x9D3D: DS:A4B7 := 1 (arms LOADCHAR's removal with DS:A4B6)
+                return;
+            case 0x312:
+                // OVR 0x9EC6 → START 0640:0AB0: the old disk to DS:7421, then DS:7420 = (low byte + 1) div 2.
+                PreviousDisk = Disk;
+                Disk = (byte)(((value & 0xFF) + 1) / 2);
+                return;
+            case 0x322 or 0x324 or 0x326:
+                if (value > 0x80) // OVR 0x9ED2: wall set (v AND 0x7F) into slot 1/2/3 (OVR 0x4077E)
+                    WallSetRequested?.Invoke(1 + (k - 0x322) / 2, value & 0x7F);
+                return;
+        }
+        bool hasEffect = k is (>= 0x1B and <= 0x65) or 0xB8 or 0xBB or 0xBD or 0xBF or 0xC1 or 0xC3 or 0xC5 or 0xF7
+            or 0xF9 or 0x100 or 0x10C or 0x119;
+        if (!hasEffect)
+            return;
+        var c = CurrentCharacter(a);
+        if (c is null)
+            return;
+        switch (k)
+        {
+            case >= 0x1B and <= 0x65:
+                SetRecordByte(c, a, 0x1E + (k - 0x1B), (byte)value); // OVR 0x9D4F
+                return;
+            case 0xB8:
+                SetRecordByte(c, a, 0xFF, (byte)(value > 0xB2 ? value - 0x32 : value)); // OVR 0x9D72
+                return;
+            case 0xBB or 0xBD or 0xBF or 0xC1 or 0xC3 or 0xC5:
+                SetRecordWord(c, a, 0x103 + (k - 0xBB), value);
+                return;
+            case 0xF7:
+                SetRecordWord(c, a, 0x14E, value);
+                return;
+            case 0xF9:
+                SetRecordByte(c, a, 0x150, (byte)value);
+                return;
+            case 0x100:
+                if (value == 1) // OVR 0x9E31
+                {
+                    SetRecordByte(c, a, 0x1A6, 0);
+                    SetRecordByte(c, a, 0x1A7, 1);
+                }
+                return;
+            case 0x10C:
+                switch (value) // OVR 0x9E55, as PoR's $6C0C
+                {
+                    case 0: SetRecordByte(c, a, 0x1A8, 0); SetRecordByte(c, a, 0x1A9, 0); break;
+                    case 0x80: SetRecordByte(c, a, 0x1A8, 0); SetRecordByte(c, a, 0x1A9, 1); break;
+                    case 0x81: SetRecordByte(c, a, 0x1A8, 1); SetRecordByte(c, a, 0x1A9, 1); break;
+                }
+                return;
+            case 0x119:
+                SetRecordByte(c, a, 0x1B5, (byte)value);
+                return;
+        }
+    }
+
     // -----------------------------------------------------------------------------------------------------------------
     // Text
     // -----------------------------------------------------------------------------------------------------------------
 
     /// <summary>
-    /// Text of a type-0x81 operand (routine 0x87CE): one character per cell (low byte of a word cell, or a script
-    /// byte) until a cell that is 0; $6B00 gives the current character's name instead.
+    /// Text of a type-0x81 operand (PoR routine 0x87CE, SotSB OVR 0xA628): one character per cell (low byte of a word
+    /// cell, or a script byte) until a cell that is 0 (PoR: a 0 low byte; SotSB: a 0 word, OVR 0xA664); the first
+    /// character-view cell ($6B00 / $7C00) gives the current character's name instead.
     /// </summary>
     public string ReadText(ushort a)
     {
-        if (a == Area6B00 && Party?.Current is { } ch)
+        ushort view = Profile.Cells.CharacterView;
+        if (a == view && Party?.Current is { } ch)
             return ch.Name;
-        if (a == Area6B00)
+        if (a == view)
             CurrentCharacter(a);
         var sb = new System.Text.StringBuilder();
         for (int i = 0; i < Policy.MaxMemoryTextLength; i++)
@@ -484,6 +755,12 @@ public sealed class EclMemory
             if (Cell(at) is { } cell)
             {
                 c = cell & 0xFF;
+                if (_sotsb && cell != 0 && c == 0)
+                {
+                    // SotSB stops only on a 0 word; the 0 low byte is appended as a character.
+                    sb.Append('\0');
+                    continue;
+                }
             }
             else
             {
@@ -499,13 +776,14 @@ public sealed class EclMemory
     }
 
     /// <summary>
-    /// SAVE of a text (routine 0x8426; INPUTSTR uses the same rules): one character per cell, then a 0 cell. $6B00
-    /// sets the current character's name (at most 15 characters) instead. Writes go straight to the cells, so the
-    /// $6B00-area side effects do not run; special addresses: nothing.
+    /// SAVE of a text (PoR routine 0x8426, SotSB OVR 0xA264; INPUTSTR uses the same rules): one character per cell,
+    /// then a 0 cell. The first character-view cell ($6B00 / $7C00) sets the current character's name (at most 15
+    /// characters) instead. Writes go straight to the cells, so the character-view side effects do not run; special
+    /// addresses: nothing.
     /// </summary>
     public void WriteText(ushort a, string text)
     {
-        if (a == Area6B00)
+        if (a == Profile.Cells.CharacterView)
         {
             if (CurrentCharacter(a) is { } ch)
             {
@@ -519,7 +797,7 @@ public sealed class EclMemory
             Diag($"text store to special address ${a:X4}: nothing written");
             return;
         }
-        if (text.Length == 0)
+        if (text.Length == 0 && !_sotsb) // SotSB (OVR 0xA29A) skips the copy loop for a length of 0: only the 0 is stored
         {
             // [?] The program fills a+1..a+255 with leftover stack bytes (byte counter underflow) and puts the 0 at
             // a. The leftover bytes are undefined, so only the 0 is stored. Never done in v1.3.

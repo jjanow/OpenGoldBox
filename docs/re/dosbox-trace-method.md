@@ -208,6 +208,12 @@ To test a rule in a fight the game does not offer where you need it, build the f
   Phineas's dagger replaced by the sling (ITEM1.DAX block 53 record 12, readied), name word 118 (Mirror) at byte 0x2F
   of Thrender's and Bakshi's weapons and of Rhiannon's and Sean's armour and shields. Party turns: Done, Quit (no
   draws). Seeds (DS:4428 before the step, `--seed` for the Client): 424744245 (breath), 273946116 (medusa).
+- **Choosing the seed** (s28): a state's RAM can be edited and loaded back. Copy the zip with every entry as it is
+  except `Memory`, where RandSeed sits at 0x88 + DS·16 + 0x4428 (DS from `dosbox_state.State`), put the copy at the
+  `savefile` path and press F12+L in the running emulator: the game goes on from the edited seed. Used to get the
+  1-in-10,000 rare terrains 28/29 into an outdoor fight (`combat-menu.md` "Ground"): the seed that a wanted arena
+  needs is found offline with `ArenaBuilder` once the number of draws between the state and the builder is known
+  (rebuild the boot's own arena from its seed for each count until one matches).
 - **Frame sampling**: python-xlib `get_image` on the window in a loop (~500 grabs a second on Xvfb), each distinct
   frame kept with its time; per frame the bounding box of changed pixels in the map, panel and bottom row gives a
   flight's positions and timing, compared line by line with the Client's window sampled the same way (its window

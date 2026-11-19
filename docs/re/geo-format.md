@@ -280,11 +280,11 @@ unused. In the table:
 | GEO3 | 0 | New Phlan, civilised area | 0 (8 and 11 re-load it too) | 127 → WALLDEF3/0 (3 blocks) | yes |
 | GEO6 | 1 | Buccaneer Base | 1 | 2, 6, 6 | yes |
 | GEO4 | 2 | Cadorna Textile House | 2 | 1, 3, 20 | yes |
-| GEO5 | 3 | Valjevo Castle, NW quadrant + NW part of the hedge maze | 3 by the same-id convention `[?]`; the scan finds no immediate LOAD FILES in block 3; block 7 (inner tower) loads it, probably on exit | 24, 25, 1 (block 3) | yes |
+| GEO5 | 3 | Valjevo Castle, NW quadrant + NW part of the hedge maze | 3 (vector 4 facing N or W, table $9C24), 5 (hedge maze edges), 7 (leaving the tower) | 24, 25, 1 (block 3; two-flag rule: 24 in slots 1–2, 1 in slot 3, s28) | yes |
 | GEO5 | 4 | Valjevo Castle, NE quadrant + hedge maze NE | 4 | 24, 25, 1 | yes |
-| GEO5 | 5 | Valjevo Castle, SE quadrant + hedge maze SE | 5 by the same-id convention `[?]`; the scan finds nothing in block 5; Lee labels this quadrant "ECL Script 3" and the hedge maze "ECL Script 5" (unresolved) | `[?]` | yes |
+| GEO5 | 5 | Valjevo Castle, SE quadrant + hedge maze SE | 3 (vector 4 facing E or S, table $9C24: so Lee's "ECL Script 3" for this quadrant holds) and 5 (hedge maze edges); block 5 is the hedge maze on maps 3–6 | none of its own: the castle's 24/–/1 stay loaded (s28) | yes |
 | GEO5 | 6 | Valjevo Castle, SW quadrant + hedge maze SW | 6 | 24, 25, 1 | yes |
-| GEO5 | 7 | Valjevo Castle inner tower (two small levels) | 7 | `[?]` | no (FAQ map has no coordinates) |
+| GEO5 | 7 | Valjevo Castle inner tower (two small levels) | 7 | none: the castle's 24/–/1 stay loaded (DOSBox-X s28) | no (FAQ map has no coordinates) |
 | GEO2 | 9 | Stojanow Gate | 9 | 1, 9, 23 | yes |
 | GEO4 | 10 | Valhingen Graveyard | 10 | 21, 22, 20 (21 = 2 blocks) | yes |
 | GEO8 | 13 | Kobold Caves | 13 | 17, 18, 255 | yes |
@@ -314,7 +314,8 @@ unused. In the table:
   no map of their own.
 - In the ECL/GEO ids, 0–32 identify an area, and most areas use the same number for script and map (DrEvil's
   convention, confirmed by the scan wherever it finds a LOAD FILES). The exceptions are GEO 30–32, which are second maps
-  of areas 16, 29 and 24. For Valjevo Castle (GEO 3–7), the script-to-map assignment is open `[?]`.
+  of areas 16, 29 and 24. Valjevo Castle (GEO 3–7, from the ECL5 disassembly, s28): script 3 → map 3 or 5 by the
+  facing, 4 → 4, 5 (hedge maze) → 3–6 by edge tables, 6 → 6, 7 → 7 (map 3 on the way out); see `view3d.md`.
 - While ECL block 0 (New Phlan) or 10 (Valhingen Graveyard) runs, the map accessors return 0 for squares off the map
   instead of wrapping (GAME.OVR 0x2EC5D; see "Edges"). Steps still wrap if a script leaves an edge open and unhandled.
 - Map names 24 and 31 (Lee's script list has them the other way round) were settled from the area script and the

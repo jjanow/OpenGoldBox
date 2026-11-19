@@ -172,4 +172,19 @@ public interface IEclHost
     /// clearing the text box (ecl-format.md "PRINTRET and CLEARBOX"). Display only; the VM state does not change.
     /// </summary>
     void TextHome() { }
+
+    // ---- SotSB (docs/re/survey-sotsb.md §10; default implementations keep PoR hosts working) --------------------
+    /// <summary>
+    /// SotSB CLOCK (0x34, OVR 0x3D37): the low bytes of both operands go to the clock routine OVR 0x2BA0D as
+    /// (amount, unit). [?] The routine and the unit codes were not read.
+    /// </summary>
+    void AdvanceClock(byte amount, byte unit) { }
+
+    /// <summary>
+    /// SotSB ADD EP (0x41, OVR 0x43FF): the message the program shows before it adds the experience, at column 1,
+    /// row 17: the whole-party text (OVR 0x43AF) when <paramref name="memberName"/> is null, else the one-member text
+    /// (OVR 0x43DB) with the name; then two START routines (0540:04B9, 0540:0BF7) `[?]` (presumably the press-key
+    /// line and its wait). Display only.
+    /// </summary>
+    void ExperienceMessage(string? memberName) { }
 }

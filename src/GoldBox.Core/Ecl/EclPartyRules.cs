@@ -52,36 +52,49 @@ public sealed class EclPartyRules(EclMemory memory, Func<int, int> random)
     // ---- LOADCHAR ----------------------------------------------------------------------------------------------
 
     /// <summary>
-    /// LOADCHAR (0x1026): DS:4430 set; the (v AND 0x7F)-th list member (0-based walk from the head) becomes current
-    /// when it exists. With bit 0x80 and both DS:84D2 and DS:84D3 set, the current character is removed from the list
-    /// (0x1CC10): the predecessor (or the new head) becomes current, $6E3E − 1, and both flags are cleared.
-    /// Returns the removed record, if any.
+    /// LOADCHAR (PoR 0x1026, SotSB OVR 0xEA3): DS:4430 (SotSB DS:59B6) set; the (v AND 0x7F)-th list member (0-based
+    /// walk from the head) becomes current when it exists (SotSB: DS:A4D1 = 0, else 1, <see cref="EclMemory.MemberMissing"/>).
+    /// With bit 0x80 and both DS:84D2 and DS:84D3 (SotSB DS:A4B6 and A4B7) set, the current character is removed from
+    /// the list (<see cref="RemoveCurrent"/>) and both flags are cleared. Returns the removed record, if any.
     /// </summary>
     public EclCharacter? LoadCharacter(int v)
     {
         var party = Party;
         party.ChangedByScript = true;
         int n = v & 0x7F;
-        if (n < party.Members.Count)
+        bool found = n < party.Members.Count;
+        if (found)
             party.CurrentIndex = n;
+        if (Memory.Profile.Handlers == Profiles.EclHandlerSet.Sotsb)
+            Memory.MemberMissing = !found; // OVR 0xF20 / 0xF27
         if ((v & 0x80) == 0 || !Memory.Ds84D2 || !Memory.Ds84D3)
             return null;
-        var cur = party.Current;
-        if (ReferenceEquals(cur, party.Selected))
+        if (ReferenceEquals(party.Current, party.Selected))
             party.ChangedByScript = false;
-        EclCharacter? removed = null;
-        if (cur is not null)
-        {
-            int i = party.CurrentIndex;
-            party.Members.RemoveAt(i);
-            removed = cur;
-            // 0x1CC10: the predecessor becomes current; when the head went, the new head (or none).
-            party.CurrentIndex = i > 0 ? i - 1 : party.Members.Count > 0 ? 0 : -1;
-            Memory.Write(PartySizeCell, (ushort)(Memory.Read(PartySizeCell) - 1));
-        }
+        var removed = RemoveCurrent();
         Memory.Ds84D2 = false;
         Memory.Ds84D3 = false;
         return removed;
+    }
+
+    /// <summary>
+    /// Removes the current character from the list (PoR 0x1CC10; SotSB OVR 0x20E40, called with (0, 1) by LOADCHAR
+    /// and DUMP): the predecessor becomes current; when the head went, the new head (or none); the party size cell
+    /// ($6E3E / $7F3E) − 1. A current record that is not listed stays. Returns the removed record, if any. [?] SotSB
+    /// also passes record 0x155 to OVR 0x42CC0 first (not read; presumably frees the combat icon).
+    /// </summary>
+    public EclCharacter? RemoveCurrent()
+    {
+        var party = Party;
+        var cur = party.Current;
+        if (cur is null)
+            return null;
+        int i = party.CurrentIndex;
+        party.Members.RemoveAt(i);
+        party.CurrentIndex = i > 0 ? i - 1 : party.Members.Count > 0 ? 0 : -1;
+        ushort size = Memory.Profile.Cells.PartySize;
+        Memory.Write(size, (ushort)(Memory.Read(size) - 1));
+        return cur;
     }
 
     // ---- CHKPARTY ----------------------------------------------------------------------------------------------

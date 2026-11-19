@@ -139,13 +139,33 @@ public static class PorAmigaArt
     /// which they match). The default colours confirm it: DOS Create's bytes paint each pair with its own colours, the
     /// Amiga's (the pair bytes themselves, hunk 10 +0xA98) do the same, and the pens of each DOS pair are the two
     /// indices of the Amiga pair byte (<see cref="IconPairsAgree"/>). EGA 5 and 13 appear too rarely in the icons to
-    /// say (24 and 21 pixels), so a character whose colour bytes use them keeps its DOS icon.
+    /// say (24 and 21 pixels) and table 3 has no magenta: decided (user, s28) as the nearest table-3 pen by RGB
+    /// distance, pen 0 (see-through) left out: 5 → 6 (red), 13 → 7 (pink) (<see cref="NearestIconPen"/>).
     /// </summary>
     public static byte? IconPen(int ega) => ega switch
     {
-        0 => 0, 1 => 1, 2 => 2, 3 => 3, 4 => 6, 6 => 5, 7 => 14, 8 => 4, 9 => 9, 10 => 10, 11 => 11, 12 => 7, 14 => 8, 15 => 15,
+        0 => 0, 1 => 1, 2 => 2, 3 => 3, 4 => 6, 5 => 6, 6 => 5, 7 => 14, 8 => 4, 9 => 9, 10 => 10, 11 => 11, 12 => 7,
+        13 => 7, 14 => 8, 15 => 15,
         _ => null,
     };
+
+    /// <summary>
+    /// The table-3 pen (1..15; pen 0 is see-through) nearest to an RGB colour by squared distance, first pen on a tie:
+    /// the rule decided for EGA 5 and 13 in <see cref="IconPen"/> (user, s28). <paramref name="table3"/> is the
+    /// program's table 3 as RGB triplets (<see cref="Palettes"/>).
+    /// </summary>
+    public static byte NearestIconPen(ReadOnlySpan<byte> table3, byte r, byte g, byte b)
+    {
+        int best = 1, bestD = int.MaxValue;
+        for (int p = 1; p < 16; p++)
+        {
+            int dr = table3[3 * p] - r, dg = table3[3 * p + 1] - g, db = table3[3 * p + 2] - b;
+            int d = dr * dr + dg * dg + db * db;
+            if (d < bestD)
+                (best, bestD) = (p, d);
+        }
+        return (byte)best;
+    }
 
     /// <summary>Whether pair byte k holds the pens of DOS pair k (its two nibbles, in either order) for every k.</summary>
     public static bool IconPairsAgree(ReadOnlySpan<byte> pairs)
@@ -165,8 +185,7 @@ public static class PorAmigaArt
     /// <summary>
     /// A DOS character's six colour bytes (0xC1..0xC6, EGA nibbles) as the Amiga record's (0xC3..0xC8, pens): for pair
     /// byte k, the nibble whose index is the pen of DOS index <c>DosIconPairs[k]</c> takes the pen of the DOS low
-    /// nibble, the other the pen of the DOS high nibble. Null when a nibble's EGA colour has no pen (5, 13 [?]) or the
-    /// pairs do not agree.
+    /// nibble, the other the pen of the DOS high nibble. Null when the pairs do not agree.
     /// </summary>
     public static byte[]? AmigaIconColours(ReadOnlySpan<byte> dosColours, ReadOnlySpan<byte> pairs)
     {

@@ -19,6 +19,7 @@ training.md, combat-format.md, ecl-format.md "DAMAGE"):
     I  PRINT, PROGRAM 0, PRINT, a one-word HMENU: the text box and cursor after the hall
 
 The texts written by I are this tool's own. Nothing from the game is stored in this file.
+The folder can stay GOLDBOX_POR_DIR afterwards: the tests that count the release's files read a copy without these.
 """
 import shutil
 import struct

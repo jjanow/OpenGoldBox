@@ -14,14 +14,16 @@ namespace GoldBox.Core.Tests;
 /// <summary>
 /// The PoR importer on the player's v1.3 files (docs/module-format.md §16–§17): every block rebuilds from the
 /// module, and the engine runs the same scripts and areas from the module as from the DAX files. Skipped without
-/// <c>GOLDBOX_POR_DIR</c>.
+/// <c>GOLDBOX_POR_DIR</c>. The totals are the v1.3 release's: both sides read <see cref="PorData.ReleaseDir"/>, so extra
+/// saves in the folder (the test saves B–I of <c>tools/scripts/por_test_saves.py</c>, a played game's) do not count.
 /// </summary>
 public class PorModuleTests(ITestOutputHelper output)
 {
     [PorFact]
     public void Every_imported_block_rebuilds_byte_for_byte()
     {
-        var r = PorRoundTrip.Check(PorData.Open(), PorModuleData.Open());
+        var r = PorRoundTrip.Check(PorData.OpenRelease(), PorModuleData.Open());
+        output.WriteLine("left out of the release copy: " + string.Join(", ", PorData.NotRelease));
         output.WriteLine(string.Join(", ", r.Checked.Select(kv => $"{kv.Key} {kv.Value}")));
         Assert.Empty(r.Mismatches);
         Assert.Equal(29, r.Checked["ECL"]);
@@ -53,7 +55,7 @@ public class PorModuleTests(ITestOutputHelper output)
     [PorFact]
     public void The_overland_is_imported_into_rules_and_placed_by_the_wilderness_areas()
     {
-        var dir = PorData.Open();
+        var dir = PorData.OpenRelease();
         var m = PorModuleData.Open();
         Assert.True(PorModuleData.Report.Overland);
         // Located through GAME.OVR's code at the v1.3 offsets (docs/re/geo-format.md "Wilderness (overland)").
@@ -99,7 +101,7 @@ public class PorModuleTests(ITestOutputHelper output)
         Assert.Equal((783, 39, 36), (rep.Pictures, rep.ArtData, rep.Saves));
         Assert.Equal(PorTextCatalog.Overlay.Count + PorTextCatalog.Image.Count, rep.Texts);
         var m = PorModuleData.Open();
-        var dir = PorData.Open();
+        var dir = PorData.OpenRelease();
         Assert.Equal(PorRoundTrip.Describe(dir.Program()!), PorRoundTrip.Describe(m.Program()!));
         // The tables the engine builds from them.
         var a = dir.Program()!;
@@ -173,7 +175,7 @@ public class PorModuleTests(ITestOutputHelper output)
         Assert.Equal([14, 24, 26, 31], Area(24).Maps);
         Assert.DoesNotContain("[?]", Area(24).Notes);
         // The engine reads the flag from the area: the same squares wrap as under the program's rule.
-        var dir = PorData.Open();
+        var dir = PorData.OpenRelease();
         Assert.All(Enumerable.Range(0, 30), id => Assert.Equal(dir.NoWrapOffMap(id), m.NoWrapOffMap(id)));
     }
 
@@ -181,7 +183,7 @@ public class PorModuleTests(ITestOutputHelper output)
     public void The_module_answers_null_where_the_program_would_not_find_the_block()
     {
         var m = PorModuleData.Open();
-        var dir = PorData.Open();
+        var dir = PorData.OpenRelease();
         // Script 20 and map 20 are on disk 2 only; the program reads ECL<disk>/GEO<disk> of the current disk.
         Assert.Equal(2, m.ScriptDisk(20));
         Assert.NotNull(m.LoadBlock(2, 20));
@@ -233,7 +235,7 @@ public class PorModuleTests(ITestOutputHelper output)
     [MemberData(nameof(Scripts))]
     public void Every_script_enters_the_same_from_the_module(int script)
     {
-        var dir = PorData.Open();
+        var dir = PorData.OpenRelease();
         var module = PorModuleData.Open();
         string Run(IPorContent? content)
         {
@@ -267,7 +269,7 @@ public class PorModuleTests(ITestOutputHelper output)
     [InlineData("SAVGAMJ.DAT")]
     public void A_save_loads_and_plays_the_same_from_the_module(string save)
     {
-        var dir = PorData.Open();
+        var dir = PorData.OpenRelease();
         var module = PorModuleData.Open();
         AreaCommand[] commands =
         [
@@ -318,7 +320,7 @@ public class PorModuleTests(ITestOutputHelper output)
     [InlineData('J')]
     public void A_game_from_the_engine_save_is_the_game_from_the_original_files(char slot)
     {
-        var dir = PorData.Open();
+        var dir = PorData.OpenRelease();
         var module = PorModuleData.Open();
         var json = Path.Combine(module.SaveFolder!, PorEngineSave.FileName(slot));
         var doc = PorEngineSave.Read(json);
@@ -385,7 +387,7 @@ public class PorModuleTests(ITestOutputHelper output)
         // A second import of the same folder (as the Client's cache does after an importer change) gives the same hash
         // and the same engine saves. The folder is left for the temp folder's own cleanup, as PorModuleData's.
         var again = Path.Combine(Path.GetTempPath(), "goldbox-tests", $"por-module-{Guid.NewGuid():N}");
-        PorImporter.Import(PorData.Dir!, again);
+        PorImporter.Import(PorData.ReleaseDir, again);
         Assert.Equal(hash, ModuleContentHash.Of(again));
         foreach (var slot in "AJ")
             Assert.Equal(File.ReadAllText(Path.Combine(module.SaveFolder!, PorEngineSave.FileName(slot))),
@@ -406,7 +408,7 @@ public class PorModuleTests(ITestOutputHelper output)
     public void Golden_captures_replay_the_same_from_the_module(string name)
     {
         var s = PorGoldenCaptures.Find(name)!;
-        var a = new EclCaptureComparer(Captures.Dir!, PorData.Open()).Compare(s);
+        var a = new EclCaptureComparer(Captures.Dir!, PorData.OpenRelease()).Compare(s);
         var b = new EclCaptureComparer(Captures.Dir!, PorModuleData.Open()).Compare(s);
         Assert.Equal(a.ToString(), b.ToString());
         Assert.Equal(a.Outcome, b.Outcome);

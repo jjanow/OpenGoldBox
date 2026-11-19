@@ -35,6 +35,8 @@ public class AmigaSoundProgramTests
         {
             if (PorAmigaData.Dir is null)
                 Skip = "needs the player's Amiga Pool of Radiance v1.0 files: set " + PorAmigaData.EnvVar;
+            else if (PorAmigaData.Missing is { } missing)
+                Skip = missing;
             else if (FixturePath is null)
                 Skip = "needs the private fixture tests/fixtures-private/por/amiga-v1.0/sound_player.json";
         }

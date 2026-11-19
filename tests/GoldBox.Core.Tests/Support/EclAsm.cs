@@ -115,15 +115,17 @@ public sealed class VmRig
     public ScriptedEclHost Host { get; } = new();
     public ListTraceSink Trace { get; } = new();
 
-    public VmRig(byte[] block, EclVmPolicy? policy = null, Action<EclMemory>? setup = null)
+    public VmRig(byte[] block, EclVmPolicy? policy = null, Action<EclMemory>? setup = null,
+        GoldBox.Core.Ecl.Profiles.EclProfile? profile = null)
     {
-        Memory = new EclMemory(policy);
+        Memory = new EclMemory(policy, profile);
         setup?.Invoke(Memory);
         Vm = new EclVm(Memory, Host) { Trace = Trace };
         Vm.LoadScriptBlock(block, 1, 1);
     }
 
-    public static VmRig Of(EclAsm asm, EclVmPolicy? policy = null, Action<EclMemory>? setup = null) => new(asm.Build(), policy, setup);
+    public static VmRig Of(EclAsm asm, EclVmPolicy? policy = null, Action<EclMemory>? setup = null,
+        GoldBox.Core.Ecl.Profiles.EclProfile? profile = null) => new(asm.Build(), policy, setup, profile);
 
     public EclRunResult Run(int vector = 0, int maxSteps = 1000) => Vm.RunVector(vector, maxSteps);
 

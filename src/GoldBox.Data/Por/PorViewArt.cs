@@ -138,8 +138,9 @@ public sealed class PorViewArt
         if (_dir.ArtData($"WALLDEF{disk}", id) is not { } record)
         {
             // The program stops with a fatal error here, so in play the request never names a missing block: the
-            // area expects the two-flag rule ($49E7/$49E8 set by earlier play) that skips slot 2 after a two-block
-            // set. Entered with fresh memory (no save) the flags are clear; the slot keeps what it holds. [?]
+            // area expects the two-flag rule that skips slot 2 after a two-block set (Valjevo's LOADPIECES 24, 25, 1:
+            // $49E7/$49E8 set by the castle entry's vector 4, ECL5 6 $9C5A/$9C60; view3d.md). Entered with fresh memory
+            // at another castle script the flags are clear; the slot keeps what it holds.
             Diagnostics.Add($"WALLDEF{disk}.DAX has no block {id} for slot {slot}: slot left as it was");
             return;
         }

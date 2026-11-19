@@ -1,13 +1,16 @@
 namespace GoldBox.Core.Ecl;
 
 /// <summary>
-/// One party member as the ECL VM sees it: the 285-byte creature record (docs/re/character-format.md) and the
+/// One party member as the ECL VM sees it: the creature record (PoR 285 bytes, docs/re/character-format.md; SotSB
+/// 439 bytes, <see cref="Profiles.EclProfile.RecordSize"/>) and the
 /// 63-byte item records it carries (docs/re/item-format.md). The VM reads and writes record bytes only through the
 /// $6B00-area redirection table and the opcodes the spec reads from the program (PARTYSTR, PSURPRISE, FINDITEM).
 /// </summary>
 public sealed class EclCharacter
 {
     public const int RecordSize = 0x11D;
+    /// <summary>SotSB's record (docs/re/survey-sotsb.md §5).</summary>
+    public const int SotsbRecordSize = 0x1B7;
     public const int ItemRecordSize = 63;
     /// <summary>Longest name the record holds (Pascal string at offset 0, 16 bytes).</summary>
     public const int MaxNameLength = 15;
@@ -25,11 +28,13 @@ public sealed class EclCharacter
     /// <summary>True when an effect with this id is in <see cref="Effects"/> (START.EXE 00BA:2199 walks the list).</summary>
     public bool HasEffect(byte id) => Effects.Any(e => e.Length > 0 && e[0] == id);
 
-    public EclCharacter(byte[]? record = null)
+    /// <param name="record">Initial bytes (cut or zero-padded to <paramref name="recordSize"/>).</param>
+    /// <param name="recordSize">The dialect's record size (<see cref="Profiles.EclProfile.RecordSize"/>).</param>
+    public EclCharacter(byte[]? record = null, int recordSize = RecordSize)
     {
-        Record = new byte[RecordSize];
+        Record = new byte[recordSize];
         if (record is not null)
-            record.AsSpan(0, Math.Min(record.Length, RecordSize)).CopyTo(Record);
+            record.AsSpan(0, Math.Min(record.Length, recordSize)).CopyTo(Record);
     }
 
     public byte this[int offset]

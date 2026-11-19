@@ -90,7 +90,8 @@ no separate launcher: `START.EXE` is the program root and `GAME.OVR` its overlay
   (OVR 0x922C) sets PC = $8000 and reads five operands into DS:67D7–67DF. It also sets $7EE1 = 255 and
   $7ED2 = $7ED3 = 0, and, unless DS:67F0 is set, clears $4C00–$4C1F and $7F79–$7F82. These are PoR's cells ($6DE1,
   $6DD2/$6DD3, $4A00–$4A1F, $6E79–$6E82) moved with their regions (3.3). Vector roles assumed from PoR `[?]`.
-- A missing block makes the loader try again (OVR 0x9426 jumps back while the block is shorter than 2 bytes); there
+- A missing block makes the loader try again (OVR 0x9426 jumps back while the block is shorter than 2 bytes; the
+  loader then always returns 1, OVR 0x9472, so NEWECL's failure branch OVR 0x1890 is dead code); there
   is no failure exit `[?]` whether the DAX reader asks for a disk meanwhile.
 
 ### 3.2 Operand encoding and strings: unchanged
@@ -174,7 +175,7 @@ for 3E–41.
 | 03 | COMPARE 2 | 2 | 2 | 2 | 0xCD7 | text compare when either is text | same | 1169 |
 | 04–07 | ADD … MUL 3 | 3 | 3 | 3 | 0xD54 | | same | 316 |
 | 08, 09 | RANDOM, SAVE 2 | 2 | 2 | 2 | 0xDF7, 0xE55 | | same | 152, 1407 |
-| 0A | LOADCHAR 1 | 1 | 1 | 1 | 0xEA3 | | same | 39 |
+| 0A | LOADCHAR 1 | 1 | 1 | 1 | 0xEA3 | as PoR, plus DS:A4D1 = "no member v" (§10.4) | same (read) | 39 |
 | 0B | LOADMON 3 | 3 | 3 | 3 | 0x1019 | list cap 63 (OVR 0x1038), as PoR | same (read) | 349 |
 | 0C | SETUPMON 3 | 3 | 3 | **3** | 0xF7D | sprite, $7EC0/$7EC1 (PoR $6DC0/$6DC1), close-up | same (read), skip fixed | 236 |
 | 0D, 0E | APPROACH 0, PICTURE 1 | 0, 1 | 0, 1 | 0, 1 | 0x1473, 0x14B3 | | same | 89, 125 |
@@ -188,10 +189,10 @@ for 3E–41.
 | 1D | PARTYSTR 1 | 1 | 1 | 1 | 0x1F87 | | same | 0 |
 | 1E | CHKPARTY 6 | 6 | 6 | 6 | 0x212C | | same | 13 |
 | 1F | — | — | — | 2 | none | no handler | same | 0 |
-| 20 | NEWECL 1 | 1 | 1 | 1 | 0x1837 | old id → $4BF2, new id → DS:A4C2 (read) | same | 78 |
-| 21, 37 | LOADFILES, LOADPIECES 3 | 3 | 3 | 3 | 0x18AA | section 2 | same (read) | 20, 19 |
+| 20 | NEWECL 1 | 1 | 1 | 1 | 0x1837 | old id → $4BF2 (before the fetch), new id (low byte) → DS:A4C2 (read) | same | 78 |
+| 21, 37 | LOADFILES, LOADPIECES 3 | 3 | 3 | 3 | 0x18AA | section 2; LOADPIECES has a third flag $4BE9 (§10.4) | changed (read) | 20, 19 |
 | 22 | PSURPRISE 2 | 2 | 2 | 2 | 0x2507 | | same | 0 |
-| 23 | SURPRISE 4 | 4 | 4 | 4 | 0x25A3 | | same | 0 |
+| 23 | SURPRISE 4 | 4 | 4 | 4 | 0x25A3 | PoR's rule; result written to $02CB (lost, §10.4) | same (read) | 0 |
 | 24 | COMBAT 0 | 0 | 0 | 0 | 0x266B | | same | 258 |
 | 25, 26 | ONGOTO, ONGOSUB 2+n | 2+n | 2+n | 0 | 0x2990 | | same, mis-skip kept | 186, 4 |
 | 27 | TREASURE 8 | 8 | 8 | 8 | 0x2A48 | | same | 91 |
@@ -215,10 +216,10 @@ for 3E–41.
 | 3B | SPELL 3 | 3 | 3 | 3 | 0x3EC5 | | same | 4 |
 | 3C | PROTECT 1 | 1 | **stub** | 1 | 0x4248 | loads nothing, PC not moved (3.4) | changed | 0 |
 | 3D | CLEARBOX 0 | 0 | 0 | 0 | 0x3D97 | | same | 23 |
-| 3E | — | 0 (DUMP) | 0 | 0 | 0x424F | DUMP: drops the current character `[?]` details | new (Curse) | 2 |
+| 3E | — | 0 (DUMP) | 0 | 0 | 0x424F | DUMP: removes the current character from the party (§10.4) | new (Curse), read | 2 |
 | 3F | — | 1 (FIND SPECIAL) | 1 | 1 | 0x4282 | "=" if the current character has effect v, else "≠" (OVR 0x42BA) | new (Curse), read | 0 |
-| 40 | — | 1 (DESTROY ITEMS) | 1 | 1 | 0x42D3 | | new (Curse) | 1 |
-| 41 | — | — | **2** | 2 | 0x43FF | ADD EP: o1 = 0 current character, else every party member; o2 = 16-bit amount, divided by the member's number of classes (record 0x111–0x116 > 0) and added to the dword experience at record 0x12C when record 0x1A7 ≠ 0 | **new in SotSB**, read | 40 |
+| 40 | — | 1 (DESTROY ITEMS) | 1 | 1 | 0x42D3 | every member's items of type v removed (§10.4) | new (Curse), read | 1 |
+| 41 | — | — | **2** | 2 | 0x43FF | ADD EP: o1 = 0 current character, else every party member; o2 = 16-bit amount, divided by the member's number of record bytes 0x111–0x117 that are > 0 and added to the dword experience at record 0x12C when record 0x1A7 ≠ 0 | **new in SotSB**, read | 40 |
 
 Summary: SotSB has **65 dispatched opcodes** (0x00–0x41 without 0x1F), one of them a stub (0x3C). Of PoR's 61,
 **59 keep PoR's count**; CLOCK (0x34) has a second operand and 0x3C is a stub. Four are added (3E–40 from Curse, 41
@@ -243,7 +244,7 @@ importer's art path should take SotSB as it is. Per-asset palette work starts wi
 | Item, in DAX and in memory | 63 | `[?]` | **63** | 17 in DAX, 63 in memory | `MON1ITM` and `ITEM1–3` block sizes are all multiples of 63 |
 | Effect | 9 | 9 (`.FX`) | 9 (`.SFX`) | 9 (`.EFX`) | file sizes 9 and 27 |
 
-- ADD EP (0x41) and the character view (3.3) touch record 0x111–0x116 (class levels), 0x12C (experience, dword),
+- ADD EP (0x41) and the character view (3.3) touch record 0x111–0x117 (class levels), 0x12C (experience, dword),
   0x1A7 and the next-pointer at 0x19D (party walk, OVR 0x44D1). The full layout is GBC's `[?]` (not re-read).
 - The member files are `CHRDATxn.SAV` + `.SFX` (effects); no item file is shipped (the party carries nothing) `[?]`
   the item file's extension.
@@ -283,7 +284,8 @@ loader seeks to in a SotSB save (`survey-pod.md` §5), which confirms the layout
   stubs: header +4 = the unit's file offset in `GAME.OVR`, +0xC = entry count, 5-byte `INT 3F` entries from +0x20.
   The ECL helpers are stub 0x7D (loader = entry 2 at OVR 0x9073, value fetch OVR 0x91AB, script init OVR 0x922C,
   script loader OVR 0x939F, reader OVR 0xA0F1, writer OVR 0x9F3A, IF-skip OVR 0xAFB0). The dispatcher and the
-  handlers are in the unit at OVR 0x0–0x458A.
+  handlers are in the unit at OVR 0xC0B–0x4D07 (stub paragraph 0x50; EXIT is its first routine, the dispatcher sits
+  at OVR 0x458B).
 - `GAME.OVR` begins `TPOV` (PoR's `FBOV`); the file layout is otherwise the same kind.
 
 ## Versions
@@ -333,13 +335,12 @@ single files. DQK then fixed the IF-skip.
 
 ## 9. Module-format and VM implications
 
-**Built (s24): the profile `ecl-sotsb-1.3`** (`EclProfiles.Sotsb13`, `EclOpcodes.Sotsb`), decoding only. It holds
+**Built (s24): the profile `ecl-sotsb-1.3`** (`EclProfiles.Sotsb13`, `EclOpcodes.Sotsb`). It holds
 the layout, the four regions (script region not saved), the opcode rows of 3.5 and the IF-skip chain of 3.4 as data,
 `ReturnOnEmptyStack = Exits`, the CALL ids, PROGRAM ids 0 and 9 with the exit guard $4C38
 (`ProgramExitGuardCell`), the disk cell $7F12 and the banked kinds. 0x3C has no row (its handler neither loads an
-operand nor moves the PC); it keeps the name PROTECT and IF-skip 1. The character view (`Sotsb7C00Redirection`) and
-the handlers (`EclHandlerSet.Sotsb`) are named but not written: `EclMemory` refuses the profile, so nothing runs
-SotSB scripts yet. `EclDecoder` / `EclAnalysis` take a profile, `goldbox-tools ecl-check GAMEDIR --vm ecl-sotsb-1.3`
+operand nor moves the PC); it keeps the name PROTECT and IF-skip 1. Since s28 the headless VM runs the profile
+(section 10). `EclDecoder` / `EclAnalysis` take a profile, `goldbox-tools ecl-check GAMEDIR --vm ecl-sotsb-1.3`
 and `ecl.py … --vm sotsb` decode the 22 v1.30 blocks with 0 errors, 0 overlaps, 0 unhandled opcodes and 0 IF-skip
 hazards (137,918 bytes, 15,322 instructions, 132,135 bytes on hard paths). `SotsbProfileTests` checks this on the
 player's files (`GOLDBOX_SOTSB_DIR`, skipped without). The scripts use CALL $2DCB, $B203 and $C01E only, and
@@ -351,10 +352,8 @@ PROGRAM 0 and 3. The IF-skip chain, the CALL compares and the PROGRAM cases were
    0x3C stub, 3E–41 handlers, SotSB's CALL and PROGRAM ids, and a redirection table into the 439-byte record. The
    regions, special cells, residue and width rule stay PoR's. In `EclProfile` (s17) the layout, regions, disk cell,
    opcode and IF-skip tables, width rule (`FromAddressRegion`) and unmapped read (`StackResidue`) are already data
-   that fits SotSB. The enum members it needed exist since s24 (above); still to write before SotSB scripts run: the
-   redirection list into the 439-byte record (as data, base + case → record field, behind
-   `Sotsb7C00Redirection`), the special-cell changes, and the `EclHandlerSet.Sotsb` handlers (RETURN-exits, 3E–41,
-   two-operand CLOCK, the 0x3C stub, SotSB's CALL/PROGRAM ids).
+   that fits SotSB. The enum members it needed exist since s24 (above); the redirection list, the special-cell
+   changes and the handlers followed in s28 (section 10).
 2. **Region base offsets are a profile field, not a constant.** The same special-cell addresses ($C04B…) sit next to
    moved areas, so "move every address" does not work; the profile must give each region's base.
 3. **Banks stay.** SotSB keeps disk digits for ECL, GEO, WALLDEF, 8X8D and ITEM (3 disks), and a fixed `MON1`. Its
@@ -368,11 +367,133 @@ PROGRAM 0 and 3. The IF-skip chain, the CALL compares and the PROGRAM cases were
 6. **Character transfer:** Curse 422 → SotSB 439 → PoD 510. SotSB's import of Curse characters and the field mapping
    were not read `[?]`.
 
+## 10. Handlers in the headless VM (s28)
+
+`EclHandlerSet.Sotsb` runs in `EclVm` / `EclMemory`: PoR's handlers, with SotSB's branching off where the program
+differs. Everything below was read from v1.30 `GAME.OVR` for this; the VM code cites the same offsets. Tests:
+`SotsbVmTests` (one per handler, and with `GOLDBOX_SOTSB_DIR` every vector of the 22 blocks headless from the shipped
+`SAVGAMA.DAT` and its six `CHRDATA` members, plus a seeded exploration: no fault, no unhandled opcode, no access to
+PoR's $4900–$4AFF or $6B00–$6EFF).
+
+### 10.1 Memory
+
+- Areas by role: globals $4B00 (DS:67C6), character view $7C00 (DS:67CA), $7A00 (DS:67CE), script $8000 (DS:67D2).
+  The fetch is `buffer + A − 0x8000`.
+- Region 0: a read of **$4BEA** gives the facing byte DS:89D9 (OVR 0xA10C). A write of $4BFD / $4BFE sets the sky
+  redraw flag DS:A4CE (OVR 0x9F61, PoR's DS:84E8). A write to **$4BE6** that changes it copies the game mode DS:67E7
+  to DS:67E8 and sets DS:67E7 = 4 before the store (OVR 0x9F68); `EclMemory.GameMode` / `PreviousGameMode`.
+- Special reads (OVR 0xA19D): PoR's list. $00B1 / $00FB / $00FC read DS:8F52 / 8F4E / 8F50, which no byte of
+  `GAME.OVR` or `START.EXE` writes (searched): 0, as in PoR `[?]` (not run). **$C04D** is the raw facing while
+  $4BE6 = 0, else facing div 2 (OVR 0xA20C). $035F and $C059 have a case with no value (residue), as in PoR.
+- Special writes (OVR 0x9FF9): PoR's list and rules ($03DE → DS:A4B0, $00B8 → A4B2, $00B9 → A4B4; $C04B/$C04C →
+  x / y and DS:A4CC; $C04D → facing (v mod 4) × 2; $C059 / $C05F → DS:8F4C / 8F4D and DS:A4CB; $00FB, $00FC, $00B1,
+  $D022 nothing). $C05A (written by blocks 80–82) has no case.
+- Texts (OVR 0xA628 reads a type-0x81 text, OVR 0xA264 is SAVE's text store): $7C00 is the current character's name
+  (at most 15 characters), as PoR's $6B00. A word-area text ends at a **0 word** (OVR 0xA664 compares the word; the
+  character is the low byte). An empty text stores only the terminator (OVR 0xA29A skips the loop; PoR's byte
+  counter underflows there).
+
+### 10.2 The $7C00 character view
+
+Reader OVR 0x9830 (k = address − $7C00; the record is the current character's, pointer DS:7D38). An offset with no
+case reads the cell; a case that sets no value reads residue.
+
+| k | Value | k | Value |
+|---|---|---|---|
+| 0x15 | rec 0x13 | 0xC9, 0xCA, 0xCB, 0xCC, 0xCF, 0xD0 | f · rec a + rec b (signed bytes), (a, b) = (0x11D, 0x116), (0x118, 0x111), (0x11E, 0x117), (0x11A, 0x113), (0x11B, 0x114), (0x11C, 0x115) |
+| 0x18 | rec 0x19 | 0xD6, 0xD8 | rec 0x11F, 0x120 (signed) |
+| 0x19 | rec 0x1B | 0xF7 | word rec 0x14E |
+| 0x72, 0x73 | rec 0x6B, 0x6C (signed) | 0xF9 | rec 0x150 |
+| 0x76 | rec 0x70 | 0x100 | 0 while DS:A4D1 is set; else rec 0x1A6 mapped 0→1, 3→6, 4→5, 5→4, 6→3, 7→7, 8→2, other → 0 |
+| 0x9B | rec 0xE9 | 0x10C | 0x80 if rec 0x1A8 = 0 and rec 0x1A9 ≠ 0; 0x81 if rec 0x1A8 = 1; else 0 |
+| 0xA0 | rec 0xEE (signed) | 0x10D | residue (case, no value) |
+| 0xA5–0xAC | rec 0xF3–0xFA (code: 0xF2 + k − 0xA4) | 0x119, 0x11B | rec 0x1B5, 0x1B6 |
+| 0xB8 | rec 0xFF | 0x2B1, 0x2B4 | members before the current record in the list (OVR 0x97CF; the list length if it is not listed) |
+| 0xBB–0xC5 (odd) | words rec 0x103–0x10D | 0x2CF | PoR's $6DCF table keyed by rec **0x1B** (3→0 … 18–25→60), else residue |
+| | | 0x312 | the disk byte DS:7420 |
+| | | 0x33E | the cell $7F3E (party size) |
+
+f (OVR 0x3CBB6): 1 when L > rec 0xEF (signed), else 0; L (OVR 0x3CB44) is 0 unless rec 0x6B = 6, then the first
+non-zero of rec 0x111–0x116 (rec 0x117 when all six are 0). `[?]` meaning: presumably a dual-class human whose new
+class has passed the old one. 0xCD and 0xCE have no case.
+
+Checked against the program (s28): `tools/scripts/sotsb_view_oracle.py` runs OVR 0x9830 and 0x9D20 under unicorn on
+random party records; `SotsbViewProgramTests` compares every handled read (516, all but the two residue cases) and
+18,480 writes (record bytes, disk bytes, DS:A4B7, wall-set loads) with `EclMemory`: all equal.
+
+Writer OVR 0x9D20, after the cell is stored: k = 0 with value 0 → DS:A4B7 (LOADCHAR's removal arm, PoR DS:84D3);
+0x1B–0x65 → rec 0x1E + (k − 0x1B); 0xB8 → rec 0xFF (v − 0x32 when v > 0xB2); 0xBB–0xC5 odd → words rec 0x103–0x10D;
+0xF7 → word rec 0x14E; 0xF9 → rec 0x150; 0x100 with v = 1 → rec 0x1A6 = 0, rec 0x1A7 = 1; 0x10C with 0 / 0x80 /
+0x81 → rec 0x1A8, 0x1A9 = (0, 0) / (0, 1) / (1, 1); 0x119 → rec 0x1B5; **0x312 → the old disk to DS:7421, then
+DS:7420 = (low byte + 1) div 2** (START 0640:0AB0); 0x322 / 0x324 / 0x326 with v > 0x80 → wall set v AND 0x7F into slot
+1 / 2 / 3 (OVR 0x4077E). There is no case like PoR's $6C00 = 0 (DS:84D2): its SotSB twin DS:A4B6 is only ever
+cleared in `GAME.OVR` and absent from `START.EXE` (byte search), so LOADCHAR's removal looks unreachable `[?]`.
+
+### 10.3 Control flow and the script init
+
+- **Script init** OVR 0x922C: DS:A4C6, A4C8, A4B6, A4B7 cleared, $C059 / $C05F colours 0x41 / 9 and DS:A4CB set, PC =
+  $8000, the GOSUB list and the flags cleared, **$7EE1 = 255, $7ED2 = $7ED3 = 0, $4BE5 = 0**, the five vectors read;
+  then, unless DS:67F0 is set, $4C00–$4C1F and $7F79–$7F82 cleared. **No $4BE6 write** (PoR sets $49E6 = 1). These
+  writes go straight into the arrays (no writer cases apply to them). DS:8F67 = 8 and DS:90AA = 0 `[?]`.
+- **RETURN** OVR 0x170A: pops when the GOSUB list is non-empty, else calls EXIT (0x0C0B).
+- **EXIT** OVR 0x0C0B: as PoR (restore the selected character when DS:59B6, the GOSUB list freed, stop flag, text
+  cursor to column 1 row 17). DS:59B6 / DS:59BB are PoR's DS:4430 / DS:4436.
+- **NEWECL** OVR 0x1837: $4BF2 = the running id (byte DS:A4C2) before the operand's value is fetched; the new id is
+  the value's low byte; load, script init, stop flag DS:59B4 and changed flag DS:59B5 set.
+- **0x3C** has no row (empty frame at OVR 0x4248): an unhandled opcode in the VM. Its run-time behaviour stays `[?]`.
+- **PROGRAM** OVR 0x41A1: compares the operand's **low byte**; 9 runs camp with the PC saved around it, then EXIT only
+  while $4C38 = 0 (OVR 0x422E). Camp (OVR 0x4136) runs script vectors 2 (DS:67DB) and 3 (DS:67DD) through OVR 0x47FD
+  `[?]` (host side, not modelled). DS:A4D4 is saved and restored around the handler `[?]`.
+- The area loop / script switch (`FollowScriptChanges`) is PoR's (vectors 4, 0, 1) without PoR's event re-reads,
+  edge cell and view-mode rules for SotSB: OVR 0x4A50 … was not read `[?]`.
+
+### 10.4 Opcodes
+
+- **CLOCK** OVR 0x3D37: two plain value fetches (low bytes) to OVR 0x2BA0D (amount, unit); no residue index as in
+  PoR. `IEclHost.AdvanceClock`; the clock routine and the unit codes `[?]`.
+- **LOADCHAR** OVR 0xEA3: PoR's walk (member v AND 0x7F becomes current when listed), and DS:A4D1 = 0 when it is,
+  1 when not (`EclMemory.MemberMissing`, read by $7D00). Removal with bit 0x80 and DS:A4B6 and A4B7 set: OVR 0x20E40
+  with (0, 1), then the party list redraw OVR 0x38915.
+- **Removal** OVR 0x20E40(a, b): the current record is unlinked; its predecessor becomes current, or the new head
+  when it was the head; $7F3E − 1 when a = 0; with b ≠ 0, rec 0x155 goes to OVR 0x42CC0 first `[?]` (presumably the
+  combat icon); a nil current then becomes the head. This is PoR's 0x1CC10 rule (`EclPartyRules.RemoveCurrent`).
+- **SURPRISE** OVR 0x25A3: PoR's rule (dice OVR 0x36FAE = PoR's: count × (Random(sides) + 1)), but the result goes
+  through the writer to the constant **$02CB** (OVR 0x2658), which is no cell and no special write case: lost.
+  PoR wrote $6DCB; the constant was not moved with the regions. No script uses SURPRISE.
+- **LOADFILES / LOADPIECES** OVR 0x18AA: all three values fetched (low bytes), DS:59B7 set. LOADFILES (DS:59B9):
+  o1 not 255/127 and $4BE6 ≠ 0 → $4BC5 = o1, map o1 loaded (OVR 0x40A6D), $7EC9 = 0; no outdoor branch.
+  LOADPIECES (DS:59B8): o1 = 127 → set 0 into slot 1 only. Else with $4BE7 and $4BE8 ≠ 0: slot 1 = o1 (255 empties);
+  then with **$4BE9 ≠ 0** slots 2 and 3 get o2 / o3 only when not 255/127 (else untouched), with $4BE9 = 0 slot 3 = o3
+  (255/127 empties). Otherwise slot k = o_k, **255 or 127 empties it**. After both ran with DS:67E8 = 3 a redraw
+  follows (OVR 0x1A68, display).
+- **FINDITEM** OVR 0x38B8: PoR's (item list rec 0x161, next +0x2A, type byte +0x2E).
+- **DUMP (3E)** OVR 0x424F: PC + 1; the removal OVR 0x20E40(0, 1) on the current character; the new current one
+  becomes the selected one (DS:59BB); party list redraw (OVR 0x38915).
+- **FIND SPECIAL (3F)** OVR 0x4282: flags cleared; "=" when the current character's effect list (rec 0xFB, next +5)
+  holds an effect whose byte 0 is the operand's low byte (OVR 0x3AA19), else "≠".
+- **DESTROY ITEMS (40)** OVR 0x42D3: for each member in list order, each item whose byte +0x2E is the operand's low
+  byte is unlinked and freed (OVR 0x3966C) with that member current; a readied one (byte +0x34 ≠ 0) goes through
+  OVR 0x28D70 first `[?]` (the unready routine, not read; the VM leaves the record as it is); after each member OVR
+  0x3A292 runs on it `[?]` (not read); the old current character is restored.
+- **ADD EP (41)** OVR 0x43FF: amount = operand 2 (16-bit, fetched first), who = operand 1's low byte. Text cursor to
+  column 1 row 17, then the whole-party message (OVR 0x43AF) or the one-member message with the name (OVR 0x43DB),
+  shown through START 0540:04B9 and 0540:0BF7 `[?]` (`IEclHost.ExperienceMessage`). Per member: share = amount div
+  (count of rec 0x111–0x117 above 0 as signed bytes; the loop runs k = 0 … 6), **a divide fault when the count is 0**
+  (even with rec 0x1A7 = 0: the div comes first); when rec 0x1A7 ≠ 0 the dword at rec 0x12C gets the share (add
+  with carry). `[?]` rec 0x1A7's meaning.
+- **CALL** OVR 0x3FD1: ids as the profile lists ($2DCB view refresh, $B203 sound by $03DE 8 / 10, $C01E one square
+  forward via OVR 0xAD2B, $C018 re-reads the wall ahead only while $4BE6 = 0, $6803 cycles an animation table
+  DS:89F2 / 89F4 / 89F5 `[?]`); effects are the host's.
+- **Not re-read for the 439-byte record**: PARTYSTR, PSURPRISE, CHKPARTY, ROB, DAMAGE, SPELL and ADDNPC run PoR
+  record offsets in our code, so under SotSB they go to the host with a `[?]` diagnostic. The scripts use CHKPARTY
+  13×, ROB 7×, DAMAGE 41×, SPELL 4×, ADDNPC 5×.
+
 ## Open `[?]`
 
 - 0x3C and 0x1F behaviour at run time (hang assumed from the handler shape; not run in DOSBox).
-- CALL $C018 and $6803; DUMP (3E) and DESTROY ITEMS (40) details; PROGRAM 0 details; DS:67E9 (new-game start choice);
-  $4BFC/$4BFF in the save; which accessor is wall and which event; the step / "left the map" logic.
+- CALL $C018 and $6803; DESTROY ITEMS' unready (OVR 0x28D70) and per-member routine (OVR 0x3A292); PROGRAM 0 details;
+  the record handlers of 10.4's last item; the clock routine OVR 0x2BA0D; the SotSB area loop; DS:67E9 (new-game start
+  choice); $4BFC/$4BFF in the save; which accessor is wall and which event; the step / "left the map" logic.
 - Curse: special cells, CALL/PROGRAM ids, LOADMON cap, no-wrap scripts, GEO prefix (not read).
 - The SotSB record layout and the Curse → SotSB character import; the item file extension; `SOUND.DAX`; the
   `MON1ITM`/`MON1SPC` name builders.

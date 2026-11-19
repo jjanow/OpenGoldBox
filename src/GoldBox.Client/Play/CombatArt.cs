@@ -26,8 +26,8 @@ public sealed record CombatPicture(int Width, int Height, byte[] Pixels);
 /// share the terrain table, so the Amiga set (8 tiles; its 2 and 3 are DOS's 3 and
 /// 2, its 6 and 7 never drawn) is used as it is, as the Amiga shows it. Party icons (<see cref="Party"/>) are built
 /// the Amiga way from the Amiga CHEAD/CBODY when the module has the program's colour pairs
-/// (<see cref="IPorContent.AmigaIconPairs"/>) and every colour nibble of the character has a pen
-/// (<see cref="PorAmigaArt.IconPen"/>); otherwise DOS.
+/// (<see cref="IPorContent.AmigaIconPairs"/>), each colour nibble moved to a pen (<see cref="PorAmigaArt.IconPen"/>);
+/// otherwise DOS.
 /// </para>
 /// </summary>
 public sealed class CombatArt
@@ -224,7 +224,7 @@ public sealed class CombatArt
     /// body's top rows (hunk 16 +0x210: indices ORed, not replaced as on DOS), then recolours both pictures through
     /// <see cref="PorAmigaArt.IconColourMap"/> with the character's colour bytes moved to pens
     /// (<see cref="PorAmigaArt.AmigaIconColours"/>). Null (the DOS icon) under Original DOS, without the pairs or the
-    /// Amiga blocks, or when a colour nibble has no pen.
+    /// Amiga blocks.
     /// </summary>
     private CombatPicture? AmigaParty(EclCharacter c, bool attack)
     {

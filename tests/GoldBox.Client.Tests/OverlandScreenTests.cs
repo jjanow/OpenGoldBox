@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using GoldBox.Client.Input;
 using GoldBox.Client.Play;
 using GoldBox.Client.Screens;
+using GoldBox.Client.Tests.Support;
 using GoldBox.Core.Explore;
 using GoldBox.Data.Por;
 using Microsoft.Xna.Framework;
@@ -15,19 +16,7 @@ namespace GoldBox.Client.Tests;
 /// </summary>
 public class OverlandScreenTests
 {
-    private static string? Dir()
-    {
-        var d = Environment.GetEnvironmentVariable("GOLDBOX_POR_DIR");
-        return string.IsNullOrWhiteSpace(d) || !Directory.Exists(d) ? null : d;
-    }
-
-    private sealed class NoHost : IScreenHost
-    {
-        public void Push(IScreen screen) { }
-        public void Pop() { }
-        public void Quit() { }
-        public void SaveBindings() { }
-    }
+    private static string? Dir() => TestRig.PorDir();
 
     private sealed record Rig(ExploreScreen Screen, PorGame Game, ScriptRunner Runner, ActionInput Input, ClientPlayer Player);
 
@@ -38,12 +27,15 @@ public class OverlandScreenTests
         var save = PorSaveGame.PlaceOnOverland(File.ReadAllBytes(savePath), dir, script, x, y, Facing.North);
         var runner = new ScriptRunner();
         PorGame? game = null;
-        var player = new ClientPlayer(runner, () => game!.Memory) { Resources = ClientResources.Load(dir), TypesText = false };
+        var player = TestRig.Player(runner, () => game!.Memory);
+        player.Resources = ClientResources.Load(dir);
         game = PorGame.FromSave(dir, PorViewArt.Load(dir), save, Path.GetDirectoryName(savePath)!,
             new PorPlayer(player, player, player, player), seed);
         var input = new ActionInput(InputBindings.Defaults());
         var art = new ClientArt(dir, game.Art, new ScreenPalette(), PorArtChoice.Dos);
-        return new Rig(new ExploreScreen(game, player, runner, new NoHost(), 'B', art), game, runner, input, player);
+        // Loaded from slot A: the menus' shared highlight starts on A's place in the folder's save list
+        // (ExploreScreen.LoadMenuIndex), 0 whatever other saves the folder holds.
+        return new Rig(new ExploreScreen(game, player, runner, new TestRig.NoHost(), 'A', art), game, runner, input, player);
     }
 
     private static void Press(Rig r, GameAction a)
@@ -186,11 +178,12 @@ public class OverlandScreenTests
         var savePath = dir.Find("SAVGAMA.DAT")!;           // save A: a 3D map
         var runner = new ScriptRunner();
         PorGame? game = null;
-        var player = new ClientPlayer(runner, () => game!.Memory) { Resources = ClientResources.Load(dir) };
+        var player = TestRig.Player(runner, () => game!.Memory);
+        player.Resources = ClientResources.Load(dir);
         game = PorGame.FromSave(dir, PorViewArt.Load(dir), File.ReadAllBytes(savePath), Path.GetDirectoryName(savePath)!,
             new PorPlayer(player, player, player, player), 7);
         var input = new ActionInput(InputBindings.Defaults());
-        var r = new Rig(new ExploreScreen(game, player, runner, new NoHost(), 'B',
+        var r = new Rig(new ExploreScreen(game, player, runner, new TestRig.NoHost(), 'A',
             new ClientArt(dir, game.Art, new ScreenPalette(), PorArtChoice.Dos)), game, runner, input, player);
         game.Memory.Write(AreaLoop.NoAreaMap, 1);
         game.Memory.GameSpeed = 2;

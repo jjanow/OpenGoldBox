@@ -190,23 +190,25 @@ test checks that they match. The PoD and DQK columns above stay documentation un
   through the keys in its document, which carry their bank. `wallset` is banked by the container's disk digit in the
   art path (`art/dos/walldef/<d>/…`, section 10), not through a resource key.
 
-The VM reads the layout, the opcode and IF-skip tables and the PROGRAM exit ids from the profile. The other fields
-describe what the `Por13` code does: `EclMemory` refuses a profile with another handler set. The profile hangs off
+The VM reads the layout, the regions, the opcode and IF-skip tables, the PROGRAM exit ids, the fixed cells
+(`EclProfile.Cells`: old script id, view flag, map id, wall flags, party size, SURPRISE result, the script init's
+writes and clears, the character-view base) and the record size from the profile. The other fields name code: the
+handler set picks the branches in `EclVm` / `EclMemory` where a dialect's handler differs. The profile hangs off
 `EclMemory` (`new EclMemory(policy, profile)`; `EclVm.Profile` is the memory's). Both default to `ecl-por-1.3`, so
 callers that name none run PoR. `IPorContent.VmProfile` gives the content's profile: a DOS folder is `ecl-por-1.3`, and a
 module is its `vm` (section 4: its own or a dependency's; none fails with `ModuleHasNoVmException`). An unknown name
 fails when the module is opened (`UnknownEclProfileException`).
 
-Done (s24): `ecl-sotsb-1.3` (`EclProfiles.Sotsb13`), the SotSB column as data, for decoding only. It adds
-`EclReturnOnEmptyStack.Exits`, `EclCharacterView.Sotsb7C00Redirection` and `EclHandlerSet.Sotsb` (named, not
-written: `EclMemory` and `PorModule` refuse the profile with `EclProfileNotRunnableException`, which the Client
-reports like an unknown profile, so no SotSB script runs) and `ProgramExitGuardCell` (SotSB's PROGRAM 9 exits only
-while $4C38 = 0; null for PoR; `EclVm` reads it). Its opcode table is `EclOpcodes.Sotsb`: PoR's rows with CLOCK's second
+Done (s24): `ecl-sotsb-1.3` (`EclProfiles.Sotsb13`), the SotSB column as data. It adds
+`EclReturnOnEmptyStack.Exits`, `EclCharacterView.Sotsb7C00Redirection` and `EclHandlerSet.Sotsb` and
+`ProgramExitGuardCell` (SotSB's PROGRAM 9 exits only while $4C38 = 0; null for PoR; `EclVm` reads it). Since s28 the
+headless VM runs it (`survey-sotsb.md` §10: the handlers, the $7C00 view, the special-cell changes); `PorModule` still
+refuses it with `EclProfileNotRunnableException` (the Client reports it like an unknown profile), as the game host
+around the VM (encounters, combat, rules) is PoR's. Its opcode table is `EclOpcodes.Sotsb`: PoR's rows with CLOCK's second
 operand, 3E DUMP, 3F FINDSPECIAL, 40 DESTROYITEMS, 41 ADDEP, and no row for the 0x3C stub; the IF-skip counts are the
 program's chain (mis-skips 15, 25, 26, 2B, 34, 36). `EclDecoder` and `EclAnalysis` take a profile (default PoR), and
 `goldbox-tools ecl-check GAMEDIR --vm ecl-sotsb-1.3` and `tools/scripts/ecl.py … --vm sotsb` read a SotSB folder. The
-special cells, the redirection list into the 439-byte record and the new-game start (script 3 or 17) stay in
-`survey-sotsb.md` until the SotSB handlers are written. Banked kinds: `wallset`, `tile`, `treasureList`; monsters
+new-game start (script 3 or 17) stays in `survey-sotsb.md`. Banked kinds: `wallset`, `tile`, `treasureList`; monsters
 are always bank 1 (`MON1`) and the item and effect lists presumably too `[?]`, so they are not in the set.
 
 `EclVmPolicy` stays separate. It holds the `[?]` switches, which a test or a DOSBox check may change for one VM.
@@ -679,8 +681,8 @@ With `--amiga` (Amiga v1.0, s17): 508 Amiga pictures over 16 files (every pictur
    resolved from the manifest's `vm`. The VM takes its layout, opcode and IF-skip tables from it. A pure refactor:
    every test and every `ecl-compare` capture gives the same result as before.
    SotSB surveyed (s18, `docs/re/survey-sotsb.md`). **Decode profile done (s24):** `ecl-sotsb-1.3`
-   (`EclProfiles.Sotsb13`) decodes every SotSB block (`ecl-check --vm ecl-sotsb-1.3`); its handlers and character
-   view are not written, so `EclMemory` refuses it (§5.1).
+   (`EclProfiles.Sotsb13`) decodes every SotSB block (`ecl-check --vm ecl-sotsb-1.3`). **Runs headless (s28):** its
+   handlers, character view and moved cells (`survey-sotsb.md` §10); the game host around the VM is still PoR's (§5.1).
 7. Engine saves (§15). **Done (s18)** for PoR: `EngineSaveDocument` + `PorEngineSave`. The importer converts the
    shipped saves (`saves/a.json`, `saves/j.json`), and they write the 36 original files back byte for
    byte. `PorGame.FromSave` loads either form through one path. The Client's camp Save writes engine saves, and
@@ -718,8 +720,8 @@ With `--amiga` (Amiga v1.0, s17): 508 Amiga pictures over 16 files (every pictur
   (table 2) and the combat icons and grounds (table 3) are inferred, not traced (docs/re/por-art-formats.md §4).
   Client side (s19, docs/re/por-art-formats.md §4 "Amiga program reads"): under Amiga walls the backdrop takes the
   Amiga program's pens; RANDCOM is the Amiga set as the Amiga draws it; the party icons are built the Amiga way
-  (`art/amiga/icon-colours.json`). `[?]`: the EGA → pen move of the icon colours is from the art (EGA 5 and 13 have no
-  pen: such a character keeps its DOS icon); the sprite frame per
+  (`art/amiga/icon-colours.json`). `[?]`: the EGA → pen move of the icon colours is from the art (EGA 5 and 13, absent from the
+  art, take the nearest table-3 pen by RGB, 6 and 7: user decision s28); the sprite frame per
   distance and the use of the block x, y are from the art; the Amiga PIC animations are composed as the Amiga program
   composes them (XOR with the first frame) but timed with the DOS rule (the Amiga times them by poll passes). The title painting is optional (disk A's `intro`).
 - Settled (s18): the PoR overland tile table and special locations are in `rules/overland.json`, placed by areas

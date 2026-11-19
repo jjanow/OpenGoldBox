@@ -84,9 +84,16 @@ All 8 × 8 tiles share one numbering (Put8x8Symbol). Number 0 is "nothing". The 
   - a k-block record uses blocks i·10 + 1 … i·10 + k, with id 0 counted as 10;
   - see `geo-format.md` for the 127 → id 0 rule.
 - The program stops with a fatal error when a WALLDEF block is missing, so in play no script asks for one.
-  - Entered with fresh VM memory (the Client's `--area`), the Valjevo Castle scripts ask for slot 2 after a two-block
-    set: the two-flag rule ($49E7/$49E8, set by earlier play) is off.
-  - `PorViewArt` then leaves the slot as it is and logs a diagnostic `[?]`.
+  - Valjevo Castle's LOADPIECES 24, 25, 1 (ECL5 blocks 3, 4 and 6; WALLDEF5 holds only blocks 1 and 24) needs the
+    two-flag rule: block 6, the castle's entry from Stojanow Gate, sets $49E7 = $49E8 = 1 in its vector 4 (ECL5 6
+    $9C5A/$9C60) before its own LOADPIECES, and only the two ways out clear them (block 6 $9B7F/$9B85 on the south
+    gate back to ECL2 block 9, block 7 $A8D9/$A8DF on the way to civilised Phlan). So 24 fills slots 1–2 and 1 goes
+    to slot 3; set 25 is never read in play (DOSBox-X s28, below). Sweep of every v1.3 ECL block (`ecl.py dis`, s28):
+    the only other writes of the two cells are the graveyard's (ECL4 10: 1 at $9A72/$9A78 before its LOADPIECES,
+    0 at $9932/$9938 on the way out), and the only NEWECLs from outside ECL5 into disk 5 are Stojanow Gate's (ECL2 9
+    $9CA0 and $A5A0, both to block 6); inside the castle blocks 3–7 switch only among themselves, apart from those two exits.
+  - Entered with fresh VM memory (the Client's `--area`) at script 3 or 4 the flags are clear and the script asks for
+    block 25: `PorViewArt` then leaves the slot as it is and logs a diagnostic (the game would stop there).
   - `PorAreaEntryTests` enters every script 0..32 this way. Script 19 (the overland) loads no map and is refused.
 - LOADPIECES with 255 empties a slot. `[?]` Whether the program clears the bytes is not read; we zero them.
 - Wall type t (1..15) is the 156 bytes at (t − 1) × 156 of the three slots.
@@ -389,4 +396,17 @@ $4A9E = 255, as their vector 4 needs), loaded in DOSBox-X: ECL6 block 25 at 2,9 
 set, so its view shows the saved ones: `PorArea.FromSave` (the tools' and tests' load) now re-reads them before
 vector 4 as `PorGame` has done since s23 (0x1FBEE); before, `view-compare` showed an open view there.
 
-Not checked yet: the Valjevo Castle areas.
+**Valjevo Castle (s28).** Save A placed with `save-area` (`--walls 24,-1,1 --cell 49E7=1 --cell 49E8=1`, the state
+block 6's entry leaves; `--cell 49C5=M` for the hedge-maze script 5, which loads no map in its vector 4 so the Load
+re-reads map $49C5), loaded from the main menu in DOSBox-X (`MACHINE=ega`). Block 3's vector 4 takes map 3 or 5 from
+the facing (table $9C24: N, W → 3; E, S → 5); blocks 4, 5 and 7 load no wall set, so the saved 24/–/1 show (the castle
+wall types 11, 14, 15 come from set 1 in slot 3; types 1–10, the walls 3, the hedges 7–9 and the tower's 2–4, 6 and
+10, from set 24's two blocks in slots 1–2).
+Views: block 6 map 6 at 1,8 N and 5,8 E (hedges); block 4 map 4 at 14,10 N and 8,7 W (hedges) plus one step west;
+block 3 map 3 at 1,9 W and map 5 at 13,7 E; the hedge maze (block 5) on map 3 at 8,8 N, 4 at 6,10 S, 5 at 5,6 E and
+6 at 9,7 W; the inner tower (block 7, map 7, sky 8) at 2,5 S, 7,9 N and 10,5 W. 0 differing pixels in all 14,
+pinned in `OtherAreaViewTests.Valjevo_views_match_dosbox` (through `PorArea` and `PorGame`; no diagnostic). Nothing
+needed fixing. `[?]` A save made in the hedge maze holds map 3–6 in $49C5, and the VM takes its current script number from
+$49C5 (`PorSaveGame.ScriptId`), so after such a load the Client counts block 3–6 as current while block 5's code runs;
+the views do not depend on it, but code that reads the current block (DS:84DC; NEWECL's $49F2 write, then a vector
+4's `COMPARE [$49F2]`) could differ. What the program's Load sets DS:84DC to is not read.

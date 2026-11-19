@@ -122,12 +122,12 @@ public class SotsbProfileTests(ITestOutputHelper output)
     }
 
     [Fact]
-    public void Memory_refuses_to_run_it()
+    public void Memory_and_vm_take_it()
     {
-        // Decoding only: the SotSB handlers (RETURN-exits, 3E–41, the 7C00 view) are not written.
-        var e = Assert.Throws<EclProfileNotRunnableException>(() => new EclMemory(profile: S));
-        Assert.Contains("ecl-sotsb-1.3", e.Message);
-        Assert.Same(S, e.Profile);
+        var m = new EclMemory(profile: S);
+        Assert.Same(S, new EclVm(m, new ScriptedEclHost()).Profile);
+        Assert.Equal(0x1B7, S.RecordSize);
+        Assert.Equal(0x11D, EclProfiles.Por13.RecordSize);
     }
 
     [Fact]

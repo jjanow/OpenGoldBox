@@ -389,8 +389,17 @@ and Speed menus, an AI attack at game speed 9). Code: `src/GoldBox.Client/Screen
   vector 0 = CLRMON, LOADMON 1 ×2, COMBAT, one step north: an outdoor fight (DS:49FA = 3); on its first screen every
   cell with no creature, against the arena from the state, matched the Client's WILDCOM tile pixel for pixel with the
   0/8 swap: terrains 23, 33, 37, 42, 44, 46, 48, 57 (tiles 22, 1, 5, 10, 12, 14, 16, 25;
-  `CombatScreenGameTests.Wilderness_ground_in_an_outdoor_fight_matches_dosbox`). Terrains 28–30 were not seen on screen
-  (program read only).
+  `CombatScreenGameTests.Wilderness_ground_in_an_outdoor_fight_matches_dosbox`).
+  **D** (s28, the same fight): terrains **28, 29 and 30 seen on screen** and pixel-exact against the Client's RANDCOM
+  items 2, 3, 4 with the 0/8 swap. 28/29 come only from the rare-feature roll (1/10,000 per tile-22 cell), so the
+  seed was chosen: RandSeed DS:4428 patched in a DOSBox-X state taken before the step (`dosbox-trace-method.md`); the
+  arena builder starts 5 draws after it (the monster loader's; the boot's own seed 0xED17FD58 rebuilt its arena byte
+  for byte), and `ArenaBuilder.BuildWilderness` picked seeds with a 28 or 29 near the party: 0x3A6D3172 gave 28 at
+  31,14 (one column right of the first screen, shown by moving the Manual aim cursor past it) and 0x7A17D593 gave 29 at
+  31,13 on the first screen, as predicted (`CombatMapProgramTests.Rare_features_28_and_29_match_dosbox_seeds`).
+  Terrain 30: Darkstar given Stinking Cloud (`CHRDATA5.SAV` 0x2B = 34) cast it on an empty 2 × 2; the four cells were
+  0x1E in the arena and drew RANDCOM item 4. The same screens added terrains 26 and 27 outdoors and WILDCOM 32, 34, 36,
+  38, 40, 45, 47, 56 (one picture per terrain throughout).
 - **Icons**: player characters (record 0x84 < 0x80) get the party icon, other creatures the CPIC block = their icon slot's picture (LoadCombatIcon; a joined NPC not checked `[?]`), attack pose + 128 (seen in the AI
   burst); party members are CBODY + CHEAD (head on the top rows) recoloured by 0xC1–0xC6, + 64 for icon size 2: all six
   members of save A matched pixel for pixel (`CombatArt.Party`). Colour 0 is see-through. Facing 5–7 mirrors the

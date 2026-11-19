@@ -6,9 +6,10 @@ using GoldBox.Data.Por;
 namespace GoldBox.Core.Tests.Support;
 
 /// <summary>
-/// The player's PoR folder (<see cref="PorData"/>) imported once per test run into a new folder under
-/// <c>&lt;temp&gt;/goldbox-tests/</c> (game data: never written into the repo). The tests do not delete it (the user's
-/// rule: no deletes of computed paths); the temp folder's own cleanup removes it.
+/// The player's PoR folder, its release files only (<see cref="PorData.ReleaseDir"/>: extra saves left out), imported
+/// once per test run into a new folder under <c>&lt;temp&gt;/goldbox-tests/</c> (game data: never written into the
+/// repo). The tests do not delete it (the user's rule: no deletes of computed paths); the temp folder's own cleanup
+/// removes it.
 /// </summary>
 public static class PorModuleData
 {
@@ -23,7 +24,7 @@ public static class PorModuleData
     private static (string, PorImportReport) Import()
     {
         var dir = Path.Combine(Path.GetTempPath(), "goldbox-tests", $"por-module-{Guid.NewGuid():N}");
-        var report = PorImporter.Import(PorData.Dir ?? throw new InvalidOperationException(PorData.SkipReason), dir);
+        var report = PorImporter.Import(PorData.ReleaseDir, dir);
         return (dir, report);
     }
 }

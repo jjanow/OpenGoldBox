@@ -103,7 +103,27 @@ public class CombatMapProgramTests
         Assert.True(n >= 8);
     }
 
-    private static readonly BaseItemTable NoItems = new(new byte[BaseItemTable.EntrySize * BaseItemTable.Count]);
+    [PorFact]
+    public void Rare_features_28_and_29_match_dosbox_seeds()
+    {
+        // DOSBox-X s28: save A on script 26's overland at 12,13 N (DS:49FA = 3), vector 0 = CLRMON, LOADMON 1 ×2,
+        // COMBAT; RandSeed DS:4428 before the step patched in the state. The offset of 5 draws (the monster loader's)
+        // was found by rebuilding the boot's own arena (seed 0xED17FD58) byte for byte in a one-off probe (not pinned
+        // here). This test pins what the two patched seeds were chosen for: the arena's one rare feature and its cell,
+        // which the states at the first menu showed.
+        foreach (var (seed, x, y, terrain) in new[] { (0x3A6D3172u, 31, 14, 28), (0x7A17D593u, 31, 13, 29) })
+        {
+            var arena = new CombatArena();
+            var r = new TurboPascalRandom(seed);
+            r.Skip(5);
+            ArenaBuilder.BuildWilderness(arena, Tables.Value, 12, 13, 3, false, 26, r.Next);
+            var rare = Enumerable.Range(0, CombatArena.Width * CombatArena.Height)
+                .Where(i => arena.Cells()[i] is 28 or 29).Select(i => (i % CombatArena.Width, i / CombatArena.Width, arena.Cells()[i]));
+            Assert.Equal([(x, y, (byte)terrain)], rare);
+        }
+    }
+
+    private static readonly BaseItemTable NoItems =new(new byte[BaseItemTable.EntrySize * BaseItemTable.Count]);
 
     [OracleFact]
     public void Placement_matches_the_program()

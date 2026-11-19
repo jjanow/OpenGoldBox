@@ -88,7 +88,7 @@ internal static class ViewCommands
     {
         if (a.Length < 5)
         {
-            Console.Error.WriteLine("usage: goldbox-tools save-area GAMEDIR SAVGAMx.DAT OUT.DAT SCRIPT X,Y,F [--flag0 N] [--walls A,B,C]");
+            Console.Error.WriteLine("usage: goldbox-tools save-area GAMEDIR SAVGAMx.DAT OUT.DAT SCRIPT X,Y,F [--flag0 N] [--walls A,B,C] [--cell HEXADDR=N]...");
             return 2;
         }
         var dir = new PorGameDirectory(a[0]);
@@ -101,6 +101,16 @@ internal static class ViewCommands
         int[]? walls = Opt("--walls")?.Split(',').Select(v => int.Parse(v, CultureInfo.InvariantCulture)).ToArray();
         var save = PorSaveGame.PlaceInArea(source, dir, script, int.Parse(p[0], CultureInfo.InvariantCulture),
             int.Parse(p[1], CultureInfo.InvariantCulture), f, flag0, walls);
+        // Other VM cells of the $4900 area, e.g. --cell 49E7=1 --cell 49E8=1 (Valjevo's two-flag LOADPIECES) or
+        // --cell 49C5=3 (the map a script that loads none reads on a load).
+        for (int i = 0; i + 1 < a.Length; i++)
+            if (a[i] == "--cell" && a[i + 1].Split('=') is [var addr, var value])
+            {
+                int o = PorSaveGame.Off4900 + 2 * (int.Parse(addr, NumberStyles.HexNumber, CultureInfo.InvariantCulture) - 0x4900);
+                int v = int.Parse(value, CultureInfo.InvariantCulture);
+                save[o] = (byte)v;
+                save[o + 1] = (byte)(v >> 8);
+            }
         int disk = save[PorSaveGame.OffDisk];
         File.WriteAllBytes(a[2], save);
         var check = PorArea.FromSave(dir, PorViewArt.Load(dir), save, Path.GetDirectoryName(Path.GetFullPath(dir.Find(a[1]) ?? a[1]))!);

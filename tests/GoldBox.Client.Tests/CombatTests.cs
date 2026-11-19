@@ -1,6 +1,7 @@
 using GoldBox.Client.Input;
 using GoldBox.Client.Play;
 using GoldBox.Client.Screens;
+using GoldBox.Client.Tests.Support;
 using GoldBox.Core.Ecl;
 using GoldBox.Core.Explore;
 using GoldBox.Core.Game;
@@ -200,19 +201,7 @@ public class CombatScreenUnitTests
 /// <summary>A fight on the combat screen, headless, on save A of the player's files (skipped without GOLDBOX_POR_DIR).</summary>
 public class CombatScreenGameTests
 {
-    private static string? Dir()
-    {
-        var d = Environment.GetEnvironmentVariable("GOLDBOX_POR_DIR");
-        return string.IsNullOrWhiteSpace(d) || !Directory.Exists(d) ? null : d;
-    }
-
-    private sealed class NoHost : IScreenHost
-    {
-        public void Push(IScreen screen) { }
-        public void Pop() { }
-        public void Quit() { }
-        public void SaveBindings() { }
-    }
+    private static string? Dir() => TestRig.PorDir();
 
     private sealed record Rig(ExploreScreen Screen, PorGame Game, ScriptRunner Runner, ActionInput Input, ClientPlayer Player);
 
@@ -222,14 +211,13 @@ public class CombatScreenGameTests
         var art = PorViewArt.Load(dir);
         var runner = new ScriptRunner();
         PorGame? game = null;
-        var player = new ClientPlayer(runner, () => game!.Memory);
+        var player = TestRig.Player(runner, () => game!.Memory);
         player.Chooser.Text = new CombatText(dir.Program());
         player.Chooser.Pauses = false;
-        player.TypesText = false;
         game = PorGame.FromSave(dir, art, dir.Find("SAVGAMA.DAT")!,
             new PorPlayer(player, player, player, player, FightMenu: player.Chooser, QuickFight: true), seed);
         var input = new ActionInput(InputBindings.Defaults());
-        return new Rig(new ExploreScreen(game, player, runner, new NoHost()), game, runner, input, player);
+        return new Rig(new ExploreScreen(game, player, runner, new TestRig.NoHost()), game, runner, input, player);
     }
 
     private static void Press(Rig r, GameAction a)
@@ -583,12 +571,29 @@ public class CombatScreenGameTests
     [InlineData(46, "ea732a7dacb62ace4306234738680708cad0ebcfad2b6b46d8da332266d315a7")]
     [InlineData(48, "ce5195c104d674cddbe539848f27e785d71cfec975b07cf3af0a5342217047aa")]
     [InlineData(57, "d0b99609c594f49a9ad2b93ff0a48bc441009ca326c54fe3e31fcd5585e73f5b")]
+    // s28, the same fight: rare features 26–29 (RANDCOM 0–3) and Stinking Cloud's 30 (RANDCOM 4), and more WILDCOM tiles.
+    [InlineData(26, "bcb363a456232bd31955989bc3162a10f742d644772fc2c07e12c3d934b9e5fd")]
+    [InlineData(27, "7faf5e1bbb76a5e0fb0af1191b9fd27165c8a51336c1d23fbbdb6e7c4b8b0167")]
+    [InlineData(28, "bfaf2d8b8ec9d5f2f9f6724a3f64f11b4f74d83574e26818833f63c18b5bf4b3")]
+    [InlineData(29, "e8d61fe4a919ed2e6ec2f171b0320ebd76d6009c5c5171d51dc01906a90fe7a9")]
+    [InlineData(30, "5ea8293ef4293717a21e6c6ad1c76326742e69807f0fa788e553bf03785b697c")]
+    [InlineData(32, "5e31f3caf44358572faa3761bb5c75097d7dd1768404d6f8e3bfda3c503ec548")]
+    [InlineData(34, "aa66c635ea716ddea691b532c6b9a4fe832881add7110fcb50ccc1bc14ebca4f")]
+    [InlineData(36, "41cc50fa92ea78df0ab907bf4d224dce3c162ed13e9eeee0055bafd77d471340")]
+    [InlineData(38, "2a831192c284a0a70a173c31d1eec0c01f92772de460a6b1c7356862936903d8")]
+    [InlineData(40, "ede55154b41ee59a56a369db63340b793fa8dc944e5111d67a0a424e880296df")]
+    [InlineData(45, "5dc0d2fe6719f66c869e7b8a4918f59377fa919998ac7d104cea7e7c53955bc7")]
+    [InlineData(47, "f6eca3db30f629c6488925686c262cce6c08882edd3e38f1edfcd94e032c0bab")]
+    [InlineData(56, "a109bb5fb0e994e3dfaef19400f60c870840a8a5045c5bb34e90f4ec9d3f9a03")]
     public void Wilderness_ground_in_an_outdoor_fight_matches_dosbox(int terrain, string sha256)
     {
         // DOSBox-X s26 (MACHINE=ega): save A put on script 26's overland at 12,13 N (goldbox-tools save-overland), its
         // vector 0 = CLRMON, LOADMON 1 ×2, COMBAT, one step north: an outdoor fight (DS:49FA = 3). The first screen's
         // 7 × 7 cells with no creature on them, reduced to EGA indices as shown (the combat palette's 0/8 swap), against
         // the arena's terrain from the state at that screen: every cell of a terrain gave the same picture.
+        // s28: RandSeed DS:4428 patched in the state before the step (0x3A6D3172: terrain 28 at 31,14, shown by moving
+        // the Manual aim cursor past it; 0x7A17D593: 29 at 31,13 on the first screen; the arena builder starts 5 draws
+        // after that seed, as ArenaBuilder.BuildWilderness predicted), and Darkstar's Stinking Cloud (a 2 × 2 of 30).
         if (Dir() is null)
             return;
         var dir = new PorGameDirectory(Dir()!);

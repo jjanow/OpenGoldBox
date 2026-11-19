@@ -23,7 +23,7 @@ public enum EclStopReason
     Budget,
     /// <summary>A VM fault: PC outside the script area, a decode past the end, a missing script, DIV by zero.</summary>
     Fault,
-    /// <summary>Opcode 0x1F or ≥ 0x3E with <see cref="UnhandledOpcodeMode.StopWithDiagnostic"/>.</summary>
+    /// <summary>An opcode with no handler (PoR: 0x1F, ≥ 0x3E; SotSB: 0x1F, 0x3C, ≥ 0x42) with <see cref="UnhandledOpcodeMode.StopWithDiagnostic"/>.</summary>
     UnhandledOpcode,
     /// <summary>The host had no answer for an input request (<see cref="EclAwaitingInput"/>); the game would be waiting.</summary>
     AwaitingInput,
@@ -35,13 +35,14 @@ public sealed record EclRunResult(EclStopReason Reason, int Steps, string? Messa
 public sealed class EclVmFault(string message) : Exception(message);
 
 /// <summary>
-/// Headless ECL virtual machine for Pool of Radiance (DOS v1.3), built from docs/re/ecl-format.md. Instructions are
+/// Headless ECL virtual machine for Pool of Radiance (DOS v1.3), built from docs/re/ecl-format.md, and for Secret of
+/// the Silver Blades (the <see cref="EclHandlerSet.Sotsb"/> branches, docs/re/survey-sotsb.md §10). Instructions are
 /// decoded at run time from the live script area at the PC (scripts may write into it). Operand slots and string
 /// slots persist from one instruction to the next as in the program, so a type-0 operand used as an address keeps
 /// the previous high byte. Every effect taken from Lee only is marked <c>[?]</c> with its opcode row; the choices
 /// the spec leaves open live in <see cref="EclVmPolicy"/>. The dialect's data (script layout, opcode and IF-skip
-/// tables, PROGRAM ids that end the run) comes from the <see cref="Profile"/>; the handlers here are its
-/// <see cref="EclHandlerSet.Por13"/> code.
+/// tables, PROGRAM ids that end the run, the fixed cells) comes from the <see cref="Profile"/>; the handlers here are
+/// the <see cref="EclHandlerSet.Por13"/> code with the SotSB handlers branching off where the program differs.
 /// </summary>
 public sealed class EclVm
 {
@@ -199,30 +200,31 @@ public sealed class EclVm
     /// Script init (GAME.OVR 0x7689) on the script already in the area: PC = $9900, GOSUB stack and the six flags
     /// cleared, $6DE1 = 255, $6DD2 = $6DD3 = 0, $49E5 = 0, the five vectors read, $49E6 = 1; unless
     /// <see cref="LoadingSave"/> (DS:49F8) is set, $4A00–$4A1F and $6E79–$6E82 are zeroed; DS:49F8 is cleared. It also
-    /// resets the 3D-view colour bytes behind $C059 / $C05F (DS:6F68 = 0x41, DS:6F69 = 9, 0x76A3).
+    /// resets the 3D-view colour bytes behind $C059 / $C05F (DS:6F68 = 0x41, DS:6F69 = 9, 0x76A3). The cells come from
+    /// <see cref="EclProfile.Cells"/>: SotSB's init (OVR 0x922C) writes $7EE1, $7ED2, $7ED3 and $4BE5, sets no view flag
+    /// and clears $4C00–$4C1F and $7F79–$7F82 unless DS:67F0 is set.
     /// </summary>
     public void InitScript()
     {
+        var cells = Profile.Cells;
         _gosub.Clear();
-        Memory.PictureShown = false; // 0x768F
-        Memory.Ds84D2 = false; // 0x7699
+        Memory.PictureShown = false; // 0x768F (SotSB OVR 0x9237: DS:A4C8)
+        Memory.Ds84D2 = false; // 0x7699 (SotSB OVR 0x923C: DS:A4B6, A4B7)
         Memory.Ds84D3 = false;
         Array.Clear(Flags);
         Memory.SpecialWriteValues[0xC059] = 0x41;
         Memory.SpecialWriteValues[0xC05F] = 0x09;
-        Memory.ViewRedrawFlags |= ViewRedraw.Backdrop; // 0x76AD: DS:84E5 := 1
-        Memory.Write(0x6DE1, 255);
-        Memory.Write(0x6DD2, 0);
-        Memory.Write(0x6DD3, 0);
-        Memory.Write(0x49E5, 0);
+        Memory.ViewRedrawFlags |= ViewRedraw.Backdrop; // 0x76AD: DS:84E5 := 1 (SotSB OVR 0x9250: DS:A4CB)
+        foreach (var (cell, value) in cells.InitWrites)
+            Memory.Write(cell, value);
         ReadVectors();
-        Memory.Write(0x49E6, 1);
+        if (cells.InitSetsViewFlag)
+            Memory.Write(cells.ViewFlag, 1);
         if (!LoadingSave)
         {
-            for (ushort a = 0x4A00; a <= 0x4A1F; a++)
-                Memory.Write(a, 0);
-            for (ushort a = 0x6E79; a <= 0x6E82; a++)
-                Memory.Write(a, 0);
+            foreach (var (first, last) in cells.InitClears)
+                for (int a = first; a <= last; a++)
+                    Memory.Write((ushort)a, 0);
         }
         LoadingSave = false;
     }
@@ -383,6 +385,25 @@ public sealed class EclVm
         for (int i = 0; i < maxSwitches && ScriptChanged; i++)
         {
             LoadPending();
+            if (!PorHandlers)
+            {
+                // [?] SotSB's area loop (OVR 0x4A50 …) was not read: vectors 4, 0 and 1 run as in PoR, without PoR's
+                // event re-reads, edge cell and view-mode rules.
+                last = RunVector(Profile.InitVector, maxStepsPerRun);
+                if (last.Reason is not (EclStopReason.Exit or EclStopReason.NewScript))
+                    return last;
+                LoadPending();
+                ScriptChanged = false;
+                last = RunVector(0, maxStepsPerRun);
+                if (last.Reason is not (EclStopReason.Exit or EclStopReason.NewScript))
+                    return last;
+                if (ScriptChanged)
+                    continue;
+                last = RunVector(1, maxStepsPerRun);
+                if (last.Reason is not (EclStopReason.Exit or EclStopReason.NewScript))
+                    return last;
+                continue;
+            }
             if (ScriptSwitchEventByte?.Invoke(false) is { } ev)
                 Memory.Position.EventByte = ev;
             Memory.Write(EdgeStepCell, 0);
@@ -393,14 +414,14 @@ public sealed class EclVm
             if (last.Reason is not (EclStopReason.Exit or EclStopReason.NewScript))
                 return last;
             LoadPending();
-            if (ReadMem(0x49E6) == 0 && CurrentScript is >= 25 and <= 27)
+            if (ReadMem(Profile.Cells.ViewFlag) == 0 && CurrentScript is >= 25 and <= 27)
                 Memory.ViewMode = (byte)(CurrentScript - 23);
             // The redraw 0x2DCF4 runs (0x3FD2–0x3FF5) when the view mode stayed 1, or when the old mode was outdoors or
             // the new one is 1 and vector 4 loaded files (DS:4431); it re-reads the event byte only in the 3D view
             // (DS:49FA = 1 or $49E6 ≠ 0, 0x2DCFA–0x2DD27).
             byte before = Memory.PreviousViewMode, now = Memory.ViewMode;
             bool redraw = (before == 1 && now == 1) || ((before > 1 || now == 1) && Memory.FilesLoadedSinceSwitch);
-            if (redraw && (now == 1 || ReadMem(0x49E6) != 0) && ScriptSwitchEventByte?.Invoke(true) is { } ev2)
+            if (redraw && (now == 1 || ReadMem(Profile.Cells.ViewFlag) != 0) && ScriptSwitchEventByte?.Invoke(true) is { } ev2)
                 Memory.Position.EventByte = ev2;
             if (redraw)
             {
@@ -486,6 +507,28 @@ public sealed class EclVm
         return result;
     }
 
+    /// <summary>True for PoR's handler set; false for SotSB, whose differing handlers branch on it.</summary>
+    private bool PorHandlers => Profile.Handlers == EclHandlerSet.Por13;
+
+    /// <summary>
+    /// The party opcodes that work on PoR record offsets run on the attached party only for PoR; otherwise (no party,
+    /// or SotSB, whose handlers were not re-read for the 439-byte record) they go to the host, with a diagnostic.
+    /// </summary>
+    private bool PartyRulesFor(string opcode)
+    {
+        if (Memory.Party is null)
+        {
+            Diag($"{opcode} with no party attached: host call");
+            return false;
+        }
+        if (!PorHandlers)
+        {
+            Diag($"[?] {opcode}: the {Profile.Name} handler was not read for its {Profile.RecordSize}-byte record; host call");
+            return false;
+        }
+        return true;
+    }
+
     private EclRunResult? Execute(byte op)
     {
         var info = Profile.Opcodes.Get(op);
@@ -518,10 +561,12 @@ public sealed class EclVm
                 return null;
             }
             case EclOpcodes.Return:
-                // P: steps past the opcode (done by the loader); empty stack falls through
-                // (EclReturnOnEmptyStack.FallsThrough, the one rule the Por13 handlers have).
+                // P: steps past the opcode (done by the loader). Empty stack: PoR falls through; SotSB (OVR 0x170A)
+                // calls the EXIT handler (EclReturnOnEmptyStack.Exits).
                 if (_gosub.Count > 0)
                     Pc = _gosub.Pop();
+                else if (Profile.ReturnOnEmptyStack == EclReturnOnEmptyStack.Exits)
+                    DoExit();
                 return null;
             case EclOpcodes.Compare:
                 DoCompare();
@@ -553,9 +598,21 @@ public sealed class EclVm
             case EclOpcodes.NewEcl:
             {
                 // P (0x1917): $49F2 = current script id, load ECL<disk>.DAX block v and run the script init at once;
-                // the run stops and the caller runs the new script's vectors 4, 0, 1.
-                int script = Value(1);
-                Memory.Write(0x49F2, (ushort)CurrentScript);
+                // the run stops and the caller runs the new script's vectors 4, 0, 1. SotSB (OVR 0x1837): the old id
+                // (the byte DS:A4C2) goes to $4BF2 before the operand's value is fetched, and the id is its low byte.
+                // Its loader (OVR 0x939F) retries until the block is there and always returns 1, so the failure branch
+                // (OVR 0x1890) is never taken; a missing block is a VM fault here.
+                int script;
+                if (PorHandlers)
+                {
+                    script = Value(1);
+                    Memory.Write(Profile.Cells.OldScriptId, (ushort)CurrentScript);
+                }
+                else
+                {
+                    Memory.Write(Profile.Cells.OldScriptId, (byte)CurrentScript);
+                    script = Value(1) & 0xFF;
+                }
                 Memory.FilesLoadedSinceSwitch = false; // DS:4431 := 0 (0x19AA)
                 HostCall("ScriptChanging", [Num(script)], null, () => Host.ScriptChanging((ushort)script));
                 if (Scripts is null)
@@ -668,13 +725,10 @@ public sealed class EclVm
             {
                 var dst = DestWord(1);
                 ushort r = 0;
-                if (Memory.Party is { } party)
-                    r = PartyStrength(party);
+                if (PartyRulesFor("PARTYSTR"))
+                    r = PartyStrength(Memory.Party!);
                 else
-                {
-                    Diag("PARTYSTR with no party attached: host answer used");
                     HostCall("PartyStrength", [], () => Num(r), () => r = Host.PartyStrength());
-                }
                 Memory.Write(dst, r);
                 return null;
             }
@@ -682,10 +736,10 @@ public sealed class EclVm
             {
                 // P: a1 = 1 if a party member's class (record 0x2F) is ranger (4) or cleric/ranger (10), else 0; a2 = 0.
                 ushort ranger = 0;
-                if (Memory.Party is { } party)
-                    ranger = (ushort)(party.Members.Any(m => m[0x2F] is 4 or 10) ? 1 : 0);
+                if (PartyRulesFor("PSURPRISE"))
+                    ranger = (ushort)(Memory.Party!.Members.Any(m => m[0x2F] is 4 or 10) ? 1 : 0);
                 else
-                    Diag("PSURPRISE with no party attached: no ranger assumed");
+                    Diag("[?] PSURPRISE: no ranger assumed");
                 Memory.Write(DestWord(1), ranger);
                 Memory.Write(DestWord(2), 0);
                 return null;
@@ -699,13 +753,16 @@ public sealed class EclVm
                 int y = (sbyte)(byte)(b[1] + 2 - b[2]);
                 int r1 = DieRoll(6), r2 = DieRoll(6);
                 int result = r2 <= y ? 2 : r1 <= x ? 1 : 0;
-                Memory.Write(0x6DCB, (ushort)result);
+                // SotSB (OVR 0x25A3): same rule and dice (OVR 0x36FAE), but the result goes through the writer to the
+                // constant $02CB, which no region or special write case takes: it is lost.
+                Memory.Write(Profile.Cells.SurpriseResult, (ushort)result);
                 return null;
             }
             case EclOpcodes.FindItem:
             {
                 // P (0x33B0): all flags cleared and "≠" set; "=" (and "≠" cleared) if any party member carries an
-                // item whose byte 0x2E equals the low byte of v ([?] byte 0x2E presumably the item type).
+                // item whose byte 0x2E equals the low byte of v ([?] byte 0x2E presumably the item type). SotSB's
+                // handler (OVR 0x38B8) is the same: item list at record 0x161, next item +0x2A, byte +0x2E.
                 int item = Value(1) & 0xFF;
                 bool found = false;
                 if (Memory.Party is { } party)
@@ -877,7 +934,7 @@ public sealed class EclVm
                 ushort effect = (ushort)(Value(2) & 0xFF);
                 var dsts = new[] { DestWord(3), DestWord(4), DestWord(5), DestWord(6) };
                 EclPartyCheck r = default;
-                if (Memory.Party is not null)
+                if (PartyRulesFor("CHKPARTY"))
                 {
                     if (PartyRules.CheckParty(field, effect) is not { } c)
                         return null; // other selectors write nothing
@@ -885,7 +942,6 @@ public sealed class EclVm
                 }
                 else
                 {
-                    Diag("CHKPARTY with no party attached: host answer used");
                     HostCall("CheckParty", [Num(field), Num(effect)], () => $"{r.Min},{r.Max},{r.Average},{r.Any}",
                         () => r = Host.CheckParty(field, effect));
                 }
@@ -908,20 +964,17 @@ public sealed class EclVm
             {
                 // P (0x2AF7): v1 who, v2 the money percentage and the item chance (operand 2 fetched twice); v3 unused.
                 var v = Values(1, 2);
-                if (Memory.Party is not null)
+                if (PartyRulesFor("ROB"))
                     PartyRules.Rob(v[0] & 0xFF, v[1] & 0xFF);
                 else
-                {
-                    Diag("ROB with no party attached: host call only");
                     HostCall("Rob", [Num(v[0]), Num(v[1]), Num(v[1])], null, () => Host.Rob(v[0], v[1], v[1]));
-                }
                 return null;
             }
             case EclOpcodes.Damage:
             {
                 // P (0x34BB): flags, dice count, sides, bonus, to-hit / save type (low bytes); EclPartyRules.Damage.
                 var v = Values(1, 5);
-                if (Memory.Party is not null)
+                if (PartyRulesFor("DAMAGE"))
                 {
                     bool killed = PartyRules.Damage(v[0] & 0xFF, v[1] & 0xFF, v[2] & 0xFF, v[3] & 0xFF, v[4] & 0xFF);
                     if (killed)
@@ -929,10 +982,7 @@ public sealed class EclVm
                     HostCall("DamageEnd", [killed ? "killed" : "alive"], null, () => Host.DamageEnd(killed));
                 }
                 else
-                {
-                    Diag("DAMAGE with no party attached: host call only");
                     HostCall("Damage", v.Select(Num).ToArray(), null, () => Host.Damage(v[0], v[1], v[2], v[3], v[4]));
-                }
                 return null;
             }
             case EclOpcodes.SpriteOff:
@@ -948,7 +998,7 @@ public sealed class EclVm
                 int spell = Value(1) & 0xFF;
                 ushort d1 = (ushort)(RawWord(2) & 0xFF), d2 = (ushort)(RawWord(3) & 0xFF);
                 (ushort, ushort)? r = null;
-                if (Memory.Party is not null)
+                if (PartyRulesFor("SPELL"))
                 {
                     var (index, count) = PartyRules.Spell(spell, Policy.SpellFoundResidue);
                     r = (index, count);
@@ -969,13 +1019,26 @@ public sealed class EclVm
                 return null;
             }
             case EclOpcodes.LoadFiles:
-                Memory.FilesLoadedSinceSwitch = true; // DS:4431 := 1 (0x19C8)
-                DoLoadFiles();
+                Memory.FilesLoadedSinceSwitch = true; // DS:4431 := 1 (0x19C8; SotSB OVR 0x18B8: DS:59B7)
+                if (PorHandlers)
+                    DoLoadFiles();
+                else
+                    DoLoadFilesSotsb();
                 return null;
             case EclOpcodes.LoadPieces:
                 Memory.FilesLoadedSinceSwitch = true;
-                DoLoadPieces();
+                if (PorHandlers)
+                    DoLoadPieces();
+                else
+                    DoLoadPiecesSotsb();
                 return null;
+            case EclOpcodes.Clock when !PorHandlers:
+            {
+                // SotSB (OVR 0x3D37): two plain fetches, low bytes, to the clock routine OVR 0x2BA0D (amount, unit).
+                byte amount = (byte)Value(1), unit = (byte)Value(2);
+                HostCall("AdvanceClock", [Num(amount), Num(unit)], null, () => Host.AdvanceClock(amount, unit));
+                return null;
+            }
             case EclOpcodes.Clock:
             {
                 // P (0x3807): loads its operand, then fetches the amount with an uninitialised local as the operand
@@ -998,8 +1061,9 @@ public sealed class EclVm
             }
             case EclOpcodes.Program:
             {
-                RestoreSelected(); // 0x3B5C, before the operand is loaded
-                var v = Value16(1); // ids P; effects [?]
+                RestoreSelected(); // 0x3B5C (SotSB OVR 0x41B2), before the operand is loaded
+                // ids P; effects [?]. SotSB (OVR 0x41DB) compares the low byte.
+                var v = PorHandlers ? Value16(1) : (ushort)(Value(1) & 0xFF);
                 HostCall("Program", [Num(v)], null, () => Host.Program(v));
                 if (Profile.ProgramIdsThatExit.Contains(v) && (Profile.ProgramExitGuardCell is not { } guard || Memory.Read(guard) == 0))
                     DoExit(); // P: camp (0x3B56), then EXIT (0x3BBC): the run ends (SotSB: only while the guard cell is 0)
@@ -1021,8 +1085,136 @@ public sealed class EclVm
                 HostCall("DrawGlyphs", [JsonlTraceWriter.Hex(a), string.Join(" ", glyphs)], null, () => Host.DrawGlyphs(a, glyphs));
                 return null;
             }
+
+            // ---- Curse / SotSB opcodes 3E–41 (survey-sotsb.md §10.4) -----------------------------------------------
+            case EclOpcodes.Dump:
+                DoDump();
+                return null;
+            case EclOpcodes.FindSpecial:
+            {
+                // OVR 0x4282: the six flags cleared, then "=" if the current character's effect list (record 0xFB,
+                // next +5) holds an effect whose byte 0 is the operand's low byte (OVR 0x3AA19), else "≠".
+                Array.Clear(Flags);
+                byte effect = (byte)Value(1);
+                bool has = false;
+                if (Memory.Party?.Current is { } c)
+                    has = c.HasEffect(effect);
+                else
+                    Diag("[?] FINDSPECIAL with no current character: the program reads through a nil pointer; \"≠\" set");
+                Flags[has ? FlagEq : FlagNe] = true;
+                return null;
+            }
+            case EclOpcodes.DestroyItems:
+                DoDestroyItems();
+                return null;
+            case EclOpcodes.AddEp:
+                DoAddEp();
+                return null;
         }
         throw new InvalidOperationException($"opcode {op:X2} has a table row but no case");
+    }
+
+    /// <summary>
+    /// DUMP (SotSB OVR 0x424F; no operand, PC + 1): the current character is removed from the party list (OVR 0x20E40
+    /// with (0, 1), <see cref="EclPartyRules.RemoveCurrent"/>), the new current one becomes the selected one (DS:59BB,
+    /// which EXIT and PROGRAM restore) and the party list is redrawn (OVR 0x38915, display).
+    /// </summary>
+    private void DoDump()
+    {
+        if (Memory.Party is not { } party)
+        {
+            Diag("DUMP with no party attached: nothing removed");
+            return;
+        }
+        var removed = PartyRules.RemoveCurrent();
+        if (removed is not null)
+            _step?.HostCalls.Add(new EclTraceHostCall("RemoveFromParty", [removed.Name], null));
+        party.Selected = party.Current;
+    }
+
+    /// <summary>
+    /// DESTROY ITEMS (SotSB OVR 0x42D3): for each party member in list order, each carried item whose byte 0x2E equals
+    /// the operand's low byte is removed (OVR 0x3966C) with that member made current; a readied one (byte 0x34 ≠ 0) is
+    /// first unreadied by OVR 0x28D70 `[?]` (not read: the item's effects on the record are not undone here). After each
+    /// member, OVR 0x3A292 runs on it `[?]` (not read; presumably the stat recalculation). Then the old current
+    /// character is current again.
+    /// </summary>
+    private void DoDestroyItems()
+    {
+        byte type = (byte)Value(1);
+        if (Memory.Party is not { } party)
+        {
+            Diag("DESTROYITEMS with no party attached: nothing removed");
+            return;
+        }
+        var saved = party.Current;
+        foreach (var m in party.Members.ToList())
+        {
+            foreach (var item in m.Items.ToList())
+            {
+                if (item.Length <= 0x2E || item[0x2E] != type)
+                    continue;
+                party.SetCurrent(m);
+                if (item.Length > 0x34 && item[0x34] != 0)
+                    Diag("[?] DESTROYITEMS: a readied item is unreadied by OVR 0x28D70 first (not read; record left as it is)");
+                m.Items.Remove(item);
+                _step?.HostCalls.Add(new EclTraceHostCall("ItemDestroyed", [m.Name, Num(type)], null));
+            }
+        }
+        Diag("[?] DESTROYITEMS: OVR 0x3A292 runs on every member (not read)");
+        party.SetCurrent(saved);
+    }
+
+    /// <summary>
+    /// ADD EP (SotSB OVR 0x43FF): amount = operand 2's 16-bit value (fetched first), who = operand 1's low byte. The
+    /// text cursor goes to column 1, row 17 and the message is shown (<see cref="IEclHost.ExperienceMessage"/>). who ≠
+    /// 0: every party member, else the current character. For each, the share is amount div (number of record bytes
+    /// 0x111–0x117 that are &gt; 0 as signed bytes), unsigned; a member with none is a divide fault (8086 div by zero).
+    /// When record byte 0x1A7 ≠ 0 the share is added to the dword at record 0x12C. [?] 0x1A7's meaning.
+    /// </summary>
+    private void DoAddEp()
+    {
+        ushort amount = Value16(2);
+        int who = Value(1) & 0xFF;
+        var party = Memory.Party;
+        if (party is null)
+        {
+            Diag("ADDEP with no party attached: nothing added");
+            return;
+        }
+        List<EclCharacter> members;
+        if (who != 0)
+        {
+            HostCall("ExperienceMessage", ["party"], null, () => Host.ExperienceMessage(null));
+            members = [.. party.Members];
+        }
+        else if (party.Current is { } c)
+        {
+            HostCall("ExperienceMessage", [c.Name], null, () => Host.ExperienceMessage(c.Name));
+            members = [c];
+        }
+        else
+        {
+            Diag("[?] ADDEP for the current character with none current: the program reads through a nil pointer; nothing added");
+            return;
+        }
+        foreach (var m in members)
+        {
+            int classes = 0;
+            for (int k = 0; k <= 6; k++) // OVR 0x4486–0x449E: k = 0 … 6, the test after the body
+                if ((sbyte)m[0x111 + k] > 0)
+                    classes++;
+            if (classes == 0)
+                throw new EclVmFault($"ADDEP: {m.Name} has no record byte 0x111–0x117 above 0: divide by zero (run-time error 200) [?] handler not traced");
+            uint share = (uint)(amount / classes);
+            if (m[0x1A7] == 0)
+                continue;
+            uint before = (uint)(m.Word(0x12C) | (m.Word(0x12E) << 16));
+            uint after = before + share;
+            m.SetWord(0x12C, (ushort)after);
+            m.SetWord(0x12E, (ushort)(after >> 16));
+            _step?.HostCalls.Add(new EclTraceHostCall("ExperienceAdded", [m.Name, Num((int)share)], Num((int)after)));
+        }
     }
 
     /// <summary>
@@ -1037,10 +1229,9 @@ public sealed class EclVm
     {
         int monster = Value(1) & 0xFF;
         var party = Memory.Party;
-        if (party is null)
+        if (!PartyRulesFor("ADDNPC") || party is null)
         {
             var v = Values(1, 2);
-            Diag("ADDNPC with no party attached: host call only");
             HostCall("AddNpc", v.Select(Num).ToArray(), null, () => Host.AddNpc(v[0], v[1]));
             return;
         }
@@ -1116,12 +1307,12 @@ public sealed class EclVm
     private void DoLoadFiles()
     {
         int o1 = Value(1) & 0xFF, o3 = Value(3) & 0xFF;
-        bool view3d = ReadMem(0x49E6) != 0;
+        bool view3d = ReadMem(Profile.Cells.ViewFlag) != 0;
         if (o1 is not (255 or 127) && view3d)
         {
-            Memory.Write(0x49C5, (ushort)o1);
+            Memory.Write(Profile.Cells.MapId, (ushort)o1);
             HostCall("LoadMap", [Num(o1)], null, () => Host.LoadMap(o1));
-            Memory.Write(0x6DC9, 0);
+            Memory.Write(Profile.Cells.MapLoadedClear, 0);
         }
         if (o3 != 255 && !view3d)
             HostCall("LoadOutdoorPicture", [], null, Host.LoadOutdoorPicture);
@@ -1144,6 +1335,57 @@ public sealed class EclVm
             Diag("[?] LOADPIECES with $49E7/$49E8 set: whether 255 empties the slot here is not read");
         foreach (var k in slots)
             WallSet(k, o[k - 1] == 255 ? null : o[k - 1]);
+    }
+
+    /// <summary>
+    /// SotSB LOADFILES (OVR 0x18AA, shared with LOADPIECES): all three values fetched (low bytes); if o1 is not 255 or
+    /// 127 and $4BE6 ≠ 0, $4BC5 = o1, GEO block o1 is loaded (OVR 0x40A6D) and $7EC9 = 0. No outdoor branch. [?] The
+    /// redraw after both LOADFILES and LOADPIECES ran with game mode 3 (OVR 0x1A68–0x1AA2) is display only.
+    /// </summary>
+    private void DoLoadFilesSotsb()
+    {
+        var o = Values(1, 3);
+        int o1 = o[0] & 0xFF;
+        if (o1 is not (255 or 127) && ReadMem(Profile.Cells.ViewFlag) != 0)
+        {
+            Memory.Write(Profile.Cells.MapId, (ushort)o1);
+            HostCall("LoadMap", [Num(o1)], null, () => Host.LoadMap(o1));
+            Memory.Write(Profile.Cells.MapLoadedClear, 0);
+        }
+    }
+
+    /// <summary>
+    /// SotSB LOADPIECES (OVR 0x18AA): o1 = 127 loads set 0 into slot 1 only. With $4BE7 and $4BE8 both ≠ 0: when $4BE9 ≠
+    /// 0, slot 1 gets o1 (255 empties it) and slots 2 and 3 get o2 / o3 only when not 255 or 127 (else they keep their
+    /// set); when $4BE9 = 0, slot 1 as before and slot 3 gets o3 (255 or 127 empties it). Otherwise each slot k gets
+    /// o_k, and 255 or 127 empties it.
+    /// </summary>
+    private void DoLoadPiecesSotsb()
+    {
+        int[] o = [.. Values(1, 3).Select(x => x & 0xFF)];
+        static bool Set(int x) => x is not (255 or 127);
+        if (o[0] == 127)
+        {
+            WallSet(1, 0);
+            return;
+        }
+        var f = Profile.Cells.WallFlags;
+        if (ReadMem(f[0]) != 0 && ReadMem(f[1]) != 0)
+        {
+            WallSet(1, o[0] == 255 ? null : o[0]);
+            if (ReadMem(f[2]) != 0)
+            {
+                if (Set(o[1]))
+                    WallSet(2, o[1]);
+                if (Set(o[2]))
+                    WallSet(3, o[2]);
+            }
+            else
+                WallSet(3, Set(o[2]) ? o[2] : null);
+            return;
+        }
+        for (int k = 1; k <= 3; k++)
+            WallSet(k, Set(o[k - 1]) ? o[k - 1] : null);
     }
 
     private void WallSet(int slot, int? set) =>
