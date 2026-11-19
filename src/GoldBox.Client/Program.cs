@@ -227,12 +227,15 @@ else
             loadSlot = (slot, started) =>
             {
                 // DS:84E1 (the picture animation's arm) is not in the save and Load (0x1F5E8) does not write it: the
-                // loaded game goes on with the running one's.
+                // loaded game goes on with the running one's. So does the typing flag DS:4A00 (only the start-up, PRINT,
+                // ENCMENU and the after-combat end write it).
                 bool armed = game?.Memory.PictureArmed ?? false;
+                bool typing = game?.Memory.TypesText ?? true;
                 return game = WithSound(PorGame.FromSave(content, art, SlotPath(slot), who, seed,
                     game?.Memory.MarkerCounter ?? 0, g =>
                     {
                         g.Memory.PictureArmed = armed;
+                        g.Memory.TypesText = typing;
                         game = WithSound(g);
                         started(g);
                     }));

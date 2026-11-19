@@ -209,19 +209,44 @@ public sealed class CombatScreen
         if (ReferenceEquals(request, _shown))
             return;
         _shown = request;
-        // The menu routine 0x2CC8C opens on the shared highlight (MenuHighlight); a request may name its own start.
-        _selected = request switch
-        {
-            ChoiceRequest { Vertical: false } c => c.Selected != 0 ? c.Selected : Highlight.Start(c.Items.Count),
-            ChoiceRequest c => c.Selected,
-            PageRequest { SharedHighlight: true } pr => Highlight.Start(pr.Entries.Count),
-            _ => 0,
-        };
+        // The shared highlight (MenuHighlight, DS:6B2B), as ExploreScreen: the menu routine 0x2CC8C opens on the cell;
+        // the yes/no routine 0x2D9A0 first sets it to No (ChoiceRequest.Selected, 0x2D9B9); the item list routine
+        // 0x2D669 (the Items page, the coin list, the spell lists through 0x270A2) sets it to the first entry
+        // (0x2D6B9). FollowHighlight keeps it on the menu's entry while the menu is up.
+        _selected = 0;
         _typed = "";
+        // Another request that draws row 24 (or a page over the screen) replaces the menu kept there.
+        if (request is not (null or DelayRequest or ChoiceRequest { Vertical: false }))
+            _staleMenu = null;
         _hasClickAnswer = false;
         _drawn = false;
-        if (request is ListRequest l)
-            _list.Sync(l);
+        switch (request)
+        {
+            case ChoiceRequest { Vertical: false } h:
+                if (h.Selected != 0)
+                    Highlight.Index = h.Selected;
+                _selected = Highlight.Start(h.Items.Count);
+                break;
+            case ChoiceRequest v:
+                Highlight.ItemList();
+                _selected = Math.Clamp(v.Selected, 0, Math.Max(0, v.Items.Count - 1));
+                break;
+            case PageRequest pr:
+                if (!pr.SharedHighlight)
+                    Highlight.ItemList();
+                _selected = Highlight.Start(pr.Entries.Count);
+                break;
+            case KeyRequest { AsMenu: true } km:
+                Highlight.Start(km.MenuEntries);
+                break;
+            case ListRequest l:
+                _list.Sync(l);
+                if (l.SharedHighlight)
+                    _list.SetAction(l, Highlight.Start(l.Actions.Count));
+                else
+                    Highlight.Index = _list.SelectedAction;
+                break;
+        }
         if (request is DelayRequest d)
         {
             // A chained pause (typing, the moving icon) starts where the last one ended, unless that was longer ago
@@ -250,6 +275,7 @@ public sealed class CombatScreen
         }
         else
             answered = Decide(request, input, out answer);
+        FollowHighlight(request, answered, answer, input.Pressed(GameAction.Cancel));
         if (!answered)
             return;
         _runner.Answer(answer);
@@ -339,7 +365,6 @@ public sealed class CombatScreen
         if (input.Pressed(GameAction.Confirm))
         {
             answer = _selected;
-            Chose(c, _selected);
             return true;
         }
         if (input.Pressed(GameAction.Cancel) && c.CancelIndex is { } ci)
@@ -366,13 +391,11 @@ public sealed class CombatScreen
             if (input.Pressed(GameAction.NextMember))
             {
                 answer = 0;
-                Chose(c, 0);
                 return true;
             }
             if (input.Pressed(GameAction.PreviousMember))
             {
                 answer = 1;
-                Chose(c, 1);
                 return true;
             }
         }
@@ -382,17 +405,39 @@ public sealed class CombatScreen
                 if (c.Items[i].Length > 0 && c.Items[i][0] == key[0])
                 {
                     answer = i;
-                    Chose(c, i);
                     return true;
                 }
         return false;
     }
 
-    /// <summary>A menu entry was taken: the shared highlight follows it (0x2CF48; Escape leaves it).</summary>
-    private void Chose(ChoiceRequest c, int entry)
+    /// <summary>
+    /// The shared cell (<see cref="MenuHighlight"/>) follows a menu's highlight while it is up (',' / '.' write the cell
+    /// itself in 0x2CC8C: 0x2CEA2, 0x2CEC4, 0x2CECB) and takes the chosen entry (a hotkey moves it there, 0x2CF48);
+    /// Escape leaves it. Bottom-line menus, the item screens' pages (both the menu routine's and the item list
+    /// routine's: 0x2D669 runs its menu through 0x2CC8C) and the full-screen lists. A row picked on the coin list
+    /// (Return, 0x234E1 takes the row whatever the key) leaves the cell on the highlighted entry.
+    /// </summary>
+    private void FollowHighlight(PlayerRequest request, bool answered, object? answer, bool cancelled)
     {
-        if (!c.Vertical)
-            Highlight.Chosen(entry);
+        bool chosen = answered && !cancelled;
+        switch (request)
+        {
+            case ChoiceRequest { Vertical: false } h:
+                Highlight.Index = chosen && answer is int i && i >= 0 && i < h.Items.Count ? i : _selected;
+                // The menu routine draws its row once more with the chosen entry lit (0x2CF48), and that row stays up
+                // until something else writes row 24 (DOSBox-X s29: Aim's A, then Next's N, lit during the typing).
+                if (_staleMenu is var (sm, _, seq) && ReferenceEquals(sm, h))
+                    _staleMenu = (sm, Highlight.Index, seq);
+                break;
+            case PageRequest pr:
+                Highlight.Index = chosen && answer is ListAnswer { Action: var a } && a >= 0 && a < pr.Entries.Count ? a : _selected;
+                break;
+            case ListRequest l:
+                Highlight.Index = chosen && answer is ListAnswer { Action: var la } && la >= 0 && la < l.Actions.Count
+                    ? la
+                    : _list.SelectedAction;
+                break;
+        }
     }
 
 
@@ -497,8 +542,6 @@ public sealed class CombatScreen
         if (row == MenuRow && WordAt(pr.Entries, col - (pr.Prompt?.Length ?? 0)) is { } e)
         {
             Answer(new ListAnswer(e, page.Selected));
-            if (pr.SharedHighlight)
-                Highlight.Chosen(e);
             return null;
         }
         if (PageRowAt(page, row) is { } i)
@@ -534,8 +577,6 @@ public sealed class CombatScreen
         if (input.Pressed(GameAction.Confirm))
         {
             answer = new ListAnswer(pr.PickRows && n > 0 ? PageRequest.RowPicked : _selected, page.Selected);
-            if (pr.SharedHighlight)
-                Highlight.Chosen(_selected);
             return true;
         }
         if (input.Pressed(GameAction.Cancel))
@@ -548,8 +589,6 @@ public sealed class CombatScreen
                 if (pr.Entries[i].Length > 0 && pr.Entries[i][0] == key[0])
                 {
                     answer = new ListAnswer(i, page.Selected);
-                    if (pr.SharedHighlight)
-                        Highlight.Chosen(i);
                     return true;
                 }
         return false;
@@ -803,12 +842,13 @@ public sealed class CombatScreen
     }
 
     /// <summary>
-    /// Icons face right in the art; DOSBox-X shows the party (facing 7, NW) mirrored and the goblins (facing 3, SE)
-    /// as stored: facings 5–7 are mirrored. s15 (save K, Rhiannon moved): facing 0 (a step north) and 4 (a step south
-    /// after facing 6) show the stored icon, facing 6 the mirrored one. The drawing routine itself is not read [?].
+    /// Icons face right in the art. The icon drawer GAME.OVR 0x31F68 (far 03E9:0039, called by 0x31232 with the record's
+    /// +9) copies the picture mirrored (START 0x464:0x15C7) when the direction is above 3, as stored otherwise (read s29):
+    /// facings 4–7 are mirrored. DOSBox-X s29: a vampire attacking the member straight below it (facing 4) in its
+    /// mirrored attack pose; the party (facing 7) mirrored and goblins (3) as stored at a fight's start (s15).
     /// </summary>
     private bool Mirrored(EclCharacter c) =>
-        _view.Fight is { } fight && fight.Record(c)[CombatRecord.Facing] is >= 5 and <= 7;
+        _view.Fight is { } fight && fight.Record(c)[CombatRecord.Facing] is >= 4 and <= 7;
 
     /// <summary>
     /// A creature's icon: a player character (record 0x84 &lt; 0x80, as the menu's space key tells PCs from NPCs) gets
@@ -817,7 +857,10 @@ public sealed class CombatScreen
     /// </summary>
     private CombatPicture? Icon(EclCharacter c, bool attack)
     {
-        if (c[CombatRules.Npc] < 0x80)
+        // A charmed member (0xF05B sets the NPC byte to 0xB3, the mark Animate Dead also gives a member) keeps the
+        // party icon: DOSBox-X s29, Brother Sean charmed by a vampire's gaze, then casting from his own square.
+        // [?] An animated member's icon is not seen.
+        if (c[CombatRules.Npc] < 0x80 || c[CombatRules.Npc] == EffectHandlers.AnimatedMember)
             return _art.Party(c, attack);
         return _view.IconPictures.TryGetValue(c[0xBF], out int pic) ? _art.Monster(pic, attack) ?? _art.Monster(pic, false) : null;
     }
@@ -855,7 +898,12 @@ public sealed class CombatScreen
         if (PanelCreature() is { } c)
         {
             Text(f, PanelCol, 1, Fit(c.Name.ToUpperInvariant(), 16), CombatChooser.NameColour(c));
-            Text(f, PanelCol, 3, Fit(_text[CombatMsg.PanelHitpoints].Trim() + " " + c[FightRules.Hp].ToString(CultureInfo.InvariantCulture), 16), Chrome.Green);
+            // The HP number as the party list (START 0x1513): yellow below the maximum 0x32 (DOSBox-X s29: 185 of 200).
+            string hpLabel = _text[CombatMsg.PanelHitpoints].Trim() + " ";
+            Text(f, PanelCol, 3, Fit(hpLabel, 16), Chrome.Green);
+            if (hpLabel.Length < 16)
+                Text(f, PanelCol + hpLabel.Length, 3, Fit(c[FightRules.Hp].ToString(CultureInfo.InvariantCulture), 16 - hpLabel.Length),
+                    c[FightRules.Hp] < c[0x32] ? Chrome.Yellow : Chrome.Green);
             // [?] AC as 60 − record byte 0x111, as the party list (ExploreScreen); DOSBox-X: Darkstar 7, Thrender 1.
             Text(f, PanelCol, 5, Fit(_text[CombatMsg.PanelAc].Trim() + " " + (60 - c[FightRules.Ac]).ToString(CultureInfo.InvariantCulture), 16), Chrome.Green);
             // START 0x1675: the weapon's name (ending in a space, as composed) word-wrapped into (23, 7)–(38, 9) through
@@ -864,9 +912,10 @@ public sealed class CombatScreen
             {
                 var box = new TextWindow(PanelCol, 7, 38, 9);
                 box.PrintIn(PanelCol, 7, 38, 9, ItemNames.Compose(w, _itemWord), true, Chrome.Green);
+                int left = _view.WeaponTyped ?? int.MaxValue; // typed while DS:4A00 is set (CombatChooser.ShowPanel)
                 for (int row = 7; row <= 9; row++)
                     for (int col = PanelCol; col <= 38; col++)
-                        if (box.Cell(row, col) is ({ } ch and not '\0', var colour))
+                        if (box.Cell(row, col) is ({ } ch and not '\0', var colour) && left-- > 0)
                             Text(f, col, row, ch.ToString(), colour);
             }
         }
@@ -892,6 +941,12 @@ public sealed class CombatScreen
                 // The message routine START 0x1693 over the map (Alt-M, Alt-X): row 24 in green during its pause.
                 Text(f, 0, MenuRow, Fit(msg, 40), Chrome.Green);
                 break;
+            case DelayRequest when _view.MovePrompt is null && _staleMenu is var (sm, sel, seq) && seq == _view.Row24Writes:
+                // Row 24 keeps the last menu drawn (with the answered entry lit) until something else writes it
+                // (DOSBox-X s29: Aim's and Next's menus while the panel types, a Done menu through the next creature's
+                // panel until the AI's start clears the row).
+                DrawMenu(f, sm, sel);
+                break;
             case CombatMoveRequest m:
                 // DOSBox-X: Move's prompt (0xA1BB) and the moves left in green on the menu row.
                 Text(f, 0, MenuRow, Fit(_text[CombatMsg.MoveLeft] + m.MovementLeft.ToString(CultureInfo.InvariantCulture), 40), Chrome.Green);
@@ -916,19 +971,8 @@ public sealed class CombatScreen
             }
             case ChoiceRequest { Vertical: false } c:
             {
-                int start = MenuStart(c);
-                if (c.MenuPrompt is { Length: > 0 } mp)
-                    Text(f, 0, MenuRow, mp, PromptColour);
-                int col = start;
-                for (int i = 0; i < c.Items.Count; i++)
-                {
-                    var w = c.Items[i];
-                    if (col + w.Length > 40)
-                        break;
-                    Text(f, col, MenuRow, w[..1], Chrome.White);
-                    Text(f, col + 1, MenuRow, w[1..], i == _selected ? Chrome.White : Chrome.Green);
-                    col += w.Length + 1;
-                }
+                DrawMenu(f, c, _selected);
+                _staleMenu = (c, _selected, _view.Row24Writes);
                 if (_view.Mode == CombatMode.Aim && input.LastDevice == InputDevice.Gamepad)
                     Text(f, 23, StatusRow, Fit("LB/RB: PREV/NEXT", 17), Chrome.Grey);
                 if (IsMainMenu(c) && input.LastDevice != InputDevice.Keyboard)
@@ -938,6 +982,27 @@ public sealed class CombatScreen
             case KeyRequest:
                 Text(f, 0, MenuRow, input.LastDevice == InputDevice.Gamepad ? "PRESS A" : "PRESS A KEY", PromptColour);
                 break;
+        }
+    }
+
+    /// <summary>The last horizontal menu drawn, its highlight and <see cref="CombatView.Row24Writes"/> then (see DrawLines).</summary>
+    private (ChoiceRequest Menu, int Selected, int Row24Writes)? _staleMenu;
+
+    /// <summary>A horizontal menu on row 24: the prompt, then each entry with a white hotkey, the highlighted one white.</summary>
+    private void DrawMenu(IndexedFrame f, ChoiceRequest c, int selected)
+    {
+        int start = MenuStart(c);
+        if (c.MenuPrompt is { Length: > 0 } mp)
+            Text(f, 0, MenuRow, mp, PromptColour);
+        int col = start;
+        for (int i = 0; i < c.Items.Count; i++)
+        {
+            var w = c.Items[i];
+            if (col + w.Length > 40)
+                break;
+            Text(f, col, MenuRow, w[..1], Chrome.White);
+            Text(f, col + 1, MenuRow, w[1..], i == selected ? Chrome.White : Chrome.Green);
+            col += w.Length + 1;
         }
     }
 

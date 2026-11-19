@@ -777,7 +777,7 @@ public sealed class ExploreScreen : IScreen
                 Chrome.Text(f, font, 0, MenuRow, Fit(KeyPrompt(wk, input), 40), KeyColour(wk));
             else if (pending is DelayRequest { BottomLine: { } bline })
                 Chrome.Text(f, font, 0, MenuRow, Fit(bline.Text, 40), bline.Colour);
-            else if (pending is DelayRequest)
+            else if (pending is DelayRequest && !_player.WindowAfterFight)
                 DrawLine(f, font, Commands, _highlight.Start(Commands.Length), 0); // the DAMAGE wipe's pause: row 24 kept (DOSBox-X s22)
             return;
         }
@@ -990,11 +990,20 @@ public sealed class ExploreScreen : IScreen
         // Shop/temple (START 0x3379 case 1): an empty view box, also after a PICTURE before CLRMON (DOSBox-X s22) and
         // with the picture still armed (no CLRMON; DOSBox-X s24: empty on entry and after View → Exit, the 3D view back
         // on leaving).
-        else if (_player.ViewBlanked || _player.Interface == Venue.Shop)
+        else if (_player.Interface == Venue.Shop)
         {
             for (int y = 0; y < 88; y++)
                 for (int x = 0; x < 88; x++)
                     f[ViewX + x, ViewY + y] = 0;
+        }
+        else if (_player.ViewBlanked)
+        {
+            // CLEARBOX blanks cells (1, 1)–(15, 15) (START 0x7E63 from 0x386D), the view's own box too; PROTECT's runes
+            // go over it (ClientPlayer.DrawGlyphs; glyph cells drawn whole).
+            for (int r = 1; r <= 15; r++)
+                Chrome.Clear(f, 1, r, 15);
+            foreach (var (c, r, g) in _player.ViewGlyphs)
+                Chrome.Text(f, font, c, r, g.ToString(), Chrome.White);
         }
         else if (ShownPicture is { } picture && _art.Pictures.Draw(f, ViewX, ViewY, picture, _anim.Frame))
         {
@@ -1078,7 +1087,11 @@ public sealed class ExploreScreen : IScreen
             _memberPicked = false;
         int? shown = !_memberPicked && party is { ChangedByScript: true, Selected: { } pick } && party.Members.IndexOf(pick) is >= 0 and var i
             ? i : null;
-        Chrome.PartyList(f, font, party, 17, shown);
+        // LOADMON appends the monsters to the party list (DS:5D96), but the program draws the list (START 0x1307) only at
+        // fixed points, none between LOADMON and the fight: DOSBox-X s29 (a vampire loaded by a step's script) shows the
+        // six members through "A battle begins". [?] START 0x1307 is not read: whether a redraw there would list them.
+        var monsters = _game.Encounter.State.Monsters;
+        Chrome.PartyList(f, font, party, 17, shown, monsters.Count > 0 ? monsters.Contains : null);
     }
 
     /// <summary>Two help lines in the text window, in the device used last (keys, pad buttons, or mouse gestures).</summary>

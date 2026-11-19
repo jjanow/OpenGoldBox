@@ -86,13 +86,20 @@ public class CampEffectMessageTests
         var s = new Script(w,
             2, 0,                 // MAGIC, CAST
             new ListAnswer(0, 1), // spell 5 (row 0 is the heading)
-            null,                 // "casts" key
             null,                 // nothing memorised now: message key
             5, 5);
         var c = Camp(s, w, a, speed: 2);
         VenueScreens.Camp(c, null);
         Assert.Equal(0, s.Left);
-        var d = Assert.Single(s.Delays);
+        // The cast message (DOSBox-X s29): name and the casts word on row 19, the spell on row 20, the game-speed
+        // pause and no key; then the effect message.
+        Assert.Equal(2, s.Delays.Count);
+        var cast = s.Delays[0];
+        Assert.Equal(TimeSpan.FromMilliseconds(450), cast.Wait);
+        Assert.StartsWith("ANNA ", cast.Rows[2].Trim());
+        Assert.NotEqual("", cast.Rows[3].Trim());
+        Assert.Equal("", cast.Rows[1].Trim());
+        var d = s.Delays[1];
         Assert.Equal(TimeSpan.FromMilliseconds(450), d.Wait); // PauseOnly: DS:49E2 × 225 ms
         Assert.Equal("", d.Rows[0].Trim());                  // row 17 (index 0) cleared
         Assert.Equal("ANNA", d.Rows[1].Trim());              // the name at (1, 18)
@@ -105,7 +112,7 @@ public class CampEffectMessageTests
     public void Speed_0_does_not_wait()
     {
         var w = new TextWindow();
-        var s = new Script(w, 2, 0, new ListAnswer(0, 1), null, null, 5, 5);
+        var s = new Script(w, 2, 0, new ListAnswer(0, 1), null, 5, 5);
         VenueScreens.Camp(Camp(s, w, Member(), speed: 0), null);
         Assert.Equal(0, s.Left);
         Assert.Empty(s.Delays);

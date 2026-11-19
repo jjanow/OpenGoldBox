@@ -241,11 +241,8 @@ public class PorAmigaArtTests(ITestOutputHelper output)
 
     // ---- the player's files ----
 
-    private static readonly Lazy<(string Dir, PorImportReport Report)> Imported = new(() =>
-    {
-        var dir = Path.Combine(Path.GetTempPath(), "goldbox-tests", $"por-amiga-module-{Guid.NewGuid():N}");
-        return (dir, PorImporter.Import(PorData.Dir!, dir, PorAmigaData.Dir));
-    });
+    private static readonly Lazy<(string Dir, PorImportReport Report)> Imported =
+        new(() => Support.TestImportCache.Import("por-amiga-module", PorData.Dir!, PorAmigaData.Dir));
 
     [PorAmigaFact]
     public void The_overlay_holds_every_amiga_picture_and_rebuilds_byte_for_byte()

@@ -74,18 +74,32 @@ public static class PorData
     private static readonly Lazy<(string Dir, List<string> Left)> Release = new(() =>
     {
         var from = Dir ?? throw new InvalidOperationException(SkipReason);
-        var to = Path.Combine(Path.GetTempPath(), "goldbox-tests", $"por-release-{Guid.NewGuid():N}");
-        Directory.CreateDirectory(to);
+        // One copy per content of the folder (reused by later runs, touched on use; TestImportCache.Prune removes
+        // copies unused for a day): written to a temporary folder and renamed into place when complete.
+        var root = Path.Combine(Path.GetTempPath(), "goldbox-tests");
+        var to = Path.Combine(root, $"por-release-{GoldBox.Data.Module.Por.PorModuleCache.Key(from)}");
         var left = new List<string>();
+        var release = new List<string>();
         foreach (var path in Directory.EnumerateFiles(from).Order(StringComparer.Ordinal))
+            (IsReleaseFile(Path.GetFileName(path)) ? release : left).Add(path);
+        if (Directory.Exists(to))
+            TestImportCache.Touch(to);
+        else
         {
-            var name = Path.GetFileName(path);
-            if (IsReleaseFile(name))
-                File.Copy(path, Path.Combine(to, name));
-            else
-                left.Add(name);
+            var temp = Path.Combine(root, $".release-{Guid.NewGuid():N}");
+            Directory.CreateDirectory(temp);
+            foreach (var path in release)
+                File.Copy(path, Path.Combine(temp, Path.GetFileName(path)));
+            try
+            {
+                Directory.Move(temp, to);
+            }
+            catch (IOException) when (Directory.Exists(to))
+            {
+                // Another test process made the same copy meanwhile: its folder is used.
+            }
         }
-        return (to, left);
+        return (to, left.Select(p => Path.GetFileName(p)).ToList());
     });
 
     private static string? Resolve()

@@ -233,6 +233,41 @@ public class MonsterAiTests
     }
 
     [Fact]
+    public void A_surrender_message_comes_while_the_creature_is_still_on_the_map_and_none_when_out_of_play()
+    {
+        // 0x2BDF0: out of play (0x2BE0C) → nothing at all; else the view and the message (0x2BE31, 0x2BE47) before
+        // in play 0, the status and the removal.
+        foreach (bool inPlay in new[] { true, false })
+        {
+            var gob = Creature(1);
+            gob[CombatRules.Npc] = 0x8A;
+            gob[FightRules.Hp] = 1;
+            gob[FightRules.Movement] = 3;
+            gob[MonsterAi.Int] = 9;
+            var a = Creature(0);
+            a[FightRules.Movement] = 12;
+            var (fight, map) = Setup(new Script(), a, gob);
+            map.Place(gob, 5, 5);
+            map.Place(a, 5, 6);
+            gob[FightRules.InPlay] = (byte)(inPlay ? 1 : 0);
+            var said = new List<(AiMessage M, byte InPlay, bool OnMap)>();
+            var ai = new MonsterAi(Steps) { Message = (c, m) => said.Add((m, c[FightRules.InPlay], map.OnMap(c))) };
+            Assert.True(ai.CheckMorale(fight, gob));
+            if (inPlay)
+            {
+                Assert.Equal((AiMessage.Surrenders, (byte)1, true), Assert.Single(said));
+                Assert.Equal(0, gob[FightRules.InPlay]);
+            }
+            else
+            {
+                Assert.Empty(said);
+                Assert.NotEqual((byte)CreatureStatus.Unconscious, gob[FightRules.Status]);
+            }
+            Assert.Equal(0, fight.Record(gob)[CombatRecord.Movement]); // actions ended either way (0xBE36)
+        }
+    }
+
+    [Fact]
     public void Steady_monster_side_keeps_fighting()
     {
         var gob = Creature(1);

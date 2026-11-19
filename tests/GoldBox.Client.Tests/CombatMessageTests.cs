@@ -71,7 +71,10 @@ public class CombatMessageTests
         var thrender = Creature("Thrender", 0);
         var goblin = Creature("Goblin", 1, inPlay: false);
         goblin[FightRules.Status] = 5;
-        r.Chooser.AttackMessage(new AttackMessage(thrender, goblin, 0, 5, true, DefenderWasInPlay: true, SpellLost: false));
+        var m = new AttackMessage(thrender, goblin, 0, 5, true, DefenderWasInPlay: true, SpellLost: false);
+        r.Chooser.AttackMessage(m);
+        Assert.Single(r.Pauses);                          // the damage pause; the rest waits for the drop (0x2BEF4, 0x0D)
+        r.Chooser.AttackEnd(m, down: true);
 
         Assert.Equal(2, r.Pauses.Count);
         Assert.All(r.Pauses, p => Assert.Equal(TimeSpan.FromMilliseconds(225), p.Wait)); // PauseOnly at speed 1
@@ -104,7 +107,9 @@ public class CombatMessageTests
         var goblin = Creature("Goblin", 1);
         var darkstar = Creature("Darkstar", 0, inPlay: false);
         darkstar[FightRules.Status] = 6;
-        r.Chooser.AttackMessage(new AttackMessage(goblin, darkstar, 1, 1, true, DefenderWasInPlay: true, SpellLost: false));
+        var m = new AttackMessage(goblin, darkstar, 1, 1, true, DefenderWasInPlay: true, SpellLost: false);
+        r.Chooser.AttackMessage(m);
+        r.Chooser.AttackEnd(m, down: true);
         var first = r.Pauses[0].Rows;
         Assert.Equal(r.T(CombatMsg.FromBehind), Rig.Row(first, 13));
         Assert.Equal(r.T(CombatMsg.HittingFor) + " 1", Rig.Row(first, 14));
@@ -159,6 +164,10 @@ public class CombatMessageTests
         goblin[FightRules.InPlay] = 0;
         goblin[FightRules.Status] = 5;
         r.Chooser.EffectMessage(goblin, EffectEvent.GoesDown);
+        Assert.Equal(5, r.Pauses.Count);                 // no wait of its own: CreatureDowned's comes with the end
+        r.Chooser.EffectMessage(goblin, EffectEvent.GoesDownDone);
+        Assert.Equal(6, r.Pauses.Count);
+        Assert.All(r.View.Panel.Lines.Skip(9), l => Assert.Equal("", l)); // START 0x17E3
         rows = r.Pauses[^1].Rows;
         Assert.Equal(taken, Rig.Join(rows, 11, 13));     // the damage text is still up
         Assert.Equal("GOBLIN", Rig.Row(rows, 14));
@@ -209,22 +218,27 @@ public class CombatMessageTests
     [Fact]
     public void In_a_fight_the_panel_text_is_typed_out_at_speed_times_10_ms_per_character()
     {
-        // DS:4A00 = 1 from the fight start (0xE974): START 0x7737 waits Delay(DS:49E2 × 10) after every character it
-        // draws (spaces too); the names written at a fixed cell (START 0x23B6) are not typed.
+        // With DS:4A00 set (the start-up or a fight before, no PRINT or ENCMENU since) START 0x7737 waits
+        // Delay(DS:49E2 × 10) after every character it draws (spaces too); the names written at a fixed cell
+        // (START 0x23B6) are not typed. With it clear (a fight after ENCMENU or PRINT) the text shows at once.
         if (Dir() is not { } dir)
             return;
-        var r = new Rig(dir);
-        r.View.Speed = 3;
-        r.Chooser.Attach(r.Fight);
-        r.View.Speed = 3;
-        var a = Creature("Thrender", 0);
-        var d = Creature("Goblin", 1);
-        r.Chooser.AttackMessage(new AttackMessage(a, d, 0, 0, false, true, false));
-        int typed = r.Chooser.Text[CombatMsg.Attacks].Length + r.Chooser.Text[CombatMsg.AndMisses].Length;
-        Assert.Equal(typed, r.Pauses.Count(p => p.Wait == TimeSpan.FromMilliseconds(30)));
-        Assert.Equal(TimeSpan.FromMilliseconds(675), r.Pauses[^1].Wait); // then PauseOnly
-        r.Chooser.Detach(r.Fight);
-        Assert.Null(r.View.Panel.Typed);
+        foreach (bool typing in new[] { true, false })
+        {
+            var r = new Rig(dir);
+            r.Chooser.Typing = () => typing;
+            r.View.Speed = 3;
+            r.Chooser.Attach(r.Fight);
+            r.View.Speed = 3;
+            var a = Creature("Thrender", 0);
+            var d = Creature("Goblin", 1);
+            r.Chooser.AttackMessage(new AttackMessage(a, d, 0, 0, false, true, false));
+            int typed = r.Chooser.Text[CombatMsg.Attacks].Length + r.Chooser.Text[CombatMsg.AndMisses].Length;
+            Assert.Equal(typing ? typed : 0, r.Pauses.Count(p => p.Wait == TimeSpan.FromMilliseconds(30)));
+            Assert.Equal(TimeSpan.FromMilliseconds(675), r.Pauses[^1].Wait); // then PauseOnly
+            r.Chooser.Detach(r.Fight);
+            Assert.Null(r.View.Panel.Typed);
+        }
     }
 
     [Fact]

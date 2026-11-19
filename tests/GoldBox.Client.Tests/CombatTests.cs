@@ -284,6 +284,36 @@ public class CombatScreenGameTests
     }
 
     [Fact]
+    public void A_charmed_member_keeps_the_party_icon()
+    {
+        // DOSBox-X s29 (a vampire's charm gaze 84 on Brother Sean): the charm handler 0xF05B sets the NPC byte to 0xB3,
+        // and the member is still drawn with his own icon (cast box, moves, attacks), not left blank.
+        if (Dir() is null)
+            return;
+        var r = ToFight();
+        var v = r.Player.FightView;
+        var me = v.Current!;
+        var (x, y) = ((CombatMap)v.Fight!.Map!).Position(me);
+        v.Cursor = null;
+        byte[] Cell()
+        {
+            var f = new IndexedFrame(320, 200);
+            r.Screen.Draw(f, r.Input);
+            int x0 = CombatScreen.MapX + (x - v.ViewX) * 24, y0 = CombatScreen.MapY + (y - v.ViewY) * 24;
+            var cell = new byte[24 * 24];
+            for (int j = 0; j < 24; j++)
+                for (int i = 0; i < 24; i++)
+                    cell[j * 24 + i] = f[x0 + i, y0 + j];
+            return cell;
+        }
+        var own = Cell();
+        byte npc = me[CombatRules.Npc];
+        me[CombatRules.Npc] = EffectHandlers.AnimatedMember;
+        Assert.Equal(own, Cell());
+        me[CombatRules.Npc] = npc;
+    }
+
+    [Fact]
     public void The_fight_shows_the_programs_menu_and_plays_to_the_end_on_the_screen()
     {
         if (Dir() is null)
@@ -485,6 +515,243 @@ public class CombatScreenGameTests
             Assert.Equal(before - 1, FightItemScreens.Coins(me, kind));
             for (int g = 0; g < 4 && !AtMainMenu(r); g++)
                 Press(r, GameAction.Cancel);
+            Assert.True(AtMainMenu(r));
+        }
+        r.Runner.Dispose();
+    }
+
+    /// <summary>An empty frame: the screen syncs to the request now pending (as the next drawn frame would).</summary>
+    private static void Idle(Rig r)
+    {
+        r.Input.Update(default, default, default, TimeSpan.Zero, _ => null);
+        r.Screen.Update(r.Input);
+    }
+
+    /// <summary>
+    /// A readied wand put first in the current creature's list: the capture's wand (fight_manual_use, ITEM1.DAX block 9
+    /// item 3: type 79, 20 charges, power 88 = spell 65), its other bytes those of the creature's first item.
+    /// </summary>
+    private static byte[] GiveWand(EclCharacter me)
+    {
+        var wand = (byte[])me.Items[0].Clone();
+        wand[0x2E] = 79;
+        wand[CombatRules.ItemEquipped] = 1;
+        wand[FightSpells.ItemCount] = 0;
+        wand[0x3C] = 20;
+        wand[0x3D] = 88;
+        wand[0x3E] = 0;
+        me.Items.Insert(0, wand);
+        me[FightItemScreens.ItemCount] = (byte)me.Items.Count;
+        return wand;
+    }
+
+    /// <summary>The pixel at the middle of a creature's square on the combat map.</summary>
+    private static (int X, int Y) Pixel(CombatView v, EclCharacter c)
+    {
+        var (x, y) = ((CombatMap)v.Fight!.Map!).Position(c);
+        return (CombatScreen.MapX + (x - v.ViewX) * 24 + 12, CombatScreen.MapY + (y - v.ViewY) * 24 + 12);
+    }
+
+    [Fact]
+    public void An_items_spell_is_aimed_on_the_map_by_keys_pad_and_mouse()
+    {
+        if (Dir() is null)
+            return;
+        var r = ToFight();
+        var v = r.Player.FightView;
+        var fight = v.Fight!;
+        var me = v.Current!;
+        var wand = GiveWand(me);
+
+        // Use (0x21F32): the Items page; U on the wand (row 0) runs 0x22AC4: the item message, then the aim 0x15D53.
+        Key(r, Keys.U);
+        Assert.IsType<PageRequest>(r.Runner.Pending);
+        Assert.Equal(0, v.Page!.Selected);
+        Key(r, Keys.U);
+        for (int g = 0; g < 10 && !(r.Runner.Pending is ChoiceRequest && v.Mode == CombatMode.Aim); g++)
+            Press(r, GameAction.Confirm);              // the item message's pause
+        var aim = Assert.IsType<ChoiceRequest>(r.Runner.Pending);
+        Assert.Equal(CombatMode.Aim, v.Mode);
+        Assert.NotNull(aim.MenuPrompt);
+        // The aim is drawn on the combat map, not on the Items page.
+        Assert.Null(v.Page);
+        var f = new IndexedFrame(320, 200);
+        r.Screen.Draw(f, r.Input);
+        Assert.Equal(8, f[319, 199]);
+        Assert.Same(v.Shown, r.Screen.Combat.PanelCreature());
+        // The Items list left the shared cell on Use (its 2nd entry, the hotkey 0x2CF48), so the aim menu opens on
+        // its 2nd entry, Prev (P: read, not seen in DOSBox-X).
+        Assert.Equal(1, r.Screen.MenuHighlight);
+
+        // Next by key, Prev by the pad's shoulder: back on the first candidate.
+        var first = v.Shown;
+        Key(r, Keys.N);
+        var second = v.Shown;
+        Press(r, GameAction.PreviousMember);
+        Assert.Same(first, v.Shown);
+        Assert.NotSame(first, second);
+
+        // Manual: the cursor on the shown candidate's square; Escape back to the aim.
+        Key(r, Keys.M);
+        var cur = Assert.IsType<CombatCursorRequest>(r.Runner.Pending);
+        Assert.Null(v.Page);
+        Assert.Equal(((CombatMap)fight.Map!).Position(first!), (cur.View.X, cur.View.Y));
+        Assert.False(cur.View.Attack);                 // a spell's aim (attack mode 0)
+        Key(r, Keys.Escape);
+        Assert.Equal(CombatMode.Aim, v.Mode);
+        Assert.IsType<ChoiceRequest>(r.Runner.Pending);
+
+        // Exit: nothing picked, the abort question (0x27EF2, the yes/no 0x2D9A0 opens on No); No aims again, and the
+        // aim menu opens on the cell the answer left (No, the 2nd entry).
+        Key(r, Keys.E);
+        Assert.Equal(CombatMode.Question, v.Mode);
+        Idle(r);
+        Assert.Equal(1, r.Screen.MenuHighlight);
+        Press(r, GameAction.Confirm);                  // Return on the highlight: No
+        Assert.Equal(CombatMode.Aim, v.Mode);
+        Idle(r);
+        Assert.Equal(1, r.Screen.MenuHighlight);
+        Assert.Equal(20, wand[0x3C]);
+
+        // Step to an enemy with Next, then a click on it takes it (Target), the wand's spell hits it.
+        for (int g = 0; g < 20 && v.Shown is { } s && s[FightRules.Hostile] == me[FightRules.Hostile]; g++)
+            Key(r, Keys.N);
+        var target = v.Shown!;
+        Assert.NotEqual(me[FightRules.Hostile], target[FightRules.Hostile]);
+        Assert.Contains("TARGET", Assert.IsType<ChoiceRequest>(r.Runner.Pending).Items);
+        int hp = target[FightRules.Hp];
+        var (px, py) = Pixel(v, target);
+        r.Input.Update(default, default, default, TimeSpan.Zero, _ => null);
+        Assert.Null(r.Screen.MapClick(new ScreenClick(px, py, false)));
+        r.Screen.Update(r.Input);
+        Assert.Equal(19, wand[0x3C]);
+        Assert.Same(target, fight.Record(me).Other);
+        Assert.True(target[FightRules.Hp] < hp || target[FightRules.InPlay] == 0 || target[FightRules.Status] != 0);
+        // The wand's spell ends the creature's turn: the next menu is someone else's.
+        for (int g = 0; g < 40 && !(AtMainMenu(r) || !v.Active); g++)
+            Press(r, GameAction.Confirm);
+        Assert.NotSame(me, v.Current);
+        r.Runner.Dispose();
+    }
+
+    [Fact]
+    public void A_scrolls_spell_is_aimed_on_the_map_not_under_the_items_page()
+    {
+        if (Dir() is null)
+            return;
+        var r = ToFight();
+        var v = r.Player.FightView;
+        var fight = v.Fight!;
+        var me = v.Current!;
+        // A readied scroll (base item slot 11–13, 0x2A255) holding the wand's spell 65.
+        int type = Enumerable.Range(1, 254).First(t => fight.Items[t, BaseItemTable.Slot] is >= 11 and <= 13);
+        var scroll = (byte[])me.Items[0].Clone();
+        scroll[0x2E] = (byte)type;
+        scroll[CombatRules.ItemEquipped] = 1;
+        scroll[0x3C] = 65;
+        scroll[0x3D] = 0;
+        scroll[0x3E] = 0;
+        me.Items.Insert(0, scroll);
+        me[FightItemScreens.ItemCount] = (byte)me.Items.Count;
+
+        // Use, U on the scroll: its spell list (0x239D6 → 0x2D669: the cell to its first entry, Cast), Return casts.
+        Key(r, Keys.U);
+        Key(r, Keys.U);
+        Assert.IsType<ListRequest>(r.Runner.Pending);
+        Idle(r);
+        Assert.Equal(0, r.Screen.MenuHighlight);
+        Press(r, GameAction.Confirm);
+        // The aim (no item message for a scroll): on the combat map, the Items page gone; the menu opens on the cell
+        // the spell list left (Cast, the 1st entry): Next.
+        Assert.IsType<ChoiceRequest>(r.Runner.Pending);
+        Assert.Equal(CombatMode.Aim, v.Mode);
+        Assert.Null(v.Page);
+        Idle(r);
+        Assert.Equal(0, r.Screen.MenuHighlight);
+        // Exit, then Yes to the abort question: the aim ends.
+        Key(r, Keys.E);
+        Assert.Equal(CombatMode.Question, v.Mode);
+        Key(r, Keys.Y);
+        Assert.NotEqual(CombatMode.Aim, v.Mode);
+        r.Runner.Dispose();
+    }
+
+    [Fact]
+    public void Combat_item_lists_coins_and_yes_no_follow_the_shared_highlight()
+    {
+        if (Dir() is null)
+            return;
+        var r = ToFight();
+        var v = r.Player.FightView;
+        var me = v.Current!;
+        var menu = Assert.IsType<ChoiceRequest>(r.Runner.Pending);
+        // An unreadied item and some copper, so the drop question and the coin list are always reached.
+        var loose = (byte[])me.Items[0].Clone();
+        loose[CombatRules.ItemEquipped] = 0;
+        me.Items.Add(loose);
+        me[FightItemScreens.ItemCount] = (byte)me.Items.Count;
+        if (FightItemScreens.Coins(me, 0) == 0)
+            me[FightItemScreens.Money] = 5;
+
+        // The Items list (0x2D669) stores 1 in the cell on entry (0x2D6B9): it opens on Ready whatever the cell was.
+        Key(r, Keys.U);
+        var items = Assert.IsType<PageRequest>(r.Runner.Pending);
+        Idle(r);
+        Assert.Equal(0, r.Screen.MenuHighlight);
+        // ',' / '.' (Left / Right) move the cell itself (0x2CEA2–0x2CECB); Escape leaves it there: the main menu
+        // opens on the 3rd entry.
+        Press(r, GameAction.MenuRight);
+        Press(r, GameAction.MenuRight);
+        Assert.Equal(2, r.Screen.MenuHighlight);
+        Press(r, GameAction.Cancel);
+        Assert.True(AtMainMenu(r));
+        Idle(r);
+        Assert.Equal(2, r.Screen.MenuHighlight);
+
+        // E (Exit, the list's last entry) leaves the cell on Exit: the main menu opens on that entry.
+        Key(r, Keys.U);
+        Idle(r);
+        Assert.Equal(0, r.Screen.MenuHighlight);
+        Key(r, Keys.E);
+        Assert.True(AtMainMenu(r));
+        Idle(r);
+        int exit = items.Entries.Count - 1;
+        Assert.Equal(exit < menu.Items.Count ? exit : 0, r.Screen.MenuHighlight);
+
+        // Drop of an unreadied item: "Drop it?" opens on No (0x2D9B9 stores 2); No (Escape is our No), and the Items
+        // list again on its first entry.
+        int count = me.Items.Count;
+        Key(r, Keys.U);
+        v.Page!.Selected = me.Items.IndexOf(loose);
+        Key(r, Keys.D);
+        Assert.IsType<ChoiceRequest>(r.Runner.Pending);
+        Idle(r);
+        Assert.Equal(1, r.Screen.MenuHighlight);
+        Press(r, GameAction.Cancel);
+        Assert.Equal(count, me.Items.Count);
+        Assert.IsType<PageRequest>(r.Runner.Pending);
+        Idle(r);
+        Assert.Equal(0, r.Screen.MenuHighlight);
+        Key(r, Keys.E);
+        Assert.True(AtMainMenu(r));
+
+        // Drop money from View: the coin list is the item list routine too (0x236AF), its menu only Exit (the
+        // caller's text CS:248C is empty): the cell is 1 when it closes, so the View menu comes back on its first
+        // entry, not on Drop.
+        {
+            Key(r, Keys.V);
+            var view = Assert.IsType<PageRequest>(r.Runner.Pending);
+            int drop = view.Entries.ToList().IndexOf("DROP");
+            Assert.True(drop > 0);
+            Key(r, Keys.D);
+            Assert.True(Assert.IsType<PageRequest>(r.Runner.Pending).PickRows);
+            Idle(r);
+            Assert.Equal(0, r.Screen.MenuHighlight);
+            Press(r, GameAction.Cancel);
+            Assert.Equal("VIEW:", Assert.IsType<PageRequest>(r.Runner.Pending).Prompt);
+            Idle(r);
+            Assert.Equal(0, r.Screen.MenuHighlight);
+            Press(r, GameAction.Cancel);
             Assert.True(AtMainMenu(r));
         }
         r.Runner.Dispose();

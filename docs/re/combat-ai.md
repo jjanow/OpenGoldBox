@@ -74,6 +74,23 @@ is among them, initiative 20 and the turn ends; X (0x2D) calls 0x1638E `[?]`. He
 So monsters with 0x84 = 0xFF (the goblins) get m = 0 and are steady while their side's HP stays ≥ 100 − $6DC6 %.
 No draws.
 
+**The messages on screen** (s29, P). The turn starts by clearing row 24 (0x3C5:0x2F = 0x2CFCA) and rows 10–21
+(START 0x2383), after the turn's 0x319D2(creature, 2, 1) has put the view and the cursor box on the creature.
+- Forced flee (0xBCF0, text 0xBC7A) and panic (0xACC1, text 0xABC0, after the morale call and only when +0x14 ≠ 0
+  and +0x10 = 0): START 0x16EC(creature, text, row 10, pause 1). The name on row 10 (START 0x23B6, not typed), the
+  text word-wrapped into (23, 11)–(38, 21) in colour 10 and typed (START 0x77F8 while DS:4A00 = 1, combat-menu.md
+  "The panel's text"), PauseOnly (DS:49E2 × 225 ms), rows 10–21 cleared. So a forced creature shows one message, a
+  panicking one the panic message. Neither moves the view.
+- Surrender (0xBE19 → 0x2BDF0(creature, 4, text 0xBC8C)): a creature already out of play (0x2BE0C) gets nothing,
+  not even the message. Else 0x319D2(creature, 3, 0) (ScrollView on its square with delta 3, the arena's cursor
+  flag off, so no box), the same START 0x16EC(creature, text, row 10, pause 1), then in play 0, status 4, HP 0 (status
+  ≠ 3), its cell redrawn and its slot size 0 (off the map), the grid rebuilt, actions end (START 0x31D7, always true)
+  and 0x2BEF4. Back in morale, START 0x31D7 is called again (0xBE3C) whatever the creature's state, and its result
+  (always 1) ends the turn. 0x2BDF0 is the shared status-change routine (also behind other status texts, PLAN (1)).
+- Client: `CombatChooser.AiSays` → `Say` (START 0x16EC with the pause) for all three, the surrender first scrolls
+  (`StatusChangeScroll`). Core `MonsterAi.Surrender` checks in play before raising the message. Not seen in
+  DOSBox-X.
+
 ## Targets — P
 
 **Enemies in range** (START 0x2FD3): the map list 0x3045B(x, y, range, direction 0xFF, size 0x31371, arena) — every

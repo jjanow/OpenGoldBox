@@ -132,7 +132,7 @@ public class ExploreScreenTests
         var art = PorViewArt.Load(dir);
         var runner = new ScriptRunner();
         PorGame? game = null;
-        var player = new ClientPlayer(runner, () => game!.Memory);
+        var player = new ClientPlayer(runner, () => game!.Memory) { TypesText = false };
         game = PorGame.FromSave(dir, art, dir.Find("SAVGAMA.DAT")!, new PorPlayer(player, player, player, player), seed);
         var input = new ActionInput(InputBindings.Defaults());
         return new Rig(new ExploreScreen(game, player, runner, new NoHost()), game, runner, input, player);
@@ -162,6 +162,27 @@ public class ExploreScreenTests
         r.Input.Update(new KeyboardState(k), default, default, TimeSpan.Zero, _ => null);
         r.Screen.Update(r.Input);
         r.Input.Update(default, default, default, TimeSpan.Zero, _ => null);
+    }
+
+    [Fact]
+    public void Monsters_loaded_before_a_fight_stay_off_the_party_list()
+    {
+        // LOADMON appends to the party list (DS:5D96), but DOSBox-X s29 (a vampire loaded by a step's script) shows
+        // only the six members on the area screen through the battle line: the list is drawn only at fixed points.
+        if (Dir() is null)
+            return;
+        var r = Start();
+        Settle(r);
+        byte[] Rows()
+        {
+            var f = new IndexedFrame(320, 200);
+            r.Screen.Draw(f, r.Input);
+            return f.Pixels.Skip(4 * 8 * 320).Take(8 * 8 * 320).ToArray();
+        }
+        var before = Rows();
+        r.Game.Encounter.LoadMonster(2, 2, 2);
+        Assert.Equal(8, r.Game.Memory.Party!.Members.Count);
+        Assert.Equal(before, Rows());
     }
 
     [Fact]

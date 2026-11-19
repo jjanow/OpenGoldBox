@@ -465,22 +465,32 @@ public static class CampScreens
             c.Dialog.Say(SpellName(c, spell) + ": NOT IN THIS BUILD YET.", colour: 14);
             return;
         }
-        // "casts" and the spell name (PrintCastSpellMsg), then the target and the routine.
+        // "casts" and the spell name (PrintCastSpellMsg), then the target and the routine. DOSBox-X s29 (Brother Sean's
+        // Bless in camp, speed 4): the name and the casts word on row 19, the spell name on row 20 (one row below the
+        // effect messages' name row), drawn at once (not typed), then the game-speed pause (no key) and the rows
+        // cleared; the effect messages follow. [?] The routine is not read (0x27D48 outside a fight).
         var name = who.Name.ToUpperInvariant();
-        c.Dialog.Text.Put(19, 1, name, 11);
-        c.Dialog.Text.Put(19, name.Length + 2, c.Text[Msg.Casts], 10);
-        c.Dialog.Text.Put(20, 1, SpellName(c, spell), 10);
-        c.Dialog.WaitKey();
-        c.Dialog.Text.Clear();
+        var w = c.Dialog.Text;
+        w.ClearRect(TextWindow.Left, TextWindow.Top, TextWindow.Right, TextWindow.Bottom);
+        w.Put(TextWindow.Top + 2, TextWindow.Left, name, 11);
+        w.Put(TextWindow.Top + 2, TextWindow.Left + name.Length + 1, c.Text[Msg.Casts].Trim(), 10);
+        w.Put(TextWindow.Top + 3, TextWindow.Left, SpellName(c, spell), 10);
+        if (c.Memory.GameSpeed > 0)
+            c.Dialog.Ask(new DelayRequest(TimeSpan.FromMilliseconds(225 * c.Memory.GameSpeed)));
+        w.ClearRect(TextWindow.Left, TextWindow.Top + 1, TextWindow.Right, TextWindow.Bottom);
         var heard = new List<string>();
         void OnSpell(EclCharacter t, int s, EffectEvent e) => heard.Add(t.Name.ToUpperInvariant() + ": " + e.ToString().ToUpperInvariant());
         void OnEffect(EclCharacter t, EffectEvent e)
         {
             // 0x2C540's text (START 0x2B8B) and its unaffected words (0x2C532) are shown where they happen.
             if (cast.Spells.Effects.EffectText is { } key)
-                EffectMessage(c, t, c.Resources.CombatTexts.Effect(key));
+                EffectMessage(c, t, Cut40(c.Resources.CombatTexts.Effect(key)));
             else if (e == EffectEvent.Unaffected)
                 EffectMessage(c, t, c.Resources.CombatTexts[CombatMsg.Unaffected]);
+            else if (e is EffectEvent.StatusDone or EffectEvent.GoesDownDone or EffectEvent.DamageDone)
+            {
+                // The ends of 0xECB3 and 0x2C44A (pause and clear) carry no text of their own.
+            }
             else
                 heard.Add(t.Name.ToUpperInvariant() + ": " + e.ToString().ToUpperInvariant());
         }
@@ -523,8 +533,12 @@ public static class CampScreens
     /// is drawn again (03F1:0000 around 1, 17–38, 22; the Client's frame is always there), (1, 17)–(38, 22) cleared, the
     /// name at (1, 18) (START 0x1816, the fight panel's name colours), the text word-wrapped into (1, 19)–(38, 22) in
     /// green (START 0x709:0x0768), then PauseOnly (DS:49E2 × 225 ms) and START 0x2383, which outside a fight clears
-    /// (1, 18)–(38, 22). [?] Typing (DS:4A00) in the camp is not followed: the text shows at once.
+    /// (1, 18)–(38, 22). The text types out while DS:4A00 is set (after the start-up or a fight, no PRINT or ENCMENU
+    /// since): the camp's text window is <see cref="ClientPlayer.Text"/>, which types by <see cref="GoldBox.Core.Ecl.EclMemory.TypesText"/>.
     /// </summary>
+    /// <summary>START 0x2B8B copies its text into a string[40] before it looks at the fight flag (0x2B9B).</summary>
+    private static string Cut40(string s) => s.Length > 40 ? s[..40] : s;
+
     internal static void EffectMessage(CampContext c, EclCharacter who, string text)
     {
         var w = c.Dialog.Text;

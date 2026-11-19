@@ -81,10 +81,25 @@ entries DS:66DD cleared; 0xD815 (arena); 0xD8B2 (records: also facing = DS:02F2[
 1); 0xDFC6 (placement); the moving-icon picture; view upper-left = first creature's cell − 3; the combat screen; for
 every creature the trigger-8 effects; enemy HP % (0x15074); DS:49F3 = 5.
 
-**Start messages** (s27, P + D): before any of this, 0xE430 calls 0x3C5:0x2F, PauseOnly (0x709:0xDBE, DS:49E2 × 225 ms),
-then writes the unit's string CS:0x1E1E (the battle-start text, GAME.OVR 0xE3EF) through 0x709:0x626 at row 24,
-column 0, colour 10; DOSBox-X shows it on the area screen's bottom row ~0.9 s after the step, then the screen clears
-to the combat screen. The Client does not show it yet (its text is not imported) `[?]`. The trigger-8 effects run
+**Start messages** (s27, P + D; s29, P): before any of this, 0xE430 calls 0x3C5:0x2F (= 0x2CFCA: START 0x767B clears
+row 24, columns 0–39), PauseOnly (0x709:0xDBE, DS:49E2 × 225 ms; speed 0 waits nothing), then writes the unit's
+string CS:0x1E1E (the battle-start text, GAME.OVR 0xE3EF, one fixed string) through 0x709:0x626 (START 0x76B6) at
+column 0, row 24, colour 10. 0x76B6 draws each glyph through 0x726F itself, never through the typing path
+(0x7737 / 0x777B), so the line is **not typed** whatever DS:4A00 holds. **No pause follows**: the fight start goes on
+(arena, records, placement, the moving-icon picture, COMSPR loads 0xEADC) and the combat screen replaces the area
+screen. So the blank pause comes first and the line stays up only for the time of those loads and builds `[?]`
+(machine and disk time; no code timing). DOSBox-X showed the line on the area screen's bottom row ~0.9 s after the
+step (the speed-4 pause), then the combat screen. **Every fight** shows it: 0x9881 is the only caller of 0xE402
+(stub 0x3B:0x25, call at 0x9899), and the text comes before 0x9881's "done at once" test (duels and fights with an
+empty side included). No draws come between the line and the arena build, so the Client, which builds the fight
+first (`FightKit.Create`), shows it afterwards with the same result: `CombatChooser.BattleBegins` (from
+`ClientPlayer.Fight`, before the combat screen attaches): the blank row-24 pause, then the line (imported as
+`CombatMsg.BattleBegins`, importer 0.7.18) for one Client update. **D** (s29, 3000 cycles, ~70 grabs a second): the
+line appears whole in one grab (not typed) on the blank row 24 after the speed-4 pause (the Client's blank pause
+measured 0.92 s); it stayed 0.73 s on the area screen, then the screen was cleared to the combat grey over 0.3 s with
+the line still up, then the combat map: about 1 s of load and draw time on that machine, against one update in the
+Client `[?]` (machine time, no code timing; a user decision if the line should stay longer). The Amiga plays song 2 with this line (sound.md
+§5.3; not in the Client). The trigger-8 effects run
 after the combat screen is drawn: DOSBox-X showed Tyranithraxus's fear aura as one message per party member
 (paralysis / unaffected texts, with the effect frames) on the combat screen before the first turn. The
 Client built the fight (and ran those triggers) before its screen attached, so they showed nothing: the build now

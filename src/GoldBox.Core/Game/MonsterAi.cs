@@ -259,6 +259,7 @@ public sealed class MonsterAi : IFightController
         if (c[Int] > 5)
         {
             Surrender(f, c);
+            f.EndActions(c); // 0xBE36: morale ends the actions itself too, whatever 0x2BDF0 did (START 0x31D7: true)
             return true;
         }
         return false;
@@ -274,12 +275,16 @@ public sealed class MonsterAi : IFightController
         return best;
     }
 
-    /// <summary>0x2BDF0(c, 4): in play 0, status 4, HP 0, off the map, actions end, dropped effects removed (0x2BEF4).</summary>
+    /// <summary>
+    /// 0x2BDF0(c, 4, text): nothing at all for a creature out of play (0x2BE0C, the message included); else the view
+    /// on it and the message (START 0x16EC, row 10, pause), in play 0, status 4, HP 0, off the map, actions end,
+    /// dropped effects removed (0x2BEF4).
+    /// </summary>
     private void Surrender(Fight f, EclCharacter c)
     {
-        Message?.Invoke(c, AiMessage.Surrenders);
         if (c[FightRules.InPlay] == 0)
             return;
+        Message?.Invoke(c, AiMessage.Surrenders);
         c[FightRules.InPlay] = 0;
         c[FightRules.Status] = (byte)CreatureStatus.Unconscious;
         c[FightRules.Hp] = 0;

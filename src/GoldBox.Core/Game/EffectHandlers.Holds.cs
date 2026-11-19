@@ -472,7 +472,7 @@ public sealed partial class EffectHandlers
     }
 
     /// <summary>
-    /// 0x10D7D (handlers 85, 86): (message) an animated creature (status 1) is destroyed (0xECB3 status 8, max HP 0).
+    /// 0x10D7D (handlers 85, 86): the drained message (<see cref="EffectEvent.Drained"/>), then an animated creature (status 1) is destroyed (0xECB3 status 8, max HP 0).
     /// Else per level, unless already gone (status 8): drained count 0x74 + 1; n = max HP ÷ the sum of the eight class
     /// levels 0x96..0x9D; n times max HP, rolled HP 0xB1 and HP − 1 (not below 0) and HP drained 0x75 + 1. Hit-dice byte
     /// 0x73 below 2 → gone (status 8, max HP 0), and with two levels drained its top class level becomes 0. Else the top
@@ -481,10 +481,11 @@ public sealed partial class EffectHandlers
     /// </summary>
     public void LevelDrain(EclCharacter t, int count)
     {
-        Emit(t, EffectEvent.Other);
+        DrainCount = count;
+        Emit(t, EffectEvent.Drained); // 0x10DEC: row 10, pause flag
         if (t[Status] == 1)
         {
-            InflictStatus(t, 8, EffectEvent.StatusChange);
+            InflictStatus(t, 8, EffectEvent.DeadForever); // 0x10E15, text CS:20FB
             t[HpMax] = 0;
             return;
         }
@@ -513,7 +514,7 @@ public sealed partial class EffectHandlers
             }
             if ((sbyte)t[0x73] < 2)
             {
-                InflictStatus(t, 8, EffectEvent.StatusChange);
+                InflictStatus(t, 8, EffectEvent.DeadForever); // 0x10F35, text CS:20FB
                 t[HpMax] = 0;
                 int cls = TopClass(t, out _);
                 if ((sbyte)t[ClassLevels + cls] > 0 && count == 2)
@@ -524,7 +525,7 @@ public sealed partial class EffectHandlers
                 int cls = TopClass(t, out _);
                 t[ClassLevels + cls]--;
                 if (t[Hp] == 0 && t[Status] != 6)
-                    InflictStatus(t, 6, EffectEvent.StatusChange);
+                    InflictStatus(t, 6, EffectEvent.DrainKilled); // 0x10FAB, text CS:2118
                 CallLevelStats(t);
             }
             int top = TopClass(t, out int xp);

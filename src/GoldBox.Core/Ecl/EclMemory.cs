@@ -124,6 +124,16 @@ public sealed class EclMemory
     public byte GameSpeed { get; set; } = 1;
 
     /// <summary>
+    /// DS:4A00 (a program byte, not the script cell $4A00): while set, the text routine START 0x77F8 types its text
+    /// (0x7737: Delay(DS:49E2 × 10) after each glyph, START 0x777B). The only writers (every direct write form searched
+    /// in START.EXE and GAME.OVR, s29): the start-up 0xE974 sets 1; PRINT / PRINTCLR 1 before the text (0x1763) and 0
+    /// after it (0x17DC); ENCMENU 1 on entry (0x2C4F) and 0 at its one exit (0x32E0); the after-combat step's end 1
+    /// (0x6BAF, after the summary, loot or party-destroyed screens). So it is 1 from the start-up and after each fight
+    /// until the next PRINT or ENCMENU ends. Not saved; Load does not touch it.
+    /// </summary>
+    public bool TypesText { get; set; } = true;
+
+    /// <summary>
     /// Last value written to each special write address (writer 0x814A): $03DE → DS:84CC (sound picked by CALL
     /// $BA03: 8 or 10), $00B8 / $00B9 → DS:84CE / DS:84D0 (never read by the program), $C059 / $C05F → low byte to
     /// DS:6F68 / DS:6F69 (3D-view background colour codes, applied at the next redraw; the script init sets them to

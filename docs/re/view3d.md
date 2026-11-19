@@ -248,7 +248,9 @@ Code: `GoldBox.Core.Explore.AreaLoop` (one command at a time), `GameClock`, `Are
 - Glyphs 32..63 are ASCII 0x20..0x3F, and glyphs 1..31 are 0x41..0x5F (code − 0x40).
 - The glyph routine (START 0x726F: column, row, colour, count, character, flag) draws text with the flag set as
   glyph UpCase(character) mod 64, which is this mapping (s12); with the flag clear the byte is the glyph number
-  (PROTECT's runes). Columns above 39 or rows above 24 are not drawn. In CGA mode (DS:4A1E = 0) the colour goes
+  (PROTECT's runes) in the same font: the font pointer DS:5E20 has one writer, the start-up (0xE650), so the runes
+  are 8X8D1 block 201 glyphs (65–139 in v1.3's twelve lines). Client: `TextFont.RawGlyph` (U+E000 + glyph in a text
+  cell); `[?]` a glyph number past 176 reads past the font (none in v1.3; the Client draws it blank). Columns above 39 or rows above 24 are not drawn. In CGA mode (DS:4A1E = 0) the colour goes
   through a 16-entry table at DS:25D5; in EGA it is used as is.
 
 ## Text window (START 0x77F8; program read s12)
@@ -267,14 +269,26 @@ EXIT: (1, 17), no clear).
    drawn on row 24 in colour 13, the program waits for a key (GetKey 0x7CC1: a key already waiting answers it at
    once, below), blanks the box and prints the word; otherwise the next
    pass prints it on the new row. (A test at 0x79A9 for a word ending exactly on x1 can never be true.)
-4. Else the word is drawn (0x7737), one cell per character; while DS:4A00 is set (PRINT sets it) each character is
-   followed by Delay(DS:49E2 × 10) (START 0x7782 → the Crt-style Delay START 0xA69C, calibrated milliseconds; s15)
-   (Client: `TextWindow.Typed`, for PRINT and the fight panel; combat-menu.md "The panel's text").
+4. Else the word is drawn (0x7737), one cell per character; while DS:4A00 is set each character is
+   followed by Delay(DS:49E2 × 10) (START 0x7782 → the Crt-style Delay START 0xA69C, calibrated milliseconds; s15).
+   **Typing state** (P, s29; combat-menu.md "The panel's text" lists the writers): DS:4A00 is 1 from the start-up
+   (0xE974) and again after every fight (0x6BAF); PRINT / PRINTCLR set 1 for their text and leave 0 (0x1763 / 0x17DC);
+   ENCMENU sets 1 for its loop and leaves 0 (0x2C4F / 0x32E0). So PRINT and ENCMENU's texts (the distance text and
+   the two fixed messages, all through 0x77F8 at 0x2EBC, 0x2FE7, 0x305C, 0x3104, 0x315A, 0x31DD) always type; any other
+   0x77F8 text (the camp's messages, a shop's, the fight panel's, the party-destroyed message) types only while the
+   flag stands: after the start-up or a fight, until the next PRINT or ENCMENU. Client: `EclMemory.TypesText` (not
+   saved, start value 1), read by `ClientPlayer.Text` (every text through the explore screen's text window, camp
+   included), the fight panel and the party-destroyed / party-killed windows; our own notices never type. `[?]` Not
+   followed: the summary, NPC-share and loot screens (their own windows) and the status panel's weapon name show at
+   once; the party menu's texts (the flag is 1 there after the start-up) are not typed.
 5. After the string a cursor past x1 goes to column x0 of the next row.
 The window never scrolls. Code: `GoldBox.Client.Play.TextWindow`.
 
 CLEARBOX (0x385A) blanks the picture window (1, 1)–(15, 15), not this box; `[?]` when the 3D view is drawn there
-again is not read (the Client keeps it blank until the next command).
+again is not read (the Client keeps it blank until the next command). The clear (START 0x7E63 on cells 1–15) takes
+the view's own box (cells 2 and 14) too, which EXIT draws again only after a PROTECT went into the window
+(ecl-format.md "PROTECT"); since s29 the Client blanks all of cells 1–15 in the 3D view as well (before: the 88 × 88
+view only) and draws PROTECT's runes there. `[?]` Not seen in DOSBox-X.
 
 ## Keys while the program is busy (START 0x89E9; program read s22) — P
 
@@ -332,8 +346,8 @@ turn (Core `FightKit.AiKey` → `MonsterAi.ReadKey`, `ActionInput.TakeAiKey`): t
 pad's right-stick press) puts the party back under the player's control, `FightQuickMagic` (Alt-M, left trigger)
 reads as 0x32 and `FightAltX` (Alt-X, left-stick press) as 0x2D (s23), any other key is taken with no effect. The
 check compares the byte only, extended or not, so the '2' key acts as Alt-M and '-' as Alt-X there (0xBBB0, 0xBC5F). The
-mouse has no way to them during a pause (clicks are dropped). Enter does not end a pause. The Client types PRINT text and the fight
-panel's as the program does (s25); pauses and typing are its busy time. QoL
+mouse has no way to them during a pause (clicks are dropped). Enter does not end a pause. The Client types the text window's and the fight
+panel's texts while DS:4A00 is set, as the program does (s25, s29); pauses and typing are its busy time. QoL
 `SkipPauses` (settings, off = original): Enter or a click ends a pause, and keys pressed during it are dropped (the
 Client's behaviour before s22).
 

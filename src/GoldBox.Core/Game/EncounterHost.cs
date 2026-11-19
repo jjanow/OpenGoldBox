@@ -160,6 +160,7 @@ public sealed class EncounterHost : IEclHost
     public ushort? EncounterMenu(EclEncounterMenu menu)
     {
         State.InEncounterMenu = true;
+        Memory.TypesText = true; // DS:4A00 = 1 (0x2C4F): its texts and messages type out
         try
         {
             var list = (IReadOnlyList<EclCharacter>?)Memory.Party?.Members ?? [];
@@ -187,6 +188,7 @@ public sealed class EncounterHost : IEclHost
         finally
         {
             State.InEncounterMenu = false;
+            Memory.TypesText = false; // 0x32E0, the one way out (after row 24 is cleared, 0x32DB)
         }
     }
 

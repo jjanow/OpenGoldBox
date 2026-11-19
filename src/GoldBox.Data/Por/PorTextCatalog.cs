@@ -320,6 +320,23 @@ public static class PorTextCatalog
         ["CombatMsg.HandlerCharmGazes"] = 0x10ABE,
         ["CombatMsg.HandlerBreathes"] = 0x2A0E7,
         ["CombatMsg.HandlerSpitsAcid"] = 0x1186C,
+        // The fight start 0xE402 writes this string (its unit's CS:0x1E1E) on row 24 before the arena is built.
+        ["CombatMsg.BattleBegins"] = 0xE3EF,
+        // 0xECB3's callers' texts and the messages before them (docs/re/spells-effects.md "Status changes"): CS strings
+        // of the effect handler unit 0xEC5B (handler 22 CS:0764, 32 CS:0B11, 57 CS:1382 / CS:138A, the poisoned hit
+        // 0x101A0 CS:152F / CS:153B, the level drain 0x10D7D CS:20DF / 20E7 / 20EF / 20FB / 2118, 95 CS:2605).
+        ["CombatMsg.StatusPoisonDeath"] = 0xF3BF,
+        ["CombatMsg.StatusCollapses"] = 0xF76C,
+        ["CombatMsg.Rots"] = 0xFFDD,
+        ["CombatMsg.StatusRotsAway"] = 0xFFE5,
+        ["CombatMsg.Poisoned"] = 0x1018A,
+        ["CombatMsg.StatusPoisonKilled"] = 0x10196,
+        ["CombatMsg.DrainedLevels"] = 0x10D3A,
+        ["CombatMsg.DrainedOneLevel"] = 0x10D42,
+        ["CombatMsg.Drained"] = 0x10D4A,
+        ["CombatMsg.StatusDeadForever"] = 0x10D56,
+        ["CombatMsg.StatusDrainKilled"] = 0x10D73,
+        ["CombatMsg.StatusFallsDead"] = 0x11260,
         // The effect messages, 0x2C540's text argument (Core EffectTexts; docs/re/spells-effects.md "Effect messages"):
         // the strings just before the spell routines that pass them (the resolution 0x278DB's callers) and the handlers.
         ["EffectMsg.Blessed"] = 0x2801C,

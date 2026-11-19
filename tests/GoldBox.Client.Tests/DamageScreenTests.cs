@@ -12,7 +12,7 @@ public class DamageScreenTests
     private static (ClientPlayer Player, ScriptRunner Runner) Rig()
     {
         var runner = new ScriptRunner();
-        var player = new ClientPlayer(runner, () => throw new InvalidOperationException("no memory in this test"));
+        var player = new ClientPlayer(runner, () => throw new InvalidOperationException("no memory in this test")) { TypesText = false };
         player.InstallPaging();
         return (player, runner);
     }

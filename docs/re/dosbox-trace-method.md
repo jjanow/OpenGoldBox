@@ -231,3 +231,22 @@ The s13 captures (fixtures README: `fight_casts`, `fight_mirror`, `fight_undead`
 | Monsters casting | `fight_casts` q01 → q34 | Charm Person on Sean, Magic Missile (level 5) on Phineas, Charm Person on Darkstar | the whole fight replays to the party's fall (1060 draws; every state taken between turns matches, mid-turn states differ only in that window, s15); it needed the effect clock and an AI cast with a casting time picked again in the round (the charmed Sean's Bless, q29 → q30). The 3 draws after the fight to the end screen q34 are the after-combat step's: the charmed Sean and Darkstar, okay, make the fight count as won while the party is destroyed, so the share runs and rolls 1d10 for three items of value 0 (s18; `combat-format.md` "After combat"); the replay runs that step and q34 matches (`FightMonsterCastReplayTests`) |
 | Item use from the menu | `fight_manual_use` p01 → p03 (s18; save K with a readied wand given to Phineas, `saves/CHRDATN6.*`) | U, U, Next × 5, Target: 2d4 + 2 = 7 on a magic-user, one charge off | matches to the next menu (`FightManualUseCaptureTests`) |
 | Manual aim | `fight_manual_use` p03 → p04 (flail), p05 → p06 (darts) | cursor from the aimer (range 0) over a bare square (no Target), an ally and an enemy (Target); the melee hit and the three darts | same squares, ranges and Target offers; matches to the next menu (`FightManualUseCaptureTests`) |
+
+## Frame-by-frame screen comparison (s29)
+
+- **Fights for a monster's special**: save A (disk 2) with vector 0 = CLRMON; LOADMON m, n, icon; COMBAT; EXIT, the
+  monster disk's `MON<d>CHA/ITM/SPC.DAX` and `CPIC<d>.DAX` copied over the disk-2 names, every member's HP 200
+  (0x32, 0xB1, 0x11B), spells written at 0x17 (Bless, Hold Person for Sean; Sleep, Charm Person, Magic Missile for
+  Darkstar). Used: MON4 23 (vampire: charm gaze 84, level drain), MON6 65 × 2 (ankheg: acid breath 121), MON5 66
+  (Tyranithraxus: breath 88, fear aura), MON2 26 (basilisk: gaze 83), MON2 4 × 4 (orcs off view, for the aim).
+- **Seeds**: a state taken in the same boot can be loaded (F12+L) right after it was saved; loading one into a later
+  boot, or after the game went on for a while, crashed this DOSBox-X build. So each run boots, loads the slot, saves
+  a state, writes the wanted RandSeed into that state's `Memory` (0x88 + DS·16 + 0x4428) and loads it at once. The
+  Client gets the same seed with `--seed` and the same save from the same folder.
+- **Driving**: a poller presses keys only when row 24 shows a known menu and the screen has been still for 0.4 s
+  (the main menu → D, the Done menus → Q), the same on both sides, so both play the same inputs.
+- **Comparison**: every distinct frame of both windows is kept (python-xlib, DOSBox-X 640 × 400 under a 17-pixel menu
+  bar halved, the Client's 960 × 600 divided by 3); each Client frame is looked up among DOSBox-X's as exact pixels.
+  A vampire fight (85 s, 695 Client frames) ended with 682 equal, an ankheg fight 512 of 519, Tyranithraxus 577 of
+  587, a basilisk 253 of 260; the rest are listed as `[?]` where they are
+  documented (combat-menu.md "s29 DOSBox-X checks").

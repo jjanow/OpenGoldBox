@@ -101,6 +101,13 @@ public sealed class Fight
     /// </summary>
     public Action<EclCharacter, EclCharacter>? AttackStarting { get; set; }
 
+    /// <summary>
+    /// Display hook (no game state): the end of round, after each creature's end-of-round part, when 0xA806(0) finds a
+    /// party member dying (<see cref="FightMenu.Bandage"/> without bandaging): START 0x1693 with the teammate-dying
+    /// words (GAME.OVR 0xA05F; row 24, the pause, row 24 cleared) at 0xA11A–0xA134.
+    /// </summary>
+    public Action? PartyMemberDying { get; set; }
+
     public List<EclCharacter> List => Memory.Party?.Members ?? [];
     public CombatRecord Record(EclCharacter c) => State.Record(c);
 
@@ -204,6 +211,8 @@ public sealed class Fight
         FightRules.UpdateHostileHpPercent(List, State);
         foreach (var c in List)
             FightRules.EndOfRoundCreature(c, State, Effects);
+        if (PartyMemberDying is { } dying && FightMenu.Bandage(this, false) is not null)
+            dying();
         FightRules.CountTeams(List, State);
         done = State.TeamCount[0] == 0 || State.TeamCount[1] == 0;
         if (State.TeamCount[0] > 0 && State.TeamCount[1] == 0 && !NoContinueQuestion && Controller.ContinueBattle())
@@ -311,8 +320,9 @@ public sealed class Fight
         if (ammo is not null)
             MissileFlight(attacker, defender, ammo);
         // 0x14155–0x1417E: a second 0x14EAB, whatever the ammunition (melee too), when the attacker's weapon (+0xCC)
-        // has type 0x2F, with the weapon as the missile. [?] With no weapon the program reads type byte 0000:002E (an
-        // interrupt vector byte); taken as no flight.
+        // has type 0x2F, with the weapon as the missile. With no weapon the program reads type byte 0000:002E, the low
+        // byte of INT 0Bh's segment: 0x00 for the BIOS vector (DOSBox-X, a stock machine; MS-DOS STACKS leaves it) →
+        // no flight, taken here. [?] An IRQ 3 driver's segment ending in 0x2F would give a flight (combat-menu.md).
         if (FightRules.Equipment(attacker, Items)[FightRules.SlotWeapon] is { Length: > 0x2E } weapon && weapon[0x2E] == 0x2F)
             MissileFlight(attacker, defender, weapon);
         if (attacker[0x113] > 0 || attacker[0x114] > 0)

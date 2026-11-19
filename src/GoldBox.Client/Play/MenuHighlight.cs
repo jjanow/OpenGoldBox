@@ -13,6 +13,9 @@ namespace GoldBox.Client.Play;
 /// stores 1 once on entry (0x2D6B9) and then runs its menu through 0x2CC8C, so the item lists open on their first entry
 /// (DOSBox-X: first entry each time) and leave the cell where their menu left it; the yes/no routine 0x2D9A0 stores 2
 /// (0x2D9B9) before its "Yes No" menu, so it opens on No and leaves the cell on the answer.
+/// In a fight (read s29) the item list routine is also behind the coin list of drop money and the spell list 0x239D6
+/// (Cast, View's Spells, a scroll's spells, through 0x270A2); the aim menu is the menu routine itself, so an item's
+/// aim opens where the Items list left the cell (docs/re/combat-menu.md "Menus").
 /// </summary>
 public sealed class MenuHighlight
 {

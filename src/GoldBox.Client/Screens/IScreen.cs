@@ -93,23 +93,28 @@ public static class Chrome
     /// The party list (START 0x1307, read s21): "NAME" at <paramref name="col"/> and "AC" / "HP" right-aligned at 34 / 38
     /// on row 2 (white); the members from row 4. The current member's name is white, the others take the name colour of
     /// START 0x23B6 (out of play light red, hostile yellow, else cyan). AC is |0x111 − 60| with "-" first when 0x111 &gt; 60
-    /// (START 0x148F), green; HP is 0x11B, yellow below 0x32 else green (START 0x1513, flag 0).
+    /// (START 0x148F), green; HP is 0x11B, yellow below 0x32 else green (START 0x1513, flag 0). Members for which
+    /// <paramref name="hide"/> answers true are left out (their rows close up).
     /// </summary>
-    public static void PartyList(IndexedFrame f, TextFont font, EclParty? party, int col, int? highlighted = null)
+    public static void PartyList(IndexedFrame f, TextFont font, EclParty? party, int col, int? highlighted = null,
+        Func<EclCharacter, bool>? hide = null)
     {
         Text(f, font, col, 2, "NAME", White);
         TextRight(f, font, 34, 2, "AC", White);
         TextRight(f, font, 38, 2, "HP", White);
         if (party is null)
             return;
-        for (int i = 0; i < party.Members.Count && i < 8; i++)
+        for (int i = 0, row = 4; i < party.Members.Count && row < 12; i++)
         {
             var m = party.Members[i];
+            if (hide?.Invoke(m) == true)
+                continue;
             var name = m.Name.Length > 15 ? m.Name[..15] : m.Name;
             byte nameColour = i == (highlighted ?? party.CurrentIndex) ? White : m[0x10D] == 0 ? LightRed : m[0x10E] == 1 ? Yellow : Cyan;
-            Text(f, font, col, 4 + i, name.ToUpperInvariant(), nameColour);
-            TextRight(f, font, 34, 4 + i, (60 - m[0x111]).ToString(CultureInfo.InvariantCulture), Green);
-            TextRight(f, font, 38, 4 + i, m[0x11B].ToString(CultureInfo.InvariantCulture), m[0x11B] < m[0x32] ? Yellow : Green);
+            Text(f, font, col, row, name.ToUpperInvariant(), nameColour);
+            TextRight(f, font, 34, row, (60 - m[0x111]).ToString(CultureInfo.InvariantCulture), Green);
+            TextRight(f, font, 38, row, m[0x11B].ToString(CultureInfo.InvariantCulture), m[0x11B] < m[0x32] ? Yellow : Green);
+            row++;
         }
     }
 

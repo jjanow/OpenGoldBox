@@ -834,7 +834,10 @@ public sealed class EclVm
                 else
                     text = _strings[1];
                 bool clear = op == EclOpcodes.PrintClr;
+                // DS:4A00 = 1 (0x1763) for the text, 0 after it (0x17DC): PRINT always types and leaves typing off.
+                Memory.TypesText = true;
                 HostCall(clear ? "PrintClear" : "Print", [text], null, () => Host.Print(text, clear));
+                Memory.TypesText = false;
                 return null;
             }
             case EclOpcodes.PrintRet:

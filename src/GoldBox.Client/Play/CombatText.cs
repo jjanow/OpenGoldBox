@@ -46,6 +46,15 @@ public enum CombatMsg
     // The monster specials' messages (class 0x0E handlers): the gaze 83 (0x10908) with its reflection and the stoning
     // (0xECB3's text), the charm gaze 84 (0x10AD2), the lightning breath 88 (0x2A0F1), the acid breath 121 (0x11877).
     HandlerGazes, HandlerGazeReflected, HandlerStoned, HandlerCharmGazes, HandlerBreathes, HandlerSpitsAcid,
+    // The fight start's row-24 line (0xE402: the unit's CS:0x1E1E, GAME.OVR 0xE3EF).
+    BattleBegins,
+    // 0xECB3's other callers' texts: handler 22 (0xF406), 32 (0xF7A4), 57 (0x100A4), the poisoned hit (0x10230), the
+    // level drain (status 8 at 0x10E15 / 0x10F35, status 6 at 0x10FAB), 95 (0x1129D).
+    StatusPoisonDeath, StatusCollapses, StatusRotsAway, StatusPoisonKilled, StatusDeadForever, StatusDrainKilled,
+    StatusFallsDead,
+    // The messages before them: the poisoned hit (0x101F2), mummy rot 57 (0x1001F), the level drain (0x10DEC: the
+    // drained words + "a level" or the count + the levels word).
+    Poisoned, Rots, Drained, DrainedOneLevel, DrainedLevels,
 }
 
 /// <summary>
@@ -177,6 +186,19 @@ public sealed class CombatText
         [CombatMsg.HandlerCharmGazes] = "STARES",
         [CombatMsg.HandlerBreathes] = "EXHALES LIGHTNING",
         [CombatMsg.HandlerSpitsAcid] = "SPRAYS ACID",
+        [CombatMsg.BattleBegins] = "TO ARMS!",
+        [CombatMsg.StatusPoisonDeath] = "SUCCUMBS TO POISON",
+        [CombatMsg.StatusCollapses] = "FALLS APART",
+        [CombatMsg.StatusRotsAway] = "CRUMBLES TO DUST",
+        [CombatMsg.StatusPoisonKilled] = "IS DEAD",
+        [CombatMsg.StatusDeadForever] = "IS GONE FOR GOOD",
+        [CombatMsg.StatusDrainKilled] = "IS DEAD",
+        [CombatMsg.StatusFallsDead] = "DROPS DEAD",
+        [CombatMsg.Poisoned] = "IS ENVENOMED",
+        [CombatMsg.Rots] = "DECAYS",
+        [CombatMsg.Drained] = "LOSES ",
+        [CombatMsg.DrainedOneLevel] = "ONE LEVEL",
+        [CombatMsg.DrainedLevels] = " LVLS",
     };
 
     /// <summary>START.EXE strings (offsets in the unpacked image, PorProgram.Image), read before the status panel 0x1583.</summary>

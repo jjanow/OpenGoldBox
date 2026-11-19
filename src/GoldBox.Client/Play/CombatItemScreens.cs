@@ -48,8 +48,12 @@ public sealed record PageRequest(IReadOnlyList<string> Entries, string? Prompt, 
     /// <summary>Return / A / a click on the selected row picks the row (the coin list), not the highlighted entry.</summary>
     public bool PickRows { get; init; }
 
-    /// <summary>The menu is the program's menu routine 0x2CC8C (View's): its highlight is the shared cell
-    /// (<see cref="MenuHighlight"/>); otherwise the item list routine's (first entry each time).</summary>
+    /// <summary>
+    /// The menu is the program's menu routine 0x2CC8C called directly (View's): it opens on the shared cell
+    /// (<see cref="MenuHighlight"/>). Otherwise the page is the item list routine 0x2D669 (the Items page, the coin
+    /// list), which stores 1 in the cell on entry (0x2D6B9), so it opens on its first entry. Both leave the cell where
+    /// their menu ends (0x2D669 runs its menu through 0x2CC8C).
+    /// </summary>
     public bool SharedHighlight { get; init; }
 }
 
@@ -121,10 +125,13 @@ public sealed partial class CombatChooser
     }
 
     /// <summary>
-    /// The monster AI's messages (0xABC0–0xBC8C) in the panel. [?] Their rows and pause are not read, except the key
-    /// check's (0xBB81): Alt-M's (0xBBD7 / 0xBBED) and Alt-X's (0x1638E) go through START 0x1693 on row 24.
+    /// The monster AI's messages (0xABC0–0xBC8C). The key check's (0xBB81): Alt-M's (0xBBD7 / 0xBBED) and Alt-X's
+    /// (0x1638E) go through START 0x1693 on row 24. The others are START 0x16EC(creature, text, row 10, pause 1): the
+    /// name, the text typed from row 11, the game-speed pause, rows 10–21 cleared: the panic message (0xACC1) and the
+    /// forced flee (0xBCF0). The surrender goes through the status change 0x2BDF0, which first scrolls the view to the
+    /// creature with delta 3 and no cursor box (0x319D2(creature, 3, 0) at 0x2BE31), then shows the same message.
     /// </summary>
-    private void AiSays(EclCharacter who, AiMessage m)
+    internal void AiSays(EclCharacter who, AiMessage m)
     {
         if (m is AiMessage.QuickMagicOn or AiMessage.QuickMagicOff or AiMessage.GodsIntervene)
         {
@@ -145,7 +152,16 @@ public sealed partial class CombatChooser
             AiMessage.QuickMagicOn => CombatMsg.AiMagicOn,
             _ => CombatMsg.AiMagicOff,
         };
+        if (m == AiMessage.Surrenders)
+            StatusChangeScroll(who);
         Say(who, Text[word]);
+    }
+
+    /// <summary>0x2BDF0's first step (0x2BE31): 0x319D2(creature, 3, 0), ScrollView on its square, delta 3, cursor off.</summary>
+    private void StatusChangeScroll(EclCharacter who)
+    {
+        if (Square(who) is { } p)
+            View.Scroll(p.X, p.Y, 3);
     }
 
     // ---- IItemScreenChooser: View (0x21AED) -------------------------------------------------------------------------
@@ -245,7 +261,8 @@ public sealed partial class CombatChooser
         ItemsEntry.Join => Text[CombatMsg.ItemsJoin].Trim(),
         ItemsEntry.Sell => Text[CombatMsg.ItemsSell].Trim(),
         ItemsEntry.Id => Text[CombatMsg.ItemsId].Trim(),
-        // [?] The Items menu's Exit is added by the list routine 0x2D669 (not read): the View menu's word.
+        // The list routine 0x2D669 appends " Exit" (CS:0D94 of its unit, GAME.OVR 0x2D663) when its flag [bp+0x12] is
+        // set, as the Items call (0x222B7) and the coin list (0x2369D) set it; the same word as View's.
         _ => Text[CombatMsg.ViewExit].Trim(),
     };
 

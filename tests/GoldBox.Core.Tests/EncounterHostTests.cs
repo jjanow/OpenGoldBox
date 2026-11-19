@@ -148,6 +148,32 @@ public class EncounterHostTests
             .Op(EclOpcodes.Exit);
     }
 
+    // ---- DS:4A00, the text routine's typing flag ------------------------------------------------------------------
+
+    [Fact]
+    public void Typing_is_on_from_the_start_up_and_print_and_encmenu_leave_it_off()
+    {
+        var rig = new Rig(new EclAsm().Op(EclOpcodes.Print, Text("A")).Op(EclOpcodes.Exit));
+        Assert.True(rig.Memory.TypesText); // the start-up 0xE974
+        rig.Run();
+        Assert.False(rig.Memory.TypesText); // PRINT: 1 for its text (0x1763), 0 after it (0x17DC)
+
+        var menu = new Rig(EncMenu(1, [0, 1, 1, 1, 4]));
+        menu.Memory.TypesText = false;
+        menu.Ui.Choices.Enqueue(0); // combat
+        menu.Run();
+        Assert.False(menu.Memory.TypesText); // ENCMENU: 1 on entry (0x2C4F), 0 at its exit (0x32E0)
+    }
+
+    [Fact]
+    public void Typing_is_on_after_every_fight()
+    {
+        var memory = new EclMemory { TypesText = false };
+        var step = new AfterCombat(memory, new EncounterState(), _ => 0, []);
+        step.Finish(new AfterCombatOutcome(false, false, true, false, 0, 0));
+        Assert.True(memory.TypesText); // the after-combat end 0x6BAF
+    }
+
     [Fact]
     public void Encmenu_advances_then_offers_parley_at_distance_0()
     {

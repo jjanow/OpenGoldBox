@@ -509,8 +509,25 @@ roll per item (RandSeed).
 - **PROTECT a** (0x3BC3) is not a copy-protection check: it draws a line of glyphs. 84C8/84C9 and 84E0 cleared; if
   DS:84DE is set and the line is > 13, the cursor goes to column 2, line 5 (inside the cleared window) and DS:84E2
   = 1; DS:84DF = 1; then for i = 0, 1, …: g = (VM read at raw a + i) + 1 as a byte; while g > 1 draw glyph g at the
-  cursor (START.EXE 0x726F, colour 15) and column + 1; then line + 1. v1.3 uses it for the rune texts after CLEARBOX
-  (e.g. ECL4 block 21 $9BD8: the parchment). EXIT, when DS:84E2 is set, shows a prompt and redraws (0xD4D–0xDA7, display only).
+  cursor (START.EXE 0x726F with its flag 0: g is the text font's glyph number, no case mapping; colour 15; columns
+  above 39 and rows above 24 not drawn) and column + 1; then line + 1, the column left where the line ended (an empty
+  line, first byte 0 or 255, still moves the line down). Not through the text routine, so it never types.
+  DS:84DE: CLEARBOX sets it (0x3872), EXIT clears it (0xE31), the start-up too (0xE9EF). DS:84DF: PROTECT sets it,
+  PRINTRET clears it (0x3848), but both PRINTRET branches do the same (column 1, line + 1), so it changes nothing.
+  DS:84E2: cleared by EXIT (0xDDC) and the script init (0x7696). **EXIT with DS:84E2 set** (0xD4D–0xDA7, display
+  only): START 0x41F8 (a window: the inside blanked, 0x4047, and a frame, 0x3F10, no title) for (1, 1)–(15, 15), and
+  when $49E6 ≠ 0 (DS:49D2 + 0x1CC; the 3D view) again for (3, 3)–(13, 13); no key wait (s29; earlier notes said a
+  prompt). So the runes are gone when the run ends.
+  **Uses in v1.3** (12, `ecl.py dis`; P, s29): every one sits between LOADFILES #255,#16,#255 and #255,#2,#255, which
+  load nothing (o1 = 255; o2 unused; o3 = 255). ECL4 block 21 $9BD7: CLEARBOX, then three lines (glyph data $AF1E,
+  $AF25, $AF34) with PRINTRET between, after a PRINTCLR text: the cursor is below 13, so the lines go to (2, 5), then
+  (1, 7) and (1, 9) in the cleared picture window. ECL5 blocks 3 and 4, ECL7 block 23 (no CLEARBOX): a PRINTCLR of
+  an empty text, an empty line (its only effect: the cursor one row down, then the next PRINTCLR homes it), then
+  PRINTCLR / PRINT texts each followed by a line of glyphs at the cursor, so the runes follow the text on its row in
+  the text box (ECL5 block 4 $A45E: rows 17 and 19). Client: `ClientPlayer.DrawGlyphs` (text-box rows into
+  `ClientPlayer.Text`, which a later clear removes; picture-window rows into `ViewGlyphs`, drawn over CLEARBOX's blank
+  of cells (1, 1)–(15, 15)); test `RuneTextTests` runs both uses from the game's scripts and checks the pixels against
+  8X8D1 block 201. `[?]` Glyphs on rows 16, 23 and 24 (no v1.3 use) are not drawn.
 
 **CALL $C018** (0x3AFA): only when DS:49FA = 1, the wall type ahead DS:6AB0 ($C04E) is read again (0x2ED72 at
 x, y, facing). DS:49FA (view mode = the save's location type) is 1 at a new game (0xE9C3) and is set by 0x3EFA

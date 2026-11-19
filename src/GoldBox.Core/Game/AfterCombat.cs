@@ -75,6 +75,7 @@ public sealed class AfterCombat
             _memory.Write(CombatResult, ResultDestroyed);
         else
             _state.TreasureItems.Clear(); // the treasure list is freed after the loot step (0x6AEA–0x6B32)
+        _memory.TypesText = true; // DS:4A00 = 1 (0x6BAF): texts after a fight type until the next PRINT or ENCMENU
         foreach (var a in ClearedAtEnd)
             _memory.Write(a, 0);
     }

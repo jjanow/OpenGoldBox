@@ -67,10 +67,21 @@ public sealed class CombatView
     /// </summary>
     public TextWindow Panel { get; } = new(PanelLeft, 1, PanelRight, PanelBottom);
     public const int PanelLeft = 23, PanelRight = 38, PanelBottom = 21, MessageTop = 10;
+    /// <summary>While the status panel's weapon name types: the cells shown so far (null = all).</summary>
+    public int? WeaponTyped { get; set; }
     /// <summary>Row 23 (under the map frame): "RANGE = n", "MOVE … = n" and the like.</summary>
     public string? StatusLine { get; set; }
     /// <summary>Row 24 during an AI creature's move (0xB396 and its moves left, AiMoveStep), green; null = none.</summary>
-    public string? MovePrompt { get; set; }
+    public string? MovePrompt { get => _movePrompt; set { _movePrompt = value; if (value is not null) Row24Written(); } }
+    private string? _movePrompt;
+
+    /// <summary>
+    /// Counts the writes and clears of row 24 outside the menus (an AI's start 0x2CFCA, its move prompt, a START 0x1693
+    /// message): the last menu drawn stays on the row until one of them (CombatScreen draws it during waits).
+    /// </summary>
+    public int Row24Writes { get; private set; }
+
+    public void Row24Written() => Row24Writes++;
     /// <summary>Monster icon pictures by icon slot (record 0xBF), from LoadCombatIcon (LOADMON, ADDNPC, the duel).</summary>
     public Dictionary<int, int> IconPictures { get; } = [];
     /// <summary>The game speed DS:49E2 (0 fastest … 9), shared with the Done menu's Speed.</summary>
@@ -80,7 +91,8 @@ public sealed class CombatView
     /// <summary>The character screen over the whole frame (View, Items, drop money), or null for the map.</summary>
     public CombatPage? Page { get; set; }
     /// <summary>The message routine's line (START 0x1693: row 24, green) while a page waits out its pause.</summary>
-    public string? PageMessage { get; set; }
+    public string? PageMessage { get => _pageMessage; set { _pageMessage = value; if (value is not null) Row24Written(); } }
+    private string? _pageMessage;
 
     /// <summary>
     /// The view's band test and move (GAME.OVR 0x30F0E, read s19): the view's centre is (view x + 3, view y + 3); a
@@ -168,6 +180,8 @@ public sealed partial class CombatChooser(Func<PlayerRequest, object?> ask, Comb
     public Func<int, string?> SpellName { get; set; } = _ => null;
     /// <summary>Pauses (the attack messages, a step, a turn change); false in tests.</summary>
     public bool Pauses { get; set; } = true;
+    /// <summary>DS:4A00 (<see cref="GoldBox.Core.Ecl.EclMemory.TypesText"/>): the panel's texts type out while it is set.</summary>
+    public Func<bool> Typing { get; set; } = () => true;
 
     /// <summary>The creature a click on the map picked while the aim menu is up: the aim menu steps to it (Next).</summary>
     private EclCharacter? _goal;
@@ -194,26 +208,53 @@ public sealed partial class CombatChooser(Func<PlayerRequest, object?> ask, Comb
         fight.AttackStarting = AttackStarting;
         fight.AttackMade = AttackMade;
         fight.State.AttackMessage = AttackMessage;
+        fight.State.AttackEnd = AttackEnd;
         fight.State.Flight = Flight;
+        fight.State.Posed = Posed;
+        fight.PartyMemberDying = () => PageSay(Text[CombatMsg.TeammateDying]); // 0xA134 (DOSBox-X s29: row 24, pause)
         fight.Moves = new ShownMoves(fight.Moves, Stepping, Stepped);
         if (fight.Spells is FightSpells spells)
         {
             spells.Announce = Announce;
+            spells.CastDone = CastDone;
             spells.ItemUsed = ItemUsed;
             spells.Event += SpellEvent;
             spells.Effects.Event += EffectMessage;
         }
         if (fight.Controller is MenuController { Ai: MonsterAi ai })
             ai.Message = AiSays;
-        // The fight start sets DS:4A00 = 1 (0xE974) and nothing in a fight clears it (the only writers are PRINT 0x1763 /
-        // 0x17DC, ENCMENU 0x2C4F / 0x32E0, 0x6BAF and 0xE974): every panel text typed through START 0x77F8 types out.
+        // Nothing in a fight writes DS:4A00 (the only writers are the start-up 0xE974, PRINT 0x1763 / 0x17DC, ENCMENU
+        // 0x2C4F / 0x32E0 and the after-combat end 0x6BAF): the panel's texts through START 0x77F8 type out when the
+        // fight starts with it set (after the start-up or a fight, no PRINT or ENCMENU since), else they show at once.
         View.Panel.Typed = TypeDelay;
     }
+
+    /// <summary>
+    /// The fight start's line (0xE430–0xE452), on the area screen before the combat screen comes: row 24 cleared
+    /// (0x3C5:0x2F = 0x2CFCA, START 0x767B over columns 0–39), PauseOnly (Delay(DS:49E2 × 225) ms; speed 0 waits
+    /// nothing) with row 24 blank, then the text at column 0, row 24, colour 10 through START 0x76B6 (one glyph call
+    /// per character, not typed), and no pause after it: the program goes on to build the arena and draw the combat
+    /// screen. Every fight passes here (0x9881's one call to 0xE402, before its "done at once" test). How long the line
+    /// stays up is the time of those loads and builds on the machine `[?]`; the Client's take none, so the line holds
+    /// one Client update (the runner hands it to the screen before that frame's draw). Call before <see cref="Attach"/>
+    /// (the combat screen takes over drawing once attached).
+    /// </summary>
+    public void BattleBegins()
+    {
+        if (!Pauses)
+            return; // the tests' setting: no waits at all
+        if (View.Speed is > 0 and <= 9)
+            ask(new DelayRequest(TimeSpan.FromMilliseconds(225 * View.Speed)) { BottomLine = ("", StartLineColour) });
+        ask(new DelayRequest(TimeSpan.Zero) { BottomLine = (Text[CombatMsg.BattleBegins], StartLineColour) });
+    }
+
+    /// <summary>The fight start's line colour (0xE440: 10, light green).</summary>
+    public const byte StartLineColour = 10;
 
     /// <summary>The typing delay after each character (START 0x777B–0x778D): Delay(DS:49E2 × 10) ms; speed 0 waits nothing.</summary>
     private void TypeDelay()
     {
-        if (View.Speed > 0 && Pauses)
+        if (View.Speed > 0 && Pauses && Typing())
             ask(new DelayRequest(TimeSpan.FromMilliseconds(10 * View.Speed)) { Chained = true });
     }
 
@@ -225,10 +266,14 @@ public sealed partial class CombatChooser(Func<PlayerRequest, object?> ask, Comb
         fight.AttackStarting = null;
         fight.AttackMade = null;
         fight.State.AttackMessage = null;
+        fight.State.AttackEnd = null;
         fight.State.Flight = null;
+        fight.State.Posed = null;
+        fight.PartyMemberDying = null;
         if (fight.Spells is FightSpells spells)
         {
             spells.Announce = null;
+            spells.CastDone = null;
             spells.ItemUsed = null;
             spells.Event -= SpellEvent;
             spells.Effects.Event -= EffectMessage;
@@ -274,10 +319,60 @@ public sealed partial class CombatChooser(Func<PlayerRequest, object?> ask, Comb
     /// The status panel (START 0x1583): the creature's lines and an empty message area (it clears columns 23–38, rows
     /// 1–21 first).
     /// </summary>
-    private void ShowPanel(EclCharacter c)
+    private void ShowPanel(EclCharacter c, bool type = true)
     {
         View.Shown = c;
         View.Panel.Clear();
+        View.WeaponTyped = null;
+        // The weapon's name goes through 0x77F8, so it types while DS:4A00 is set (Delay(DS:49E2 × 10) after each
+        // character, spaces too); the name, HP and AC lines are fixed-cell strings and show at once. DOSBox-X s29: the
+        // weapon typed letter by letter on every panel (turns, attacks, each aim candidate) in a fight entered by a
+        // step's COMBAT after a load.
+        if (!type || View.Speed == 0 || !Pauses || !Typing() || View.Fight is not { } fight
+            || FightRules.Equipment(c, fight.Items)[FightRules.SlotWeapon] is not { } w)
+            return;
+        int n = WeaponCells(ItemNames.Compose(w, Resources().ItemWord));
+        for (int i = 1; i <= n; i++)
+        {
+            View.WeaponTyped = i;
+            ask(new DelayRequest(TimeSpan.FromMilliseconds(10 * View.Speed)) { Chained = true });
+        }
+        View.WeaponTyped = null;
+    }
+
+    /// <summary>The cells the panel's weapon name fills when word-wrapped into (23, 7)–(38, 9), spaces included.</summary>
+    internal static int WeaponCells(string name)
+    {
+        var box = new TextWindow(CombatView.PanelLeft, 7, CombatView.PanelRight, 9);
+        box.PrintIn(CombatView.PanelLeft, 7, CombatView.PanelRight, 9, name, true, 10);
+        int n = 0;
+        for (int row = 7; row <= 9; row++)
+            for (int col = CombatView.PanelLeft; col <= CombatView.PanelRight; col++)
+                if (box.Cell(row, col) is ({ } ch and not '\0', _))
+                    n++;
+        return n;
+    }
+
+    /// <summary>
+    /// The end of a cast (0x27F44–0x27F5C): rows 10–21 cleared, then row 23 (the spell label) cleared in a fight
+    /// (DOSBox-X s29: Brother Sean's Bless, the label gone with the last blessed message).
+    /// </summary>
+    private void CastDone(EclCharacter caster)
+    {
+        ClearMessageWindow();
+        View.StatusLine = null;
+    }
+
+    /// <summary>
+    /// 0x31232 with frame 1 (the cast's facing, 0x27E00): the cell is drawn again (0x30C65), so a cursor box on it goes
+    /// (DOSBox-X s29: Brother Sean's Bless and Hold Person, the box gone from the cast on, his plain icon at the cast's
+    /// facing, equal to the Client's frames). [?] Why frame 1 shows the plain icon here and the attack pose in
+    /// MakeAttack (0x14113, also frame 1) is not read.
+    /// </summary>
+    private void Posed(EclCharacter c)
+    {
+        if (Square(c) is { } sq && View.Cursor == sq)
+            View.Cursor = null;
     }
 
     /// <summary>
@@ -292,11 +387,13 @@ public sealed partial class CombatChooser(Func<PlayerRequest, object?> ask, Comb
         View.Page = null;
         _announced = null; // a cast-now spell the list announced but never cast (no target) is forgotten
         View.Current = c;
-        ShowPanel(c);
         View.HitMarker = null;
         View.Attacking.Clear();
         View.StatusLine = null;
         Centered(c, 2, true);
+        // A menu-driven creature's panel is drawn again by the menu loop (0x9B21) right away: it types once there
+        // (DOSBox-X s29: one typing per turn).
+        ShowPanel(c, c[CombatRules.AutoCombat] != 0);
         if (c[CombatRules.AutoCombat] != 0)
         {
             View.Mode = CombatMode.Watch;
@@ -304,6 +401,7 @@ public sealed partial class CombatChooser(Func<PlayerRequest, object?> ask, Comb
             // The AI's start (0xABCF): row 24 (0x2CFCA) and the message area (START 0x2383) are cleared; until then the
             // last creature's move prompt is still up (DOSBox-X s19: Darkstar's box and panel under Rhiannon's prompt).
             View.MovePrompt = null;
+            View.Row24Written();
             ClearMessageWindow();
         }
     }
@@ -459,9 +557,30 @@ public sealed partial class CombatChooser(Func<PlayerRequest, object?> ask, Comb
                 p.Put(row, CombatView.PanelLeft, t[CombatMsg.AndIsDying], 10);
             if (status is 6 or 7 or 8)
                 PrintCreatureMessage(m.Defender, t[CombatMsg.IsKilled], row, false);
-            Downed(m.Defender);
+            Remember();
         }
+    }
+
+    /// <summary>
+    /// The end of 0x12AF4 (0x12DE1–0x12E17, read s29), after Core's 0x2BEF4 and trigger 0x0D (whose handlers may print
+    /// over the panel, e.g. handler 32's text through 0xECB3): a defender that went down and is still out of play gets
+    /// CreatureDowned 0x3154B's picture and pause, one back in play PauseOnly; then START 0x17E3 clears rows 10–21 (a
+    /// defender still up: only the clear).
+    /// </summary>
+    internal void AttackEnd(AttackMessage m, bool down)
+    {
+        if (down)
+            DownedOrPause(m.Defender);
         ClearMessageWindow();
+    }
+
+    /// <summary>A creature still out of play: CreatureDowned's display (<see cref="Downed"/>); else PauseOnly.</summary>
+    private void DownedOrPause(EclCharacter c)
+    {
+        if (c[FightRules.InPlay] == 0)
+            Downed(c);
+        else
+            Pause(MessageMs);
     }
 
     /// <summary>
@@ -474,6 +593,8 @@ public sealed partial class CombatChooser(Func<PlayerRequest, object?> ask, Comb
         View.HitMarker = Square(c) ?? (_lastSquare.TryGetValue(c, out var last) ? last : null);
         Pause(MessageMs);
         View.HitMarker = null;
+        // [?] DOSBox-X s29: once the vampire's attacker pose went with the downed picture (Thrender, below it, drained
+        // dead), once it stayed (Bakshi, beside it, the same way): which redraw takes it is not read.
     }
 
     /// <summary>The end of MakeAttack (0x142C5–0x1430E): the attacker is drawn again in its standing pose.</summary>
@@ -491,7 +612,9 @@ public sealed partial class CombatChooser(Func<PlayerRequest, object?> ask, Comb
     /// electricity, 0x10 acid) and the magic words when DS:6819 AND 8 = DS:6819 (also for 0), shown by 0x2B8B
     /// (<see cref="ShowHit"/>). A spell being cast lost: START 0x16EC at row 12 with the pause. Out of play (0x2C44A):
     /// the down words, ", and is dying" added for status 5, the killed words instead for 6–8, START 0x16EC at the cursor
-    /// row + 1, then the pause. An effect resisted (0x2C540): the unaffected words, START 0x16EC at row 10 with the pause.
+    /// row + 1; its end (<see cref="EffectEvent.GoesDownDone"/>) brings the downed picture or the pause and the clear.
+    /// An effect resisted (0x2C540): the unaffected words, START 0x16EC at row 10 with the pause. 0xECB3's callers and
+    /// the messages before them: docs/re/spells-effects.md "Status changes".
     /// </summary>
     internal void EffectMessage(EclCharacter c, EffectEvent e)
     {
@@ -521,7 +644,9 @@ public sealed partial class CombatChooser(Func<PlayerRequest, object?> ask, Comb
                 };
                 if ((mask & 8) == mask)
                     s += t[CombatMsg.FromMagic];
-                ShowHit(c, s);
+                // START 0x2B8B copies its text into a string[40] (0x2B9B): longer damage lines are cut (DOSBox-X s29:
+                // "takes 40 points of damage from electricity" ends after 40 characters).
+                ShowHit(c, s.Length > 40 ? s[..40] : s);
                 break;
             }
             case EffectEvent.CastingLost:
@@ -535,11 +660,64 @@ public sealed partial class CombatChooser(Func<PlayerRequest, object?> ask, Comb
                     s += t[CombatMsg.SpellAndIsDying];
                 if (c[FightRules.Status] is 6 or 7 or 8)
                     s = t[CombatMsg.SpellIsKilled];
+                Remember();
                 PrintCreatureMessage(c, s, View.Panel.Row + 1, false);
-                // In a fight the creature, still out of play after trigger 0x0D, goes through CreatureDowned (its
-                // picture and pause); else (or out of a fight) the pause alone. Core runs the trigger after this event.
-                Downed(c);
+                break;
+            }
+            case EffectEvent.DamageDone:
+                ClearMessageWindow(); // 0x2C527: START 0x17E3
+                break;
+            case EffectEvent.GoesDownDone:
+                // 0x2C4F3–0x2C527: after Core's 0x2BEF4, trigger 0x0D and map removal, the creature still out of play
+                // goes through CreatureDowned (its picture and pause), else the pause alone; then START 0x17E3.
+                DownedOrPause(c);
                 ClearMessageWindow();
+                break;
+            case EffectEvent.PoisonDeath:
+                StatusMessage(c, t[CombatMsg.StatusPoisonDeath]);
+                break;
+            case EffectEvent.Collapses:
+                StatusMessage(c, t[CombatMsg.StatusCollapses]);
+                break;
+            case EffectEvent.RotsAway:
+                StatusMessage(c, t[CombatMsg.StatusRotsAway]);
+                break;
+            case EffectEvent.PoisonKilled:
+                StatusMessage(c, t[CombatMsg.StatusPoisonKilled]);
+                break;
+            case EffectEvent.DeadForever:
+                StatusMessage(c, t[CombatMsg.StatusDeadForever]);
+                break;
+            case EffectEvent.DrainKilled:
+                StatusMessage(c, t[CombatMsg.StatusDrainKilled]);
+                break;
+            case EffectEvent.FallsDead:
+                StatusMessage(c, t[CombatMsg.StatusFallsDead]);
+                break;
+            case EffectEvent.StatusDone:
+                // 0xED2E–0xED49: CreatureDowned when still out of play (its picture and pause), then PauseOnly whatever
+                // happened, then START 0x17E3 (rows 10–21 cleared).
+                if (c[FightRules.InPlay] == 0)
+                    Downed(c);
+                Pause(MessageMs);
+                ClearMessageWindow();
+                break;
+            case EffectEvent.Poisoned:
+                // 0x101D5–0x101F7: START 0x16EC from row 10 without the pause flag, then PauseOnly; nothing cleared.
+                HandlerMessage(c, t[CombatMsg.Poisoned], CombatView.MessageTop, false);
+                Pause(MessageMs);
+                break;
+            case EffectEvent.Rots:
+                HandlerMessage(c, t[CombatMsg.Rots], CombatView.MessageTop, true); // 0x10004–0x1001F
+                break;
+            case EffectEvent.Drained:
+            {
+                // 0x10D84–0x10DEC: the drained words + (count > 1: Str(count) + the levels word; else the one-level words).
+                int n = fight.Spells is FightSpells fs ? fs.Effects.DrainCount : 1;
+                string s = t[CombatMsg.Drained] + (n > 1
+                    ? n.ToString(CultureInfo.InvariantCulture) + t[CombatMsg.DrainedLevels]
+                    : t[CombatMsg.DrainedOneLevel]);
+                HandlerMessage(c, s, CombatView.MessageTop, true);
                 break;
             }
             case EffectEvent.Unaffected:
@@ -552,7 +730,7 @@ public sealed partial class CombatChooser(Func<PlayerRequest, object?> ask, Comb
                 HandlerMessage(c, t[CombatMsg.HandlerGazeReflected], 12, false);
                 break;
             case EffectEvent.Stoned:
-                HandlerMessage(c, t[CombatMsg.HandlerStoned], CombatView.MessageTop, false);
+                StatusMessage(c, t[CombatMsg.HandlerStoned]);
                 break;
             case EffectEvent.CharmGazes:
                 HandlerMessage(c, t[CombatMsg.HandlerCharmGazes], CombatView.MessageTop, false);
@@ -567,10 +745,23 @@ public sealed partial class CombatChooser(Func<PlayerRequest, object?> ask, Comb
     }
 
     /// <summary>
-    /// A monster special's own message (class 0x0E handlers 83, 84, 88, 121 and the stoning 0xECB3, read s27): START
-    /// 0x16EC(creature, text, row, pause flag) as the handler calls it. The gazes (row 10), the reflection (row 12) and
-    /// the stoning (row 10) pass no pause: the text stays in the panel through the flight that follows until the next
-    /// text overwrites it. The two breaths (row 10) pass the pause: PauseOnly, then rows 10–21 cleared (START 0x2383).
+    /// 0xECB3's message (0xECB9–0xECDD, read s29): the caller's text by START 0x16EC from row 10 without the pause flag,
+    /// before the dead / stone / gone test. When the status is then set, <see cref="EffectEvent.StatusDone"/> brings the
+    /// pauses and the clear; a creature already dead, stone or gone keeps the text in the panel until the next one.
+    /// Its square is remembered first: the map removal comes before CreatureDowned's picture.
+    /// </summary>
+    private void StatusMessage(EclCharacter c, string text)
+    {
+        Remember();
+        HandlerMessage(c, text, CombatView.MessageTop, false);
+    }
+
+    /// <summary>
+    /// A monster special's own message (class 0x0E handlers 83, 84, 88, 121, read s27; the handlers before 0xECB3, s29):
+    /// START 0x16EC(creature, text, row, pause flag) as the handler calls it. The gazes (row 10) and the reflection (row
+    /// 12) pass no pause: the text stays in the panel through the flight that follows until the next text overwrites
+    /// it. The two breaths (row 10), the rot and the drain pass the pause: PauseOnly, then rows 10–21 cleared (START
+    /// 0x2383).
     /// </summary>
     private void HandlerMessage(EclCharacter c, string text, int row, bool pause)
     {
@@ -668,10 +859,10 @@ public sealed partial class CombatChooser(Func<PlayerRequest, object?> ask, Comb
     private void ShowCurrent(FightMenu menu)
     {
         View.Current = menu.Creature;
-        ShowPanel(menu.Creature);
+        Centered(menu.Creature, 2, true);
+        ShowPanel(menu.Creature); // rows 23 and 24 keep what they showed while the weapon name types
         View.StatusLine = null;
         View.MovePrompt = null;
-        Centered(menu.Creature, 2, true);
     }
 
     // ---- IFightMenuChooser -------------------------------------------------------------------------------------------
@@ -781,11 +972,16 @@ public sealed partial class CombatChooser(Func<PlayerRequest, object?> ask, Comb
             else
                 _goal = null; // [?] not a candidate (fails the target check): back to the aim menu
         }
+        // The aim is drawn on the combat screen: an item's aim from the Items page (a scroll, whose use prints no
+        // message first) leaves that page.
+        View.Page = null;
         View.Current = menu.Creature;
         // 0x154xx: 0x319D2(candidate, 3, cursor on), then the panel shows it (START 0x1583).
         Centered(c, 3, true);
-        ShowPanel(c);
+        // DOSBox-X s29: the new range is on row 23 before the panel (its weapon typing) comes.
+        View.Mode = CombatMode.Aim;
         View.StatusLine = Text[CombatMsg.Range] + aim.Distance.ToString(CultureInfo.InvariantCulture);
+        ShowPanel(c);
         while (true)
         {
             var words = new List<string>(Text.Words(CombatMsg.AimNextPrevManual));
@@ -850,6 +1046,7 @@ public sealed partial class CombatChooser(Func<PlayerRequest, object?> ask, Comb
     public ManualInput ChooseManual(FightMenu menu, ManualView view)
     {
         View.Mode = CombatMode.Manual;
+        View.Page = null;
         View.Current = menu.Creature;
         View.Shown = view.Creature;
         View.Panel.Clear();

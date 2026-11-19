@@ -402,9 +402,13 @@ and Speed menus, an AI attack at game speed 9). Code: `src/GoldBox.Client/Screen
   38, 40, 45, 47, 56 (one picture per terrain throughout).
 - **Icons**: player characters (record 0x84 < 0x80) get the party icon, other creatures the CPIC block = their icon slot's picture (LoadCombatIcon; a joined NPC not checked `[?]`), attack pose + 128 (seen in the AI
   burst); party members are CBODY + CHEAD (head on the top rows) recoloured by 0xC1–0xC6, + 64 for icon size 2: all six
-  members of save A matched pixel for pixel (`CombatArt.Party`). Colour 0 is see-through. Facing 5–7 mirrors the
-  icon (party at 7 mirrored, orcs at 3 not, both pixel-exact); s15 (save K, Rhiannon stepping): facing 0 and 4 show
-  the stored icon, 6 the mirrored one. The party's attack pose (+ 128) is from the art only `[?]`; DOSBox-X drew a
+  members of save A matched pixel for pixel (`CombatArt.Party`). Colour 0 is see-through. **Facing 4–7 mirrors the
+  icon** (read s29: the icon drawer GAME.OVR 0x31F68, far 03E9:0039, copies the slot's picture mirrored through START
+  464:15C7 when the direction is above 3; every caller passes the combat record's +9; party at 7 mirrored, orcs at 3
+  not, both pixel-exact; **D** s29: a vampire attacking the member straight below it, facing 4, mirrored; s15 had
+  read facing 4 as stored, wrongly). The drawer takes the picture by the creature's icon slot (+0xBF, table DS:5E5A,
+  two pictures a slot), so a **charmed member** (NPC byte 0xB3) keeps the party icon (**D** s29; the Client used to
+  draw nothing for it). The party's attack pose (+ 128) is from the art only `[?]`; DOSBox-X drew a
   creature that had just stepped with the sword raised (the other pose?) `[?]`.
 - **Cursor box** (read s19): the box sprite (icon cell 25 = COMSPR 25) painted into the view by DrawCursorCell through
   ScrollView 0x310D0 while the arena's cursor flag (+4) is set, on every cell of the footprint in +5 (0x319D2 sets
@@ -432,6 +436,21 @@ and Speed menus, an AI attack at game speed 9). Code: `src/GoldBox.Client/Screen
   on No; N → the camp menu on View. Return does nothing in the camp menu (0x2CC8C returns 13 only when its
   [bp+0x10] / [bp+0x0E] are set, and the camp does not use it); the Client's Confirm on the highlight is its own. The yes/no routine loops until N or Y (its set at cs:0x10B1), so Escape does nothing there; the Client's Cancel = No is its own too. Client: `MenuHighlight` (shared by the area line and the combat screen, seeded
   with the loaded slot's place among the saves present).
+  **In a fight (P, s29):** the lists that go through 0x2D669 (overlay stub 03C5:0034) are the Items page (0x222C9),
+  the coin list of drop money (0x236AF) and the spell list 0x239D6 (Cast, View's Spells, a scroll's spells: it calls
+  0x270A2, which calls 0x2D669 at 0x271EF when the list is not empty). 0x2D669 with an empty list returns before the
+  store. Its menu is the caller's text, then " Next" when rows remain below the window, " Prev" when the window is
+  scrolled, and " Exit" when the flag [bp+0x12] is set (the words at CS:0D88/0D8E/0D94 of its unit, GAME.OVR
+  0x2D657–0x2D668); the Items call and the coin list set the flag. The Items window is rows 5–22 (18 rows, more than
+  a character's 16 items), the coin window rows 7–13 (7 kinds), so neither shows Next / Prev. The coin list's caller
+  text (CS:248C of 0x234E1's unit) is empty: its menu is Exit alone, and a row is taken by the key the menu returns
+  (0x234E1 takes the row whatever the key), so the cell is 1 when drop money ends and View's menu comes back on its
+  first entry, not on Drop. The yes/no routine stores 2 once (0x2D9B9): an answer outside Y / N reopens the menu at
+  0x2D9BE, on the cell as left. So: Items → U leaves the cell on Use (2nd), and an item's aim menu (0x1529B, 03C5:002A)
+  opens on its 2nd entry, Prev; the abort question's No leaves it on the 2nd too. Client: `CombatScreen` sets and
+  follows the cell as `ExploreScreen` does (yes/no to No, item lists and spell lists to the first entry, Left /
+  Right move it, the chosen entry stays, Escape leaves it). Not in DOSBox-X yet. `[?]` The spell lists' Next / Prev
+  (21 memorised slots against the window) are not drawn by the Client's list.
 - **View scrolling** (read s19, 0x30F0E / 0x310D0): ScrollView(x, y, delta, dir) aims at (x, y) + one step in dir;
   the view's centre is (view x + 3, view y + 3); a point within delta of it on both axes leaves the view (delta 255:
   always rebuilt, band 0); else on each axis where the point is outside the band the centre steps to the point, x kept
@@ -441,6 +460,25 @@ and Speed menus, an AI attack at game speed 9). Code: `src/GoldBox.Client/Screen
   (0xA343), a message on a creature not wholly in view 3 (START 0x2BFE), end of round 255 at the centre (0xA15E).
   **D** (s19): Phineas at view column 6 → the view moved 3 right, rows unchanged; Sean's AI steps inside the view
   moved nothing (the s18 "one square off" was the Client's inner-3 × 3 rule). Code: `CombatView.Rebuild` / `Scroll`.
+- **s29 DOSBox-X checks of the panel and rows 23–24** (a fight entered by a step's COMBAT after a load, so DS:4A00 = 1;
+  every Client frame compared with DOSBox-X's as pixels; Client fixes with tests `CombatPanelTypingTests`):
+  - The status panel's **weapon name types** (0x77F8, Delay(DS:49E2 × 10) a character, spaces too); name, HP and AC
+    lines show at once. Once per turn for a menu-driven member (the menu loop's 0x1583), at each aim candidate, at an
+    attack's panel. The HP number is yellow below the maximum 0x32 (as the party list), green otherwise.
+  - **Row 24 keeps the last menu** drawn until something writes the row (an AI's start 0x2CFCA, its move prompt, a
+    START 0x1693 message): the menu row stays, with the chosen entry lit (a hotkey moves the highlight, 0x2CF48),
+    while the panel types after Aim / Next / Prev, and a Done menu stays through the next creature's panel. Aim's
+    range line (row 23) is drawn before the panel types.
+  - The cast's facing (0x27E00: 0x31232 with frame 1) redraws the caster's cell, so its cursor box goes; DOSBox-X
+    then showed the plain icon at the cast's facing (the Client's frames equal); why frame 1 is the plain icon here
+    and the attack pose in MakeAttack (0x14113) is not read `[?]`. The cast's end (0x27F44–0x27F5C) clears rows 10–21 and, in a
+    fight, row 23 (the spell label).
+  - The end of round (0xA087) shows the teammate-dying words (GAME.OVR 0xA05F) through START 0x1693 when 0xA806
+    finds a party member dying (0xA11A–0xA134; **D**: row 24, the pause, cleared). Client `Fight.PartyMemberDying`.
+  - `[?]` left: an AI creature's panel is drawn, cleared and drawn again at its turn's start (~50 ms in DOSBox-X;
+    the Client draws it once); an attacker's pose went with a downed picture once (Thrender below the vampire) and
+    stayed once (Bakshi beside it); 3 pixels of the downed picture (COMSPR 11, the skull's mouth) show the ground grey
+    in DOSBox-X and black in the Client.
 - **The panel's text** (read s19): START 0x16EC in a fight clears (23, row)–(38, 21), writes the name at (23, row)
   (START 0x23B6: out of play light red, hostile = 1 yellow, else cyan) and word-wraps the text into
   (23, row + 1)–(38, 21) in green through START 0x77F8 (the text window routine, `TextWindow`; break set DS:0D16 =
@@ -452,10 +490,14 @@ and Speed menus, an AI attack at game speed 9). Code: `src/GoldBox.Client/Screen
   DS:4A00 ≠ 0 (START 0x777B), Delay(DS:49E2 × 10) (0x778D); spaces too, nothing for a word-wrap's skipped spaces. The
   only writers of DS:4A00 (every direct-address write form searched in START.EXE and GAME.OVR): PRINT/PRINTCLR 0x174F
   sets 1 at 0x1763 and 0 at 0x17DC after its text (so PRINT always types), ENCMENU 0x2C3E 1 at 0x2C4F and 0 at 0x32E0,
-  0x6BAF (after a fight's end screens / game start) 1, the fight start 0xE974 1. So in a fight every 0x77F8 text types
-  out; fixed-cell strings (the name START 0x23B6, row 24 START 0x1693) do not. Client: `TextWindow.Typed`, wired for
-  the fight's panel (`CombatChooser.Attach`) and PRINT (`ClientPlayer.Print`); ENCMENU's and other texts printed while
-  0x6BAF's 1 stands are still shown at once `[?]`.
+  the after-combat end 0x6BAF 1 (every fight, after the summary / loot or party-destroyed screens; combat-format.md
+  "After combat"), the start-up 0xE974 1 (s29: 0xE974 is in the start-up 0xE600, next to 0xE965–0xE979, not in the fight
+  start; s25 called it the fight start). Nothing in a fight writes it, so a fight's 0x77F8 texts type only when the
+  fight begins with it set: after the start-up or a fight with no PRINT or ENCMENU since (a fight reached through
+  ENCMENU or after a PRINT shows its panel texts at once; P, s29; the s19 **D** typing in the panel fits a fight
+  entered so, not checked `[?]`). Fixed-cell strings (the name START 0x23B6, row 24 START 0x1693) never type. Client:
+  `EclMemory.TypesText` (set by the VM's PRINT, `EncounterHost.EncounterMenu`, `AfterCombat.Finish`), read by the
+  panel's `CombatChooser.Typing` and by `ClientPlayer.Text` (view3d.md "Text window").
 - **Attack messages** (read s19, 0x12AF4, called per hit and for the miss by 0x13C01: 0x13CBE helpless, 0x13F2E hit,
   0x13F92 miss): START 0x16EC(attacker, the attacks word — backstab / slays-helpless words for manner 2 / 3 —, row 10);
   the defender's name at (23, 12) in its colour before the damage; the text in (23, 13)–(38, 16): the from-behind words
@@ -464,7 +506,9 @@ and Speed menus, an AI attack at game speed 9). Code: `src/GoldBox.Client/Screen
   pause, then the lost-spell message at row 12 with its pause). Out of play: START 0x16EC(defender, the down words) at
   the cursor row + 1, then two rows on the dying words at column 23 (status 5) or START 0x16EC(defender, the killed
   words) (status 6–8); 0x2BEF4, trigger 0x0D; still out of play CreatureDowned 0x3154B (the downed picture, icon cell
-  24 = COMSPR 11, on its footprint, then the pause) else the pause; last START 0x2383. **D** (s19): the rows of a
+  24 = COMSPR 11, on its footprint, then the pause) else the pause; last START 0x2383 (a defender still up: only the
+  clear, 0x12D56). Core keeps this order since s29 (`FightState.AttackMessage` after the damage, `AttackEnd` after
+  0x2BEF4 and 0x0D), so a handler's text from the drop (handler 32's) comes between. **D** (s19): the rows of a
   3-point hit (attacks word, defender, hitting words + 3 on row 13, points and damage words on row 14) and of a miss. A plain hit draws no picture (the s13 skull
   was CreatureDowned's). MakeAttack (0x1407F) first shows the attacker in the panel (0x140FE), draws it in its attack
   pose (0x31232 frame 1) and waits Delay(100) (0x1412E); the end (0x142C5) draws frame 0 again.
@@ -518,7 +562,23 @@ and Speed menus, an AI attack at game speed 9). Code: `src/GoldBox.Client/Screen
       ammunition item, so a sling shot is this one flight. **D** (s27): Phineas with a sling at range 5, one stone
       flight (COMSPR 8) before the attack message, the same positions in the Client. With no weapon the program
       reads the type byte at 0000:002E, the high-segment low byte of INT 0Bh: **0x00** in DOSBox-X (vector F000:CE60,
-      read from a state), so no flight there, as the Client does; on real DOS it depends on what hooked IRQ 3 `[?]`.
+      read from a state), so no flight there, as the Client does. **Real DOS** (s29, reasoning, not seen): the flight
+      comes only when that byte is 0x2F (0x1415D; the flight 0x14EAB then takes the nil item, whose type byte is the
+      same 0x2F). The cases:
+      - No IRQ 3 handler installed: the BIOS vector, segment F000 on IBM and compatible BIOSes → 0x00, no flight.
+      - MS-DOS STACKS= (installed by default as 9,128 on AT-class machines, none on PC/XT): it hooks the shared
+        levels 0Ah–0Eh only when something is already there. The MS-DOS 4.0 source (`STKINIT.INC`, comments dated
+        3.30) leaves a vector alone when its segment is 0, it points to an IRET, or it is the BIOS dummy (segment
+        F000 and offset = the word at F000:FF01). So a stock BIOS vector stays F000 → no flight. 3.3 and 5.0–6.22 are
+        taken to do the same (not read).
+      - A driver for an IRQ 3 device (a serial mouse on COM2/COM4, a bus mouse set to IRQ 3, a network card at IRQ 3,
+        a resident comms program) puts its own segment there; when it was loaded from CONFIG.SYS, STACKS then chains
+        it from its relocated code (also an arbitrary segment). The byte is then whatever the memory layout gives:
+        0x2F for about one layout in 256.
+      - The game itself: no INT 21h AX=250Bh / 350Bh and no direct word write to 0000:002C / 002E in START.EXE or
+        GAME.OVR (a byte-pattern search, not a proof that nothing else sets the vector).
+      So on a stock machine (no IRQ 3 driver) the original shows no flight; with an IRQ 3 driver it depends on where
+      the driver landed `[?]`. The Client keeps 0 → no flight (the stock case and DOSBox-X's).
     - the cast 0x27E4D (cell 0x12, 4 frames, 30 ms; bracket 0x27E08–0x27E56), Hold Person's further targets 0x28745
       (same), Lightning Bolt 0x29B02 (cell 0x13, 4, 50 ms, to the cell about to be hit, **from the cell the walk
       went on from**: [bp−0x37] / [bp−0x38] are set at 0x29A68 from the line's current cell, on entry and again on
@@ -557,15 +617,23 @@ and Speed menus, an AI attack at game speed 9). Code: `src/GoldBox.Client/Screen
     bolt's three flights), the gaze 83 (gazer → target; a diagonal one across the view), the reflected gaze
     (target → gazer) and the sling flight all give the same positions in the same order in both; the views scroll
     alike (after the Bolt fix above). A drawn position takes ~57 ms in DOSBox-X at 3000 cycles against the 50 ms Delay
-    (the draw time); the Client waits the Delay alone. Not seen yet: the charm gaze 84, the acid breath 121 and the
-    aim cursor 0x15D02 (delay 0) `[?]`.
+    (the draw time); the Client waits the Delay alone. **D** (s29): the charm gaze 84 (12 positions) and the acid
+    breath 121 (13 positions, COMSPR 10's first picture) at the same positions in both. The aim cursor 0x15D02 (Next /
+    Prev over party members, orcs off view): DOSBox-X draws the bare box at each whole square on the way, ~14 ms each
+    (draw time, delay 0), then the candidate's square; the Client goes there in one update, so the passing box is not
+    seen `[U]` (the s27 decision covers picture frames with delay 0, not this flight). Every other frame of the aim
+    equal. One flight end `[?]`: at a gaze's and Hold Person's last square DOSBox-X showed a single picture where the
+    Client draws the walk's last position and then the end frame (one extra 45 / 30 ms picture; the code read,
+    START 0x27CF–0x2B80, draws both).
   - **D** (s27) messages around them in DOSBox-X: the breath message typed from row 10 under the panel, then the
     pause (~0.9 s at speed 4), rows cleared, then the flight; the gaze message typed with no pause before the flight;
     the reflect message on row 12 (typed, no pause) before the return flight; the stone message with the hit frames
     (COMSPR 10) on its square; a poisoned hit's poison / death messages. The game state after them matched the
     Client's (same screen at the next menu). The handler messages are now shown by the Client (spells-effects.md
-    "Handler messages", s27; not yet compared with these captures `[?]`); status-change messages (stone via 0xECB3
-    for other callers, poison, death) still are not.
+    "Handler messages", s27; **D** s29 frame by frame); the status-change messages (0xECB3's nine
+    callers with their end, the poisoned hit's poison words, the rot and drain words) are shown since s29
+    (spells-effects.md "Status changes"; **D** s29: the vampire's level drain, the dead-forever text (0x10D56) and the basilisk's stone
+    messages equal frame by frame).
 - **Manual in the Client**: Aim's Manual answers `AimKey.Manual` and each cursor pass is Core's (`ChooseManual`):
   arrows / pad move it one square, Return / T Target (ending Manual even where it is not offered), E / Escape Exit,
   C / shoulders re-centre; the panel shows `ManualView.Creature`, row 23 the range to the square in attack mode when the line got

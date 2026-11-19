@@ -101,11 +101,16 @@ reduction 1 cancels and 2 halves (shift); nothing at 0. Else (message) START 0x2
 in a fight the side's team count drops). In a fight the target's cast allowed (+1) = 0, and a spell it was
 casting (+0 > 0) is lost: message, START 0x202B removes **the current character's** first memorised copy of that id
 (DS:5D92, not the target's — the attacker or caster, a quirk), +0 = 0. A target now out of play in a fight: the
-dropped-creature removal, class 0x0D, and still out of play it leaves the map (0x3154B).
+dropped-creature removal, class 0x0D, and still out of play it leaves the map (0x3154B). A target still in play
+(0x2C44D) jumps to the end 0x2C527: START 0x17E3 clears the message area (read s29; **D**: a lightning bolt's damage
+message gone before the bolt's next flight). The message itself goes through START 0x2B8B, which copies its text into
+a string[40] first (0x2B9B): a longer line is cut at 40 characters (**D** s29: a lightning damage line with the
+damage type's word, shown to its 40th character). Client: `EffectEvent.DamageDone`, the cut in `CombatChooser.EffectMessage`.
 
 **Status** (0xECB3, creature, status, message): message; a creature already dead, stone or gone (6, 7, 8) is left;
-else status, out of play, HP 0, the dropped-creature removal, class 0x0D, and still out of play it leaves the map.
-Team counts are not touched (the next count does it).
+else status, out of play, HP 0, the dropped-creature removal, class 0x0D, and still out of play it leaves the map
+(0x3154B, called in and out of a fight); then PauseOnly, START 0x17E3 and, outside a fight, START 0x0767 (s29).
+Team counts are not touched (the next count does it). Callers, texts and display: "Status changes" below.
 
 **Healing** (0x2C647, creature, amount, bypass): only for status 0, 1, 4, 5 (set at CS:0x173D). Below full HP with
 bypass: healed. Otherwise rot (0x32) blocks it, and so does bypass at full HP. HP + amount (byte), at most 0x32; an
@@ -322,15 +327,81 @@ the moving icon that follows until the next 0x16EC call clears its rows; with it
 |---|---|---|---|---|---|
 | 83 gaze | 0x10940 | gazer | 0x108E8 (CS:1C8D of unit 0xEC5B) | 10 | no |
 | 83 reflected | 0x10A1A | target | 0x108F1 (CS:1C96) | 12 | no |
-| 83 stone | 0xECDD in 0xECB3, text from 0x10AAA | victim | 0x108FE (CS:1CA3) | 10 | no |
+| 83 stone | 0xECDD in 0xECB3, text from 0x10AAA | victim | 0x108FE (CS:1CA3) | 10 | no (0xECB3's end follows, "Status changes") |
 | 84 charm gaze | 0x10B7F | gazer | 0x10ABE (CS:1E63) | 10 | no |
 | 88 lightning breath | 0x2A147 | breather | 0x2A0E7 (CS:30CF of the spell unit) | 10 | yes |
 | 121 acid breath | 0x118E9 | breather | 0x1186C (CS:2C11) | 10 | yes |
 
-0xECB3 shows its text for every caller (row 10, no pause), before its dead / stone / gone test; only handler 83's text is
-mapped so far (the other callers' texts `[?]` not shown). Code: Core `EffectEvent.Gazes`, `GazeReflected`, `Stoned`,
+0xECB3 shows its text for every caller (row 10, no pause flag), before its dead / stone / gone test; every caller's
+text is mapped (s29, "Status changes"). Code: Core `EffectEvent.Gazes`, `GazeReflected`, `Stoned`,
 `CharmGazes`, `Breathes`, `SpitsAcid`; `PorTextCatalog` `CombatMsg.Handler*`; the Client's
-`CombatChooser.HandlerMessage`. Not checked in DOSBox-X `[?]`.
+`CombatChooser.HandlerMessage`. **D** (s29, DOSBox-X 3000 cycles against the Client with the same seed and scratch
+saves, every distinct window frame of both compared as pixels; set-up in `dosbox-trace-method.md` "s29"): the charm
+gaze 84 (a vampire, MON4 23: name and text typed from row 10, no pause, the flight gazer → target, then the target's
+charmed message 0x10C20 with the COMSPR 9 frames), the acid breath 121 (an ankheg, MON6 65: text from row 10, the
+pause, rows cleared, the one-frame flight, then the damage message), the gaze 83 and its stone message (a basilisk,
+MON2 26) and the lightning breath 88 (Tyranithraxus: text, pause, flight, the bolt's flights and damage messages):
+every message frame equal pixel for pixel, with the typing, rows and pauses as in the table (the few frames that
+still differ are flight ends, an AI panel redraw and a skull's 3 pixels: combat-menu.md "s29 DOSBox-X checks", `[?]`). The 84 gaze came from the
+vampire four squares from its target (the `[?]` range byte stays unread).
+
+**Status changes** (read s29, P): 0xECB3 (unit 0xEC5B, near calls only; no far caller in GAME.OVR or START.EXE)
+copies its text argument to a local (0xAF8:0x0B25, 40 characters) and calls START 0x16EC(creature, text, 10, 0)
+**before** the status test. A creature already dead, stone or gone (6, 7, 8): return, the text stays in the panel
+until the next text. Else (0xECF8–0xED5D): status, in play 0, HP 0, 0x2BEF4, class 0x0D; still out of play →
+CreatureDowned 0x3154B (no fight test here: in a fight the body, the sound DS:261E, the picture and PauseOnly at
+0x3174D; outside, the sound and PauseOnly at 0x31569); then PauseOnly (0xED44) whatever happened; START 0x17E3 (= the
+docs' START 0x2383: in a fight (23, 10)–(38, 21) cleared, else (1, 18)–(38, 22)); outside a fight START 0x0767
+(DS:5D92) redraws the party list. So a victim taken out shows its text through two pauses in a fight. The nine call
+sites, their texts (Pascal strings, CS of unit 0xEC5B; GAME.OVR offset = 0xEC5B + CS) and the message before:
+
+| Caller | Call | Status | Text | Before it (START 0x16EC from row 10) |
+|---|---|---|---|---|
+| 22 (Slow Poison's end on a poisoned creature) | 0xF406 | 6 | CS:0764 (0xF3BF) | — |
+| 32 (Animate Dead's 0x20 removed, DS:681F = 0) | 0xF7A4 | 6 | CS:0B11 (0xF76C) | — |
+| 57 (mummy rot, last stage: param ÷ 16 ≤ 1) | 0x100A4 | 8 | CS:138A (0xFFE5) | CS:1382 (0xFFDD) at 0x1001F, pause flag 1, each time 57 runs |
+| poisoned hit 0x101A0 (64, 65, 66, 70) | 0x10230 | 6 | CS:153B (0x10196) | CS:152F (0x1018A) at 0x101F2, flag 0, then PauseOnly 0x101F7 (no clear); then 0x37 added (0x2BD3C) |
+| 83 gaze | 0x10AB5 | 7 | CS:1CA3 (0x108FE) | the gaze (table above) |
+| level drain 0x10D7D (85, 86), animated | 0x10E15 | 8 | CS:20FB (0x10D56) | 0x10DEC, flag 1: CS:20EF + (count > 1: Str(count) (START 0x1037) + CS:20DF; else CS:20E7) |
+| level drain, hit dice 0x73 < 2 | 0x10F35 | 8 | CS:20FB | (same message, once per call) |
+| level drain, HP 0 and status ≠ 6 | 0x10FAB | 6 | CS:2118 (0x10D73) | (same) |
+| 95 (in play) | 0x1129D | 6 | CS:2605 (0x11260) | — |
+
+Order around a drop: in 0x12AF4 (attacks) and 0x2C44A (non-weapon damage) the down / dying / killed words come
+first, then 0x2BEF4 and class 0x0D (whose handlers may print: handler 32's text replaces the panel from row 10), then
+CreatureDowned (still out of play) or PauseOnly, then START 0x17E3 (0x12DE1–0x12E17; 0x2C4F3–0x2C527; outside a fight
+0x2C44A only pauses, 0x2C4EC). An animated creature (status 1) is always dead (6) when its HP runs out (START 0x2DC8),
+so on these paths handler 32's 0xECB3 stops after its text, which then shows through CreatureDowned's pause instead
+of the killed words. 0x3154B's fourth caller 0x13ACE is turn undead's destroyed branch (its own text; combat-menu.md "Turn undead").
+Code (s29): Core `EffectHandlers.InflictStatus` raises the caller's event (`PoisonDeath`, `Collapses`, `RotsAway`,
+`PoisonKilled`, `Stoned`, `DeadForever`, `DrainKilled`, `FallsDead`) and, when the status is set, `StatusDone` after
+the map removal; `Poisoned`, `Rots`, `Drained` (count `EffectHandlers.DrainCount`) before; 0x2C44A ends with
+`GoesDownDone`; the attack routine calls `FightState.AttackMessage` after the damage and `FightState.AttackEnd` after
+`FightRules.DropDefender`. Texts `PorTextCatalog` `CombatMsg.Status*`, `Poisoned`, `Rots`, `Drained*` (importer
+0.7.18); Client `CombatChooser.EffectMessage` / `StatusMessage` / `AttackEnd`. `[?]` Not compared with DOSBox-X.
+`[?]` Outside a fight (handlers 22, 32, 57, 95 from the clock's effect timeout, e.g. resting) the Client's camp does
+not show these (START 0x16EC's camp layout, camp.md "Cast"; CreatureDowned's sound and pause; START 0x0767).
+`[?]` A creature dropped twice in one call chain (0xECB3's end inside 0x2BEF4 of an attack): 0x3154B's early exit
+(0x31571–0x315A3 compares the body entry DS:70C7 × 7 + DS:66D6 eight times) not settled; the Client shows the downed
+picture again.
+
+Where to see each (for the DOSBox-X check; monsters from the MON*SPC sets, s27's way of loading another disk's
+monsters: dosbox-trace-method.md "Monsters of another disk"):
+- 83 stone and the poisoned hit 64: the s27 medusa (MON5 49: 0x53 gaze and 0x40 poison); basilisk MON2 / MON5 26
+  for the gaze alone. A party member's failed save shows the gaze, the stone text and two pauses.
+- 64 / 65 / 66 / 70 poisoned hit: giant snake MON5 / MON6 60 and wyvern MON8 121 (64), poisonous frog MON4 38 (65),
+  large scorpion MON4 18 (66), huge scorpion MON4 39 (64), phase spider MON8 116 (70).
+- 85 / 86 level drain: wight MON4 20, wraith MON4 21 (85); spectre MON2 / MON4 17, vampire MON4 23 / 105, Ferran
+  Martinez MON4 19 (86). The dead-forever branches need a target with hit dice 0x73 < 2 or an animated one (a party
+  member's Animate Dead zombie).
+- 32: an Animate Dead (spell 36) creature killed in a fight (its text through the downed picture's pause).
+- 57: mummy MON4 114 gives rot (87: 0x32 and 0x39); 57 runs when 0x39 ends (43 200 minutes): a save with a member's
+  CHRDAT*.SPC 0x39 record set to 1 minute (param 0x1F → the rot text; 0x10 → also the last-stage text) and a fight
+  long enough for a minute to pass.
+- 22: Slow Poison (26) on a member killed by a poisoned hit (0x37; the routine sets HP 0 → 1 and runs handler 0x4E):
+  when its effect 0x16 ends with the poison still on, the member dies again with this text.
+- 95: carried after handler 99's revive (0x63, 1d4 + 1 minutes; no MON*SPC monster carries 0x5F or 0x63) `[?]`
+  where 0x63 comes from.
 
 **Routines**:
 
@@ -405,7 +476,7 @@ byte is not 0. `[?]` The menu's own list (0x239D6) is not read.
   out-of-combat cast and 0x27AA9 are in camp.md); the map target list 0x3045B (implemented by
   the map code through `IFightTargetList` / `IFightAuraRange`; without it auras in a fight are not found and area
   spells fall back to the map distance with a diagnostic).
-- Handler 84's sight range. Handler 88 (read s26) is not checked in DOSBox-X `[?]`.
+- Handler 84's sight range (an uninitialised stack byte; DOSBox-X s29 saw gazes at distance 4).
 - Everything else here is **P**; the Sleep cast and Restoration's no-class index below are **D**; the routines under "Checked under emulation" are **E**.
 
 ## Restoration with no class to raise — D (s18)

@@ -6,8 +6,8 @@ using GoldBox.Data.Module.Por;
 namespace GoldBox.Core.Tests;
 
 /// <summary>
-/// A new folder under <c>&lt;temp&gt;/goldbox-tests/</c>. Never deleted by the tests (the user's rule: no deletes of
-/// computed paths); the temp folder's own cleanup removes it.
+/// A new folder under <c>&lt;temp&gt;/goldbox-tests/</c>, removed by <see cref="Support.TestImportCache.Prune"/> a day
+/// later.
 /// </summary>
 public sealed class TempFolder
 {

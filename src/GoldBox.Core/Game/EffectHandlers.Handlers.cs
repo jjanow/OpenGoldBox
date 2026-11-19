@@ -111,7 +111,7 @@ public sealed partial class EffectHandlers
                 return;
             case 22: // 0xF3D0: poisoned (0x37) → dies; then effect 0x0F is removed under the lock
                 if (FindEffect(c, 0x37) is not null)
-                    InflictStatus(c, 6, EffectEvent.PoisonDeath);
+                    InflictStatus(c, 6, EffectEvent.PoisonDeath); // text CS:0764
                 Cells.Lock = 1;
                 RemoveEffect(c, 0x0F);
                 Cells.Lock = 0;
@@ -162,7 +162,7 @@ public sealed partial class EffectHandlers
             case 32: // 0xF776 Animate Dead
                 node![4] = 0;
                 if (Cells.Lock == 0)
-                    InflictStatus(c, 6, EffectEvent.Collapses);
+                    InflictStatus(c, 6, EffectEvent.Collapses); // text CS:0B11
                 c[Hostile] = (byte)(param >> 4);
                 c[Auto] = 1;
                 c[UndeadLevel] = 0;
@@ -272,7 +272,7 @@ public sealed partial class EffectHandlers
             case 57: // 0xFFF4 mummy rot
                 if (Cells.Lock != 0)
                     return;
-                Emit(c, EffectEvent.Other);
+                Emit(c, EffectEvent.Rots); // CS:1382, row 10, pause flag
                 c[Cha] = c[Cha] > 2 ? (byte)(c[Cha] - 2) : (byte)0;
                 if (c[Cha] < 3)
                     c[Cha] = 3;
@@ -282,7 +282,7 @@ public sealed partial class EffectHandlers
                     AddEffectIfNoLock(c, 0x39, node[3], 0xA8C0);
                 }
                 else
-                    InflictStatus(c, 8, EffectEvent.StatusChange);
+                    InflictStatus(c, 8, EffectEvent.RotsAway); // text CS:138A
                 return;
             case 58: // 0x100AD: movement +6 = 0; during the movement count the rate is 0
                 rec[CombatRecord.Movement] = 0;
@@ -448,8 +448,9 @@ public sealed partial class EffectHandlers
     }
 
     /// <summary>
-    /// 0x101A0: the creature's last target (+0x0A) saves vs. type 0 with <paramref name="modifier"/>; failing: (message)
-    /// poisoned (0x37, permanent, param 255) and dead (0xECB3, status 6).
+    /// 0x101A0: the creature's last target (+0x0A) saves vs. type 0 with <paramref name="modifier"/>; failing: the poisoned
+    /// message (START 0x16EC row 10, then PauseOnly), poisoned (0x37, permanent, param 255; 0x2BD3C) and dead (0xECB3,
+    /// status 6, its own text).
     /// </summary>
     private void PoisonAttack(EclCharacter c, sbyte modifier)
     {
@@ -457,9 +458,9 @@ public sealed partial class EffectHandlers
         Cells.Other = other;
         if (other is null || SavingThrow(other, 0, modifier))
             return;
-        Emit(other, EffectEvent.Other);
+        Emit(other, EffectEvent.Poisoned); // CS:152F, row 10, no pause flag, then PauseOnly
         AddEffect(other, 0x37, 0, 0xFF, false);
-        InflictStatus(other, 6, EffectEvent.PoisonDeath);
+        InflictStatus(other, 6, EffectEvent.PoisonKilled); // text CS:153B
     }
 
     /// <summary>

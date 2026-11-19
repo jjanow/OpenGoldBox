@@ -130,7 +130,7 @@ public sealed partial class EffectHandlers
             case 95: // 0x1126B: record byte 4 cleared; a creature in play dies (0xECB3, status 6)
                 node![4] = 0;
                 if (c[InPlay] != 0)
-                    InflictStatus(c, 6, EffectEvent.StatusChange);
+                    InflictStatus(c, 6, EffectEvent.FallsDead); // text CS:2605
                 return;
             case 96: // 0x112A6: no missile/weapon, or one with plus 0 whose word 0x31 is not 0xB1 → damage 0
             {

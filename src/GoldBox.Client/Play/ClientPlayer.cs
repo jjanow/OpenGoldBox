@@ -16,8 +16,47 @@ namespace GoldBox.Client.Play;
 /// </summary>
 public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : IEclHost, IEncounterUi, ICombatRunner, IAreaUi
 {
-    /// <summary>The program's text window (PRINT / PRINTCLR box, cursor, paging).</summary>
-    public TextWindow Text { get; } = new();
+    /// <summary>
+    /// The program's text window (PRINT / PRINTCLR box, cursor, paging). It types its text while DS:4A00 is set
+    /// (<see cref="EclMemory.TypesText"/>, <see cref="TypeDelay"/>), as START 0x77F8 does for every caller.
+    /// </summary>
+    public TextWindow Text
+    {
+        get
+        {
+            _text.Typed ??= TypeDelay;
+            return _text;
+        }
+    }
+
+    private readonly TextWindow _text = new();
+
+    /// <summary>
+    /// After each character the text routine draws (0x7737): when DS:4A00 is set (<see cref="EclMemory.TypesText"/>)
+    /// Delay(DS:49E2 × 10) ms (START 0x777B–0x778D); speed 0 waits nothing. Off with <see cref="TypesText"/> (tests).
+    /// </summary>
+    /// <summary>
+    /// A full-screen window's text through START 0x77F8 (the party-destroyed and party-killed messages): shown as it
+    /// grows and typed as <see cref="TypeDelay"/> says.
+    /// </summary>
+    private void TypesInto(TextWindow box)
+    {
+        Window = box.WindowLines();
+        box.Typed = () =>
+        {
+            Window = box.WindowLines();
+            TypeDelay();
+        };
+    }
+
+    private void TypeDelay()
+    {
+        if (!TypesText || _atOnce)
+            return;
+        var m = memory();
+        if (m.TypesText && m.GameSpeed > 0)
+            runner.Ask(new DelayRequest(TimeSpan.FromMilliseconds(10 * m.GameSpeed)) { Chained = true });
+    }
 
     /// <summary>The program's texts for the screens (our wordings until <see cref="Resources"/> are set).</summary>
     public ClientResources Resources { get; set; } = new();
@@ -69,7 +108,7 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
         set => memory().PictureArmed = value;
     }
 
-    /// <summary>PRINT types its text out (DS:4A00, <see cref="Print"/>); off only in tests that step through scripts.</summary>
+    /// <summary>The text window types its text while DS:4A00 is set (<see cref="TypeDelay"/>); off only in tests that step through scripts.</summary>
     public bool TypesText { get; set; } = true;
 
     /// <summary>
@@ -82,9 +121,25 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
     /// <summary>A notice the player must acknowledge (stand-ins for screens not built yet).</summary>
     private void Acknowledge(string text)
     {
-        Text.Print(text, clear: true, colour: 14);
+        PrintAtOnce(text);
         runner.Ask(new KeyRequest());
     }
+
+    /// <summary>A notice in our words (not the program's text routine): shown at once, never typed.</summary>
+    private void PrintAtOnce(string text)
+    {
+        _atOnce = true;
+        try
+        {
+            Text.Print(text, clear: true, colour: 14);
+        }
+        finally
+        {
+            _atOnce = false;
+        }
+    }
+
+    private bool _atOnce;
 
     /// <summary>The text window waits for a key when a page is full (START.EXE 0x7A12).</summary>
     public void InstallPaging() => Text.Pause = () =>
@@ -105,31 +160,92 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
     // ---- Text ----------------------------------------------------------------------------------------------------
     /// <summary>
     /// PRINT / PRINTCLR (GAME.OVR 0x174F): PRINTCLR starts at column 1, row 17 and blanks the box; colour 10. The
-    /// handler sets DS:4A00 = 1 (0x1763) before the text and 0 after it (0x17DC), so the text is typed out: Delay(DS:49E2
-    /// × 10) ms after each character (START 0x777B).
+    /// handler sets DS:4A00 = 1 (0x1763) before the text and 0 after it (0x17DC; the VM sets
+    /// <see cref="EclMemory.TypesText"/>), so the text is typed out: Delay(DS:49E2 × 10) ms after each character
+    /// (START 0x777B).
     /// </summary>
     public void Print(string text, bool clearFirst)
     {
-        // (TypesText off: tests that walk the scripts step by step.)
         if (clearFirst)
             Text.Home();
-        int speed = memory().GameSpeed;
-        Text.Typed = speed > 0 && TypesText
-            ? () => runner.Ask(new DelayRequest(TimeSpan.FromMilliseconds(10 * speed)) { Chained = true })
-            : null;
-        try
-        {
-            Text.Print(text, clearFirst);
-        }
-        finally
-        {
-            Text.Typed = null;
-        }
+        Text.Print(text, clearFirst);
     }
     public void PrintReturn() => Text.NewLine();
-    /// <summary>CLEARBOX (0x385A): blanks the picture window, not the text box.</summary>
-    public void ClearBox() => ViewBlanked = true;
-    public void TextHome() => Text.Home();
+
+    /// <summary>
+    /// CLEARBOX (0x385A): blanks the picture window, cells (1, 1)–(15, 15) (START 0x7E63, 0x386D), not the text box,
+    /// and sets DS:84DE (0x3872), which sends the next PROTECT below row 13 into the window.
+    /// </summary>
+    public void ClearBox()
+    {
+        ViewBlanked = true;
+        ViewGlyphs = [];
+        _windowCleared = true;
+    }
+
+    /// <summary>
+    /// EXIT's display part (0xD4D–0xE31; also PROGRAM 9's end): with DS:84E2 set (a PROTECT went into the cleared
+    /// window) two windows are drawn, (1, 1)–(15, 15) and, in the 3D view ($49E6 ≠ 0), (3, 3)–(13, 13) (START 0x41F8: a
+    /// blank inside and a frame; no key wait), so the runes are gone; then the cursor goes to column 1, row 17 and
+    /// DS:84DE and DS:84E2 are cleared. The Client's window stays blank until the next command's redraw.
+    /// </summary>
+    public void TextHome()
+    {
+        if (_glyphsInWindow)
+            ViewGlyphs = [];
+        _glyphsInWindow = false;
+        _windowCleared = false;
+        Text.Home();
+    }
+
+    /// <summary>DS:84DE: CLEARBOX ran since the last EXIT (0x3872; cleared by EXIT 0xE31 and the start-up 0xE9EF).</summary>
+    private bool _windowCleared;
+
+    /// <summary>DS:84E2: a PROTECT moved into the cleared window (0x3C17); EXIT then redraws it (0xD4D), the script init clears it (0x7696).</summary>
+    private bool _glyphsInWindow;
+
+    /// <summary>
+    /// Glyph cells PROTECT drew in the picture window (cells 1–15), as (column, row, raw glyph character): drawn over
+    /// the blank window while <see cref="ViewBlanked"/> holds. A new CLEARBOX or EXIT's redraw removes them.
+    /// </summary>
+    public (int Col, int Row, char Glyph)[] ViewGlyphs { get; private set; } = [];
+
+    /// <summary>
+    /// PROTECT (GAME.OVR 0x3BC3): one line of raw glyphs at the text cursor DS:5E24 / 5E25. When CLEARBOX ran
+    /// (DS:84DE) and the row is above 13, the cursor first goes to column 2, row 5 (inside the cleared window) and
+    /// DS:84E2 := 1. Each glyph is drawn through the glyph routine with its flag clear (START 0x726F: the byte is the
+    /// glyph number in the text font, colour 15; columns above 39 or rows above 24 are not drawn) and the column moves
+    /// on; at the end the row goes down one, the column stays (an empty line moves the row too). The glyphs go into the
+    /// text box when the cursor is in rows 17–22 (a later clear of the box removes them) and into the picture window
+    /// in rows 1–15. [?] Rows 16, 23 and 24 (no script puts runes there) are not drawn.
+    /// </summary>
+    public void DrawGlyphs(ushort address, IReadOnlyList<byte> glyphs)
+    {
+        int col = Text.Column, row = Text.Row;
+        if (_windowCleared && row > 13)
+        {
+            (col, row) = (2, 5);
+            _glyphsInWindow = true;
+        }
+        var inWindow = new List<(int, int, char)>(ViewGlyphs);
+        foreach (var g in glyphs)
+        {
+            char ch = TextFont.RawGlyph(g);
+            if (col <= 39 && row <= 24)
+            {
+                if (row is >= TextWindow.Top and <= TextWindow.Bottom)
+                    Text.Put(row, col, ch.ToString(), 15);
+                else if (row is >= 1 and <= 15 && col is >= 1 and <= 15)
+                {
+                    inWindow.RemoveAll(c => c.Item1 == col && c.Item2 == row);
+                    inWindow.Add((col, row, ch));
+                }
+            }
+            col = (col + 1) & 0xFF; // DS:5E24 is a byte
+        }
+        ViewGlyphs = [.. inWindow];
+        Text.MoveTo(col, row + 1);
+    }
 
     /// <summary>DELAY: game speed DS:49E2 (<see cref="EclMemory.GameSpeed"/>) × 225 ms; speed 0 does not wait.</summary>
     public void Delay()
@@ -239,9 +355,13 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
 
     /// <summary>Where the program's sound calls go (the Client's audio, or none).</summary>
     public GoldBox.Core.Sound.ISoundSink Sound { get; set; } = GoldBox.Core.Sound.NoSound.Instance;
-    public void Protect(ushort address) { } // the code wheel: imported modules skip it (PLAN 6)
+    public void Protect(ushort address) { } // PROTECT is drawn by DrawGlyphs (the VM passes the glyphs read)
     public ushort Random(ushort range) => 0; // AreaHost draws from the game's generator
-    public void ScriptChanging(ushort script) => Log.Add($"NEWECL {script}");
+    public void ScriptChanging(ushort script)
+    {
+        Log.Add($"NEWECL {script}");
+        _glyphsInWindow = false; // the script init clears DS:84E2 (0x7696)
+    }
 
     /// <summary>PROGRAM: 0 training hall (0x19AE0), 8 end game (0x20941), 9 camp (0x3B56: the camp menu, then the run ends).</summary>
     public void Program(ushort program)
@@ -440,7 +560,11 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
     private CombatChooser? _chooser;
 
     /// <summary>The player's side of the combat menu (passed to the game as <c>PorPlayer.FightMenu</c>).</summary>
-    public CombatChooser Chooser => _chooser ??= new CombatChooser(runner.Ask, FightView) { Resources = () => Resources };
+    public CombatChooser Chooser => _chooser ??= new CombatChooser(runner.Ask, FightView)
+    {
+        Resources = () => Resources,
+        Typing = () => memory().TypesText,
+    };
 
     /// <summary>
     /// The real fight (arena and placement done): shown on the combat screen while it runs; party members not on Quick
@@ -452,6 +576,9 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
         int speed = memory().GameSpeed;
         FightView.Speed = (byte)(speed <= 9 ? speed : 0);
         FightView.Dungeon = memory().ViewMode == 1; // DUNGCOM only when DS:49FA = 1, else WILDCOM (0xD81B; combat-menu.md "Ground")
+        // The fight start's line on the area screen (0xE430–0xE452). The program shows it before the arena is built;
+        // the build draws nothing and only the arena's own dice, so showing it after FightKit.Create changes nothing.
+        Chooser.BattleBegins();
         Chooser.Attach(fight);
         fight.State.Sound = Sound;
         try
@@ -495,15 +622,18 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
         var box = new TextWindow(1, 1, 38, 22);
         string title = t[Msg.EndTitle];
         box.Put(1, Math.Max(1, (1 + 38 - title.Length) / 2), title, 15);
-        box.PrintIn(2, 5, 37, 22, t[Msg.MonstersRejoice], clear: true, colour: 10);
-        Window = box.WindowLines();
+        WindowAfterFight = true;
+        TypesInto(box); // before 0x6BAF: typed when DS:4A00 was set as the fight began
         try
         {
+            box.PrintIn(2, 5, 37, 22, t[Msg.MonstersRejoice], clear: true, colour: 10);
+            Window = box.WindowLines();
             runner.Ask(new KeyRequest(t[Msg.PressAnyKey]));
         }
         finally
         {
             Window = null;
+            WindowAfterFight = false;
         }
     }
 
@@ -549,6 +679,7 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
         if (partyKilled)
         {
             var box = new TextWindow(1, 1, 38, 22);
+            TypesInto(box);
             box.PrintIn(1, 1, 38, 22, t[Msg.PartyKilled], clear: true, colour: 10);
             Window = box.WindowLines();
             // Row 24 keeps what was there: the page prompt, or else the command line (DOSBox-X s22, a one-line wipe).
@@ -592,6 +723,12 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
     /// <summary>A full-screen window over the screen (the fight summary, 0x5E94), or null.</summary>
     public IReadOnlyList<WindowLine>? Window { get; set; }
 
+    /// <summary>
+    /// The window came up over the combat screen (the party-destroyed page): row 24 shows nothing while its text types
+    /// (DOSBox-X s29), unlike the DAMAGE wipe's window over the area screen, whose command line stays.
+    /// </summary>
+    public bool WindowAfterFight { get; set; }
+
     /// <summary>The interface state the screens are in (DS:49F3: 1 shop/temple, 2 camp, 6 loot), null while exploring.</summary>
     public Venue? Interface { get; private set; }
 
@@ -630,7 +767,7 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
         Halted = e;
         Log.Add($"program halt: run-time error {e.Code} ({e.Message})");
         Console.Error.WriteLine($"game logic: the original program halts here with run-time error {e.Code}: {e.Message}");
-        Text.Print(HaltNotice(e), clear: true, colour: 14);
+        PrintAtOnce(HaltNotice(e));
         runner.Ask(new KeyRequest());
         Quit?.Invoke();
     }

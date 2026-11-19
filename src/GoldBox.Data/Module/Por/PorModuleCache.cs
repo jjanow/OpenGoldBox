@@ -8,7 +8,8 @@ namespace GoldBox.Data.Module.Por;
 /// bytes), so a changed game folder or a newer importer imports again. With an Amiga folder (<c>--amiga DIR</c>) the
 /// overlay is imported too and the key also hashes the Amiga files the overlay reads (<see cref="PorAmigaArt.InputFiles"/>),
 /// so a cache without the overlay (or with another one) is not reused. The import is written to a temporary folder and
-/// renamed into place when complete. Old cache folders are left as they are (nothing is deleted).
+/// renamed into place when complete. Old cache folders are left as they are (nothing is deleted); a reused folder
+/// gets its write time set to now, so a cleaner can tell which ones are still in use.
 /// </summary>
 public static class PorModuleCache
 {
@@ -17,7 +18,19 @@ public static class PorModuleCache
     {
         var target = Path.Combine(cacheRoot, "por-" + Key(gameDir, amigaDir));
         if (File.Exists(Path.Combine(target, ModuleManifest.FileName)))
+        {
+            try
+            {
+                Directory.SetLastWriteTimeUtc(target, DateTime.UtcNow);
+            }
+            catch (IOException)
+            {
+            }
+            catch (UnauthorizedAccessException)
+            {
+            }
             return target;
+        }
         Directory.CreateDirectory(cacheRoot);
         var temp = Path.Combine(cacheRoot, $".import-{Guid.NewGuid():N}");
         PorImporter.Import(gameDir, temp, amigaDir);

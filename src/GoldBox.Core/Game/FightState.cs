@@ -105,10 +105,19 @@ public sealed class FightState
 
     /// <summary>
     /// Display hook (no game state): each call of the attack message routine 0x12AF4 from the attack routine 0x13C01
-    /// (a hit, a slain helpless defender, or the miss after no hit), called after its damage part
-    /// (<see cref="FightRules.ApplyAttackResult"/>). A front end shows the program's message here.
+    /// (a hit, a slain helpless defender, or the miss after no hit), called after its damage
+    /// (<see cref="FightRules.ApplyAttackDamage"/>) and before the defender's drop (<see cref="FightRules.DropDefender"/>).
+    /// A front end shows the program's message here, up to the down and dying / killed words.
     /// </summary>
     public Action<AttackMessage>? AttackMessage { get; set; }
+
+    /// <summary>
+    /// Display hook (no game state): the end of the same 0x12AF4 call, after the defender's drop (0x2BEF4 and trigger
+    /// 0x0D, when it went out of play: the flag): a defender still out of play gets CreatureDowned 0x3154B's picture and
+    /// pause (the map removal itself is <see cref="Fight.MakeAttack"/>'s), one back in play PauseOnly; then START 0x2383
+    /// clears the message area.
+    /// </summary>
+    public Action<AttackMessage, bool>? AttackEnd { get; set; }
 
     /// <summary>
     /// Display hook (no game state): the moving icon START 0x25C9 (a missile's, a spell's or a bolt's flight, a gaze or
@@ -116,6 +125,13 @@ public sealed class FightState
     /// resident sound bracket, the effect handlers and the aim with none. A front end animates it there.
     /// </summary>
     public Action<FlightAnimation>? Flight { get; set; }
+
+    /// <summary>
+    /// Display hook (no game state): 0x31232(creature, direction, frame 1, 0) after the creature's facing changed: its
+    /// cell is drawn again (a cursor box there goes) with the action picture (icon frame 1), which stays until the cell is
+    /// next drawn. The cast calls it at 0x27E00 before its flight.
+    /// </summary>
+    public Action<EclCharacter>? Posed { get; set; }
 
     // Cells the monster AI (GAME.OVR 0xABCF, docs/re/combat-ai.md) passes to the effect handlers and the map.
     /// <summary>DS:6825: the morale value the trigger-0x11 effects see (morale check 0xBC97).</summary>

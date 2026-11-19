@@ -19,6 +19,14 @@ public sealed class TextFont
         _glyphs = glyphs;
     }
 
+    /// <summary>
+    /// A raw glyph number as a character (U+E000 + glyph): the glyph routine with its flag clear draws the byte as the
+    /// glyph number itself (PROTECT's runes, GAME.OVR 0x3C53; docs/re/view3d.md "Font").
+    /// </summary>
+    public static char RawGlyph(byte glyph) => (char)(RawGlyphBase + glyph);
+
+    private const int RawGlyphBase = 0xE000;
+
     /// <summary>Glyph index of a character, or −1 when the font has none.</summary>
     public int GlyphOf(char c)
     {
@@ -28,6 +36,7 @@ public sealed class TextFont
         {
             >= (char)0x20 and <= (char)0x3F => c,
             >= (char)0x40 and <= (char)0x5F => c - 0x40,
+            >= (char)RawGlyphBase and <= (char)(RawGlyphBase + 0xFF) => c - RawGlyphBase,
             _ => -1,
         };
         return g < GlyphCount ? g : -1;

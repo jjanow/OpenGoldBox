@@ -33,7 +33,7 @@ public class CampPlayTests
         var art = PorViewArt.Load(dir);
         var runner = new ScriptRunner();
         PorGame? game = null;
-        var player = new ClientPlayer(runner, () => game!.Memory) { Resources = ClientResources.Load(dir), Game = () => game };
+        var player = new ClientPlayer(runner, () => game!.Memory) { Resources = ClientResources.Load(dir), Game = () => game, TypesText = false };
         game = PorGame.FromSave(dir, art, save ?? dir.Find("SAVGAMA.DAT")!, new PorPlayer(player, player, player, player), 7);
         player.SaveFolder = saveDir;
         var input = new ActionInput(InputBindings.Defaults());
@@ -322,7 +322,7 @@ public class CampPlayTests
         var art = PorViewArt.Load(dir);
         var runner = new ScriptRunner();
         PorGame? game = null;
-        var player = new ClientPlayer(runner, () => game!.Memory) { Resources = ClientResources.Load(dir), Game = () => game };
+        var player = new ClientPlayer(runner, () => game!.Memory) { Resources = ClientResources.Load(dir), Game = () => game, TypesText = false };
         game = PorGame.FromSave(dir, art, dir.Find("SAVGAMA.DAT")!, new PorPlayer(player, player, player, player), 7);
         var program = dir.Program()!;
         var folder = Directory.CreateTempSubdirectory("camp-icon-");

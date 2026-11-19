@@ -95,6 +95,9 @@ public sealed partial class FightSpells : IFightSpells
     /// <summary>[Display hook] 0x27D48: the cast message (caster, spell) shown before the target pick when the spell
     /// is not cast from an item or scroll (DS:6DBF = 0).</summary>
     public Action<EclCharacter, int>? Announce { get; set; }
+    /// <summary>[Display hook] The end of a cast that ran its routine (0x27F44–0x27F5C): START 0x2383 clears the
+    /// message rows 10–21 and, in a fight, row 23 (the spell label) is cleared.</summary>
+    public Action<EclCharacter>? CastDone { get; set; }
     /// <summary>[Display hook] 0x22B58: an item with a power (DS:6DBF = 1, not a scroll) is about to be used (user, item).</summary>
     public Action<EclCharacter, byte[]>? ItemUsed { get; set; }
     public List<string> Diagnostics { get; } = [];
@@ -319,6 +322,7 @@ public sealed partial class FightSpells : IFightSpells
                 var (cx, cy) = map.Position(caster);
                 var (ax, ay) = Aim;
                 fight.Record(caster)[CombatRecord.Facing] = (byte)map.DirectionToward(cx, cy, ax, ay);
+                fight.State.Posed?.Invoke(caster); // 0x27E00: frame 1, so the cell is redrawn in the action pose
                 // 0x27E05–0x27E56: the cast's flight to the aim, resident; Fireball (47) and Lightning Bolt (51) have
                 // their own cue (docs/re/sound.md §2.4).
                 fight.State.Sound.BeginResident();
@@ -336,6 +340,7 @@ public sealed partial class FightSpells : IFightSpells
             Routine(spell, caster);
             Effects.Cells.Spell = 0;
             Effects.Cells.MultiTarget = 0;
+            CastDone?.Invoke(caster);
             return true;
         }
         finally

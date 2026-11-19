@@ -439,13 +439,21 @@ public static class FightRules
     }
 
     /// <summary>
-    /// The damage part of 0x12AF4 (the rest is the message): a hit inflicts the damage; damage &gt; 0 clears the
-    /// defender's cast allowed (+1) and loses a spell it was casting: START 0x202B (0x12D2C) removes the first memorised
-    /// copy of that spell from the <b>current</b> character (DS:5D92, the attacker during an attack), then +0 → 0. A
-    /// defender now out of play loses its <see cref="DroppedEffects"/> (0x2BEF4) and runs trigger 0x0D; the map removal
-    /// (0x3154B) is the caller's (<see cref="Fight.MakeAttack"/>).
+    /// The damage part of 0x12AF4 (the rest is the message): <see cref="ApplyAttackDamage"/>, then
+    /// <see cref="DropDefender"/>. The map removal (0x3154B) is the caller's (<see cref="Fight.MakeAttack"/>).
     /// </summary>
     public static void ApplyAttackResult(EclCharacter defender, byte damage, bool hit, FightState fight, IFightEffects effects)
+    {
+        ApplyAttackDamage(defender, damage, hit, fight);
+        DropDefender(defender, fight, effects);
+    }
+
+    /// <summary>
+    /// 0x12AF4's damage: a hit inflicts the damage; damage &gt; 0 clears the defender's cast allowed (+1) and loses a
+    /// spell it was casting: START 0x202B (0x12D2C) removes the first memorised copy of that spell from the
+    /// <b>current</b> character (DS:5D92, the attacker during an attack), then +0 → 0.
+    /// </summary>
+    public static void ApplyAttackDamage(EclCharacter defender, byte damage, bool hit, FightState fight)
     {
         if (hit)
             InflictDamage(defender, damage, fight);
@@ -460,26 +468,41 @@ public static class FightRules
                 rec[CombatRecord.SpellCast] = 0;
             }
         }
-        if (defender[InPlay] == 0)
-        {
-            foreach (var id in DroppedEffects)
-                RemoveFirstEffect(defender, id, effects);
-            effects.Trigger(TriggerHpZero, defender, fight);
-        }
     }
 
     /// <summary>
-    /// 0x12AF4 as the attack routine calls it (0x13CBE, 0x13F2E, 0x13F92): <see cref="ApplyAttackResult"/> with
-    /// <paramref name="damage"/>, then the display hook <see cref="FightState.AttackMessage"/> with the message's
-    /// arguments (<paramref name="manner"/>, <paramref name="shown"/>, the hit) and the state it saw before the damage.
+    /// 0x12AF4 after its down / killed words: a defender out of play loses its <see cref="DroppedEffects"/> (0x2BEF4)
+    /// and runs trigger 0x0D. True when it was out of play (the routine's down branch).
+    /// </summary>
+    public static bool DropDefender(EclCharacter defender, FightState fight, IFightEffects effects)
+    {
+        if (defender[InPlay] != 0)
+            return false;
+        foreach (var id in DroppedEffects)
+            RemoveFirstEffect(defender, id, effects);
+        effects.Trigger(TriggerHpZero, defender, fight);
+        return true;
+    }
+
+    /// <summary>
+    /// 0x12AF4 as the attack routine calls it (0x13CBE, 0x13F2E, 0x13F92), in the program's order: the damage
+    /// (<see cref="ApplyAttackDamage"/>); the display hook <see cref="FightState.AttackMessage"/> with the message's
+    /// arguments (<paramref name="manner"/>, <paramref name="shown"/>, the hit) and the state it saw before the damage
+    /// (the attack words, the damage pause, the down and dying / killed words); the defender's drop
+    /// (<see cref="DropDefender"/>: 0x2BEF4, trigger 0x0D, whose handlers may show their own messages, e.g. handler 32's
+    /// through 0xECB3); then <see cref="FightState.AttackEnd"/> (CreatureDowned's picture and pause or the pause, and
+    /// START 0x2383).
     /// </summary>
     private static void ShowAttack(EclCharacter att, EclCharacter def, int manner, byte damage, byte shown, bool hit,
         FightState fight, IFightEffects effects)
     {
         bool wasInPlay = def[InPlay] != 0;
         bool spellLost = damage > 0 && fight.Record(def)[CombatRecord.SpellCast] > 0;
-        ApplyAttackResult(def, damage, hit, fight, effects);
-        fight.AttackMessage?.Invoke(new AttackMessage(att, def, manner, shown, hit, wasInPlay, spellLost));
+        ApplyAttackDamage(def, damage, hit, fight);
+        var message = new AttackMessage(att, def, manner, shown, hit, wasInPlay, spellLost);
+        fight.AttackMessage?.Invoke(message);
+        bool down = DropDefender(def, fight, effects);
+        fight.AttackEnd?.Invoke(message, down);
     }
 
     /// <summary>0x2BEBC: while the creature has an invisibility effect (0x19, START 0x2199), 0x2AF10 removes it.</summary>

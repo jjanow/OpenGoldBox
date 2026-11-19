@@ -385,9 +385,8 @@ public class PorModuleTests(ITestOutputHelper output)
         foreach (var slot in "AJ")
             Assert.Equal(hash, PorEngineSave.Read(Path.Combine(module.SaveFolder!, PorEngineSave.FileName(slot))).Module.ContentHash);
         // A second import of the same folder (as the Client's cache does after an importer change) gives the same hash
-        // and the same engine saves. The folder is left for the temp folder's own cleanup, as PorModuleData's.
-        var again = Path.Combine(Path.GetTempPath(), "goldbox-tests", $"por-module-{Guid.NewGuid():N}");
-        PorImporter.Import(PorData.ReleaseDir, again);
+        // and the same engine saves. Imported once per build of the importer, as PorModuleData's (TestImportCache).
+        var again = TestImportCache.Import("por-module-again", PorData.ReleaseDir).Dir;
         Assert.Equal(hash, ModuleContentHash.Of(again));
         foreach (var slot in "AJ")
             Assert.Equal(File.ReadAllText(Path.Combine(module.SaveFolder!, PorEngineSave.FileName(slot))),

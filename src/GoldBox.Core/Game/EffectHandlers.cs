@@ -29,11 +29,56 @@ public interface IFightTerrain
 /// <summary>Something an effect handler shows in the text window (the program prints a message there).</summary>
 public enum EffectEvent
 {
-    StartsTraining, Silenced, LostImage, Coughing, Collapses, Ages, Weakens, PoisonDeath, ParalysisFailed,
-    StatusChange, GainsItem, Unaffected, EffectGained, CastingLost, NonWeaponDamage, MissileDodged, Hardier,
+    StartsTraining, Silenced, LostImage, Coughing, Ages, Weakens, ParalysisFailed,
+    /// <summary>A creature put back on its square (0x2C753) or out of play (0x2BDF0); not 0xECB3's (see below).</summary>
+    StatusChange,
+    GainsItem, Unaffected, EffectGained, CastingLost, NonWeaponDamage, MissileDodged, Hardier,
     FearsDragon, Charmed, Healed, SpellCast, SpellAborted, BeginsCasting, Other,
     /// <summary>Non-weapon damage put the creature out of play (0x2C44A: the "goes down" / dying / killed message).</summary>
     GoesDown,
+    /// <summary>
+    /// The end of 0x2C44A after <see cref="GoesDown"/> (0x2C4E5–0x2C527): outside a fight PauseOnly; in a fight, after
+    /// 0x2BEF4 and trigger 0x0D, CreatureDowned 0x3154B (the downed picture and its pause) when the creature is still out
+    /// of play, else PauseOnly; then START 0x17E3 clears the message area. Raised after the map removal.
+    /// </summary>
+    GoesDownDone,
+    /// <summary>
+    /// The end of 0x2C22E for a target still in play after its non-weapon damage (0x2C44D → 0x2C527): START 0x17E3 clears
+    /// the message area (in a fight rows 10–21). DOSBox-X s29: the bolt's damage message gone before the next flight.
+    /// </summary>
+    DamageDone,
+    // 0xECB3's callers (docs/re/spells-effects.md "Status changes"): each passes its own text (a Pascal string in the
+    // handler unit 0xEC5B), shown by START 0x16EC from row 10 without the pause flag before the dead / stone / gone test.
+    /// <summary>Handler 22 (0xF406, text CS:0764): poisoned when slow poison ends.</summary>
+    PoisonDeath,
+    /// <summary>Handler 32 (0xF7A4, text CS:0B11): an animated dead creature's effect goes.</summary>
+    Collapses,
+    /// <summary>Handler 57 (0x100A4, text CS:138A): the last stage of mummy rot.</summary>
+    RotsAway,
+    /// <summary>The poisoned hit 0x101A0 (0x10230, text CS:153B), after <see cref="Poisoned"/>.</summary>
+    PoisonKilled,
+    /// <summary>Level drain 0x10D7D, status 8 (0x10E15 animated, 0x10F35 hit dice below 2; text CS:20FB).</summary>
+    DeadForever,
+    /// <summary>Level drain 0x10D7D, status 6 at 0 HP (0x10FAB, text CS:2118).</summary>
+    DrainKilled,
+    /// <summary>Handler 95 (0x1129D, text CS:2605).</summary>
+    FallsDead,
+    /// <summary>
+    /// 0xECB3's end (0xED2E–0xED5D), only when the status was set: CreatureDowned 0x3154B (picture and pause in a fight)
+    /// when the creature is still out of play, then PauseOnly, START 0x17E3 (message area cleared) and, outside a fight,
+    /// START 0x0767 (the party list). Raised after the map removal.
+    /// </summary>
+    StatusDone,
+    // The messages those handlers show before 0xECB3 (START 0x16EC from row 10).
+    /// <summary>The poisoned hit 0x101A0 (text CS:152F at 0x101F2): no pause flag, then PauseOnly (0x101F7), no clear.</summary>
+    Poisoned,
+    /// <summary>Handler 57 (text CS:1382 at 0x1001F): with the pause flag.</summary>
+    Rots,
+    /// <summary>
+    /// Level drain 0x10D7D (0x10DEC, with the pause flag): CS:20EF + (count &gt; 1: Str(count) (START 0x1037) + CS:20DF;
+    /// else CS:20E7); the count is <see cref="EffectHandlers.DrainCount"/>.
+    /// </summary>
+    Drained,
     // The monster specials' own messages (class 0x0E handlers; each START 0x16EC(creature, its text, row, pause flag)
     // with the text a Pascal string in the handler's code segment; docs/re/spells-effects.md "Handler messages").
     /// <summary>Handler 83 (0x10930): the gazer's gaze, row 10, no pause.</summary>
@@ -432,24 +477,32 @@ public sealed partial class EffectHandlers : IFightEffects
                 rec[CombatRecord.SpellCast] = 0;
             }
         }
-        if (c[InPlay] == 0)
-            Emit(c, EffectEvent.GoesDown); // 0x2C458–0x2C4E0: the message, in and out of a fight
-        if (c[InPlay] == 0 && InCombat)
+        if (c[InPlay] != 0)
+        {
+            Emit(c, EffectEvent.DamageDone);
+            return;
+        }
+        Emit(c, EffectEvent.GoesDown); // 0x2C458–0x2C4E0: the message, in and out of a fight
+        if (InCombat)
         {
             RemoveEffectsHp0(c);
             Trigger(FightRules.TriggerHpZero, c, F);
             if (c[InPlay] == 0)
                 LeaveMap?.Invoke(c);
         }
+        Emit(c, EffectEvent.GoesDownDone); // 0x2C4E5–0x2C527: CreatureDowned's or the pause, then START 0x17E3
     }
 
     /// <summary>START 0x202B: a spell being cast is lost with its memorised copy [?] (the spell code removes it).</summary>
     public Action<EclCharacter, byte>? SpellLost { get; set; }
 
     /// <summary>
-    /// 0xECB3: (message) unless the creature is dead, stone or gone (6, 7, 8) it takes <paramref name="status"/>, out of
-    /// play with 0 HP, loses its DS:0C14 effects, runs class 0x0D and, still out of play, leaves the map. The team counts
-    /// are not touched here (the next count does it).
+    /// 0xECB3: <paramref name="message"/> (the caller's text, START 0x16EC from row 10 without the pause flag, shown
+    /// first whatever the status); a creature already dead, stone or gone (6, 7, 8) is left, the text staying in the
+    /// panel. Else it takes <paramref name="status"/>, out of play with 0 HP, loses its DS:0C14 effects, runs class 0x0D
+    /// and, still out of play, leaves the map (0x3154B, the program calls it in and out of a fight); then
+    /// <see cref="EffectEvent.StatusDone"/> (PauseOnly, message area cleared). The team counts are not touched here (the
+    /// next count does it).
     /// </summary>
     public void InflictStatus(EclCharacter c, byte status, EffectEvent message)
     {
@@ -463,7 +516,11 @@ public sealed partial class EffectHandlers : IFightEffects
         Trigger(FightRules.TriggerHpZero, c, F);
         if (c[InPlay] == 0)
             LeaveMap?.Invoke(c);
+        Emit(c, EffectEvent.StatusDone);
     }
+
+    /// <summary>The count the level drain 0x10D7D was last called with (its message shows it; handlers 85 → 1, 86 → 2).</summary>
+    public int DrainCount { get; private set; }
 
     /// <summary>
     /// 0x2C647: healing. Nothing for a status outside <see cref="HealableStatus"/>. Below full HP with

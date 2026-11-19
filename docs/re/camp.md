@@ -159,8 +159,18 @@ its row: r = 18 while DS:6DDA is set (rest), else 17 and the text box's frame is
 38, 22, style 0: the frame one cell outside the box); (1, r)–(38, 22) cleared, the name at (1, r + 1) (START 0x1816),
 the text word-wrapped into (1, r + 2)–(38, 22) in colour 10 (START 0x709:0x0768); with the pause flag PauseOnly then
 START 0x2383, which outside a fight clears (1, 18)–(38, 22). Client: `CampScreens.EffectMessage` for 0x2C540's text and
-the unaffected words. `[?]` The other messages of a camp cast (damage through 0x2B8B, healing, the spells' own) are
-still listed in our words; typing (DS:4A00) in the camp is not followed.
+the unaffected words. The text types out (0x77F8) only while DS:4A00 is set, which in the camp
+means after the start-up or a fight with no PRINT or ENCMENU since (view3d.md "Typing state"); the Client's camp prints
+through `ClientPlayer.Text`, which follows it (s29). `[?]` The other messages of a camp cast (damage through 0x2B8B,
+healing, the spells' own) are still listed in our words.
+**D** (s29, save A in camp, Brother Sean's Bless at speed 4 with DS:4A00 set; rows 17–23 compared pixel for pixel
+with the Client, every distinct frame): the spell list page stays up and the text box's frame is drawn over it at row
+17 (the redraw of START 0x16EC's camp branch); the cast message shows the caster's name (cyan) and the casts word
+(green) on row 19, the spell's name on row 20, drawn at once (not typed), then the game-speed pause (0.9 s) and the
+box cleared, no key; then for each member the name on row 18 and the blessed words typed from row 19, the pause, the
+rows cleared, as read. The Client now matches those rows (`CampScreens.CastOne`, test `CampEffectMessageTests`); it
+still returns to the camp screen under the box instead of keeping the spell page and its menu row
+("Choose spell: Cast Exit" stays on row 24 in DOSBox-X) `[?]` (the Client's spell list is its own page).
 
 **Memorize (0x1813B)**: the check; the pending list (type 5) first: when not empty, the keep question 0x180F0 — No
 clears the pending slots (0x1798A), Yes ends here. Then until done: no slot byte at all (0x17DD5: cleric or
@@ -236,6 +246,6 @@ slots are written as zero (leftover memory in the program).
 
 ## Open `[?]`
 
-- The camp Cast's other messages (damage, healing, the spells' own) and typing in the camp.
+- The camp Cast's other messages (damage, healing, the spells' own).
 - The roster-file deletion on save.
 - Cell positions of the camp's messages other than the rest's (the Client keeps its own frame).
