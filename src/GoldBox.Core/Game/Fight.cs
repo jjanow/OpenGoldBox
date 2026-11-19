@@ -262,6 +262,26 @@ public sealed class Fight
     }
 
     /// <summary>
+    /// 0x14EAB: resident 0x15011, the cue as it leaves (0x15016), the flight from the attacker's square to the
+    /// defender's (squares 0x31321 / 0x31349; 0x1501F–0x15057), its sprite by the item's type (+0x2E) and the direction
+    /// 0x14E38, the cue as it arrives (0x1505C), 0x15069. The flight is a display hook; the cues always sound.
+    /// </summary>
+    private void MissileFlight(EclCharacter attacker, EclCharacter defender, byte[] item)
+    {
+        State.Sound.BeginResident();
+        State.Sound.Cue(Sound.SoundCue.MissileOut);
+        if (State.Flight is { } fly && Geometry is CombatMap fm && fm.OnMap(attacker) && fm.OnMap(defender))
+        {
+            var (ax, ay) = fm.Position(attacker);
+            var (dx, dy) = fm.Position(defender);
+            fly(FlightAnimation.Missile(ax, ay, dx, dy, item.Length > 0x2E ? item[0x2E] : (byte)0,
+                Geometry.DirectionToward(attacker, defender)));
+        }
+        State.Sound.Cue(Sound.SoundCue.MissileIn);
+        State.Sound.EndResident();
+    }
+
+    /// <summary>
     /// MakeAttack (0x1407F) alone, without <see cref="NoteAttackDirection"/>: the free attacks of a move (0x130AD) call
     /// it this way. A defender that drops leaves the combat map (0x3154B via 0x12AF4; <see cref="CombatMap.Downed"/>).
     /// </summary>
@@ -276,25 +296,14 @@ public sealed class Fight
         AttackStarting?.Invoke(attacker, defender);
         var outcome = new FightRules.AttackOutcome(false, defender[FightRules.InPlay] == 0, true, 0, 0);
         int hpBefore = defender[FightRules.Hp];
+        // The missile's flight (0x14152 → 0x14EAB, before the attacks-left test).
         if (ammo is not null)
-        {
-            // The missile's flight (0x14152 → 0x14EAB, before the attacks-left test: resident 0x15011, leaves 0x15016,
-            // the flight, arrives 0x1505C, 0x15069). [?] A second flight when the attacker's item at +0xCC has type
-            // 0x2F (0x1417E) is not hooked.
-            State.Sound.BeginResident();
-            State.Sound.Cue(Sound.SoundCue.MissileOut);
-            // 0x1501F–0x15057: the flight from the attacker's square to the defender's (squares 0x31321 / 0x31349),
-            // its sprite by the missile's type and the direction 0x14E38 (0x14EAB).
-            if (State.Flight is { } fly && Geometry is CombatMap fm && fm.OnMap(attacker) && fm.OnMap(defender))
-            {
-                var (ax, ay) = fm.Position(attacker);
-                var (dx, dy) = fm.Position(defender);
-                fly(FlightAnimation.Missile(ax, ay, dx, dy, ammo.Length > 0x2E ? ammo[0x2E] : (byte)0,
-                    Geometry.DirectionToward(attacker, defender)));
-            }
-            State.Sound.Cue(Sound.SoundCue.MissileIn);
-            State.Sound.EndResident();
-        }
+            MissileFlight(attacker, defender, ammo);
+        // 0x14155–0x1417E: a second 0x14EAB, whatever the ammunition (melee too), when the attacker's weapon (+0xCC)
+        // has type 0x2F, with the weapon as the missile. [?] With no weapon the program reads type byte 0000:002E (an
+        // interrupt vector byte); taken as no flight.
+        if (FightRules.Equipment(attacker, Items)[FightRules.SlotWeapon] is { Length: > 0x2E } weapon && weapon[0x2E] == 0x2F)
+            MissileFlight(attacker, defender, weapon);
         if (attacker[0x113] > 0 || attacker[0x114] > 0)
         {
             var saved = State.Current;

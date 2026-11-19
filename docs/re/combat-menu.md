@@ -368,8 +368,29 @@ and Speed menus, an AI attack at game speed 9). Code: `src/GoldBox.Client/Screen
   3D area; tile 22 is all colour 0. The rare terrains 0x1A–0x1F draw RANDCOM block 1 tiles 0–5 (tile bytes
   0x22–0x27, `CombatArt.RareFirstTile`); DOSBox-X s24 (save K's Slums fight, several boots, cells scrolled into view
   with Manual aim): terrain 26 (tile 0), 27 (tile 1) and two bodies 31 (tile 5) pixel-exact with the 0/8 swap
-  (`CombatScreenGameTests.Rare_terrain_in_a_dungeon_fight_matches_dosbox`); 28–30 go through the same table and set, not
-  seen (28/29 are 1 in 10,000 per open cell). WILDCOM outdoors is not checked `[?]`.
+  (`CombatScreenGameTests.Rare_terrain_in_a_dungeon_fight_matches_dosbox`).
+- **Ground, program read (P, s26).** The fight start 0xD815 picks the set by DS:49FA alone: 1 (a 3D area) → DUNGCOM
+  (0xD81B–0xD837), anything else → WILDCOM (0xD843–0xD853), both block 1 loaded at tile 0, then RANDCOM block 1 at tile
+  0x22 (0xD867). The loader 0x31A8E takes (file, first tile, a last-tile byte): the last-tile byte (0x18, 0x21, 5; 0x28
+  for BACPAC) is **never read**; it copies the block's own item count × item size into the low tile sheet DS:5E52 at
+  first tile × item size, so the v1.3 files fill tiles 0–0x18 (DUNGCOM, 25 items), 0–0x21 (WILDCOM, 34 items) and
+  0x22–0x27 (RANDCOM, 6 items). All four ground draws (0x30938, 0x30DAF, 0x30E10, 0x31098) take the cell's terrain t,
+  read the tile byte DS:2744 + 4t + 3 and call the tile draw 0x31B5D, which draws item [tile] of DS:5E52 for a byte
+  ≤ 0x7F (DS:5E56's item [tile AND 0x7F] above): no special case for any terrain. The table's tile bytes (v1.3):
+  terrains 0–25 → 0–24 (0 and 1 both 0), 26–31 → 0x22–0x27, 32–65 → 0–33 (64, 65 read from the next table). So
+  terrains **28, 29, 30** draw RANDCOM items 2, 3, 4 by the same code that drew 26, 27 and 31 pixel-exact (28/29 are
+  the 1-in-10,000 rare features, 30 = 0x1E the area-spell cloud of `combat-map.md`); outdoors the wilderness builder's
+  terrains (23 → 22, 26–31, 32–65) draw WILDCOM items 0–33 and RANDCOM the same way, with the same screen-wide 0/8
+  swap. In a dungeon fight tiles 0x19–0x21 keep what the sheet held before (SQRPACI / BACPAC, or a previous WILDCOM);
+  no dungeon terrain reaches them. Client: `ClientPlayer.Fight` sets `CombatView.Dungeon` from DS:49FA
+  (`EclMemory.ViewMode`), `CombatArt.Ground` indexes the set by the tile byte below 0x22 and RANDCOM from 0x22
+  (`CombatScreenGameTests.Every_rare_terrain_draws_a_randcom_tile`, `Every_wilderness_terrain_draws_a_wildcom_tile`).
+  **D** (s26, `MACHINE=ega`): save A put on script 26's overland at 12,13 N (`goldbox-tools save-overland`) with
+  vector 0 = CLRMON, LOADMON 1 ×2, COMBAT, one step north: an outdoor fight (DS:49FA = 3); on its first screen every
+  cell with no creature, against the arena from the state, matched the Client's WILDCOM tile pixel for pixel with the
+  0/8 swap: terrains 23, 33, 37, 42, 44, 46, 48, 57 (tiles 22, 1, 5, 10, 12, 14, 16, 25;
+  `CombatScreenGameTests.Wilderness_ground_in_an_outdoor_fight_matches_dosbox`). Terrains 28–30 were not seen on screen
+  (program read only).
 - **Icons**: player characters (record 0x84 < 0x80) get the party icon, other creatures the CPIC block = their icon slot's picture (LoadCombatIcon; a joined NPC not checked `[?]`), attack pose + 128 (seen in the AI
   burst); party members are CBODY + CHEAD (head on the top rows) recoloured by 0xC1–0xC6, + 64 for icon size 2: all six
   members of save A matched pixel for pixel (`CombatArt.Party`). Colour 0 is see-through. Facing 5–7 mirrors the
@@ -478,14 +499,41 @@ and Speed menus, an AI attack at game speed 9). Code: `src/GoldBox.Client/Screen
   quirk) moves it; every 3 thirds the square and the centre move. A position past 0..18 leaves the view: the centre goes
   3 squares past the icon on the axis it moved along, ScrollView(…, 255); in follow mode the walk goes on from there,
   else the flight ends. End: ScrollView(target, 3) when out of view, the frame drawn on the target, with delay > 0
-  Delay and the background back (with 0 it stays drawn). Callers: the missile 0x15057 (sprite by type 0x14EAB, see
-  Core `FlightAnimation.Missile`; resident bracket 0x15011–0x15069 with cues 2620 / 262C), the cast 0x27E4D (cell 0x12,
-  4 frames, 30 ms; bracket 0x27E08–0x27E56), Hold Person's further targets 0x28745 (same), Lightning Bolt 0x29B02
-  (cell 0x13, 4, 50 ms, from the line's start to the cell about to be hit); not hooked `[?]`: the handlers 0x10987,
-  0x10A59, 0x10BC6 (cell 0x12, 4, 45 ms) and 0x11930 (cell 0x17, 1, 30 ms), 0x15D02 (delay 0), 0x2A1E4 (cell 0x13,
-  4, 50 ms), the second missile flight 0x1417E. The tune started before the call sounds for the flight's length (the
-  Client's logic thread waits out each frame). Client: `CombatChooser.Flight`, `CombatView.Flying`; the drawing
-  routine's own pixel offsets are not read `[?]` (drawn as the squares). Not checked in DOSBox-X `[?]`.
+  Delay and the background back (with 0 it stays drawn).
+  - **Callers** (all GAME.OVR; arguments from (x0, y0) = the first creature's square 0x31321 / 0x31349):
+    - the missile 0x15057 in 0x14EAB (sprite by the item's type, Core `FlightAnimation.Missile`; resident bracket
+      0x15011–0x15069 with cues 2620 / 262C), called from MakeAttack 0x1407F at 0x14152 with the ammunition and
+      (s26) **again at 0x1417E** with the attacker's weapon (+0xCC) when its type is 0x2F, whatever the ammunition, in
+      melee too (so COMSPR 8's two frames, 20 ms, in its own bracket). `[?]` With no weapon the program reads the type
+      byte at 0000:002E (an interrupt vector byte); taken as no flight.
+    - the cast 0x27E4D (cell 0x12, 4 frames, 30 ms; bracket 0x27E08–0x27E56), Hold Person's further targets 0x28745
+      (same), Lightning Bolt 0x29B02 (cell 0x13, 4, 50 ms, from the line's start to the cell about to be hit).
+    - (s26) effect handlers, **no sound bracket**, each after its message (START 0x16EC from row 10): the petrifying
+      gaze 83 (0x10908): 0x257E(cell 0x12) at 0x10948, gazer → its last target (+0x0A), 4 frames, 45 ms (0x10987);
+      reflected (0x7F and a mirror item): after the reflect message (row 12) target → gazer, same sprite and pace
+      (0x10A59). The charm gaze 84: gazer → target after the target check, the sight line and the message (0x10BC6,
+      cell 0x12, 4, 45 ms), before DS:681B = 10. The acid breath 121: 0x257E(cell 0x17) but a frame count of 1, so
+      COMSPR 10's first picture, breather → target, 30 ms (0x11930). The lightning breath 88 (0x2A0F1, see
+      spells-effects.md): 0x257E(cell 0x13), breather → the nudged aim, 4, 50 ms (0x2A1E4), then the bolt 0x29973
+      with its own flights.
+    - (s26) the aim's Next / Prev (0x15D02, in Aim's nested 0x15B84(step, fly)): the cursor box sprite 0x2432(0x19,
+      0, 0, 0) (cell 25 = COMSPR 25, set at 0x15D66 and again after Manual 0x15EDD and Target 0x15F24), 1 frame,
+      **delay 0**, from the shown candidate's square (DS:5F27 / 5F28 by its slot) to the square of the list entry one
+      step on, **before** that entry's target check. 0x15F6B: after every key 0x30A0F redraws the shown square, then
+      0x15B84([bp−0xDD] = +1 Next, −1 Prev, 0 otherwise; fly = not done and the key not E / #0); the skip of an entry
+      that fails the check (0x15E4D) passes fly = 0 and does not fly; with step 0 the path is one entry, so nothing.
+      With delay 0 positions are drawn only on whole squares with no wait and the last stays (erased by the next
+      0x30A0F), so in effect the view follows the box. No sound.
+  - The tune started before a bracketed call sounds for the flight's length (the Client's logic thread waits out
+    each frame; with delay 0 nothing waits).
+  - **Pixel position** (read s26): 0x464:0xD71(x, y, frame, 5, sprite DS:6E36, buffer DS:4A20) at 0x1CD4 / 0x1F94
+    takes the position in 8-pixel units (x added to the buffer column in bytes, y shl 3 = rows), the same units and
+    buffer the map's own cell draws use (0x31679 icons and 0x32097 cells at view cell × 3; the view cell of a slot,
+    DS:604A / 6092, is its square − the arena's view corner +2 / +3, written at 0x307E3 / 0x3080D), so the icon's
+    origin is the view's: square (col, row) of the view at (col·3, row·3). The Client places it as the squares
+    (`CombatScreen.DrawMap`).
+  - Client: `CombatChooser.Flight`, `CombatView.Flying`. Core: `FightState.Flight` (`FlightAnimation.Gaze`,
+    `AcidBreath`, `AimCursor`, `Bolt`, `Missile`, `Spell`). Not checked in DOSBox-X `[?]`.
 - **Manual in the Client**: Aim's Manual answers `AimKey.Manual` and each cursor pass is Core's (`ChooseManual`):
   arrows / pad move it one square, Return / T Target (ending Manual even where it is not offered), E / Escape Exit,
   C / shoulders re-centre; the panel shows `ManualView.Creature`, row 23 the range to the square in attack mode when the line got

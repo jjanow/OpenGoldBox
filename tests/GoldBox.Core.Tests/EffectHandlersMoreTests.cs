@@ -188,12 +188,14 @@ public class EffectHandlersMoreTests
     }
 
     [Fact]
-    public void Handler_88_has_no_table_entry_and_reports_a_diagnostic()
+    public void Handler_88_without_the_fight_s_spells_reports_a_diagnostic_and_still_counts_down()
     {
+        // The entry DS:6988 is written by the spell table builder (0x2A7B9); the breath itself needs FightSpells.
         var (h, f) = Make(new Script());
         var c = new EclCharacter();
         EffectHandlers.AddEffect(c, 88, 0, 0xFF, false);
         h.Trigger(14, c, f);
         Assert.Contains(h.Diagnostics, d => d.Contains("88"));
+        Assert.Equal(0xFE, EffectHandlers.FindEffect(c, 88)![3]);
     }
 }

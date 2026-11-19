@@ -679,10 +679,12 @@ public sealed class FightMenu
                 case AimKey.Next:
                     dir = 1;
                     idx = Wrap(idx + 1, list.Count);
+                    AimFlight(cand, list[idx]);
                     break;
                 case AimKey.Prev:
                     dir = -1;
                     idx = Wrap(idx - 1, list.Count);
+                    AimFlight(cand, list[idx]);
                     break;
                 case AimKey.Target:
                     if (!view.TargetOffered)
@@ -721,6 +723,23 @@ public sealed class FightMenu
     }
 
     private static int Wrap(int i, int n) => ((i % n) + n) % n;
+
+    /// <summary>
+    /// 0x15B84 with its fly flag set (the call at 0x15FB4 after a key that is not Exit and left Aim not done): the cursor
+    /// box flies (<see cref="FlightAnimation.AimCursor"/>, 0x15D02) from the shown candidate's square (DS:5F27 / 5F28)
+    /// to the square of the list entry one step on, before that entry's target check (a skip, 0x15E4D, has the flag
+    /// clear and flies nothing). Only Next / Prev step; the step-0 calls (Aim's start, after Target, Manual or Center)
+    /// fly from a square to itself, which draws nothing. A display hook.
+    /// </summary>
+    private void AimFlight(EclCharacter from, EclCharacter to)
+    {
+        if (Fight.State.Flight is { } fly && Fight.Map is { } m && m.OnMap(from) && m.OnMap(to))
+        {
+            var (fx, fy) = m.Position(from);
+            var (tx, ty) = m.Position(to);
+            fly(FlightAnimation.AimCursor(fx, fy, tx, ty));
+        }
+    }
 
     /// <summary>
     /// The player's pick for an item's spell (0x22AC4 → 0x27C38 with ai = 0, the same pick loop as a cast from the

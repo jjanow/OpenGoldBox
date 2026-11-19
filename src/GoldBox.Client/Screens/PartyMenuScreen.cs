@@ -610,6 +610,10 @@ public sealed class PartyMenuScreen(PartyMenuFlow flow, ScriptRunner runner, ISc
             case TextRequest t:
                 DrawTextEntry(f, t, input);
                 break;
+            case KeyRequest { Prompt: { Length: > 0 } kp } k:
+                // Our notices over a page (View's commands not built yet): the bottom line, then a key.
+                Line(f, kp, k.Colour ?? PromptColour, [], -1);
+                break;
         }
         // J's message and Train's (START 0x7DF8 / 0x2233: bottom line, during the pause).
         if (flow.Hall.Message is { } msg)

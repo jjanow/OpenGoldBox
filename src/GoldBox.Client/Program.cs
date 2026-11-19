@@ -74,7 +74,8 @@ GoldBox.Core.Game.BaseItemTable? menuItems = null;
 string? problem = null;
 Func<PartyMenuFlow>? makeFlow = null;
 PartyMenuFlow? hallFlow = null;
-Func<char, PorGame>? loadSlot = null;
+// A load in the game: the slot and the hook called with the loaded game before its entry runs.
+Func<char, Action<PorGame>, PorGame>? loadSlot = null;
 if (options.ModuleDirectory is null && (string.IsNullOrWhiteSpace(gameDir) || !Directory.Exists(gameDir)))
     problem = "Pool of Radiance folder not set: start with --game DIR or --module DIR";
 else
@@ -164,9 +165,14 @@ else
             {
                 NewGame = (party, s) => game = WithSound(PorGame.NewGame(content, art, party, who, s)),
                 SaveSlots = Slots,
-                // DS:6DDC (the overland marker's counter) is not saved: a load goes on from the session's.
-                LoadGame = (slot, s) => game = WithSound(PorGame.LoadAtPartyMenu(content, art, SlotPath(slot), who, s,
-                    game?.Memory.MarkerCounter ?? 0)),
+                // DS:6DDC (the overland marker's counter) is not saved: a load goes on from the session's. The player's
+                // hosts read `game`, so it is the loaded one before vector 4 runs (the entry may open the hall).
+                LoadGame = (slot, s, started) => game = WithSound(PorGame.LoadAtPartyMenu(content, art, SlotPath(slot), who, s,
+                    game?.Memory.MarkerCounter ?? 0, g =>
+                    {
+                        game = WithSound(g);
+                        started(g);
+                    })),
                 SaveGame = (slot, party, loaded) => player.SaveAtPartyMenu(slot, party, content, loaded),
                 Highlight = sharedHighlight,
                 // J and Train at the start-up menu (the hall's, on the menu's party).
@@ -192,6 +198,7 @@ else
             player.HallHooks.Modify = () => OnGame(hf.Modify);
             player.HallHooks.Add = () => OnGame(hf.Add);
             player.HallHooks.Remove = () => OnGame(hf.Remove);
+            player.HallHooks.View = () => OnGame(hf.View);
             player.HallHooks.Load = () =>
             {
                 if (hf.PickSlot() is not { } slot)
@@ -217,7 +224,12 @@ else
             player.HallHooks.Notice = hf.TakeNotice;
             // The camp's Alter Icon runs the same icon editor 0x1D1AC on the current character.
             player.IconEditor = hf.EditIcon;
-            loadSlot = slot => game = WithSound(PorGame.FromSave(content, art, SlotPath(slot), who, seed, game?.Memory.MarkerCounter ?? 0));
+            loadSlot = (slot, started) => game = WithSound(PorGame.FromSave(content, art, SlotPath(slot), who, seed,
+                game?.Memory.MarkerCounter ?? 0, g =>
+                {
+                    game = WithSound(g);
+                    started(g);
+                }));
         }
         if (startAtMenu)
         {
@@ -234,21 +246,21 @@ else
                 ?? throw new FileNotFoundException($"save {options.Save ?? "A"} not found in {ClientSettings.SavesFolder} or {content.Origin}");
             Console.Error.WriteLine($"save: {savePath}");
         }
-        // The entry runs on the logic thread, so its menus or text (if any) wait for the window.
+        // The entry runs on the logic thread, so its menus or text (if any) wait for the window; the game is handed over
+        // before it runs (the player's hosts read it: an entry may open the hall).
         if (!startAtMenu)
         runner.Start(() =>
         {
             game = options.Area is { } script && options.At is var (x, y, f)
-                ? PorGame.Enter(content, art, script, x, y, f, who, seed)
-                : PorGame.FromSave(content, art, savePath!, who, seed);
-            game.Loop.Sound = player.Sound;
+                ? PorGame.Enter(content, art, script, x, y, f, who, seed, g => game = WithSound(g))
+                : PorGame.FromSave(content, art, savePath!, who, seed, started: g => game = WithSound(g));
         });
         if (runner.Fault is { } fault)
             throw fault;
         if (game is null && runner.Pending is null && !startAtMenu)
             throw new InvalidOperationException("the area entry did not finish");
         if (game is not null)
-            Console.Error.WriteLine($"area: script {game.Vm.CurrentScript} map {game.Loop.Map?.Id} at {game.Memory.Position.X},{game.Memory.Position.Y}; entry {game.EntryRun.Reason}");
+            Console.Error.WriteLine($"area: script {game.Vm.CurrentScript} map {game.Loop.Map?.Id} at {game.Memory.Position.X},{game.Memory.Position.Y}; entry {(runner.Pending is null ? game.EntryRun.Reason.ToString() : "waiting for the player")}");
     }
     catch (Exception e) when (e is IOException or FormatException or ArgumentException or InvalidOperationException
                                    or UnauthorizedAccessException or GoldBox.Data.Dax.DaxFormatException
@@ -292,14 +304,16 @@ IScreen? LoadInto(char slot, IScreenHost host)
 {
     if (loadSlot is null)
         return null;
-    PorGame? loaded = null;
-    runner.Start(() => loaded = loadSlot(slot));
+    // The loaded game is handed over before its entry runs, so an entry that waits for the player (the hall, a menu)
+    // goes on under the new screen; a load that fails leaves the running game as it was.
+    PorGame? previous = game, loaded = null;
+    runner.Start(() => loadSlot(slot, g => loaded = g));
     if (runner.Fault is { } f)
     {
         Console.Error.WriteLine("load: " + f);
+        game = previous;
         return null;
     }
-    // [?] An entry vector that waits for the player during a load is not handed over (as at start-up with --save).
     return loaded is null ? null : ExploreFor(loaded, slot, host);
 }
 ExploreScreen ExploreFor(PorGame g, char letter, IScreenHost host) => new(g, player!, runner, host, letter, clientArt,

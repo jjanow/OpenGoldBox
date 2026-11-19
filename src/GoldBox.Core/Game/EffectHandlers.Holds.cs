@@ -2,10 +2,11 @@ using GoldBox.Core.Ecl;
 
 namespace GoldBox.Core.Game;
 
-// Effect handlers 40, 73–77, 81–86 and 121 (table DS:6828; GAME.OVR file offsets; 73 and 74 sit in the unit at
-// 0x161CD, the rest in the handler unit at 0xEC5B): the stinking cloud's arena cells, the rake, the holds and the blood
-// drain (combat slots), the fear auras, the gaze, the charm gaze, level drain and the acid breath. docs/re/
-// spells-effects.md "Handlers 73–139". Handler 88 has no table entry (0x11DFD never writes DS:6828 + 4·88).
+// Effect handlers 40, 73–77, 81–86, 88 and 121 (table DS:6828; GAME.OVR file offsets; 73 and 74 sit in the unit at
+// 0x161CD, 88 in the spell unit at 0x27018, the rest in the handler unit at 0xEC5B): the stinking cloud's arena cells,
+// the rake, the holds and the blood drain (combat slots), the fear auras, the gaze, the charm gaze, level drain, the
+// lightning breath and the acid breath. docs/re/spells-effects.md "Handlers 73–139". Handler 88's entry is written by
+// the spell table builder (0x2A7B9, DS:6988), not by 0x11DFD.
 
 /// <summary>
 /// One stinking cloud of the list DS:6DBB (19-byte nodes from GetMem): +0 caster, +4 next, +7 + i the terrain under
@@ -161,6 +162,9 @@ public sealed partial class EffectHandlers
             case 86: // 0x1101D: two levels
                 if (rec.Other is { } t86)
                     LevelDrain(t86, 2);
+                return;
+            case 88: // 0x2A0F1 lightning breath (entry written at 0x2A7B9 by the spell table builder)
+                LightningBreath(c, node!, rec);
                 return;
             case 121: // 0x11877 acid breath
                 AcidBreath(c, node!, rec);
@@ -330,15 +334,32 @@ public sealed partial class EffectHandlers
     }
 
     /// <summary>
-    /// 0x10908 (class 0x0E): (message) the gaze at the last target. When the gazer carries 0x7F, the target's first
-    /// readied item (byte 0x34) with name word 0x76 at 0x2F, 0x30 or 0x31 reflects it (message): the gazer becomes the
-    /// victim. The victim saves vs. type 1; failing, it turns to stone (0xECB3, status 7).
+    /// The moving icon (START 0x25C9) from <paramref name="from"/>'s square to <paramref name="to"/>'s, both on the
+    /// combat map (squares 0x31321 / 0x31349), through <see cref="FightState.Flight"/>. A display hook only.
+    /// </summary>
+    private void Fly(EclCharacter from, EclCharacter? to, Func<int, int, int, int, FlightAnimation> flight)
+    {
+        if (F.Flight is { } fly && to is not null && Map is { } m && m.OnMap(from) && m.OnMap(to))
+        {
+            var (fx, fy) = m.Position(from);
+            var (tx, ty) = m.Position(to);
+            fly(flight(fx, fy, tx, ty));
+        }
+    }
+
+    /// <summary>
+    /// 0x10908 (class 0x0E): (message) the gaze at the last target, the moving icon from the gazer to it (0x10987).
+    /// When the gazer carries 0x7F, the target's first readied item (byte 0x34) with name word 0x76 at 0x2F, 0x30 or
+    /// 0x31 reflects it (message, the icon back from the target to the gazer, 0x10A59): the gazer becomes the victim.
+    /// The victim saves vs. type 1; failing, it turns to stone (0xECB3, status 7).
     /// </summary>
     private void Gaze(EclCharacter c, CombatRecord rec)
     {
         var o = rec.Other;
         Cells.Other = o;
         Emit(c, EffectEvent.Other);
+        // 0x10945–0x10987: 0x257E(cell 0x12), the moving icon from the gazer to the target, 4 frames, 45 ms.
+        Fly(c, o, FlightAnimation.Gaze);
         if (o is null)
             return;
         if (FindEffect(c, 0x7F) is not null)
@@ -347,6 +368,8 @@ public sealed partial class EffectHandlers
                 if (it.Length > 0x34 && it[0x34] != 0 && (it[0x2F] == 0x76 || it[0x30] == 0x76 || it[0x31] == 0x76))
                 {
                     Emit(o, EffectEvent.Other);
+                    // 0x10A1F–0x10A59: the same sprite back from the target to the gazer.
+                    Fly(o, c, FlightAnimation.Gaze);
                     o = c;
                     Cells.Other = c;
                     break;
@@ -358,7 +381,8 @@ public sealed partial class EffectHandlers
 
     /// <summary>
     /// 0x10AD2 (class 0x0E): the last target must pass the target check (0x13880) and be in sight (0x2FF74 from the
-    /// gazer's square; [?] the range passed is an uninitialised stack byte, taken as 255 here). Then (message) DS:681B =
+    /// gazer's square; [?] the range passed is an uninitialised stack byte, taken as 255 here). Then (message, the moving
+    /// icon 0x257E(cell 0x12) from the gazer to the target, 4 frames, 45 ms, 0x10BC6) DS:681B =
     /// 10 (Charm Person; not reset afterwards), the target saves vs. type 4 with −2 and gets charm 0x0B (permanent,
     /// param = gazer's hostile × 128 + 12, removal on, a save negates); with a charm now on it its handler runs.
     /// </summary>
@@ -385,6 +409,7 @@ public sealed partial class EffectHandlers
         else
             Diag("[?] handler 84's line of sight (0x2FF74) needs the combat map");
         Emit(c, EffectEvent.Other);
+        Fly(c, o, FlightAnimation.Gaze); // 0x10B84–0x10BC6
         Cells.Spell = 0x0A;
         bool saved = SavingThrow(o!, 4, -2);
         AddEffectWithMessage(o!, 0x0B, 0, (byte)(((sbyte)c[Hostile] << 7) + 0x0C), true, 1, saved, EffectEvent.Charmed,
@@ -394,8 +419,32 @@ public sealed partial class EffectHandlers
     }
 
     /// <summary>
+    /// 0x2A0F1 (class 0x0E, handler 88; its DS:6828 entry is written by the spell table builder at 0x2A7B9, not by
+    /// 0x11DFD): after the first round (round counter DS:6DE3 ≠ 0) a 1d100 ≤ 50 skips it. Else (message, START 0x16EC
+    /// from row 10 with its pause) the breath (<see cref="FightSpells.LightningBreath"/>: a Lightning Bolt pick, the
+    /// aim one square from the breather, damage = its byte 0x32); then the record's byte 3 counts down while above
+    /// 0xFD (so 0xFF gives three breaths), else the record goes; the actions end (START 0x2637).
+    /// </summary>
+    private void LightningBreath(EclCharacter c, byte[] node, CombatRecord rec)
+    {
+        if (F.RoundCounter != 0 && Dice(1, 100) <= 0x32)
+            return;
+        Emit(c, EffectEvent.Other);
+        if (_attached is { Spells: FightSpells spells } f)
+            spells.LightningBreath(f, c);
+        else
+            Diag("[?] handler 88's breath needs the fight's spells (FightSpells)");
+        if (node[3] > 0xFD)
+            node[3]--;
+        else
+            RemoveEffect(c, 0x58, node);
+        FightRules.EndActions(rec);
+    }
+
+    /// <summary>
     /// 0x11877 (class 0x0E): 1d100 ≤ 25 and the last target nearer than 4 squares (START 0x30FB): actions end,
-    /// (message) 8d4 (count to DS:681C), then the target saves vs. type 3 (breath) and takes it as non-weapon damage
+    /// (message) the moving icon 0x257E(cell 0x17) with a frame count of 1 from the breather to the target (30 ms,
+    /// 0x11930), 8d4 (count to DS:681C), then the target saves vs. type 3 (breath) and takes it as non-weapon damage
     /// (halved when saved); the record goes and so does the creature's first 0x50 (its acid bite).
     /// </summary>
     private void AcidBreath(EclCharacter c, byte[] node, CombatRecord rec)
@@ -413,6 +462,7 @@ public sealed partial class EffectHandlers
             return;
         FightRules.EndActions(rec);
         Emit(c, EffectEvent.Other);
+        Fly(c, o, FlightAnimation.AcidBreath); // 0x118EE–0x11930
         byte d = DamageDiceRoll(8, 4);
         bool saved = SavingThrow(o, 3, 0);
         NonWeaponDamage(o, d, 2, saved);

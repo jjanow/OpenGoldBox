@@ -573,6 +573,76 @@ public class CombatScreenGameTests
         for (int t = 0x1A; t <= 0x1F; t++)
             Assert.Same(art.Rare[t - 0x1A], art.Ground(tables.Tile(t), dungeon: true));
     }
+
+    [Theory]
+    [InlineData(23, "fbdf93999e5fdc8d5d8b73b72739f562b4a9f63d75691de03fb57c8545fe98ad")]
+    [InlineData(33, "6369cb22ae8f8b31caebb503ab6aa3d1c849c3a800457fd4cb17781718a1da5b")]
+    [InlineData(37, "a52865a7d20add2fe871da439d2325d3ff95ac78389f105223232b26f9877414")]
+    [InlineData(42, "fc238a145476c5d28a34fe400e26c22d9b1455aa4a70d9ca830bdb02dfd0de8f")]
+    [InlineData(44, "9c003805384cedb6ccf4cddd99f2466132f1a2de9e4f2f6ad3fa2f62a6466519")]
+    [InlineData(46, "ea732a7dacb62ace4306234738680708cad0ebcfad2b6b46d8da332266d315a7")]
+    [InlineData(48, "ce5195c104d674cddbe539848f27e785d71cfec975b07cf3af0a5342217047aa")]
+    [InlineData(57, "d0b99609c594f49a9ad2b93ff0a48bc441009ca326c54fe3e31fcd5585e73f5b")]
+    public void Wilderness_ground_in_an_outdoor_fight_matches_dosbox(int terrain, string sha256)
+    {
+        // DOSBox-X s26 (MACHINE=ega): save A put on script 26's overland at 12,13 N (goldbox-tools save-overland), its
+        // vector 0 = CLRMON, LOADMON 1 ×2, COMBAT, one step north: an outdoor fight (DS:49FA = 3). The first screen's
+        // 7 × 7 cells with no creature on them, reduced to EGA indices as shown (the combat palette's 0/8 swap), against
+        // the arena's terrain from the state at that screen: every cell of a terrain gave the same picture.
+        if (Dir() is null)
+            return;
+        var dir = new PorGameDirectory(Dir()!);
+        var tables = PorCombatTables.Open(dir)!;
+        var tile = new CombatArt(dir).Ground(tables.Tile(terrain), dungeon: false)!;
+        var shown = tile.Pixels.Select(p => p switch { 0 => (byte)8, 8 => (byte)0, var v => p }).ToArray();
+        Assert.Equal(sha256, Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(shown)));
+    }
+
+    [Fact]
+    public void Every_wilderness_terrain_draws_a_wildcom_tile()
+    {
+        // combat-menu.md "Ground, program read" (s26): outside a 3D area 0xD815 loads WILDCOM block 1 at tile 0 (the
+        // loader copies the block's own 34 items, up to RANDCOM's first tile 0x22) and the ground draws index the sheet
+        // by the terrain's tile byte with no special case. Every terrain the wilderness builder writes, over the whole
+        // overland map and many seeds, has a WILDCOM or RANDCOM tile: 23 → 22, 26–31 → RANDCOM 0–5, 32–65 → 0–33.
+        if (Dir() is null)
+            return;
+        var dir = new PorGameDirectory(Dir()!);
+        var tables = PorCombatTables.Open(dir)!;
+        var art = new CombatArt(dir);
+        Assert.Equal(CombatArt.RareFirstTile, art.Wilderness.Count);
+        Assert.Equal(6, art.Rare.Count);
+        var seen = new SortedSet<int>();
+        for (uint seed = 1; seed <= 12; seed++)
+        {
+            var rng = new TurboPascalRandom(seed * 7919);
+            for (int y = 0; y < PorCombatTables.WildRows; y++)
+                for (int x = 0; x < CombatTables.WildMapStride; x++)
+                {
+                    var a = new CombatArena();
+                    ArenaBuilder.BuildWilderness(a, tables, x, y, 2, seed % 2 == 0, 20, rng.Next);
+                    foreach (byte t in a.Cells())
+                        seen.Add(t);
+                }
+        }
+        Assert.Contains(23, seen);
+        Assert.Contains(50, seen);
+        foreach (int t in seen)
+        {
+            int tile = tables.Tile(t);
+            var expected = t switch
+            {
+                23 => art.Wilderness[22],
+                >= 0x1A and <= 0x1F => art.Rare[t - 0x1A],
+                >= 32 and <= 65 => art.Wilderness[t - 32],
+                _ => throw new Xunit.Sdk.XunitException($"terrain {t} outdoors"),
+            };
+            Assert.Same(expected, art.Ground(tile, dungeon: false));
+        }
+        // A dungeon's terrains (1–25 → DUNGCOM 0–24) never reach the sheet's tiles 0x19–0x21.
+        for (int t = 1; t <= 25; t++)
+            Assert.Same(art.Dungeon[tables.Tile(t)], art.Ground(tables.Tile(t), dungeon: true));
+    }
 }
 
 /// <summary>The controls screen with more actions than rows: the mouse reaches everything.</summary>

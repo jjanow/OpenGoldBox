@@ -511,6 +511,39 @@ public sealed partial class FightSpells
         Effects.Cells.MultiTarget = 0;
     }
 
+    /// <summary>
+    /// The breath of effect handler 88 (0x2A0F1, in this unit), after its message: the target pick (DS:6B84, 0x148BE in a
+    /// fight) for spell 0x33 with ai = 1 (<see cref="PickAuto"/>; its picked flag DS:70C6 is not read); the aimed
+    /// square DS:6DB9 / 6DBA becomes the breather's square + the sign of (aim − square) on each axis (0x2FB52), and on
+    /// an axis where that is the square + 1 one more (as read: two squares toward positive x / y, one toward negative);
+    /// invisibility off (0x2BEBC); the moving icon (0x257E(cell 0x13), 4 frames, 50 ms, 0x2A1E4) from the breather to
+    /// the aim; <see cref="BoltHit"/> on the aim and the bolt (<see cref="Bolt"/>, length 10, no rebound bonus), both
+    /// with damage = the breather's byte 0x32 and save type 3. The bolt starts from the current creature (DS:5D92).
+    /// [?] When the pick aims nowhere the aim stays on the breather: the bolt hit lands on its own slot (as read).
+    /// </summary>
+    internal void LightningBreath(Fight fight, EclCharacter c)
+    {
+        Bind(fight);
+        if (fight.Geometry is not CombatMap map || !map.OnMap(c))
+        {
+            Diag("[?] handler 88's breath needs the combat map");
+            return;
+        }
+        var (px, py) = map.Position(c);
+        PickAuto(fight, c, 0x33); // 0x2A14C–0x2A157
+        int ax = (sbyte)(byte)(px + Math.Sign(Aim.X - px)), ay = (sbyte)(byte)(py + Math.Sign(Aim.Y - py));
+        if (ax == px + 1)
+            ax++;
+        if (ay == py + 1)
+            ay++;
+        Aim = (ax, ay);
+        Effects.RemoveInvisibility(c); // 0x2A1C1
+        F.Flight?.Invoke(FlightAnimation.Bolt(px, py, ax, ay)); // 0x2A1C6–0x2A1E4
+        byte damage = c[MaxHp];
+        BoltHit(ax, ay, damage, 3); // 0x2A202
+        Bolt(10, damage, 3, false); // 0x2A217
+    }
+
     // ---- 56 Restoration, 58 ---------------------------------------------------------------------------------------
 
     /// <summary>

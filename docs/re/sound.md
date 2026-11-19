@@ -163,9 +163,9 @@ for far calls to CS:00DC, CS:01A5, CS:017B):
   the move, turns left/right, the area loop's check after the redraw), the bump (`IAreaUi.Bump`), ECL CALL $BA03 (the
   Client's host), the fight (`FightState.Sound`: impact per hit and on a helpless defender, miss, a creature's step,
   the body routine, a missile's flight, a spell's flight with its own cue for spells 47 and 51, Hold Person's further
-  targets). Not hooked `[?]`: the name animation (START 0x2B8B, cues 261A/261C; 10 callers in GAME.OVR: damage and
-  effect messages), the second missile flight for an item of type 0x2F (OVR 0x1417E), sounds outside a fight in the
-  body routine.
+  targets, the second missile flight 0x1417E of a weapon of type 0x2F with its own bracket and cues, s26). Not hooked
+  `[?]`: the name animation (START 0x2B8B, cues 261A/261C; 10 callers in GAME.OVR: damage and effect messages), sounds
+  outside a fight in the body routine.
 - **Client**: `--sound speaker|tandy|off` (settings `Sound`, default speaker); 44.1 kHz mono through MonoGame's
   dynamic sound instance; the logic thread waits out an auto-stop sound as the program does. `[?]` A resident
   bracket's length is the program's animation. The missile, spell and Hold Person flights are drawn inside it (s25,

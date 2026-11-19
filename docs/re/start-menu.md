@@ -238,8 +238,20 @@ through the menus with Keep, Exit, Escape and No; `IconEditorProgramTests`).
 - **Drop (0x1B8B6)**: yes/no `PartyMsg.Drop` + name + `PartyMsg.Forever`, then `PartyMsg.AreYouSure`; on two yeses the
   message is `PartyMsg.YouDump` / `PartyMsg.OutBack` when in play (0x10D) is 0, else name + `PartyMsg.BidsFarewell`,
   and 0x1CC10 (no file is written); otherwise name + `PartyMsg.SighOfRelief`.
-- **View**: the character page (0x21084, as `CombatSheet` documents it) with the portrait. `[?]` The engine shows the
-  page only; the program's View here is the camp's View menu (Items, Spells, …).
+- **View** (V at 0x19D13, only while its shown flag DS:06EA is set, i.e. with a current character): 0x19D23 calls
+  `lcall 0085:0039`, the overlay stub of **0x21AED**, the same far call the camp's V makes (0x197B3); `[bp-4]` is its
+  var done. So it is the camp's View: the character page (0x21084, as `CombatSheet` documents it, with the portrait
+  rule below) and the menu routine with the prompt `View:` (0x21AC7) and the entries 0x21AED builds (Items, Spells,
+  Trade, Drop as the character has them, then Exit; `combat-menu.md` "View / Use"). DS:49F3 is 0 here (0x19AE0
+  clears it), so the Items menu (0x21F32) has no Use and no Sell / Id. The loop (0x21B1D–0x21D40) acts on I (0x21F32),
+  S (0x239D6), T (0x23190) and D (0x234E1, then the money lines 0x21547) only, and redraws the page after keys of the
+  set at 0x21ACD (0x21D35); it calls no member selection (0x23819), so Home / End do nothing inside View: the member
+  is picked on the party menu. It ends on Exit or Escape (key 0) and the party menu is drawn again (0x19D28 →
+  0x19E65). DOSBox-X s25: Items, Trade, Drop, Exit under the page. Client: `PartyMenuFlow.View` runs the camp's
+  `CharacterView.Run` with the program's page (`SheetRequest`, the portrait as Modify's), prompt and words, no member
+  switch, venue `Venue.PartyMenu` (no Use); the training hall's View goes through the same (`HallHooks.View`). The
+  entries' screens are the camp's as built (Spells, money Trade / Drop and the item commands other than Sell / Id are
+  not built yet: our notice on the bottom line).
 - **Train**: the training hall's (training.md). Save: section 5a.
 
 ### Modify (0x1BA1E)
@@ -385,10 +397,12 @@ before it uses them (`PorProgramData.CreationTables`). `[?]` Not decoded into a 
 - Home / End wrapping on the party menu; the drop message's line and how long it stays.
 - The icon editor's frame boxes (icon slot 25) and its palette are drawn as seen, not decoded. The camp's Alter Icon
   runs the same routine (camp.md "Alter").
-- The party menu's View is the camp's View menu (Items, Trade, Drop, Exit under the page; DOSBox-X s25); the Client
-  shows the page only.
 - File names of roster characters (8.3 clean-up); the save's deletion of the members' roster files (camp.md).
 - Load at the party menu of a state-0 save: what the program's re-read of map $49C5 = 0 and wall set 0 gives.
+- View (0x21AED) elsewhere in the Client: the camp's, shop's and loot's View still draw our page
+  (`CharacterView.Sheet`) and take Home / End inside View, which the program's loop does not (see §4 View); the party
+  menu and the hall use the program's page. Not in DOSBox-X yet: View's words and highlight at the party menu pixel
+  for pixel.
 
 ## 8. After the game loop: the party destroyed (0x403E, START 0x013D) — P, D
 

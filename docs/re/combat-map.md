@@ -93,6 +93,15 @@ for byte; placement reproduces every slot of DS:5F2B/65BD; the facings are 7 (pa
 1d6 and one 1d100 per creature later the seed is `r0_start`'s. So the arena's draws are the only ones between the
 loader and the first round, and placement draws none.
 
+**DOSBox, facing W** (s26, `fight_west`: test save D of `por_test_saves.py`, the fight of s24's Alt-X check, 15,4 W,
+6 party + 8 goblin guards): the same holds (arena, all 14 slots, facings 6 and 2, 28 draws to the first menu).
+s24 had noted that the Client placed this fight's combatants differently; that was the **seed**, not placement. The
+Client draws its seed from the clock as the game does, and placement gave the same slots for every seed tried. The
+round start's 1d6 per creature, though, picks who acts first, and the view is centred on that creature (Client seed 1:
+Darkstar's menu, view moved; that boot: Phineas's). To compare a fight screen with DOSBox-X, take a state before the
+step that starts it and start the Client with `--seed` = that state's RandSeed DS:4428 in decimal (here 576852995):
+the Client then showed DOSBox-X's first screen.
+
 ## Where creatures are (map unit) — P, E, D
 
 A creature's place is not in its record. The fight start gives each creature in list order a **slot** k (1-based);

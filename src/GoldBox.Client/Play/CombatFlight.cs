@@ -23,8 +23,9 @@ public sealed partial class CombatChooser
     /// position past 0..18 in either axis leaves the view: in follow mode the view centre goes 3 squares past the icon on
     /// the axis it moved along and the walk goes on, else the flight ends there.</item>
     /// <item>At the end: the view brought to the target (ScrollView(target, 3)) when it is out of it, the frame drawn
-    /// on the target, Delay, erased (with delay 0 the icon stays drawn `[?]` until the next redraw; no caller in a
-    /// fight passes 0 except 0x15D02, not hooked).</item>
+    /// on the target, Delay, erased. With delay 0 (only the aim's cursor box, 0x15D02) it stays drawn until its cell is
+    /// redrawn; the Client leaves it to the aim's own cursor box (`CombatView.Cursor`), which ChooseAim puts on the
+    /// new candidate next.</item>
     /// </list>
     /// </summary>
     internal void Flight(FlightAnimation a)
@@ -140,11 +141,16 @@ public sealed partial class CombatChooser
         return CombatTables.Center;
     }
 
-    /// <summary>START 0x464:0xD71 (the frame at the position), 0x1B52 (shown), Delay, then the saved background back.</summary>
+    /// <summary>
+    /// START 0x464:0xD71 (the frame at the position), 0x1B52 (shown), Delay, then the saved background back. The
+    /// position is in 8-pixel units from the view's corner, as the map's own cell draws (0x31679, 0x32097: cell × 3)
+    /// into the same buffer DS:4A20, so the Client places it as the squares. With delay 0 nothing waits (the program's
+    /// Delay(0)); the positions go by within one frame.
+    /// </summary>
     private void DrawFlying(int c1, int c2, FlightFrame f, int ms)
     {
         View.Flying = (c1, c2, f.Block + (f.Second ? 128 : 0), f.Mirror);
-        if (Pauses)
+        if (Pauses && ms > 0)
             ask(new DelayRequest(TimeSpan.FromMilliseconds(ms)) { Chained = true }); // positions follow back to back
         View.Flying = null;
     }

@@ -111,8 +111,9 @@ public sealed class FightState
     public Action<AttackMessage>? AttackMessage { get; set; }
 
     /// <summary>
-    /// Display hook (no game state): the moving icon START 0x25C9 (a missile's, a spell's or a bolt's flight), called
-    /// where the program calls it, inside its resident sound bracket. A front end animates it there.
+    /// Display hook (no game state): the moving icon START 0x25C9 (a missile's, a spell's or a bolt's flight, a gaze or
+    /// breath, the aim cursor's Next / Prev), called where the program calls it: the missiles and casts inside their
+    /// resident sound bracket, the effect handlers and the aim with none. A front end animates it there.
     /// </summary>
     public Action<FlightAnimation>? Flight { get; set; }
 

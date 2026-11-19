@@ -100,11 +100,14 @@ public sealed class PorGame
     /// <c>SAVGAMx.DAT</c>, converted first (<see cref="Module.Por.PorEngineSave"/>; its party files are looked up next
     /// to it, then in the content's save folder).
     /// </summary>
+    /// <param name="started">Called with the game once the save is set up, before its entry (vector 4) runs: a front
+    /// end whose hosts read the game (its memory, its generator) hands it over here, since the entry may open screens
+    /// (the training hall, PROGRAM 0) that read it before this returns.</param>
     public static PorGame FromSave(IPorContent content, PorViewArt art, string savePath, PorPlayer player, uint seed,
-        int markerCounter = 0)
+        int markerCounter = 0, Action<PorGame>? started = null)
     {
         var (doc, problem) = ReadSave(content, savePath);
-        var g = FromSave(content, art, doc, player, seed, markerCounter);
+        var g = FromSave(content, art, doc, player, seed, markerCounter, started);
         if (problem is not null)
             g.Vm.Diagnostics.Insert(0, problem);
         return g;
@@ -116,10 +119,10 @@ public sealed class PorGame
     /// diagnostic, as before).
     /// </summary>
     public static PorGame FromSave(IPorContent content, PorViewArt art, byte[] save, string saveDir, PorPlayer player, uint seed,
-        string? fileName = null, int markerCounter = 0)
+        string? fileName = null, int markerCounter = 0, Action<PorGame>? started = null)
     {
         var (doc, problem) = ConvertOriginal(content, save, saveDir, fileName);
-        var g = FromSave(content, art, doc, player, seed, markerCounter);
+        var g = FromSave(content, art, doc, player, seed, markerCounter, started);
         if (problem is not null)
             g.Vm.Diagnostics.Insert(0, problem);
         return g;
@@ -153,10 +156,12 @@ public sealed class PorGame
     /// and version (<see cref="Module.Por.PorEngineSave.Check"/>); different module content is noted in the diagnostics.
     /// </summary>
     /// <param name="markerCounter">DS:6DDC as the session left it (a load keeps it; 0 at the start-up).</param>
+    /// <param name="started">Called with the loaded game before vector 4 runs (see the save-file overload).</param>
     public static PorGame FromSave(IPorContent content, PorViewArt art, Module.EngineSaveDocument save, PorPlayer player, uint seed,
-        int markerCounter = 0)
+        int markerCounter = 0, Action<PorGame>? started = null)
     {
         var g = Loaded(content, art, save, player, seed);
+        started?.Invoke(g);
         g.RunLoadedEntry(markerCounter);
         return g;
     }
@@ -173,13 +178,15 @@ public sealed class PorGame
     /// the game loop's first pass on that memory (<see cref="RunNewGameEntry"/>). <see cref="LoadedInterfaceState"/>
     /// tells which.
     /// </summary>
+    /// <param name="started">Called with the loaded game (<see cref="LoadedInterfaceState"/> set) before its entry runs.</param>
     public static PorGame LoadAtPartyMenu(IPorContent content, PorViewArt art, string savePath, PorPlayer player, uint seed,
-        int markerCounter = 0)
+        int markerCounter = 0, Action<PorGame>? started = null)
     {
         var (doc, problem) = ReadSave(content, savePath);
         var g = Loaded(content, art, doc, player, seed);
         if (problem is not null)
             g.Vm.Diagnostics.Insert(0, problem);
+        started?.Invoke(g);
         if (g.LoadedInterfaceState != 0)
             g.RunLoadedEntry(markerCounter);
         else
@@ -281,7 +288,9 @@ public sealed class PorGame
     }
 
     /// <summary>Enters area script <paramref name="script"/> with fresh VM memory at a square: script init, then vector 4.</summary>
-    public static PorGame Enter(IPorContent content, PorViewArt art, int script, int x, int y, int facing, PorPlayer player, uint seed)
+    /// <param name="started">Called with the game before the script init runs (as for a load's entry).</param>
+    public static PorGame Enter(IPorContent content, PorViewArt art, int script, int x, int y, int facing, PorPlayer player, uint seed,
+        Action<PorGame>? started = null)
     {
         int disk = content.ScriptDisk(script) ?? throw new ArgumentException($"no ECL block {script} in {content.Origin}");
         var g = new PorGame(content, art, player, seed);
@@ -290,6 +299,7 @@ public sealed class PorGame
         g.Memory.Position.Y = (byte)y;
         g.Memory.Position.Facing = (byte)facing;
         g.Vm.LoadScript(script, disk);
+        started?.Invoke(g);
         g.EntryRun = g.Vm.RunVector(EclLayout.VectorInit);
         g.Vm.CommandRead();
         g.FinishEntry(follow: true);

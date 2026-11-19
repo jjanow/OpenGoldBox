@@ -21,8 +21,9 @@ public sealed record CombatPicture(int Width, int Height, byte[] Pixels);
 /// Art setting (<see cref="UseArt"/>): the ground tiles, monster icons and COMSPR come from the chosen variant (the Amiga
 /// overlay, each with its palette), DOS where it has none. The Amiga DUNGCOM holds DOS's 25 tiles in the same order
 /// plus one (only DOS's count is used, so the rare-feature numbering after it stays DOS's); WILDCOM matches tile for
-/// tile. RANDCOM (read s19): both programs load it at tile 0x22 (DOS GAME.OVR 0xD867, after DUNGCOM 0–0x18 and WILDCOM
-/// 0–0x21; Amiga hunk 13 +0x1706) and share the terrain table, so the Amiga set (8 tiles; its 2 and 3 are DOS's 3 and
+/// tile. RANDCOM (read s19): both programs load it at tile 0x22 (DOS GAME.OVR 0xD867, after DUNGCOM or WILDCOM at 0,
+/// whose blocks hold 25 and 34 tiles: the loader 0x31A8E copies a block's own item count; Amiga hunk 13 +0x1706) and
+/// share the terrain table, so the Amiga set (8 tiles; its 2 and 3 are DOS's 3 and
 /// 2, its 6 and 7 never drawn) is used as it is, as the Amiga shows it. Party icons (<see cref="Party"/>) are built
 /// the Amiga way from the Amiga CHEAD/CBODY when the module has the program's colour pairs
 /// (<see cref="IPorContent.AmigaIconPairs"/>) and every colour nibble of the character has a pen
@@ -134,8 +135,10 @@ public sealed class CombatArt
 
     /// <summary>
     /// A ground tile by the terrain table's tile byte (DS:2744 + 4·t + 3; 22 = open ground): an index into the area's
-    /// set (DUNGCOM 0–0x18, WILDCOM 0–0x21), the rare-feature set from <see cref="RareFirstTile"/> (terrains 0x1A–0x1F
-    /// carry tiles 0x22–0x27).
+    /// set (DUNGCOM 0–0x18 when DS:49FA = 1, else WILDCOM 0–0x21; 0xD815), the rare-feature set from
+    /// <see cref="RareFirstTile"/> (terrains 0x1A–0x1F carry tiles 0x22–0x27). The program's draws (0x30938 and three
+    /// more → 0x31B5D) index the tile sheet by that byte with no case of their own (docs/re/combat-menu.md "Ground,
+    /// program read"). A dungeon's tiles 0x19–0x21 (the sheet's leftovers in the program) are reached by no terrain.
     /// </summary>
     public CombatPicture? Ground(int tile, bool dungeon)
     {

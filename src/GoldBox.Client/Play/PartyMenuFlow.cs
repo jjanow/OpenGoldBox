@@ -93,9 +93,10 @@ public sealed class PartyMenuFlow(Func<PlayerRequest, object?> ask, PartyMenuTex
     public Func<EclParty, uint, PorGame>? NewGame { get; init; }
 
     /// <summary>The save slots present (letters, in order) and a game loaded from one
-    /// (<see cref="PorGame.LoadAtPartyMenu"/>: its entry run unless the save's interface state is 0).</summary>
+    /// (<see cref="PorGame.LoadAtPartyMenu"/>: its entry run unless the save's interface state is 0). The third
+    /// argument is the load's <c>started</c> hook, to call with the game before its entry runs.</summary>
     public Func<IReadOnlyList<char>>? SaveSlots { get; init; }
-    public Func<char, uint, PorGame>? LoadGame { get; init; }
+    public Func<char, uint, Action<PorGame>, PorGame>? LoadGame { get; init; }
 
     /// <summary>Exit to DOS.</summary>
     public Action? Quit { get; init; }
@@ -418,19 +419,41 @@ public sealed class PartyMenuFlow(Func<PlayerRequest, object?> ask, PartyMenuTex
 
     // ---- the others -------------------------------------------------------------------------------------------------
 
-    /// <summary>View: the character page; Home / End switch members.</summary>
-    private void View()
+    /// <summary>
+    /// View (V at 0x19D13, shown with a current character: 0x19D23 calls 0x21AED, the routine the camp's V calls at
+    /// 0x197B3): the character page (0x21084, with the portrait rule of <see cref="PortraitShown"/>) and the View menu
+    /// after its prompt: Items, Spells, Trade, Drop as the character has them (<see cref="FightItemScreens.ViewEntries"/>;
+    /// DS:49F3 is 0 here) and Exit. Home / End do nothing (the loop has no member selection); Exit or Escape go back to
+    /// the party menu, where Home / End pick the member. The entries run
+    /// <see cref="CharacterView"/>'s screens, the camp's.
+    /// </summary>
+    public void View()
     {
-        while (Party.Current is { } c)
+        // The camp's screens on the menu's party. The party menu draws no text window: our notices (commands not built
+        // yet) go on its bottom line. No pool or treasure list here ([?] the money Trade / Drop are not built).
+        var t = new TradeContext
         {
-            var a = ask(new SheetRequest(c, [texts.Exit]) { PartySelect = true, CancelAction = 0 });
-            if (a is int m && (m == ChoiceRequest.PreviousMember || m == ChoiceRequest.NextMember))
+            Dialog = new Dialog(ask, new TextWindow()),
+            Text = Resources?.Texts ?? new GameText(),
+            Party = Party,
+            Pool = new uint[7],
+            Treasure = [],
+            Random = n => Random.Next((ushort)n),
+            Word =Resources?.ItemWord ?? (_ => null),
+            IsScroll = Resources?.IsScroll ?? (_ => false),
+            Halt = Halt,
+            MessagesOnBottomLine = true,
+        };
+        CharacterView.Run(t, Venue.PartyMenu, Page);
+
+        int Page(EclCharacter c, IReadOnlyList<ViewEntry> entries) =>
+            ask(new SheetRequest(c, [.. entries.Select(texts.ViewWord)])
             {
-                PartyMenu.Select(Party, m == ChoiceRequest.NextMember ? 1 : -1);
-                continue;
-            }
-            return;
-        }
+                Prompt = texts.ViewPrompt,
+                // 0x21AED's loop takes I, S, T, D and Exit only: no member selection (no 0x23819 call) in View.
+                PartySelect = false,
+                CancelAction = entries.Count - 1,
+            }) is int a ? a : entries.Count - 1;
     }
 
     /// <summary>Remove: SaveChar (0x1E684) of the current character, then 0x1CC10.</summary>
@@ -491,10 +514,17 @@ public sealed class PartyMenuFlow(Func<PlayerRequest, object?> ask, PartyMenuTex
         PorGame g;
         try
         {
-            g = LoadGame(slot, Random.Seed);
+            // A game that goes on (interface state not 0) is started before its vector 4 runs, as Begin's is: the
+            // entry may open the game's screens (the training hall), which the screen shows once it has handed over.
+            g = LoadGame(slot, Random.Seed, s =>
+            {
+                if (s.LoadedInterfaceState != 0)
+                    Started = s;
+            });
         }
         catch (Exception e) when (e is FormatException or IOException or System.Text.Json.JsonException)
         {
+            Started = null;
             // Not in the original (its saves always fit): a save this module refuses (another module or version).
             Console.Error.WriteLine($"load {slot}: {e.Message}");
             _notice = texts.CouldNotLoad(slot);
@@ -611,6 +641,13 @@ public sealed class PartyMenuTexts(PorProgramData? program, ClientResources reso
     }
     /// <summary>The lists' Exit word: the first word of the menu's Exit entry.</summary>
     public string Exit => MenuItem((int)PartyMenuItem.Exit).Split(' ')[0].ToUpperInvariant();
+
+    /// <summary>View's prompt (0x21AC7, "View:": the words follow at once, as in the fight's View).</summary>
+    public string ViewPrompt => (program?.Text("CombatMsg.ViewPrompt") ?? "VIEW:").ToUpperInvariant();
+
+    /// <summary>View's words (0x21AA6–0x21AC2, the program's, each with its trailing space trimmed).</summary>
+    public string ViewWord(ViewEntry e) =>
+        (program?.Text("CombatMsg.View" + e) ?? e.ToString()).Trim().ToUpperInvariant();
 
     public string DropForever(string name) => (T("Drop") ?? "DROP ") + name + (T("Forever") ?? "? ");
     public string DumpOutBack(string name) => (T("YouDump") ?? "") + name + (T("OutBack") ?? " IS GONE.");

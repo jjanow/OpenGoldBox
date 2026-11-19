@@ -57,6 +57,18 @@ public class CombatFlightTests
     }
 
     [Fact]
+    public void The_aim_cursor_flight_waits_nothing_but_scrolls_the_view_to_the_target()
+    {
+        // 0x15D02: delay 0, the cursor box (COMSPR 25). No position waits; the view follows it out of the view and
+        // ends with the target in it (ScrollView(target, 3) when still out).
+        var r = new Rig();
+        r.Chooser.Flight(FlightAnimation.AimCursor(1, 1, 20, 1));
+        Assert.Empty(r.Draws);
+        Assert.True(r.View.InView(20, 1));
+        Assert.Null(r.View.Flying);
+    }
+
+    [Fact]
     public void A_flight_to_its_own_square_draws_nothing()
     {
         var r = new Rig();

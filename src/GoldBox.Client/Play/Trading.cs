@@ -13,6 +13,8 @@ public enum Venue
     Shop,
     /// <summary>The loot step after a fight (DS:49F3 = 6).</summary>
     Loot,
+    /// <summary>The party menu and the training hall (0x19AE0 sets DS:49F3 = 0): the items menu has no Use.</summary>
+    PartyMenu,
 }
 
 /// <summary>
@@ -46,6 +48,9 @@ public sealed class TradeContext
     /// thread; the exception is thrown on afterwards, so the screen that hit it never goes on.
     /// </summary>
     public Action<ProgramHaltException>? Halt { get; init; }
+
+    /// <summary>The screen has no text window (the party menu): our notices go on the bottom line as a key wait.</summary>
+    public bool MessagesOnBottomLine { get; init; }
 
     public EclCharacter? Current => Party.Current;
 

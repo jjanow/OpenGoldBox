@@ -70,7 +70,7 @@ public sealed class HallText(PorProgramData? program)
 /// <summary>
 /// The training hall, ECL PROGRAM 0 (GAME.OVR 0x19AE0), and Train Character (0x1C32D) on the logic thread
 /// (docs/re/training.md). Rules are Core's <see cref="TrainingHall"/>; the other entries go to the screens that exist
-/// (View, Save) or to <see cref="HallHooks"/> (character creation and the roster: not part of this screen).
+/// (Save; View without a hook) or to <see cref="HallHooks"/> (character creation, the roster and View: the party menu's).
 /// </summary>
 public static class HallScreens
 {
@@ -121,7 +121,11 @@ public static class HallScreens
                     Train(h.Trainer(), cheat);
                     break;
                 case TrainingHall.Entry.View:
-                    CharacterView.Run(camp.Trade, Venue.Camp);
+                    // 0x21AED, the camp's View, with DS:49F3 = 0 (no Use on the items menu).
+                    if (h.Hooks.View is { } view)
+                        view();
+                    else
+                        CharacterView.Run(camp.Trade, Venue.PartyMenu);
                     break;
                 case TrainingHall.Entry.Save:
                     CampScreens.Save(camp);
@@ -490,6 +494,9 @@ public sealed class HallHooks
     public Action? Add { get; set; }
     public Action? Remove { get; set; }
     public Action? Load { get; set; }
+    /// <summary>View (0x21AED on the program's page: <see cref="PartyMenuFlow.View"/>); null: the camp's View as it is
+    /// drawn in the camp.</summary>
+    public Action? View { get; set; }
     /// <summary>A message an entry left for the bottom line (Drop's farewell; [?] its colour), taken after each entry.</summary>
     public Func<string?>? Notice { get; set; }
 

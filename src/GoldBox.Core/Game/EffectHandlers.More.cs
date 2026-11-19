@@ -7,9 +7,9 @@ namespace GoldBox.Core.Game;
 // removed). Handlers 40, 73–77, 81–86 and 121 are in EffectHandlers.Holds.cs.
 public sealed partial class EffectHandlers
 {
-    /// <summary>Ids with no handler: 88 has no entry in DS:6828 (0x11DFD never writes it; [?] a creature carrying it
-    /// would far-call whatever the slot holds).</summary>
-    public static readonly byte[] UnmodelledHandlers = [88];
+    /// <summary>Ids with no handler modelled (none since handler 88, whose DS:6828 entry the spell table builder writes
+    /// at 0x2A7B9, was read).</summary>
+    public static readonly byte[] UnmodelledHandlers = [];
 
     /// <summary>DS:6821: set by the item handlers 131 and 132 (read elsewhere [?]).</summary>
     public byte ItemFlag { get; set; }
@@ -348,7 +348,7 @@ public sealed partial class EffectHandlers
         CallHoldHandlers(id, c, node, removed, ref handled);
     }
 
-    /// <summary>Handlers 40, 73–77, 81–86, 121 (EffectHandlers.Holds.cs).</summary>
+    /// <summary>Handlers 40, 73–77, 81–86, 88, 121 (EffectHandlers.Holds.cs).</summary>
     partial void CallHoldHandlers(byte id, EclCharacter c, byte[]? node, bool removed, ref bool handled);
 
     /// <summary>0x2BD18: dice with the count stored in DS:681C first.</summary>

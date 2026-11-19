@@ -20,8 +20,13 @@ public static class CharacterView
     private static readonly string[] Statuses =
         ["OKAY", "ANIMATED", "TEMP GONE", "RUNNING", "UNCONSCIOUS", "DYING", "DEAD", "STONED", "GONE"];
 
-    /// <summary>The character page until Exit.</summary>
-    public static void Run(TradeContext t, Venue venue)
+    /// <summary>
+    /// The character page until Exit (or Escape). <paramref name="page"/> asks for the page with the entries shown and
+    /// answers the picked entry's index, or a member answer (<see cref="TradeContext.SelectMember"/>); null: our page
+    /// (<see cref="Sheet(TradeContext, EclCharacter)"/> as a list page). The party menu passes the program's page
+    /// (<see cref="PartyMenuFlow"/>: its V calls this routine, 0x19D23 → 0x21AED, as the camp's does, 0x197B3).
+    /// </summary>
+    public static void Run(TradeContext t, Venue venue, Func<EclCharacter, IReadOnlyList<ViewEntry>, int>? page = null)
     {
         while (t.Current is { } c)
         {
@@ -29,17 +34,23 @@ public static class CharacterView
             // no memorised spells gets Items, Trade, Drop, Exit, so its Exit (4th) leaves the shared highlight on the
             // shop menu's 4th entry (Appraise).
             var entries = FightItemScreens.ViewEntries(c, venue == Venue.Shop ? FightItemScreens.InShop : (byte)0);
-            string[] actions = [.. entries.Select(e => e.ToString().ToUpperInvariant())];
-            var a = t.Dialog.Page(new ListRequest(Sheet(t, c), [], actions, actions.Length - 1) { PartySelect = true, SharedHighlight = true });
-            if (t.SelectMember(a.Action))
+            int action = page is not null
+                ? page(c, entries)
+                : t.Dialog.Page(new ListRequest(Sheet(t, c), [], [.. entries.Select(Word)], entries.Count - 1)
+                {
+                    PartySelect = true,
+                    SharedHighlight = true,
+                }).Action;
+            if (t.SelectMember(action))
                 continue;
-            switch (a.Action >= 0 && a.Action < entries.Count ? entries[a.Action] : ViewEntry.Exit)
+            var entry = action >= 0 && action < entries.Count ? entries[action] : ViewEntry.Exit;
+            switch (entry)
             {
                 case ViewEntry.Items:
                     Items(t, venue);
                     break;
                 case ViewEntry.Spells or ViewEntry.Trade or ViewEntry.Drop:
-                    NotBuilt(t, actions[a.Action]);
+                    NotBuilt(t, Word(entry));
                     break;
                 default:
                     return;
@@ -47,8 +58,18 @@ public static class CharacterView
         }
     }
 
-    private static void NotBuilt(TradeContext t, string what) =>
-        t.Dialog.Say(what + ": NOT IN THIS BUILD YET.", colour: 14);
+    private static string Word(ViewEntry e) => e.ToString().ToUpperInvariant();
+
+    /// <summary>Our notice for a command not built yet: in the text window, or on the bottom line where the screen has
+    /// no text window (<see cref="TradeContext.MessagesOnBottomLine"/>: the party menu).</summary>
+    private static void NotBuilt(TradeContext t, string what)
+    {
+        string text = what + ": NOT IN THIS BUILD YET.";
+        if (t.MessagesOnBottomLine)
+            t.Dialog.Ask(new KeyRequest(text) { Colour = 14 });
+        else
+            t.Dialog.Say(text, colour: 14);
+    }
 
     /// <summary>The character page's lines: name, abilities, levels, hit points, money, weight.</summary>
     public static List<ListLine> Sheet(TradeContext t, EclCharacter c) => Sheet(t.Text, c);
@@ -96,7 +117,11 @@ public static class CharacterView
         while (t.Current is { } c)
         {
             Carrying.RecalculateWeight(c); // the items screen redraw recalculates (DOSBox s11: weight fresh again)
-            var actions = new List<string> { "READY", "USE", "TRADE", "DROP", "HALVE", "JOIN" };
+            // Use needs DS:49F3 at 2–4 (or a fight; 0x21F32): never at the party menu or in the training hall (0).
+            var actions = new List<string> { "READY" };
+            if (venue != Venue.PartyMenu)
+                actions.Add("USE");
+            actions.AddRange(["TRADE", "DROP", "HALVE", "JOIN"]);
             int sell = -1, id = -1;
             if (venue == Venue.Shop)
             {

@@ -447,7 +447,7 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
     {
         int speed = memory().GameSpeed;
         FightView.Speed = (byte)(speed <= 9 ? speed : 0);
-        FightView.Dungeon = memory().ViewMode == 1; // [?] the tile set follows DS:49FA (combat-map.md 0xD815)
+        FightView.Dungeon = memory().ViewMode == 1; // DUNGCOM only when DS:49FA = 1, else WILDCOM (0xD81B; combat-menu.md "Ground")
         Chooser.Attach(fight);
         fight.State.Sound = Sound;
         try

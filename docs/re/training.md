@@ -60,8 +60,8 @@ draws the message, the page and the Learn list, and takes J as in the hall (`Hal
 and question equal DOSBox-X's pixel for pixel (Xvfb). A start word equal to the program's word also skips the
 introduction (the Client has no code wheel).
 
-Engine (s20): the Client's hall (`HallScreens.Run`) runs Train, View, Save, Begin and Exit itself; Create, Drop, Modify,
-Add and Remove are the party menu's (`PartyMenuFlow` through `HallHooks`, on the game's party and generator; the
+Engine (s20): the Client's hall (`HallScreens.Run`) runs Train, Save, Begin and Exit itself; Create, Drop, Modify,
+View, Add and Remove are the party menu's (`PartyMenuFlow` through `HallHooks`, on the game's party and generator; the
 creation and roster pages open as a `PartyMenuScreen` overlay over the explore screen), with $6E3E following the list
 (the join 0x1F42C adds one, 0x1CC10 takes one off) and their messages (Drop's farewell, Modify's refusal) on the
 bottom line. Load is offered only without a current character (the flags above), so in the hall it needs every member
@@ -76,9 +76,10 @@ on at its PC in the **loaded** script area. DOSBox-X: a scratch save whose vecto
 PRINT, a one-word HMENU (disk 3, map 0); in the hall S wrote a hall save, a copy of it had the PRINT text changed; R × 6,
 L, the copy: the menu stayed with its party and Train, and Begin printed the copy's text. Client:
 `PorGame.LoadInMenu` (the hall's party object keeps its identity, the members replaced; $6E3E comes with the memory),
-pixel-equal to DOSBox-X before and after Begin (apart from the Client's help line). `[?]` The Client cannot open the
-hall from a vector 4 run by a load from the command line or the start-up menu (its memory hook needs the game object,
-which exists only after the entry): the Client test used a step (vector 0) instead.
+pixel-equal to DOSBox-X before and after Begin (apart from the Client's help line); that check used a step (vector 0).
+A load's vector 4 can open the hall too (`--save`, the start-up menu's Load, a Load in the game): the loads hand the
+game to the Client before the entry runs (`PorGame.FromSave` / `LoadAtPartyMenu` / `Enter`, `started`), since the
+hall reads the game's memory while vector 4 is still running (s26; before, the Client crashed there).
 
 **After the hall (PROGRAM 0 returns), P + D (s22).** Begin leaves DS:49F3 = 4 and the handler calls START 0x3379, whose
 case 4 draws every window again through 0x32CA (03F1:02E8 with 1, 1, 38, 22; 1, 17, 38, 22; 1, 1, 15, 15; 3, 3, 13,

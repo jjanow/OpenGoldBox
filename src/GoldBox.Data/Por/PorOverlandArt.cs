@@ -13,9 +13,9 @@ public sealed record OverlandPicture(byte[] Pixels, bool[] Opaque);
 /// (DS:5E52, tiles 0–127) and block 2 into the high sheet (DS:5E56, tiles 128–255) (GAME.OVR 0xEAA9 / 0xEACB). The
 /// tile draw 0x31B5D takes tile t &lt; 128 from the low sheet, else t &amp; 0x7F from the high one, drawn whole.</item>
 /// <item>Outdoors, LOADFILES (o3 ≠ 255, $49E6 = 0; 0x1A49) copies <c>BACPAC.DAX</c> block 1's 40 tiles over low tiles
-/// 0–39 (0x31A8E: start 0, count 0x28). The combat ground loads (0xD82C–0xD86D: DUNGCOM or WILDCOM at 0, RANDCOM at
-/// 34) overwrite the same low tiles; BACPAC puts back what they overwrote (its 40 tiles equal SQRPACI's 0–39 in v1.3,
-/// tested).</item>
+/// 0–39 (0x31A8E: start 0; it copies the block's own item count, the 0x28 passed with it is not read). The combat
+/// ground loads (0xD82C–0xD86D: DUNGCOM's 25 or WILDCOM's 34 tiles at 0, RANDCOM's 6 at 34) overwrite the same low
+/// tiles; BACPAC puts back what they overwrote (its 40 tiles equal SQRPACI's 0–39 in v1.3, tested).</item>
 /// <item>The party marker: <c>ICON.DAX</c> blocks 0, 1, 2 and 128, 129, 130 (animation slots 9–11, loaded on the first
 /// overland command, 0x17285–0x172D5), colour 0 see-through, then light magenta (13) recoloured to black and kept
 /// opaque (0x31E22: the remap tables DS:0CD2 → DS:0CF2). Drawn clipped over the tiles, mirrored for facings above 3

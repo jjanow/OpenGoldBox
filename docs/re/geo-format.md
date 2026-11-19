@@ -384,8 +384,10 @@ Checked against DOSBox-X (PoR v1.3, EGA, save A put on the overland with `goldbo
 - **Tiles.** Two sheets of 128 tiles of 24 × 24: the game init loads `SQRPACI.DAX` block 1 (DS:5E52, tiles 0–127) and
   block 2 (DS:5E56, tiles 128–255) (GAME.OVR 0xEAA9 / 0xEACB); the tile draw 0x31B5D takes t < 128 from the low sheet,
   else t & 0x7F from the high one. Outdoors LOADFILES (o3 ≠ 255, $49E6 = 0) copies `BACPAC.DAX` block 1 (40 tiles) over
-  low tiles 0–39 (0x1A4E → 0x31A8E, start 0, count 0x28); the combat ground loads (DUNGCOM / WILDCOM at 0, RANDCOM at
-  34, 0xD82C) overwrite the same tiles, so BACPAC puts them back. Its 40 tiles equal SQRPACI's 0–39 (tested).
+  low tiles 0–39 (0x1A4E → 0x31A8E, start 0; the loader copies the block's own item count, the 0x28 passed with it is
+  not read, `combat-menu.md` "Ground, program read"); the combat ground loads (DUNGCOM's 25 / WILDCOM's 34 tiles at 0,
+  RANDCOM's 6 at 34, 0xD82C) overwrite the same tiles, so BACPAC puts them back. Its 40 tiles equal SQRPACI's 0–39
+  (tested).
 - **Screen.** The view is at pixel (8, 8) (window cells 1–15, no inner box), tile (dx, dy) at (24·dx, 24·dy). The
   window's top-left square is (column + x − 2, y − 2) clamped to 0–39 / 0–31 (0x2DD9B).
 - **Marker** (0x2DB87): ICON.DAX blocks 0–2 and 128–130 (animation slots 9–11, loaded when the command routine starts

@@ -796,8 +796,8 @@ public sealed class CombatScreen
             CombatArt.Draw(f, skull, MapX + (hm.X - _view.ViewX) * Square, MapY + (hm.Y - _view.ViewY) * Square, false, clip);
         if (_view.Flash is { } fl && _art.Sprite(fl.Sprite) is { } flash)
             CombatArt.Draw(f, flash, MapX + (fl.X - _view.ViewX) * Square, MapY + (fl.Y - _view.ViewY) * Square, fl.Mirror, clip);
-        // The moving icon (START 0x25C9) at its position in thirds of a square. [?] The drawing routine 0x464:0xD71's
-        // own offsets are not read: the view's origin is taken as for the squares.
+        // The moving icon (START 0x25C9) at its position in thirds of a square (8 px): 0x464:0xD71 draws it into the view
+        // buffer DS:4A20 in the same units as the map's cells (0x31679 / 0x32097 at cell × 3), so from the same origin.
         if (_view.Flying is { } fy && _art.Sprite(fy.Sprite) is { } flying)
             CombatArt.Draw(f, flying, MapX + fy.Cx * (Square / 3), MapY + fy.Cy * (Square / 3), fy.Mirror, clip);
     }

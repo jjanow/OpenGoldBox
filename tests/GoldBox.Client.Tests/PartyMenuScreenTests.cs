@@ -85,7 +85,11 @@ public class PartyMenuScreenTests
             NewGame = (party, s) => rig!.Game = PorGame.NewGame(dir, art, party, who, s),
             SaveGame = saves is null ? null : (l, party, loaded) => player.SaveAtPartyMenu(l, party, dir, loaded),
             SaveSlots = saves is null ? null : () => [.. "ABCDEFGHIJ".Where(l => File.Exists(Slot(l)))],
-            LoadGame = saves is null ? null : (l, s) => rig!.Game = PorGame.LoadAtPartyMenu(dir, art, Slot(l), who, s),
+            LoadGame = saves is null ? null : (l, s, started) => rig!.Game = PorGame.LoadAtPartyMenu(dir, art, Slot(l), who, s, started: g =>
+            {
+                rig!.Game = g;
+                started(g);
+            }),
             Resources = player.Resources,
             ProgramWord = () => word,
         };
@@ -560,6 +564,48 @@ public class PartyMenuScreenTests
         }
     }
 
+    /// <summary>
+    /// Load at the start-up menu of a save whose vector 4 opens the training hall: the game is started (and the screen
+    /// hands over to its explore screen) before the entry runs, so the hall reads the loaded game; Begin ends the entry
+    /// and the menu's run with it.
+    /// </summary>
+    [Fact]
+    public void Load_of_a_save_whose_entry_opens_the_hall_hands_over_first()
+    {
+        if (Dir() is null)
+            return;
+        var saves = Directory.CreateTempSubdirectory("goldbox-saves-");
+        try
+        {
+            HallPlayTests.HallEntrySave(new PorGameDirectory(Dir()!), saves.FullName);
+            using var r = Start(14, saves: saves.FullName);
+            r.Key(Keys.L);
+            r.Key(Keys.B);                        // slot B
+            Assert.Null(r.Runner.Fault);
+            Assert.IsType<HallMenuRequest>(r.Runner.Pending);
+            Assert.NotNull(r.Game);
+            Assert.Same(r.Game, r.Flow.Started);
+            r.Act(GameAction.Confirm);            // any update hands over
+            var explore = Assert.IsType<ExploreScreen>(Assert.Single(r.Host.Pushed));
+            r.Input.Update(new KeyboardState(Keys.B), default, default, TimeSpan.Zero, _ => null);
+            explore.Update(r.Input);              // Begin: the hall ends, vector 4 and the menu's run with it
+            r.Input.Update(default, default, default, TimeSpan.Zero, _ => null);
+            for (int i = 0; i < 200 && r.Runner.Busy; i++)
+            {
+                Thread.Sleep(5);
+                explore.Update(r.Input);
+            }
+            Assert.Null(r.Runner.Fault);
+            Assert.False(r.Runner.Busy);
+            Assert.Same(r.Game, r.Flow.Started);
+            Assert.Equal(6, r.Game!.Memory.Party!.Members.Count);
+        }
+        finally
+        {
+            saves.Delete(true);
+        }
+    }
+
     [Fact]
     public void Exit_with_a_party_asks_for_a_slot_until_a_save_is_written()
     {
@@ -583,6 +629,135 @@ public class PartyMenuScreenTests
         {
             saves.Delete(true);
         }
+    }
+
+    // ---- View (0x19D13 → 0x21AED, the camp's View) -------------------------------------------------------------------
+
+    /// <summary>Two human fighters made by Core's creation (they get gold, no items); the first also carries an item.</summary>
+    private static Rig WithTwoFighters() => Start(5, (flow, t, items) =>
+    {
+        foreach (var (seed, name) in new[] { (31u, "ONE"), (32u, "TWO") })
+        {
+            var cc = new CharacterCreation(t, new TurboPascalRandom(seed).Next);
+            cc.PickRace(7);
+            cc.PickGender(0);
+            cc.PickClass(2);
+            cc.PickAlignment(cc.AlignmentChoices()[0]);
+            cc.Roll(items);
+            cc.SetName(name);
+            PartyMenu.Join(flow.Party, cc.Character, c => LevelStats.Apply(c, t.Levels));
+        }
+        var item = new byte[EclCharacter.ItemRecordSize];
+        item[0x2E] = 1;
+        flow.Party.Members[0].Items.Add(item);
+        flow.Party.CurrentIndex = 0;
+    });
+
+    private static IndexedFrame Drawn(Rig r)
+    {
+        var f = new IndexedFrame(320, 200);
+        r.Screen.Draw(f, r.Input);
+        return f;
+    }
+
+    /// <summary>The colours drawn in a text cell (8 × 8).</summary>
+    private static HashSet<byte> Cell(IndexedFrame f, int col, int row)
+    {
+        var s = new HashSet<byte>();
+        for (int y = 0; y < 8; y++)
+            for (int x = 0; x < 8; x++)
+                s.Add(f[col * 8 + x, row * 8 + y]);
+        return s;
+    }
+
+    /// <summary>
+    /// V runs 0x21AED, the camp's View: the program's page with the View menu after "View:" (DOSBox-X s25: a fighter
+    /// with an item and gold gets Items, Trade, Drop, Exit); Home / End do nothing in View (0x21AED's loop has no member
+    /// selection); Items opens the items menu without Use (DS:49F3 = 0) and comes back to the View menu; Escape and Exit
+    /// go back to the party menu; a member without items has no Items.
+    /// </summary>
+    [Fact]
+    public void View_is_the_camp_view_menu_on_the_program_page()
+    {
+        if (Dir() is null)
+            return;
+        using var r = WithTwoFighters();
+        var party = r.Flow.Party;
+        r.Key(Keys.V);
+        var page = Assert.IsType<SheetRequest>(r.Runner.Pending);
+        Assert.Same(party.Members[0], page.Character);
+        Assert.Equal("VIEW:", page.Prompt);
+        Assert.Equal(["ITEMS", "TRADE", "DROP", "EXIT"], page.Actions);
+        Assert.False(page.PartySelect);
+        Assert.Equal(3, page.CancelAction);
+
+        // The page as before (portrait window, View's layout) with the words right after the prompt on row 24.
+        var f = Drawn(r);
+        Assert.Contains((byte)13, Cell(f, 0, 24));             // V of the prompt
+        Assert.Contains(Chrome.White, Cell(f, 5, 24));         // I of ITEMS (the hotkey)
+        Assert.Contains(Chrome.Green, Cell(f, 12, 24));        // R of TRADE
+        Assert.True(Cell(f, 33, 6).Count > 1);                 // the portrait
+
+        r.Key(Keys.End);                                       // no member switch inside View
+        Assert.Same(page, r.Runner.Pending);
+        Assert.Same(party.Members[0], party.Current);
+
+        r.Key(Keys.I);                                         // Items: the camp's items menu
+        var items = Assert.IsType<ListRequest>(r.Runner.Pending);
+        Assert.Equal(["READY", "TRADE", "DROP", "HALVE", "JOIN", "EXIT"], items.Actions);
+        Assert.Single(items.Rows);
+        r.Key(Keys.Escape);
+        Assert.IsType<SheetRequest>(r.Runner.Pending);         // back on the View menu
+
+        r.Key(Keys.T);                                         // Trade: not built yet, said on the bottom line
+        var note = Assert.IsType<KeyRequest>(r.Runner.Pending);
+        Assert.Equal("TRADE: NOT IN THIS BUILD YET.", note.Prompt);
+        Assert.Contains(Chrome.Yellow, Cell(Drawn(r), 0, 24));
+        r.Key(Keys.Enter);
+        Assert.IsType<SheetRequest>(r.Runner.Pending);
+
+        r.Key(Keys.Escape);                                    // Escape (the menu routine's 0) ends View
+        Assert.IsType<PartyMenuRequest>(r.Runner.Pending);
+        r.Key(Keys.V);
+        Assert.IsType<SheetRequest>(r.Runner.Pending);
+        r.Key(Keys.E);                                         // and Exit
+        Assert.IsType<PartyMenuRequest>(r.Runner.Pending);
+        Assert.Equal(3, r.Flow.Highlight.Index);               // Exit moved the shared highlight (4th word)
+
+        r.Key(Keys.End);                                       // the next member, picked on the party menu
+        r.Key(Keys.V);
+        page = Assert.IsType<SheetRequest>(r.Runner.Pending);
+        Assert.Same(party.Members[1], page.Character);
+        Assert.Equal(["TRADE", "DROP", "EXIT"], page.Actions); // no items: no Items
+        r.Key(Keys.E);
+        Assert.IsType<PartyMenuRequest>(r.Runner.Pending);
+    }
+
+    /// <summary>The pad and the mouse on View's menu: a click on a word picks it, B backs out, A takes the highlighted
+    /// word.</summary>
+    [Fact]
+    public void Pad_and_mouse_work_the_view_menu()
+    {
+        if (Dir() is null)
+            return;
+        using var r = WithTwoFighters();
+        r.Key(Keys.V);
+        r.Act(GameAction.NextMember);                          // nothing in View
+        Assert.Same(r.Flow.Party.Members[0], Assert.IsType<SheetRequest>(r.Runner.Pending).Character);
+        r.Act(GameAction.Cancel);
+        Assert.IsType<PartyMenuRequest>(r.Runner.Pending);
+
+        r.Key(Keys.V);
+        r.Input.Update(default, default, default, TimeSpan.Zero, _ => null);
+        if (r.Screen.MapClick(new ScreenClick(6 * 8 + 3, 24 * 8 + 3, false)) is { } a)  // ITEMS (column 5–9)
+            r.Input.Inject(a);
+        r.Screen.Update(r.Input);
+        Assert.IsType<ListRequest>(r.Runner.Pending);
+        r.Act(GameAction.Cancel);
+        Assert.IsType<SheetRequest>(r.Runner.Pending);
+        r.Act(GameAction.MenuLeft);                            // the highlight wraps to EXIT
+        r.Act(GameAction.Confirm);
+        Assert.IsType<PartyMenuRequest>(r.Runner.Pending);
     }
 
     // ---- J and Train at the start-up menu (s24) ------------------------------------------------------------------

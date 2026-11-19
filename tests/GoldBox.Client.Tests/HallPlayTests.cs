@@ -342,7 +342,7 @@ public class HallPlayTests
                 PorFight.Kit(dir)!.Items, new PorRoster(folder.FullName), 1)
             {
                 SaveSlots = () => ['A'],
-                LoadGame = (_, _) => throw new InvalidOperationException("the hall does not load itself"),
+                LoadGame = (_, _, _) => throw new InvalidOperationException("the hall does not load itself"),
             };
             flow.Party = game.Memory.Party!;
             flow.Random = game.Rng;
@@ -355,6 +355,7 @@ public class HallPlayTests
             };
             player.HallHooks.Notice = flow.TakeNotice;
             player.HallHooks.Modify = flow.Modify;
+            player.HallHooks.View = flow.View;
             var host = new Stack();
             char? loaded = null;
             var input = new ActionInput(InputBindings.Defaults());
@@ -410,6 +411,15 @@ public class HallPlayTests
             Assert.Contains(party.Current!.Name.ToUpperInvariant(), player.Hall!.Message!.Value.Text);
             Settle(r);
             Assert.IsType<HallMenuRequest>(runner.Pending);
+            Key(r, Keys.V);                                  // View: the party menu's (0x21AED on the program's page)
+            Settle(r);
+            var view = Assert.IsType<SheetRequest>(runner.Pending);
+            Assert.Same(party.Current, view.Character);
+            Assert.Equal(FightItemScreens.ViewEntries(party.Current!, 0).Count, view.Actions.Count);
+            Assert.Equal("EXIT", view.Actions[^1]);
+            runner.Answer(view.CancelAction);
+            Settle(r);
+            Assert.IsType<HallMenuRequest>(runner.Pending);
             Key(r, Keys.B);                                  // Begin: the hall ends
             Settle(r);
             Assert.False(runner.Busy);
@@ -427,6 +437,84 @@ public class HallPlayTests
             Assert.False(runner.Busy);
             Assert.Equal('A', loaded);
             Assert.IsType<NoScreen>(host.Pushed[^1]);
+        }
+        finally
+        {
+            runner.Dispose();
+            folder.Delete(true);
+        }
+    }
+
+    /// <summary>SAVGAMA.DAT with its script area replaced: vector 4 (the entry after a load) runs PROGRAM 0, the other
+    /// vectors an EXIT (as tools/scripts/por_test_saves.py builds its test saves), written as the engine save
+    /// <c>b.json</c> in <paramref name="folder"/> (save A's party, interface state 2: the load leaves the menu).</summary>
+    internal static string HallEntrySave(PorGameDirectory dir, string folder)
+    {
+        var d = File.ReadAllBytes(dir.Find("SAVGAMA.DAT")!);
+        var area = d.AsSpan(PorSaveGame.OffScript, Core.Ecl.EclLayout.AreaSize);
+        area.Clear();
+        for (int v = 0; v < 5; v++)
+        {
+            ushort to = v == 4 ? (ushort)0x9920 : (ushort)0x991F;   // $991F EXIT (0x00), $9920 the code
+            area[4 * v] = 1;
+            area[4 * v + 1] = 1;
+            area[4 * v + 2] = (byte)to;
+            area[4 * v + 3] = (byte)(to >> 8);
+        }
+        area[0x20] = 0x38;                                          // PROGRAM 0
+        area[0x21] = 0;
+        area[0x22] = 0;
+        Assert.Equal(2, d[PorSaveGame.OffInterface]);
+        var path = Path.Combine(folder, GoldBox.Data.Module.Por.PorEngineSave.FileName('B'));
+        GoldBox.Data.Module.Por.PorEngineSave.Write(path, GoldBox.Data.Module.Por.PorEngineSave.FromFolders(d, "SAVGAMB.DAT",
+            GoldBox.Data.Module.Por.PorEngineSave.Identity(dir), dir.LoadBlock, [dir.Root]));
+        return path;
+    }
+
+    /// <summary>
+    /// A load whose vector 4 opens the training hall (a start with --save, a load in the game): the player's hosts read
+    /// the game (<c>() => game!.Memory</c>) while vector 4 runs, so the load hands the game over before the entry
+    /// (<c>started</c>). Without it the hall's first read of the memory threw (no game yet) or read the game being left.
+    /// The hall comes up on the loaded game's party under its explore screen, and Begin ends the entry.
+    /// </summary>
+    [Fact]
+    public void Hall_opened_by_a_loaded_saves_entry_runs_on_the_loaded_game()
+    {
+        if (Dir() is null)
+            return;
+        var dir = new PorGameDirectory(Dir()!);
+        var art = PorViewArt.Load(dir);
+        var runner = new ScriptRunner();
+        PorGame? game = null;
+        var player = new ClientPlayer(runner, () => game!.Memory) { Resources = ClientResources.Load(dir), Game = () => game };
+        var who = new PorPlayer(player, player, player, player);
+        var folder = Directory.CreateTempSubdirectory("hall-entry-");
+        try
+        {
+            var path = HallEntrySave(dir, folder.FullName);
+            var input = new ActionInput(InputBindings.Defaults());
+            for (int pass = 0; pass < 2; pass++)            // with no game yet (start-up), then from a running game
+            {
+                var before = game;
+                PorGame? handed = null;
+                runner.Start(() => game = PorGame.FromSave(dir, art, path, who, 7, started: g => handed = game = g));
+                Assert.Null(runner.Fault);
+                Assert.IsType<HallMenuRequest>(runner.Pending);
+                Assert.NotNull(handed);
+                Assert.NotSame(before, handed);
+                Assert.Same(handed, game);
+                Assert.Equal(6, handed!.Memory.Party!.Members.Count);
+                var r = new Rig(new ExploreScreen(handed, player, runner, new NoHost()), handed, runner, input, player);
+                Settle(r);
+                Assert.NotNull(player.Hall);
+                Key(r, Keys.B);                              // Begin: the hall ends, and so does vector 4
+                Settle(r);
+                Assert.Null(runner.Fault);
+                Assert.False(runner.Busy);
+                Assert.Null(player.Hall);
+                Assert.Same(handed, game);
+                Assert.Equal(6, game!.Memory.Party!.Members.Count);
+            }
         }
         finally
         {
