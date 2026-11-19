@@ -138,6 +138,20 @@ public sealed class PartyMenuFlow(Func<PlayerRequest, object?> ask, PartyMenuTex
     /// <summary>A save loaded with interface state 0: the menu goes on with its party; Begin runs its memory.</summary>
     private PorGame? _loaded;
 
+    /// <summary>The game's memory when the menu runs in the training hall (PROGRAM 0); null at start-up.</summary>
+    public EclMemory? GameMemory { get; set; }
+
+    /// <summary>
+    /// Whether the character page (View 0x21084, also Modify's) draws the portrait window: only with the portraits flag
+    /// DS:49F5 set ($49FF bit 0) and the disk byte DS:5376 = 3 (0x21530–0x2153E). At start-up both hold (0xE965,
+    /// 0x19AE7); a Load leaves the save's disk byte and flags (DOSBox-X s25: a state-0 save of disk 2, or with portraits
+    /// off, shows Modify's page with no portrait and no box); the hall sets the disk to 3.
+    /// </summary>
+    public bool PortraitShown => (GameMemory ?? _loaded?.Memory) is not { } m || (CampSettings.Portraits(m) && m.Disk == 3);
+
+    /// <summary>A save the hall's Load could not read (not in the original: its saves always fit).</summary>
+    public void CouldNotLoad(char slot) => _notice = texts.CouldNotLoad(slot);
+
     /// <summary>The message an entry left for the bottom line (Drop's farewell, no saves), taken once.</summary>
     public string? TakeNotice()
     {
@@ -194,6 +208,13 @@ public sealed class PartyMenuFlow(Func<PlayerRequest, object?> ask, PartyMenuTex
                     break;
                 case PartyMenuItem.Modify:
                     Modify();
+                    // The refusal goes through the message routine START 0x7DF8: the bottom line in yellow for game
+                    // speed × 225 ms, then the menu's prompt again without a key (DOSBox-X s25).
+                    if (_notice is { } refusal && Trainer() is { } h)
+                    {
+                        _notice = null;
+                        HallScreens.Message(h, refusal, 14);
+                    }
                     break;
                 case PartyMenuItem.Train:
                     if (Trainer() is { } trainer)
@@ -242,7 +263,7 @@ public sealed class PartyMenuFlow(Func<PlayerRequest, object?> ask, PartyMenuTex
     }
 
     /// <summary>VM $6DA8 as the menu reads it: a save loaded here (interface state 0) brings its memory; else 0.</summary>
-    private ushort HallMask => _loaded?.Memory.Read(TrainingHall.HallMaskCell) ?? 0;
+    private ushort HallMask => (GameMemory ?? _loaded?.Memory)?.Read(TrainingHall.HallMaskCell) ?? 0;
 
     /// <summary>J and Train on the menu's party, generator and (after a load here) the save's speed and hall mask.</summary>
     private HallTrainer? Trainer() => Resources is not { } r ? null : new HallTrainer
@@ -254,7 +275,7 @@ public sealed class PartyMenuFlow(Func<PlayerRequest, object?> ask, PartyMenuTex
         Party = Party,
         Tables = r.Training,
         HallMask = HallMask,
-        GameSpeed = _loaded?.Memory.GameSpeed ?? 1,
+        GameSpeed = (GameMemory ?? _loaded?.Memory)?.GameSpeed ?? 1,
         Random = n => Random.Next(n),
         Halt = Halt,
         ProgramWord = ProgramWord,

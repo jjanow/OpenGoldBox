@@ -1,4 +1,5 @@
 using GoldBox.Data.Dax;
+using GoldBox.Data.Por;
 
 namespace GoldBox.Data.Module.Por;
 
@@ -12,6 +13,8 @@ public sealed class PorAmigaReport
     public int IntroPanels { get; set; }
     /// <summary>The party icons' colour pairs were read from <c>program</c> (<see cref="AmigaIconColoursDocument"/>).</summary>
     public bool IconColours { get; set; }
+    /// <summary>The music and effect players' data were read from <c>program</c> (<see cref="AmigaSoundDocument"/>).</summary>
+    public bool Sound { get; set; }
     /// <summary>Blocks left out on purpose (placeholders, incomplete sprites), as "file id".</summary>
     public List<string> Skipped { get; } = [];
     /// <summary>Blocks that are not pictures in a picture file, as "file id" (kept out of the overlay).</summary>
@@ -330,6 +333,13 @@ public static class PorAmigaArt
                     Source = new SourceRef { Container = "program", Block = IconPairsHunk },
                 });
             report.IconColours = true;
+        }
+        // The music and effect players' data (docs/re/sound.md §5), found through their code.
+        if (PorAmigaSound.Read(programBytes) is { } sound)
+        {
+            ModuleJson.Write(Path.Combine(moduleRoot, AmigaSoundDocument.RelativePath.Replace('/', Path.DirectorySeparatorChar)),
+                AmigaSoundDocument.From(sound));
+            report.Sound = true;
         }
         if (LocateIntro(amigaDir) is { } introPath)
         {

@@ -37,6 +37,7 @@ public static class ModuleSchemas
         ("rules-combat-map.schema.json", typeof(CombatMapDocument)),
         ("overland.schema.json", typeof(OverlandDocument)),
         ("pcsound.schema.json", typeof(PcSoundDocument)),
+        ("amiga-sound.schema.json", typeof(AmigaSoundDocument)),
         ("amiga-icon-colours.schema.json", typeof(AmigaIconColoursDocument)),
     ];
 

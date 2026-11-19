@@ -418,8 +418,14 @@ and Speed menus, an AI attack at game speed 9). Code: `src/GoldBox.Client/Screen
   DS:5E24 / DS:5E25 stays after the text, so a word ending on column 38 moves it to the next row (the "blank line"
   before a down message). The status panel START 0x1583 clears rows 1–21; its weapon name (ending in a space) is
   wrapped into (23, 7)–(38, 9) (a 16-letter two-word weapon name plus its space takes two rows, **D**). While DS:4A00 is set 0x77F8 types each
-  character with Delay(DS:49E2 × 10) (**D**: seen in the panel, s19); DS:4A00 is left by the last PRINT (0) / game
-  start / after-combat (1) — not modelled `[?]`: the Client shows the text at once.
+  character with Delay(DS:49E2 × 10) (**D**: seen in the panel, s19). Read s25: 0x7737 draws each glyph then, when
+  DS:4A00 ≠ 0 (START 0x777B), Delay(DS:49E2 × 10) (0x778D); spaces too, nothing for a word-wrap's skipped spaces. The
+  only writers of DS:4A00 (every direct-address write form searched in START.EXE and GAME.OVR): PRINT/PRINTCLR 0x174F
+  sets 1 at 0x1763 and 0 at 0x17DC after its text (so PRINT always types), ENCMENU 0x2C3E 1 at 0x2C4F and 0 at 0x32E0,
+  0x6BAF (after a fight's end screens / game start) 1, the fight start 0xE974 1. So in a fight every 0x77F8 text types
+  out; fixed-cell strings (the name START 0x23B6, row 24 START 0x1693) do not. Client: `TextWindow.Typed`, wired for
+  the fight's panel (`CombatChooser.Attach`) and PRINT (`ClientPlayer.Print`); ENCMENU's and other texts printed while
+  0x6BAF's 1 stands are still shown at once `[?]`.
 - **Attack messages** (read s19, 0x12AF4, called per hit and for the miss by 0x13C01: 0x13CBE helpless, 0x13F2E hit,
   0x13F92 miss): START 0x16EC(attacker, the attacks word — backstab / slays-helpless words for manner 2 / 3 —, row 10);
   the defender's name at (23, 12) in its colour before the damage; the text in (23, 13)–(38, 16): the from-behind words
@@ -441,7 +447,8 @@ and Speed menus, an AI attack at game speed 9). Code: `src/GoldBox.Client/Screen
   words (0x2C532) are START 0x16EC with their pause. Lost spell: row 12 with pause. Out of play: the down words (0x2C1EB) + the dying words
   (0x2C1F5, status 5) or the killed words (0x2C224, 6–8) at the cursor row + 1, then CreatureDowned or the pause. The fight start
   (0xEADC) loads COMSPR i into icon cell i + 13. Each spell routine passes its own effect text to 0x278DB (33 call
-  sites in the unit at 0x27018) — not mapped yet `[?]` (the Client shows no effect lines).
+  sites in the unit at 0x27018); 0x2C540 shows it only when not empty, then START 0x2383 clears rows 10–21 (s25: the
+  spell → string table in `spells-effects.md` "Effect messages"; Client `EffectTextMessage`, not checked in DOSBox-X `[?]`).
 - **Pauses** (read s15, s19): PauseOnly START 0x709:0x0DBE = Delay(DS:49E2 × 225) ms. Every Delay call site
   (`9a 9c 02 40 0a`): GAME.OVR 0x848–0x898 (150/100/50 ms, not combat), 0x37BB (3000), 0x9C7D and 0x9D82 (200: Alt-Q and
   Quick), 0x14132 (100, attack pose); START 0x2884 / 0x2B4A (the moving icon's pace), 0x2CCB (70, hit frames), 0x778D
@@ -457,9 +464,28 @@ and Speed menus, an AI attack at game speed 9). Code: `src/GoldBox.Client/Screen
 - **AI turn** (read s19): 0x99FD shows the box and the panel; the AI (0xABCF) starts by clearing row 24 (0x2CFCA)
   and rows 10–21; each step (AiMoveStep) first writes 0xB396 + movement ÷ 2 + " " on row 24 in green, which stays
   until row 24 is written again. **D** (s19): 9, 6, 4, 3 under Brother Sean's steps.
-- **Not read `[?]`**: the spell list 0x239D6 (the Client: a full-screen list), the Guard message, the missile and
-  spell-travel animations (CombatAnimateMovingIcon START 0x2884 scrolls the view along the path; not in the Client),
-  the per-spell effect texts, DS:4A00 typing.
+- **Not read `[?]`**: the spell list 0x239D6 (the Client: a full-screen list), the Guard message.
+- **Moving icon** (read s25, P; START 0x25C9 = 0xBA:0x1A29, `retf 0x0C`; the Delays at 0x2884 / 0x2B4A are inside it):
+  arguments x0, y0, x1, y1 (squares), frame count, delay (ms, passed to Delay as is: not the game speed). The sprite
+  DS:6E36 is built before the call by START 0x257E(cell) (four frames: first picture, first mirrored, second mirrored,
+  second) or by START 0x2432(cell, picture 0/1, slot, mirror). The path: line 0x2FCF2 / 0x2FE1E (stub 0x3DB:0x2A /
+  0x2F) from (x0·3, y0·3) to (x1·3, y1·3), in thirds of a square (8 px); each step stores its direction (DS:25C0 by
+  (dx, dy), line record +0x19), the failing last step stores the last one again; under 2 entries nothing happens. View:
+  both ends in view (0x30E23) → ScrollView(centre, 255); else both |dx|, |dy| ≤ 6 → ScrollView(midpoint, 255) (fixed);
+  else the view follows (ScrollView(current centre, 255)). Walk: position (x0 − view x)·3 + sub, …; drawn (0x464:0xD71
+  frame, 0x464:0x1B52, Delay, background back) when delay > 0 or, with 0, the position is a whole square on an axis;
+  the frame advances only on a drawing; then path[++i] (the walk starts at entry 1: the first direction is skipped, a
+  quirk) moves it; every 3 thirds the square and the centre move. A position past 0..18 leaves the view: the centre goes
+  3 squares past the icon on the axis it moved along, ScrollView(…, 255); in follow mode the walk goes on from there,
+  else the flight ends. End: ScrollView(target, 3) when out of view, the frame drawn on the target, with delay > 0
+  Delay and the background back (with 0 it stays drawn). Callers: the missile 0x15057 (sprite by type 0x14EAB, see
+  Core `FlightAnimation.Missile`; resident bracket 0x15011–0x15069 with cues 2620 / 262C), the cast 0x27E4D (cell 0x12,
+  4 frames, 30 ms; bracket 0x27E08–0x27E56), Hold Person's further targets 0x28745 (same), Lightning Bolt 0x29B02
+  (cell 0x13, 4, 50 ms, from the line's start to the cell about to be hit); not hooked `[?]`: the handlers 0x10987,
+  0x10A59, 0x10BC6 (cell 0x12, 4, 45 ms) and 0x11930 (cell 0x17, 1, 30 ms), 0x15D02 (delay 0), 0x2A1E4 (cell 0x13,
+  4, 50 ms), the second missile flight 0x1417E. The tune started before the call sounds for the flight's length (the
+  Client's logic thread waits out each frame). Client: `CombatChooser.Flight`, `CombatView.Flying`; the drawing
+  routine's own pixel offsets are not read `[?]` (drawn as the squares). Not checked in DOSBox-X `[?]`.
 - **Manual in the Client**: Aim's Manual answers `AimKey.Manual` and each cursor pass is Core's (`ChooseManual`):
   arrows / pad move it one square, Return / T Target (ending Manual even where it is not offered), E / Escape Exit,
   C / shoulders re-centre; the panel shows `ManualView.Creature`, row 23 the range to the square in attack mode when the line got

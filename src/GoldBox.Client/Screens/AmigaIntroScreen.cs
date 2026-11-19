@@ -43,6 +43,9 @@ public sealed class AmigaIntroScreen : IScreen
 
     public AmigaIntroSequence Sequence => _seq;
 
+    /// <summary>Called once when the intro ends (the program stops its music then).</summary>
+    public Action? Done { get; init; }
+
     /// <summary>The first index of the run the pages are drawn in.</summary>
     public int Run => _run;
 
@@ -62,6 +65,7 @@ public sealed class AmigaIntroScreen : IScreen
         if (_seq.Phase == AmigaIntroPhase.Done && !_done)
         {
             _done = true;
+            Done?.Invoke();
             _host.Pop();
         }
     }

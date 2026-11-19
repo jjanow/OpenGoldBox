@@ -64,9 +64,21 @@ Engine (s20): the Client's hall (`HallScreens.Run`) runs Train, View, Save, Begi
 Add and Remove are the party menu's (`PartyMenuFlow` through `HallHooks`, on the game's party and generator; the
 creation and roster pages open as a `PartyMenuScreen` overlay over the explore screen), with $6E3E following the list
 (the join 0x1F42C adds one, 0x1CC10 takes one off) and their messages (Drop's farewell, Modify's refusal) on the
-bottom line. Load ends the game and the screen loads the save (`HallLoadException`; the program leaves the menu after a
-successful load, 0x19D91). `[?]` A save with interface state 0 loaded here would keep the program's menu up with the
-save's party (start-up's Load does, start-menu.md §5a); the engine starts the loaded game instead.
+bottom line. Load is offered only without a current character (the flags above), so in the hall it needs every member
+removed first. A save of interface state ≠ 0 ends the game and the screen loads it (`HallLoadException`; the program
+leaves the menu after a successful load, 0x19D91, DS:49F8 := 1).
+
+**Load of a state-0 save in the hall, P + D (s25).** Load (0x1F5E8) copies the save's areas, script area, square,
+location type, speed and disk byte over the running game and re-reads the map and wall sets; it does not touch the ECL
+PC (DS:49ED), the vectors DS:49E3–49EB or the current block DS:84DC, and with state 0 the menu stays up (0x19D8A,
+DS:49F8 stays 0) with the save's party, the first current. Begin returns to the PROGRAM 0 handler and the ECL run goes
+on at its PC in the **loaded** script area. DOSBox-X: a scratch save whose vector 4 runs SAVE 0xFF → $6DA8, PROGRAM 0,
+PRINT, a one-word HMENU (disk 3, map 0); in the hall S wrote a hall save, a copy of it had the PRINT text changed; R × 6,
+L, the copy: the menu stayed with its party and Train, and Begin printed the copy's text. Client:
+`PorGame.LoadInMenu` (the hall's party object keeps its identity, the members replaced; $6E3E comes with the memory),
+pixel-equal to DOSBox-X before and after Begin (apart from the Client's help line). `[?]` The Client cannot open the
+hall from a vector 4 run by a load from the command line or the start-up menu (its memory hook needs the game object,
+which exists only after the entry): the Client test used a step (vector 0) instead.
 
 **After the hall (PROGRAM 0 returns), P + D (s22).** Begin leaves DS:49F3 = 4 and the handler calls START 0x3379, whose
 case 4 draws every window again through 0x32CA (03F1:02E8 with 1, 1, 38, 22; 1, 17, 38, 22; 1, 1, 15, 15; 3, 3, 13,

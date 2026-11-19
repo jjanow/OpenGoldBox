@@ -5,6 +5,9 @@ namespace GoldBox.Data.Dax;
 /// <summary>One hunk of an AmigaDOS load file: its type and where its data sits in the file (null for BSS).</summary>
 public readonly record struct AmigaHunk(int Type, int? DataOffset, int Size);
 
+/// <summary>One RELOC32 entry: the long at <see cref="Offset"/> in hunk <see cref="Hunk"/> gets hunk <see cref="Target"/>'s address added.</summary>
+public readonly record struct AmigaReloc(int Hunk, int Target, int Offset);
+
 /// <summary>
 /// Minimal AmigaDOS load-file (hunk executable) reader: the list of CODE, DATA and BSS hunks in file order, with the
 /// file offset of each hunk's data. Enough to find tables in a program by hunk and offset (the Amiga PoR palettes,
@@ -14,7 +17,17 @@ public static class AmigaHunks
 {
     public const int HunkHeader = 0x3F3, Code = 0x3E9, Data = 0x3EA, Bss = 0x3EB, Reloc32 = 0x3EC, End = 0x3F2;
 
-    public static IReadOnlyList<AmigaHunk> Parse(ReadOnlySpan<byte> d)
+    public static IReadOnlyList<AmigaHunk> Parse(ReadOnlySpan<byte> d) => Walk(d, null);
+
+    /// <summary>Every RELOC32 entry of the file, in file order.</summary>
+    public static IReadOnlyList<AmigaReloc> Relocations(ReadOnlySpan<byte> d)
+    {
+        var r = new List<AmigaReloc>();
+        Walk(d, r);
+        return r;
+    }
+
+    private static IReadOnlyList<AmigaHunk> Walk(ReadOnlySpan<byte> d, List<AmigaReloc>? relocs)
     {
         int o = 0;
         uint L(ReadOnlySpan<byte> s, int at) =>
@@ -52,6 +65,12 @@ public static class AmigaHunks
                         o += 4;
                         if (n == 0)
                             break;
+                        if (relocs is not null)
+                        {
+                            int target = (int)L(d, o);
+                            for (int k = 0; k < n; k++)
+                                relocs.Add(new AmigaReloc(hunks.Count - 1, target, (int)L(d, o + 4 + 4 * k)));
+                        }
                         o += 4 + 4 * n;
                     }
                     break;

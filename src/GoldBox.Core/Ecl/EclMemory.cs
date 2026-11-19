@@ -72,6 +72,13 @@ public sealed class EclMemory
     public byte PreviousViewMode { get; set; } = 1;
 
     /// <summary>
+    /// DS:6DDC, the overland marker's animation counter (0–5, <see cref="Explore.Overland.MarkerFrame"/>). Its only
+    /// writers are the start-up (0 at 0xE9D3) and the marker routine 0x2DB87 (+1 mod 6 at 0x2DC42): not saved, and a
+    /// load does not touch it (<see cref="Explore.Overland.Redrawn"/>).
+    /// </summary>
+    public int MarkerCounter { get; set; }
+
+    /// <summary>
     /// DS:4431: LOADFILES or LOADPIECES ran (handler 0x19BA sets it at 0x19C8) since the last NEWECL (cleared at
     /// 0x19AA) or area entry (0x4053). The script switch 0x3EFA uses it to decide the redraw after vector 4.
     /// </summary>

@@ -1,6 +1,6 @@
 # Sound and music (Pool of Radiance)
 
-Status: DOS v1.3 read in the program (s19) and checked under emulation; Amiga v1.0 located, not decoded. Marks:
+Status: DOS v1.3 read in the program (s19) and checked under emulation; Amiga v1.0 music and effect players decoded (s25). Marks:
 **P** read in the program, **E** checked by running the program's own routines under emulation
 (`tools/scripts/por_sound_oracle.py`, unicorn), **D** checked against DOSBox-X, `[?]` not settled. Addresses:
 START = offset in the EXEPACK-expanded `START.EXE` load image (segment 0 = offset 0); `CS:xxxx` = offset in the
@@ -168,8 +168,9 @@ for far calls to CS:00DC, CS:01A5, CS:017B):
   body routine.
 - **Client**: `--sound speaker|tandy|off` (settings `Sound`, default speaker); 44.1 kHz mono through MonoGame's
   dynamic sound instance; the logic thread waits out an auto-stop sound as the program does. `[?]` A resident
-  bracket's length is the program's animation (missile / spell flight, body drawing, message pause), which the Client
-  does not draw yet: it stays open until its tune ends by itself or the next sound call outside a bracket.
+  bracket's length is the program's animation. The missile, spell and Hold Person flights are drawn inside it (s25,
+  `FightState.Flight`, combat-menu.md "Moving icon"), so their tune sounds for the flight; the body drawing and the
+  message pause are not yet: such a bracket stays open until its tune ends by itself or the next sound call.
 
 ## 4. Module (`audio/`)
 
@@ -178,31 +179,168 @@ the BIOS-chain count in the interrupt, the two tick routines, the two tune progr
 `audio/dos/pcsound.json`: the data bytes CS:01D7 up to the timer install (base64), their origin and the table offsets.
 The cue table stays in `rules/program.json`'s data segment (DS:2612; found by its shape). See module-format.md §10a.
 
-## 5. Amiga v1.0 (located; not decoded)
+## 5. Amiga v1.0 (decoded s25; P, E)
 
-- `program` (disk A, 41 hunks): hunk 27 (CODE, 33,568 bytes, file offset 267,572) is shared by most overlay hunks
-  (relocations from hunks 1, 4, 7, 10, 13, 16, 19, 22, 25, 33). Near +0x7C95 it holds a **music and sound player**
-  (a programmer credit string sits in the code), with self-modifying code (it writes into its own hunk) and direct
-  custom-chip access (DMACON). Its tables are in hunk 28 (DATA, 78,504 bytes; its 167 relocations all point inside
-  itself), among them a 12-per-octave Amiga period table at +0x16E8. Hunk 29 (DATA, 58,284 bytes) is **8-bit signed
-  PCM** (sample data); no relocation in the file points into it, so how the player addresses it is `[?]`.
-- **Entry points** (P, read s19): hunk 27 +0x6E54 `PlaySong(n)` (C calling convention, n on the stack; sets the
-  "playing" long at hunk 33 +0xCC and calls hunk 33 +0xE6 → hunk 27 +0x78A0 with n in d0), +0x6E88 stop (n = 0
-  through the same path), +0x6E78 (calls hunk 33 +0xD8, `[?]` set-up). Hunk 33 (the program's resident hunk) +0x82 is
-  a vertical-blank interrupt handler: while +0xCC ≠ 0 it calls the player's tick (hunk 27 +0x78B2), so the player runs
-  at the display's 50 Hz (PAL) `[?]`. The player (hunk 27 +0x78C2): n = 0 stops; 1 ≤ n ≤ 7 copies 16-byte entry n − 1
-  of a table at hunk 28 +0x197C (seven **songs**) into the current-song slot +0x182C and starts four voices; n > 7
-  goes to another path (+0x79AC) `[?]`.
-- **Callers** (through each overlay's jump stub to +0x6E54): hunk 1 +0x4FBC (song 1) and +0x513C (0, stop); hunk 10
-  +0x0580 (1), +0x059A (0), +0x235C (3), +0x433E (3); hunk 13 +0x24E2 (a variable, the word at hunk 28 +0x18C0 `[?]`);
-  hunk 16 +0x46C2 (5); hunk 19 +0x102E (5). So the Amiga version plays **music** (sampled instruments, hunk 29) on some
-  screens; which screens the overlays are (main menu, character creation, …) and whether it has any sound effect at
-  all are `[?]`. No caller passes n > 7.
-- The `intro` (PowerPacker, por-art-formats.md §5) decrunches to 9 hunks; whether it plays music is `[?]`.
-- Until the player and its song format are decoded the engine plays the DOS sounds for every setting.
+Read from disk A's `program` (41 hunks) with every hunk loaded at its own base and its RELOC32 entries applied;
+addresses are hunk + offset. **E** here = the program's own player routines run under unicorn (m68k, 68040 model)
+by `tools/scripts/por_amiga_sound_oracle.py`, which records every custom-chip write per vertical blank (private
+fixture `tests/fixtures-private/por/amiga-v1.0/sound_player.json`). Two players share the four Paula channels: a
+**music player** in hunk 27 with its data in hunk 28, and a **sound-effect player** in hunk 33 with its samples in
+hunk 29. Neither is ever run together with the other (below).
+
+### 5.1 Set-up and the interrupt (hunk 33, the resident hunk)
+
+- **Install** (hunk 27 +0x6E78 → hunk 33 +0xD8, called once at start-up, hunk 10 +0x562): silence the effect
+  channels (+0x546: their four volume bytes and AUD0–3VOL = 0), then +0x0: AllocMem an Interrupt node, copy the
+  75-byte handler +0x82 into memory and **AddIntServer(INTB_VERTB = 5)**: a vertical-blank server, so both players
+  tick at the display rate: 50 Hz on a PAL machine, 60 Hz on NTSC `[?]` (which the program expects is not stated;
+  the Client uses 50 Hz).
+- **Handler** (+0x82): when the long "music on" at +0xCC is non-zero it calls the music tick (hunk 27 +0x78B2); else,
+  when INTREQR AND INTENAR has the vertical-blank bit, the effect tick (+0x172).
+- **Remove** (hunk 27 +0x6E88 → hunk 33 +0xEE, at exit, hunk 1 +0xA): with music on, PlaySong(0) first, else silence
+  the effect channels; then RemIntServer.
+- **PlaySong(n)** (hunk 27 +0x6E54, C convention, n on the stack): "music on" := 1, then hunk 33 +0xE6 → hunk 27
+  +0x78A0. **PlayEffect(n)** (hunk 33 +0x14E, n on the stack): "music on" := 0 and request byte 0 (+0x176) := n.
+  So **an effect ends the music**: the music tick no longer runs (its channels are taken over, the voices still
+  playing a looped instrument are switched off by the effect's DMA write) and nothing resumes it but the next
+  PlaySong. The music never runs while an effect is wanted.
+
+### 5.2 Music player (hunk 27 +0x78A0 … +0x831E; data hunk 28 +0x16C8 … +0x2C60, samples to the end)
+
+A credit string sits in the code at +0x7C92. **Commands**: PlaySong stores n in the command byte (hunk 27 +0x78C0)
+and resets (+0x807E: AUD0–3VOL and the four volume bytes 0, speed counter 0, "playing" (hunk 28 +0x17D5) 0). The
+start happens on the next tick (+0x78C2): n = 0 stops (silence, "playing" 0); **1 ≤ n ≤ 7** starts song n; anything
+else is **the running state**: every start or stop ends by writing 0xFF into the command byte (+0x8048), so the
+`n > 7` branch (+0x79AC) is simply the per-tick sequencer, which does nothing but silence while "playing" is 0.
+No caller passes n > 7.
+
+**Data (hunk 28)**, all tables found through the player's own `lea` operands:
+
+| hunk 28 | What |
+|---|---|
+| +0x16C8 | 32 bytes loaded into d0–d7 at each tick (`movem`), not used `[?]` |
+| +0x16E8 | Period table, word per note: note 0 = 0 (rest), notes 1–45 = 1616 … 113 (Amiga periods, 12 per octave) |
+| +0x1750 | Voice state: **interleaved**, field f of voice v at +0x1750 + f + v (each field a group of 4 bytes, one per voice). Constants in it: +0 the channel's register offset (0, 0x10, 0x20, 0x30), +4 the voice's arpeggio slot (1, 10, 20, 30), +0x64 its DMA bit (1, 2, 4, 8) |
+| +0x17D4 … +0x17F3 | Globals: voice loop counter, playing, **speed** (+0x17D6), speed counter (+0x17D7), vibrato work bytes, arpeggio mask, row position, register offset, slide direction, the **DMA-off mask** (+0x17E0, a bit per voice) and per-voice words: base period (+0x17E2), slide target (+0x17EA), slide step (+0x17F2) |
+| +0x17FC … +0x1853 | Per voice: sample start (long), repeat length and repeat offset (words), pattern pointer (long, +0x181C), the current song's four track-list pointers (+0x182C), work longs |
+| +0x1854 | Arpeggio buffers (4 × 10 bytes) |
+| +0x187C | 16 sample pointers (relocated; samples 0–11 used, 12–15 repeat sample 11's) |
+| +0x18B8 | One pointer to 4 zero bytes (+0x18BC): the "silence" a one-shot instrument repeats |
+| +0x18C4 | **Instruments**, 8 bytes each (12): sample number, loop flag, one-shot length (word, bytes), repeat offset (word), repeat length (word) |
+| +0x1924 | Arpeggio intervals for mask bits 0–7: 3 4 5 7 8 9 10 12 |
+| +0x192C | **Envelopes**, 8 bytes each (10): start volume, attack target, attack step, release step, sustain divisor, vibrato (depth in the high nibble, speed in the low), arpeggio mask, flags |
+| +0x197C | **Song table**: 16 bytes per song, the four voices' track-list pointers. Seven slots; slot 7 is the start of the pattern table (songs 1–6 are real) |
+| +0x19DC | **Pattern table**: 127 pointers |
+| +0x1BD8 … +0x2C5F | Track lists and patterns |
+| +0x2C60 … end | **Samples**: 8-bit signed PCM (sample 0 at +0x2C60 is 2 zero bytes) |
+
+**Track list** (one per voice; +0x793C): each byte ≤ 0xC0 is a pattern number (the pattern table); 0xFF goes back
+to the list's start; any other byte sets the voice's **transpose** := byte + 0x20 (mod 256, so 0xE0 = 0, 0xDF = −1)
+and the next byte is read.
+
+**Pattern** (one voice's events; read on a row, +0x7A92). Optional prefixes in this order, each followed by the next
+byte: 0xF0–0xFB and 0xFD speed := low nibble; 0xE0–0xEF instrument
+:= low nibble; 0xC0–0xDF envelope := low 5 bits; 0x80–0xBF duration := low 6 bits. Then an optional effect:
+0x7F slide down a semitone per row, 0x7E slide up; 0x7D m / 0x7C m arpeggio with mask m (the buffer gets the interval
+of each set bit after a leading 0, ends 0xFF); 0x7B t p **portamento** to note t + transpose, p = delay (high nibble)
+and length (low nibble) in rows; 0x7A d vibrato delay d ticks. Then the **note** (0x00–0x5F; 0 = rest; + transpose).
+0xFF anywhere a prefix may stand ends the pattern (the next pattern of the track list is loaded and read at once);
+0xFE stops the song (it re-enters the start code with 0: silence); 0xFC s chains to song s. Notes 0x60–0x79 are read
+as notes past the 46-entry table `[?]` (none in the data). In the data only speed, instrument, envelope, duration,
+0x7A and notes occur, and 0xFE ends patterns 62, 69, 77 and 81 (songs 2–5 stop by themselves; songs 1 and 6 loop);
+0xFC never occurs.
+
+**A tick** (+0x79AC; voices 3, 2, 1, 0):
+- **Row ticks** are the ticks where the speed counter is 0: a row lasts speed + 1 ticks (the counter is reloaded
+  with the speed when it runs below 0, +0x8034). On a row the voice's duration counter drops by 1; with sustain
+  divisor 0 a counter reaching 0 sets the voice's DMA-off bit; a counter below 0 reads the next event. So a note
+  lasts duration + 1 rows.
+- **New note** (+0x7BF8): the voice's DMA-off bit cleared; DMACON := the voice's bit (channel off); the instrument
+  (+0x8204) writes AUDxLC = the sample and AUDxLEN = (loop ? repeat offset + repeat length : one-shot length) / 2
+  and keeps the repeat part; the envelope (+0x8198) sets volume, attack target and step, release step, sustain,
+  vibrato, arpeggio; note + transpose → period (+0x8290); duration counter := duration; vibrato delay counter := the
+  voice's 0x7A value (P, E: written only by 0x7A, never cleared by a song start or reset, so a voice keeps its last
+  value across notes and songs; 0 until the first 0x7A).
+- **Effects** (non-row ticks, and row ticks where the note goes on): with a vibrato and no arpeggio/portamento:
+  vibrato (+0x7CD8): step = (period[note] − period[note + 1]) shifted right `speed` times with bit 0 set each time;
+  a phase counter walks 1 … depth + 1 and back to 0; output period = base + step × (depth / 2) − step × phase, after
+  the delay. Arpeggio (+0x7E02): period of note + the buffer's next interval each tick. Portamento (+0x7E5A, patches
+  the immediates at +0x7E93, +0x80F5, +0x817F): between the delay and delay + length rows the base period moves by
+  (period[target] − period[note]) / (length × (speed + 1)) per tick, then it snaps to the target. Slides move the note
+  by one per row.
+- **Envelope** (+0x7F0E; not on a voice whose duration counter is 0): attack adds the step until the volume equals
+  the target (exact compare); release starts when the counter equals duration / sustain divisor (divisor 0: at once;
+  0xFF: never) and subtracts the release step each tick; at ≤ 0 the volume is 0 and the voice's DMA-off bit is set.
+- **Output** (+0x82BE, once per tick after the four voices): AUD0–3PER := the four output periods; DMACON := 0x8200
+  | the voices whose DMA-off bit is clear, then the others off; AUD0–3VOL := the four volumes. Then (+0x7FB6) for
+  each channel the **repeat part**: AUDxLEN := repeat length / 2, AUDxLC := sample + repeat offset for a looping
+  instrument; for a one-shot one the program means the silence pointer (+0x18B8) but indexes it by voice × 4, so only
+  voice 0 gets it: voices 1, 2 and 3 repeat from **chip addresses 0, 0 and 2** (the next longs, +0x18BC … +0x18C4),
+  a 2-byte loop of whatever low memory holds (a constant: no sound, only a DC level `[?]`).
+- **Paula** `[?]` (hardware, not program): a channel switched off and on within one tick restarts from AUDxLC/LEN;
+  the LC/LEN written just after the DMA write are latched for the next pass, so a sample plays once from its start
+  and then loops its repeat part. The Client assumes this and a PAL clock of 3,546,895 Hz.
+- Under emulation (E) the songs use only speed, instruments, envelopes (attack, sustain, release), vibrato and its
+  delay; no arpeggio, portamento or slide is ever reached, so those paths (and two cross-voice slips in them: the
+  envelope's flag bit 3 writes the portamento target of voice v + 3, and a byte read at +0x4E belongs to another voice) are transliterated but unchecked by data.
+
+### 5.3 Which song plays where (P)
+
+| Song | Played by | Length |
+|---|---|---|
+| 1 | start-up (hunk 10 +0x580) while disk A's `intro` runs, stopped after it (+0x59A); the **camp** menu (hunk 1 +0x4FBC, stopped on leaving, +0x513C) | loops |
+| 2 | **"A battle begins..."** (hunk 13 +0x24E2): the song number is the word at hunk 31 +0x18C0 (2), skipped when the byte at hunk 32 +0x2D1 is non-zero `[?]` (meaning not read) | stops |
+| 3 | a new character's name accepted (hunk 10 +0x235C, after the name checks) and an icon accepted ("Is this icon ok?" Y, +0x433E) | stops |
+| 5 | the party is killed (hunk 16 +0x46C2; in a fight, hunk 19 +0x102E) | stops |
+| 4, 6 | no caller (4 stops, 6 loops) | |
+
+All calls go through each overlay's stub to hunk 27 +0x6E54. Since any effect turns the music off, the battle song
+is cut by the fight's first sound.
+
+### 5.4 Sound-effect player (hunk 33 +0x172 … +0x573; tables hunk 33 +0x574 … end, samples hunk 29)
+
+- **Cues**: the callers push a word of the table at **hunk 31 +0x18A8** (13 words: 5, 9, 8, 10, 12, 11, 6, 11, 4,
+  7, 0, 2, 2), the Amiga's counterpart of DS:2612 (§2.4), in the same order: +0x18A8 a spell cast (other than 47/51)
+  and Hold Person's further targets (hunk 22 +0x2B70, +0x3496), +0x18AA / +0x18AC a creature's name with damage /
+  with an effect (hunk 13 +0x5484 / +0x5472), +0x18AE the body routine (hunk 22 +0x1128, +0x1322), +0x18B0 missile
+  leaves (no caller found), +0x18B2 impact and bump (hunk 4 +0x351C, +0x3756; hunk 19 +0x2FFC), +0x18B4 Lightning
+  Bolt (hunk 22 +0x2B5E), +0x18B6 miss (hunk 4 +0x37D0), +0x18B8 step (hunk 4 +0x2B28; hunk 16 +0x4AB4, +0x541A;
+  hunk 19 +0x1F54, +0x29CE, +0x2A52, +0x2FE6), +0x18BA Fireball (hunk 22 +0x2B46; hunk 16 +0x4AD0), +0x18BC missile
+  arrives (hunk 4 +0x46D8), +0x18BE unused, +0x18C0 the battle song (§5.3). Which screens hunks 4, 16 and 19 are
+  beyond these matches is `[?]`. Impact, bump and miss share effect 11.
+- **Effects** (+0x662, 8 bytes each, 0–14): sample, note (index into the 60-word period table at +0x574,
+  3424 … 113), parameter, volume, flags (bit 2 switch to the parameter's note once, bit 1 slide the period up by the
+  parameter per tick until 3424, bit 0 down until 113: exact compares), duration (ticks), volume decay, repeats
+  (0xFF: for ever). **Samples** (+0x6DA: 15 pointers into hunk 29; +0x716: 8 bytes each: length, repeat offset,
+  repeat length, loop flag).
+- **Tick** (+0x17A): channel 3 … 0: a request byte other than 0xFF starts that effect (+0x1E2: AUDxLC/LEN, period,
+  volume; all four channels marked off for this tick, so the sound starts one tick later); else a running effect
+  steps (+0x2F4): duration − 1 and the flag effect; at 0 a repeat reloads the duration, after the last the volume
+  drops by the decay each tick and the channel stops at < 0 (or at once with no decay). Output (+0x442): periods,
+  DMACON, volumes. Every 20th tick (+0x4BA) looping samples get their repeat LC/LEN. Only request byte 0 is ever
+  written, so effects play on **channel 0** only.
+- Engine: not modelled yet (the engine plays the DOS effects for every setting).
+
+### 5.5 Engine and module
+
+- The Amiga overlay import writes `audio/amiga/sound.json` (module-format.md §10a): hunk 28 whole with its
+  self-relocations, the effect tables, hunk 29 and the cue words, after checking the players' table operands
+  (`PorAmigaSound`).
+- Core `AmigaMusicPlayer` is the music player transliterated routine by routine on a copy of hunk 28 (voice fields
+  interleaved as in the program, the patched immediates as fields). **E**: for songs 0–6 over 13,000 ticks (past song
+  1's loop at tick 12,289) and a song started over another then stopped, it writes the same custom-chip registers
+  with the same values in the same order as the program (`AmigaSoundProgramTests`). Songs 2, 3 and 5 last 385 ticks
+  (7.7 s at 50 Hz), song 4 769; songs 1 and 6 loop after 12,288 and 7,680 ticks.
+- `PaulaSynth` turns the writes into sound (the `[?]` hardware model above, mono); `AmigaMusic` ticks the player at
+  50 Hz. Client: with the module's Amiga data and sound not off, the Amiga intro (Best / Amiga) starts song 1 and
+  stops it when it ends (`ClientAudio.PlaySong`). Departure: on the Amiga the `intro` then Delays 150 ticks
+  (3 s) before the program reaches PlaySong(0) (hunk 10 +0x59A), so song 1 sounds 3 s longer; the Client goes
+  straight on. Not hooked yet: the camp (1), the battle (2), name and icon accepted
+  (3), the party killed (5); the effect player and the rule that an effect ends the music.
 
 ## 6. Open `[?]`
 
 - Auto-stop length and onset in DOSBox-X (§2.4); the speaker's analogue filter; the Tandy noise register.
-- The Amiga player (§5): which screens play which song, the song and instrument format, the tick rate, the n > 7 path.
+- Amiga (§5): PAL or NTSC rate; Paula's restart and latch timing; the flag at hunk 32 +0x2D1 that skips the battle
+  song; the screens of hunks 4, 16 and 19; the effect player in the engine.
 - Which other SSI games share this driver and its tunes 12–20.

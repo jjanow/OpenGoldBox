@@ -93,6 +93,11 @@ public sealed class ExploreScreen : IScreen
             Interlocked.Increment(ref _viewRedraws); // and the view replaces a picture kept on screen (DrawView)
         };
         game.Loop.PassBeforeVector1 += () => player.PictureArmed = true; // the step's pass sets DS:84E1 (0x4223)
+        game.Vm.ScriptSwitchRedrawn += () =>
+        {
+            player.SwitchRedrawn(); // 0x3FF5: the new area's view over the old script's picture or blank
+            Interlocked.Increment(ref _viewRedraws);
+        };
         _runner = runner;
         _host = host;
         _art = art ?? new ClientArt(game.Content, null, new ScreenPalette(), Data.Por.PorArtChoice.Dos);
@@ -164,7 +169,7 @@ public sealed class ExploreScreen : IScreen
         if (_runner.Busy || _game.Loop.Defeated || _player.Halted is not null)
             return;
         _player.Notice = null;
-        _player.ViewBlanked = false; // [?] CLEARBOX's blank picture window lasts until the next command's redraw
+        _player.ViewBlanked = false; // CLEARBOX's blank lasts until the next command's redraw (or a script switch's, SwitchRedrawn)
         char? letter = command switch
         {
             AreaCommand.AreaMap => 'A',

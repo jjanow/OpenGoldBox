@@ -283,6 +283,15 @@ public sealed class Fight
             // 0x2F (0x1417E) is not hooked.
             State.Sound.BeginResident();
             State.Sound.Cue(Sound.SoundCue.MissileOut);
+            // 0x1501F–0x15057: the flight from the attacker's square to the defender's (squares 0x31321 / 0x31349),
+            // its sprite by the missile's type and the direction 0x14E38 (0x14EAB).
+            if (State.Flight is { } fly && Geometry is CombatMap fm && fm.OnMap(attacker) && fm.OnMap(defender))
+            {
+                var (ax, ay) = fm.Position(attacker);
+                var (dx, dy) = fm.Position(defender);
+                fly(FlightAnimation.Missile(ax, ay, dx, dy, ammo.Length > 0x2E ? ammo[0x2E] : (byte)0,
+                    Geometry.DirectionToward(attacker, defender)));
+            }
             State.Sound.Cue(Sound.SoundCue.MissileIn);
             State.Sound.EndResident();
         }

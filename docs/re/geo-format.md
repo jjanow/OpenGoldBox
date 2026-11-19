@@ -393,22 +393,71 @@ Checked against DOSBox-X (PoR v1.3, EGA, save A put on the overland with `goldbo
   column + x → < 2 as is, < 42 → 2, < 43 → 3, else 4; y → < 2 as is, < 34 → 2, < 35 → 3, else 4. Frame: counter
   DS:6DDC (0–5) → ICON block counter / 2 (+ 128 when odd), then counter + 1 mod 6; facings above 3 are mirrored
   (0x31FD2). No idle animation: one frame per redraw. On entry the interface (START 0x36FE) redraws (frame c) and draws
-  the marker once more over it (frame c + 1). DOSBox-X after a load: frames 2 + 3; then one per step. `[?]` The
-  counter's value after a load or a script switch is not traced (the session sets 2 after a load).
+  the marker once more over it (frame c + 1). DOSBox-X after a load: frames 2 + 3; then one per step.
+- **Marker counter DS:6DDC** (P, s25: every reference in START and GAME.OVR). Two writers only: the start-up (0 at
+  0xE9D3) and the marker routine (+1 mod 6 at 0x2DC42). It is not in the save and Load (0x1F5E8) does not touch it, so
+  a load goes on from the session's value. The marker routine runs from the redraw 0x2DCF4 (near call 0x2DE20, only
+  in modes 2–4 with $49E6 = 0) and from the interface (START 0x3710). Callers of 0x2DCF4: the area loop (0x3FF5 the
+  script switch, 0x40C8 the first pass, 0x414C Search/Look, 0x41D8 the step), Encamp (0x3B48), SPRITEOFF (0x37F6),
+  CALL $2C90 (0x3A7E), the encounter draw (0x7A3A / 0x7A67), PICTURE (0x1675, mode 1 only) and START 0x3379 (the
+  interface draw by DS:49F3: cases 3 and 4 redraw, 0x341F / 0x3441) and 0x36FE (0x370B). START 0x3379 is called by
+  LOADFILES / LOADPIECES (0x1B1A, once both have run since the area loop started and DS:4432 is still set), the
+  first pass (0x40BE), Encamp after an interrupted rest (0x3B3B) and many menus (shops, camp, items).
+  - **After a load** the game loop's first pass (0x403E) sets DS:49F3 := 4, or 3 when $49F2 (the block of the last
+    command read, written back at 0x40D6) is 25–27 and $49E6 = 0 (0x405D–0x408E), then runs vector 4. At 3 nothing
+    is drawn until the first command's interface: frames c, c + 1 with c the session's value. At 4, START 0x3379
+    case 4 runs once (inside a LOADFILES, or at 0x40BE) and then the redraw 0x40C8: two marker draws on the overland.
+    A save made on the overland holds $49F2 = 25–27 (0 draws); `save-overland`'s test saves keep save A's $49F2 = 20,
+    which is why DOSBox-X showed frames 2 + 3 after loading them at the start-up (0 + 2). The wilderness scripts'
+    vector 4 has only a LOADFILES on its overland branch, so 0x1B1A does not draw there. Load does not write DS:49F9 either (writers 0x3F2B, 0xE9BE, 0x173EA): a load at the start-up or in the training hall (3D) leaves 1, so the first command draws the interface.
+  - **Script switch** (0x3EFA): the redraw at 0x3FF5 runs when the old mode was outdoors and vector 4 loaded files
+    (DS:4431), so crossing into the next window draws the marker once; DS:49F9 keeps the old mode, so the next
+    command draws no interface. The same redraw draws the new area's view over whatever the old script left in the
+    window: CITY at Phlan's north edge (block 14's vector 4 loads files) shows Phlan's 3D view at once, not the
+    site's picture or CLEARBOX blank (Client: `EclVm.ScriptSwitchRedrawn` → `ClientPlayer.SwitchRedrawn`; the live
+    vpad run of s25 had found the window black until the next command).
+  - Engine: `EclMemory.MarkerCounter` and `Overland.Redrawn` on the loop's redraws, the switch, CALL $2C90 and
+    SPRITEOFF; `PorGame` loads take the session's counter (`markerCounter`, the Client passes its game's) and add
+    the first pass's draws. Not modelled: the encounter draw's redraws (0x7A3A / 0x7A67) and START 0x3379 called by
+    menus while the overland is shown `[?]` (their frames are only seen if no later redraw comes first).
+  The draw (0x2DC18–0x2DC30) takes icon slot 9 + counter / 2, frame counter % 2; the interface load puts ICON 0, 1, 2
+  into slots 9, 10, 11 (0x17285–0x172D5, each slot block b and b + 128). The camp's Alter Icon on the overland ends by
+  loading ICON 0 into slot 11 (and 1 into slot 12; icon editor 0x1D84A, start-menu.md §3), so until the next interface
+  load counters 4 and 5 draw blocks 0 and 128 (**D**, s25: script 26 at 10,20 N, Encamp, Alter, Icon, Exit, Yes, out of
+  camp, then E S W N E S: blocks 0, 128, 0, 128, 1, 129, 0 for counters 4, 5, 0, 1, 2, 3, 4; a program bug, kept).
+  Engine: `AreaLoop.MarkerSlots` / `IconEditorDone`, the Client's view equal to DOSBox-X's on all seven screens.
 - **Commands** (0x17054, modes 2–4): the line DS:04DF (the 3D line without Area), C (no status check), V, E, S, L as
   in 3D; Up / Right / Down / Left set the facing to 0 / 2 / 4 / 6 and end the command (vector 0, step, redraw,
   vector 1). The routine ends with DS:49F9 := DS:49FA (0x173E7).
 - **Step** (0x17438 → 0x16EE3, when $6DC9 < 255): x and y + the facing's deltas as signed bytes, clamped to 0–15 /
   0–35; the stored tile at (column + x, y): 0x4E, 0x7E–0x80, 0x82–0x84, 0xA8–0xAC, 0xAE–0xB3, 0xBC, 0xDD–0xDE,
   0xE1–0xE9, 0xF5 refuse silently; 0x66–0x6C and 0x72 refuse with the river message (cs:0x7F4, flashed on row 24 in
-  colour 14 for DS:49E2 × 225 ms, START 0x7DF8) while $4AA2 = 0; else $49C3/$49C4 = x, y and 12 hours pass (clock
-  count 12, unit 3), Search or not. The scripts' vector 0 cancels steps off the window's edge ($6DC9 = 255).
+  colour 14 for DS:49E2 × 225 ms, START 0x7DF8 at 0x16FEE) while $4AA2 = 0; else $49C3/$49C4 = x, y and 12 hours
+  pass (clock count 12, unit 3), Search or not. The scripts' vector 0 cancels steps off the window's edge ($6DC9 =
+  255).
+- **Row-24 messages** (P, s25). START 0x7DF8 (0709:0D68) is the combat message routine 0x2233 with a colour
+  argument: copy the text (40 chars), clear row 24 columns 0–39 (0x767B), print at column 0 in the colour (0x76B6),
+  PauseOnly (0x7E4E: Delay(DS:49E2 × 225) ms; speed 0 does not wait), clear row 24 again. The screen keeps
+  everything else (view, party list, text window); the command line comes back at the next command read. Its eight
+  callers, all with colour 14: the command routine's two, 0x16FEE (the river, overland step) and 0x170F1 (A where
+  $49FB ≠ 0, cs:0x97B, 3D branch only: the overland line has no A), so the river is the overland's only one; the
+  other six are outside exploring (0xCEE, and 0x1BA59, 0x1C359, 0x1C393, 0x1C651, 0x1C67F in the party menu /
+  training units: training.md, start-menu.md). The overland command branch (0x17277–0x173E7) calls neither 0x7DF8
+  nor 0x2233. In the program the message comes before the step's redraw (0x41D8), so the view still shows the
+  marker of the old facing meanwhile; the Client draws the new facing `[?]` (not checked in DOSBox-X). Client:
+  `ClientPlayer.Flash` (a `DelayRequest` with the row-24 line in colour 14), the texts `Msg.RiverBlocks` /
+  `Msg.NoAreaMapHere` read from GAME.OVR.
 - **Position line** (START 0x34C2): x = $49C3 + 13 in mode 3, + 26 in mode 4 (immediates), y = $49C4.
 - **What runs on a special square** is the wilderness script, not the program: vector 1 walks its tables (ECL7 block
   26 $9B0A: rows $B04A, counts $B061, columns $B053, cases $B06A → ONGOTO; the other two scripts likewise) and runs the
   site's text, picture and HMENU; leaving sets $49E6 = 1, LOADFILES #127, the position ($C04B–$C04D), the disk and
   NEWECL (tested: Phlan's north edge → CITY → block 14 at 4,0 S, as DOSBox-X). Otherwise a random encounter may come.
   Pictures on the overland are drawn in the 3D view's box over a blank window; sprites over the tiles (DOSBox-X).
+- **Live run (s25, Client on Xvfb with the virtual pad, no DOSBox-X):** a `save-overland` save at 26 12,24 N: the
+  d-pad travels (S: mirrored marker, 12 hours, the pad's help words), Phlan's north edge gives the site text, picture
+  and HMENU (A picks CITY), the 3D view of Phlan follows (fixed, above), walking north out of Phlan brings the site
+  menu back and LEAVE returns to the overland; at 26 5,19 east the river message flashes on row 24 in yellow and goes.
+  The position line keeps the old square after a script switch, as the program does (view3d.md).
 - The CALL ids the wilderness scripts use besides $2C90 ($C01B, $0806, $2C4E, $2C51, $C003, $C009) have no case in the
   handler 0x3A15 (address − 0x7FFF compared with 0xAC91, 1, 2, 0x3A04, 0x401F, 0x4019): no effect in v1.3. The
   SAVETABLEs of ECL7 block 26's vector 4 into $D000 / $6300 once Yarash is beaten land on no VM area (the writer

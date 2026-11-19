@@ -121,7 +121,7 @@ else
         player.EndArt = (disk, block) => endArt.Pictures.Find("FINAL", block, disk, anyDisk: true);
         player.InstallPaging();
         // Sound (docs/re/sound.md): the program's driver data from the content, on the device the setting names.
-        audio = GoldBox.Client.Audio.ClientAudio.Open(content.Sound(), GoldBox.Client.Audio.ClientAudio.Parse(settings.Sound));
+        audio = GoldBox.Client.Audio.ClientAudio.Open(content.Sound(), GoldBox.Client.Audio.ClientAudio.Parse(settings.Sound), content.AmigaSound());
         Console.Error.WriteLine($"sound: {(audio is null ? "off" : audio.Device.ToString().ToLowerInvariant())}");
         if (audio is not null)
             player.Sound = audio;
@@ -164,7 +164,9 @@ else
             {
                 NewGame = (party, s) => game = WithSound(PorGame.NewGame(content, art, party, who, s)),
                 SaveSlots = Slots,
-                LoadGame = (slot, s) => game = WithSound(PorGame.LoadAtPartyMenu(content, art, SlotPath(slot), who, s)),
+                // DS:6DDC (the overland marker's counter) is not saved: a load goes on from the session's.
+                LoadGame = (slot, s) => game = WithSound(PorGame.LoadAtPartyMenu(content, art, SlotPath(slot), who, s,
+                    game?.Memory.MarkerCounter ?? 0)),
                 SaveGame = (slot, party, loaded) => player.SaveAtPartyMenu(slot, party, content, loaded),
                 Highlight = sharedHighlight,
                 // J and Train at the start-up menu (the hall's, on the menu's party).
@@ -181,6 +183,7 @@ else
                 {
                     hf.Party = g.Memory.Party ??= new GoldBox.Core.Ecl.EclParty();
                     hf.Random = g.Rng;
+                    hf.GameMemory = g.Memory;
                 }
                 a();
             }
@@ -191,13 +194,30 @@ else
             player.HallHooks.Remove = () => OnGame(hf.Remove);
             player.HallHooks.Load = () =>
             {
-                if (hf.PickSlot() is { } slot)
-                    throw new HallLoadException(slot);
+                if (hf.PickSlot() is not { } slot)
+                    return;
+                // 0x19D8A: a save with interface state 0 keeps the hall's menu up with its party and memory, and the
+                // script goes on at its PC after Begin (PorGame.LoadInMenu); any other leaves the menu for the game.
+                if (game is { } g && g.Memory.Party is { } party)
+                {
+                    try
+                    {
+                        if (g.LoadInMenu(SlotPath(slot), party))
+                            return;
+                    }
+                    catch (Exception e) when (e is FormatException or IOException or System.Text.Json.JsonException)
+                    {
+                        Console.Error.WriteLine($"load {slot}: {e.Message}");
+                        hf.CouldNotLoad(slot);
+                        return;
+                    }
+                }
+                throw new HallLoadException(slot);
             };
             player.HallHooks.Notice = hf.TakeNotice;
             // The camp's Alter Icon runs the same icon editor 0x1D1AC on the current character.
             player.IconEditor = hf.EditIcon;
-            loadSlot = slot => game = WithSound(PorGame.FromSave(content, art, SlotPath(slot), who, seed));
+            loadSlot = slot => game = WithSound(PorGame.FromSave(content, art, SlotPath(slot), who, seed, game?.Memory.MarkerCounter ?? 0));
         }
         if (startAtMenu)
         {
@@ -317,7 +337,9 @@ using var window = new GoldBoxGame(
             if (clientArt.AmigaIntroPages() is { } pages)
             {
                 host.Push(menu);
-                return new AmigaIntroScreen(pages, palette, host);
+                // Song 1 plays while the intro runs and stops after it (hunk 10 +0x580 / +0x59A, docs/re/sound.md §5.3).
+                audio?.PlaySong(1);
+                return new AmigaIntroScreen(pages, palette, host) { Done = () => audio?.PlaySong(0) };
             }
             var logo = clientArt.IntroLogo();
             var titlePage = clientArt.IntroTitle();

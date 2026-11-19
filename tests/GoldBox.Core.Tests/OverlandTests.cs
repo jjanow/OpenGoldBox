@@ -264,7 +264,7 @@ public class OverlandViewTests
         public bool Camp() => false;
     }
 
-    internal static PorGame Load(int script, string where, string cells, ScriptedEclHost? host = null)
+    internal static PorGame Load(int script, string where, string cells, ScriptedEclHost? host = null, int markerCounter = 0, uint seed = 0)
     {
         var dir = PorData.Open();
         var savePath = dir.Find("SAVGAMA.DAT")!;
@@ -280,14 +280,17 @@ public class OverlandViewTests
         }
         var player = new PorPlayer(host ?? new ScriptedEclHost { StopWhenInputMissing = true },
             new ScriptedEncounterUi { StopWhenInputMissing = true }, new RecordingCombatRunner(), new Ui());
-        return PorGame.FromSave(dir, PorViewArt.Load(dir), save, Path.GetDirectoryName(savePath)!, player, 0);
+        return PorGame.FromSave(dir, PorViewArt.Load(dir), save, Path.GetDirectoryName(savePath)!, player, seed,
+            markerCounter: markerCounter);
     }
 
     [PorTheory]
     [MemberData(nameof(Cases))]
     public void View_matches_dosbox(int script, string where, string cells, string keys, string sha256)
     {
-        var game = Load(script, where, cells);
+        // Seed 1: no random encounter on the walk, as in DOSBox-X (seed 0 meets one at the second step, whose SPRITEOFF
+        // redraw draws the marker once more).
+        var game = Load(script, where, cells, seed: 1);
         foreach (char k in keys)
             game.Loop.Execute(k switch
             {
@@ -300,6 +303,41 @@ public class OverlandViewTests
         var art = PorOverlandArt.Load(game.Content);
         var frame = art.Render(game.Loop, game.Content.Overland()!, game.Content.OverlandColumn(game.Vm.CurrentScript)!.Value);
         Assert.Equal(sha256, Convert.ToHexStringLower(SHA256.HashData(frame.Pixels)));
+    }
+
+    /// <summary>
+    /// The icon editor's end on the overland (0x1D84A) loads ICON block 0 into the marker's animation slot 11 (DOSBox-X
+    /// s25: camp, Alter Icon, then a walk drew blocks 0 / 128 for counters 4 / 5) until the overland interface loads the
+    /// slots again; in 3D it changes nothing.
+    /// </summary>
+    [PorFact]
+    public void Icon_editor_on_the_overland_puts_icon_0_into_the_third_marker_slot()
+    {
+        var game = OverlandViewTests.Load(26, "10,20,N", "");
+        game.Loop.Execute(AreaCommand.TravelEast); // the interface loads the slots
+        Assert.Equal([0, 1, 2], game.Loop.MarkerSlots);
+        game.Loop.IconEditorDone();
+        Assert.Equal([0, 1, 0], game.Loop.MarkerSlots);
+        Assert.Equal(128, Overland.MarkerFrame(5, 0, game.Loop.MarkerSlots).IconBlock);
+
+        var art = PorOverlandArt.Load(game.Content);
+        var map = game.Content.Overland()!;
+        int column = game.Content.OverlandColumn(game.Vm.CurrentScript)!.Value;
+        IndexedFrame Frame(int counter, IReadOnlyList<int>? slots)
+        {
+            var f = new IndexedFrame(Overland.ViewPixels, Overland.ViewPixels);
+            art.Draw(f, 0, 0, game.Memory, map, column, counter, slots);
+            return f;
+        }
+        Assert.Equal(Frame(0, null).Pixels, Frame(4, game.Loop.MarkerSlots).Pixels);
+        Assert.NotEqual(Frame(4, null).Pixels, Frame(4, game.Loop.MarkerSlots).Pixels);
+
+        game.Memory.PreviousViewMode = 1; // an entry from a 3D area: the interface loads them again
+        game.Loop.Execute(AreaCommand.TravelWest);
+        Assert.Equal([0, 1, 2], game.Loop.MarkerSlots);
+        game.Memory.ViewMode = 1;
+        game.Loop.IconEditorDone();
+        Assert.Equal([0, 1, 2], game.Loop.MarkerSlots);
     }
 
     /// <summary>
@@ -332,6 +370,37 @@ public class OverlandViewTests
         // Special location 4 at (25, 11): the camp's own tile while found, its grass tile (1) before.
         Assert.Equal(map.Tile(25, 11) - 1, map.DrawnTile(25, 11, shown.Memory.Read));
         Assert.Equal(0, map.DrawnTile(25, 11, hidden.Memory.Read));
+    }
+
+    /// <summary>
+    /// DS:6DDC after a load (program read s25): not saved, so it goes on from the session's value. The game loop's pass
+    /// draws twice (START 0x3379 case 4 and 0x40C8) only when $49F2 is not 25–27 (DS:49F3 stays 4): save-overland's
+    /// saves keep save A's $49F2 = 20 (DOSBox-X: frames 2 + 3); a save made on the overland has $49F2 = its block.
+    /// </summary>
+    [PorFact]
+    public void The_marker_counter_after_a_load_follows_the_game_loops_first_pass()
+    {
+        Assert.Equal(2, Load(26, "10,20,N", "").Loop.MarkerCounter);         // $49F2 = 20: 0 + 2
+        Assert.Equal(0, Load(26, "10,20,N", "49F2=26").Loop.MarkerCounter); // a real overland save: nothing drawn
+        Assert.Equal(0, Load(25, "14,29,S", "49F2=25").Loop.MarkerCounter);
+        // A load in the middle of a session keeps the counter it had (5, then + 2 here).
+        Assert.Equal(1, Load(26, "10,20,N", "", markerCounter: 5).Loop.MarkerCounter);
+    }
+
+    /// <summary>
+    /// A script switch from one overland window to the next redraws once (0x3FD2–0x3FF5: old mode outdoors and vector 4's
+    /// LOADFILES set DS:4431), which draws the marker; the next command has no interface (DS:49F9 = the old mode).
+    /// </summary>
+    [PorFact]
+    public void Crossing_into_the_next_window_redraws_once()
+    {
+        var game = Load(26, "15,20,E", "49F2=26");
+        Assert.Equal(0, game.Loop.MarkerCounter);
+        game.Loop.Execute(AreaCommand.TravelEast); // first command: interface (0, 1); vector 0 → NEWECL 27
+        Assert.Equal(27, game.Vm.CurrentScript);
+        Assert.Equal(4, game.Memory.ViewMode);
+        Assert.Equal(3, game.Loop.MarkerCounter); // + the switch's redraw
+        Assert.False(game.Loop.OverlandInterfacePending);
     }
 
     [PorFact]

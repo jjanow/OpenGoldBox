@@ -1,0 +1,69 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "AmigaSoundDocument",
+  "type": "object",
+  "properties": {
+    "driver": {
+      "type": "string"
+    },
+    "music": {
+      "type": "string"
+    },
+    "musicRelocs": {
+      "type": "array",
+      "items": {
+        "type": "integer"
+      }
+    },
+    "effects": {
+      "type": "string"
+    },
+    "effectsOrigin": {
+      "type": "integer"
+    },
+    "effectRelocs": {
+      "type": "array",
+      "items": {
+        "type": "integer"
+      }
+    },
+    "effectSamples": {
+      "type": "string"
+    },
+    "cues": {
+      "type": "array",
+      "items": {
+        "type": "integer"
+      }
+    },
+    "source": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "container": {
+          "type": "string"
+        },
+        "block": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "container"
+      ]
+    }
+  },
+  "required": [
+    "driver",
+    "music",
+    "musicRelocs",
+    "effects",
+    "effectRelocs",
+    "effectSamples",
+    "cues"
+  ]
+}

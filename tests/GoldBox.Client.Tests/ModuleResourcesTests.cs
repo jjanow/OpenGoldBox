@@ -56,6 +56,8 @@ public class ModuleResourcesTests
         var cb = new CombatText(mod.Program());
         Assert.Equal(Enum.GetValues<CombatMsg>().Length, cb.FromGame);
         Assert.Equal(Enum.GetValues<CombatMsg>().Select(m => ca[m]), Enum.GetValues<CombatMsg>().Select(m => cb[m]));
+        Assert.Equal(GoldBox.Core.Game.EffectTexts.All.Count, cb.EffectsFromGame);
+        Assert.Equal(GoldBox.Core.Game.EffectTexts.All.Select(ca.Effect), GoldBox.Core.Game.EffectTexts.All.Select(cb.Effect));
         Assert.Equal(dir.Program()!.SpellNames, mod.Program()!.SpellNames);
     }
 

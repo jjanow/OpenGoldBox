@@ -225,6 +225,7 @@ public class CombatScreenGameTests
         var player = new ClientPlayer(runner, () => game!.Memory);
         player.Chooser.Text = new CombatText(dir.Program());
         player.Chooser.Pauses = false;
+        player.TypesText = false;
         game = PorGame.FromSave(dir, art, dir.Find("SAVGAMA.DAT")!,
             new PorPlayer(player, player, player, player, FightMenu: player.Chooser, QuickFight: true), seed);
         var input = new ActionInput(InputBindings.Defaults());

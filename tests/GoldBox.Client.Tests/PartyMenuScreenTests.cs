@@ -98,6 +98,28 @@ public class PartyMenuScreenTests
         return rig;
     }
 
+    /// <summary>
+    /// The page's portrait window needs the portraits flag ($49FF bit 0) and the disk byte 3 (0x21530; DOSBox-X s25:
+    /// Modify after a state-0 load of a disk-2 save, or with portraits off, shows neither portrait nor box).
+    /// </summary>
+    [Fact]
+    public void The_portrait_window_needs_portraits_on_and_disk_3()
+    {
+        if (Dir() is null)
+            return;
+        using var r = Start(1);
+        Assert.True(r.Flow.PortraitShown); // start-up: disk 3, portraits on
+        var m = new GoldBox.Core.Ecl.EclMemory { Disk = 3 };
+        m.Write(CampSettings.PicturesCell, 3);
+        r.Flow.GameMemory = m;
+        Assert.True(r.Flow.PortraitShown);
+        m.Disk = 2;
+        Assert.False(r.Flow.PortraitShown);
+        m.Disk = 3;
+        m.Write(CampSettings.PicturesCell, 2);
+        Assert.False(r.Flow.PortraitShown);
+    }
+
     [Fact]
     public void Keyboard_creates_a_human_adds_it_and_begins()
     {
@@ -332,8 +354,16 @@ public class PartyMenuScreenTests
         using var r = WithFighter(xp: 1);
         var before = (byte[])r.Flow.Party.Current!.Record.Clone();
         r.Key(Keys.M);
+        // START 0x7DF8: the refusal in yellow on the bottom line for game speed × 225 ms, then the menu again with its
+        // prompt and no key (DOSBox-X s25).
+        var pause = Assert.IsType<DelayRequest>(r.Runner.Pending);
+        Assert.Equal(TimeSpan.FromMilliseconds(225), pause.Duration);
+        Assert.Equal(14, r.Flow.Hall.Message!.Value.Colour);
+        Assert.StartsWith("MOD", r.Flow.Hall.Message!.Value.Text);
+        r.Runner.Answer(null);
         var menu = Assert.IsType<PartyMenuRequest>(r.Runner.Pending);
-        Assert.StartsWith("MOD", menu.Notice);
+        Assert.Null(menu.Notice);
+        Assert.Null(r.Flow.Hall.Message);
         Assert.Equal(before, r.Flow.Party.Current!.Record);
     }
 

@@ -202,7 +202,7 @@ public sealed class AreaLoop
         if (Overland.Shown(Memory))
         {
             // 0x2DD10 → 0x2DE39 (the tiles) and 0x2DB87 (the marker, which advances DS:6DDC).
-            MarkerCounter = (MarkerCounter + 1) % 6;
+            Overland.Redrawn(Memory);
             return;
         }
         if (Map is null || (Memory.ViewMode != 1 && Memory.Read(View3DCell) == 0))
@@ -216,9 +216,13 @@ public sealed class AreaLoop
     /// DS:6DDC, the overland marker's animation counter (0–5): the frame the next overland redraw draws
     /// (<see cref="Overland.MarkerFrame"/>); each redraw advances it. The frame on screen is the one before it, with
     /// the frame <see cref="MarkerCounter"/> itself drawn over it while <see cref="OverlandInterfacePending"/>.
-    /// [?] Its value after a load is not traced (DOSBox-X, a load from the main menu: 2, set by the session).
+    /// Held in <see cref="EclMemory.MarkerCounter"/> (a load keeps the session's value, see PorGame's loaded entry).
     /// </summary>
-    public int MarkerCounter { get; set; }
+    public int MarkerCounter
+    {
+        get => Memory.MarkerCounter;
+        set => Memory.MarkerCounter = value;
+    }
 
     /// <summary>
     /// The overland interface is drawn when the command routine starts in modes 2–4 with DS:49F9 &lt; 2 (0x17285, START
@@ -227,6 +231,27 @@ public sealed class AreaLoop
     /// shows the view as it will look then (DOSBox-X: frames 2 and 3 after a load).
     /// </summary>
     public bool OverlandInterfacePending => Overland.Commands(Memory) && Memory.PreviousViewMode < 2;
+
+    /// <summary>
+    /// The ICON blocks in the marker's animation slots 9, 10, 11 (each slot holds block b and b + 128): 0, 1, 2 as the
+    /// overland interface loads them (0x17285–0x172D5: ICON 0 → 9, 1 → 10, 2 → 11). The icon editor changes slot 11
+    /// on the overland (<see cref="IconEditorDone"/>) until the next interface load.
+    /// </summary>
+    public int[] MarkerSlots { get; } = [0, 1, 2];
+
+    /// <summary>
+    /// The end of the icon editor 0x1D1AC (the camp's Alter Icon): with DS:49FA &gt; 1 (0x1D843) it loads ICON block 0
+    /// into icon slot 11 and block 1 into slot 12 (0x1D84A–0x1D879; the editor itself used slot 12). Slot 11 is the
+    /// marker's third animation slot, which held block 2: until the overland interface loads the slots again (an entry
+    /// from a 3D area), marker counters 4 and 5 draw ICON blocks 0 and 128 instead of 2 and 130 (DOSBox-X s25: after
+    /// Alter Icon on the overland and a walk the marker went 0, 128, 0, 128, 1, 129, 0 for counters 4, 5, 0 … 4, a
+    /// program bug, kept). Slot 12 is not a marker slot: nothing to show.
+    /// </summary>
+    public void IconEditorDone()
+    {
+        if (Memory.ViewMode > 1)
+            MarkerSlots[2] = 0;
+    }
 
     /// <summary>Runs a vector; after a NEWECL, the new script's vectors (0x3EFA).</summary>
     public EclRunResult Run(int vector)
@@ -259,6 +284,9 @@ public sealed class AreaLoop
         if (OverlandInterfacePending)
         {
             MarkerCounter = (MarkerCounter + 2) % 6;
+            MarkerSlots[0] = 0; // 0x17285–0x172D5: ICON 0, 1, 2 into the animation slots 9, 10, 11
+            MarkerSlots[1] = 1;
+            MarkerSlots[2] = 2;
             Memory.PreviousViewMode = Memory.ViewMode; // drawn once per entry of the routine (DS:49F9 := DS:49FA at its end)
         }
         switch (command)

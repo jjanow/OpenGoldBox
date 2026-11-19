@@ -221,6 +221,21 @@ public sealed class PorModule : IPorContent
         return _sound;
     }
 
+    private GoldBox.Core.Sound.AmigaSoundImage? _amigaSound;
+    private bool _amigaSoundRead;
+
+    /// <summary><c>audio/amiga/sound.json</c> (the Amiga players' data), or null.</summary>
+    public GoldBox.Core.Sound.AmigaSoundImage? AmigaSound()
+    {
+        if (!_amigaSoundRead)
+        {
+            _amigaSoundRead = true;
+            if (Modules.File(AmigaSoundDocument.RelativePath) is { } p)
+                _amigaSound = ModuleJson.Read<AmigaSoundDocument>(p).ToImage();
+        }
+        return _amigaSound;
+    }
+
     // ---- art -------------------------------------------------------------------------------------------------------
 
     private byte[]? _iconPairs;

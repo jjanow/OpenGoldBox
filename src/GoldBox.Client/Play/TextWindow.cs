@@ -15,8 +15,9 @@ namespace GoldBox.Client.Play;
 /// and the program waits for a key (<see cref="Pause"/>), then the box is blanked and the word printed.</item>
 /// <item>After the text, a cursor past the right edge moves to the start of the next row.</item>
 /// </list>
-/// Characters are drawn as the glyph routine (START 0x726F) does: upper case. [?] The program also types the text
-/// out with a delay of DS:49E2 × 10 ms per character (while DS:4A00 is set, as PRINT sets it); we show it at once.
+/// Characters are drawn as the glyph routine (START 0x726F) does: upper case. While DS:4A00 is set the program types
+/// the text out: after each character's glyph (spaces included) Delay(DS:49E2 × 10) ms (0x777B–0x778D); the owner
+/// sets <see cref="Typed"/> for that time (PRINT / PRINTCLR, the fight's panel).
 /// </summary>
 public sealed class TextWindow
 {
@@ -56,6 +57,13 @@ public sealed class TextWindow
 
     /// <summary>Called when the box is full and more text follows: show the page prompt and wait for a key.</summary>
     public Action? Pause { get; set; }
+
+    /// <summary>
+    /// Called after each character <see cref="PrintIn"/> draws (0x7737) while the program types (DS:4A00 set): the
+    /// owner waits DS:49E2 × 10 ms there. Null = the text shows at once. <see cref="Put"/> (a fixed-cell string) does
+    /// not type.
+    /// </summary>
+    public Action? Typed { get; set; }
 
     public bool IsEmpty
     {
@@ -277,6 +285,7 @@ public sealed class TextWindow
                 _colours[r, c] = colour;
             }
             Column++;
+            Typed?.Invoke();
         }
         return p;
     }

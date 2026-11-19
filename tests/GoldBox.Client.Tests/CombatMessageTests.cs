@@ -175,6 +175,59 @@ public class CombatMessageTests
     }
 
     [Fact]
+    public void Every_effect_message_comes_from_the_game_files()
+    {
+        if (Dir() is not { } dir)
+            return;
+        var t = new CombatText(new PorGameDirectory(dir).Program());
+        Assert.Equal(EffectTexts.All.Count, t.EffectsFromGame);
+        Assert.All(EffectTexts.All, k => Assert.False(string.IsNullOrWhiteSpace(t.Effect(k))));
+        // The 33 resolution callers' texts by spell: the shared routines share one string, the two wrappers of
+        // 0x27F67 and of 0x2977C each have their own; damage-only routines pass none.
+        Assert.Equal(t.Effect(EffectTexts.ForSpell(5)!), t.Effect(EffectTexts.ForSpell(29)!));
+        Assert.NotEqual(t.Effect(EffectTexts.ForSpell(1)!), t.Effect(EffectTexts.ForSpell(2)!));
+        Assert.NotEqual(t.Effect(EffectTexts.ForSpell(48)!), t.Effect(EffectTexts.ForSpell(55)!));
+        Assert.All(new[] { 4, 9, 15, 20, 28, 47, 64, 65 }, s => Assert.Null(EffectTexts.ForSpell(s)));
+    }
+
+    [Fact]
+    public void An_effect_message_shows_its_text_with_the_effect_frames_and_no_pause()
+    {
+        if (Dir() is not { } dir)
+            return;
+        var r = new Rig(dir);
+        var goblin = Creature("Goblin", 1);
+        r.Chooser.EffectTextMessage(goblin, EffectTexts.Asleep);
+        // START 0x2B8B with the effect flag: DS:49E2 + 1 = 2 rounds of four 70 ms frames, then no PauseOnly.
+        Assert.Equal(Enumerable.Repeat(70, 8), r.Pauses.Select(p => (int)p.Wait.TotalMilliseconds));
+        var rows = r.Pauses[0].Rows;
+        Assert.Equal("GOBLIN", Rig.Row(rows, 10));
+        Assert.Equal(Rig.Flat(r.Chooser.Text.Effect(EffectTexts.Asleep)), Rig.Join(rows, 11, 12));
+        Assert.All(r.View.Panel.Lines.Skip(9), l => Assert.Equal("", l)); // START 0x2383 afterwards
+    }
+
+    [Fact]
+    public void In_a_fight_the_panel_text_is_typed_out_at_speed_times_10_ms_per_character()
+    {
+        // DS:4A00 = 1 from the fight start (0xE974): START 0x7737 waits Delay(DS:49E2 × 10) after every character it
+        // draws (spaces too); the names written at a fixed cell (START 0x23B6) are not typed.
+        if (Dir() is not { } dir)
+            return;
+        var r = new Rig(dir);
+        r.View.Speed = 3;
+        r.Chooser.Attach(r.Fight);
+        r.View.Speed = 3;
+        var a = Creature("Thrender", 0);
+        var d = Creature("Goblin", 1);
+        r.Chooser.AttackMessage(new AttackMessage(a, d, 0, 0, false, true, false));
+        int typed = r.Chooser.Text[CombatMsg.Attacks].Length + r.Chooser.Text[CombatMsg.AndMisses].Length;
+        Assert.Equal(typed, r.Pauses.Count(p => p.Wait == TimeSpan.FromMilliseconds(30)));
+        Assert.Equal(TimeSpan.FromMilliseconds(675), r.Pauses[^1].Wait); // then PauseOnly
+        r.Chooser.Detach(r.Fight);
+        Assert.Null(r.View.Panel.Typed);
+    }
+
+    [Fact]
     public void An_ai_turn_shows_the_creature_and_waits_one_frame()
     {
         if (Dir() is not { } dir)

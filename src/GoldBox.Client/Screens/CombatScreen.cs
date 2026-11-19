@@ -223,7 +223,14 @@ public sealed class CombatScreen
         if (request is ListRequest l)
             _list.Sync(l);
         if (request is DelayRequest d)
-            _delayEnd = _clock.Elapsed + d.Duration;
+        {
+            // A chained pause (typing, the moving icon) starts where the last one ended, unless that was longer ago
+            // than the pause itself (as ExploreScreen).
+            var start = _clock.Elapsed;
+            if (d.Chained && _delayEnd <= start && start - _delayEnd < d.Duration)
+                start = _delayEnd;
+            _delayEnd = start + d.Duration;
+        }
     }
 
     public void Update(ActionInput input)
@@ -789,6 +796,10 @@ public sealed class CombatScreen
             CombatArt.Draw(f, skull, MapX + (hm.X - _view.ViewX) * Square, MapY + (hm.Y - _view.ViewY) * Square, false, clip);
         if (_view.Flash is { } fl && _art.Sprite(fl.Sprite) is { } flash)
             CombatArt.Draw(f, flash, MapX + (fl.X - _view.ViewX) * Square, MapY + (fl.Y - _view.ViewY) * Square, fl.Mirror, clip);
+        // The moving icon (START 0x25C9) at its position in thirds of a square. [?] The drawing routine 0x464:0xD71's
+        // own offsets are not read: the view's origin is taken as for the squares.
+        if (_view.Flying is { } fy && _art.Sprite(fy.Sprite) is { } flying)
+            CombatArt.Draw(f, flying, MapX + fy.Cx * (Square / 3), MapY + fy.Cy * (Square / 3), fy.Mirror, clip);
     }
 
     /// <summary>

@@ -54,6 +54,11 @@ public sealed class CombatView
     public (int X, int Y)? HitMarker { get; set; }
     /// <summary>A COMSPR picture drawn over a square (PrintNameStringAnim's frames): square, block, mirrored.</summary>
     public (int X, int Y, int Sprite, bool Mirror)? Flash { get; set; }
+    /// <summary>
+    /// The moving icon (START 0x25C9): its position in thirds of a square (8 pixels) from the view's upper-left corner,
+    /// the COMSPR picture (+ 128 for a cell's second picture) and mirrored. Null = none.
+    /// </summary>
+    public (int Cx, int Cy, int Sprite, bool Mirror)? Flying { get; set; }
     /// <summary>Creatures drawn in their attack pose.</summary>
     public HashSet<EclCharacter> Attacking { get; } = new(ReferenceEqualityComparer.Instance);
     /// <summary>
@@ -137,6 +142,7 @@ public sealed class CombatView
         Current = Shown = null;
         Cursor = HitMarker = null;
         Flash = null;
+        Flying = null;
         CursorSize = 1;
         Attacking.Clear();
         Panel.Clear();
@@ -188,6 +194,7 @@ public sealed partial class CombatChooser(Func<PlayerRequest, object?> ask, Comb
         fight.AttackStarting = AttackStarting;
         fight.AttackMade = AttackMade;
         fight.State.AttackMessage = AttackMessage;
+        fight.State.Flight = Flight;
         fight.Moves = new ShownMoves(fight.Moves, Stepping, Stepped);
         if (fight.Spells is FightSpells spells)
         {
@@ -198,6 +205,16 @@ public sealed partial class CombatChooser(Func<PlayerRequest, object?> ask, Comb
         }
         if (fight.Controller is MenuController { Ai: MonsterAi ai })
             ai.Message = AiSays;
+        // The fight start sets DS:4A00 = 1 (0xE974) and nothing in a fight clears it (the only writers are PRINT 0x1763 /
+        // 0x17DC, ENCMENU 0x2C4F / 0x32E0, 0x6BAF and 0xE974): every panel text typed through START 0x77F8 types out.
+        View.Panel.Typed = TypeDelay;
+    }
+
+    /// <summary>The typing delay after each character (START 0x777B–0x778D): Delay(DS:49E2 × 10) ms; speed 0 waits nothing.</summary>
+    private void TypeDelay()
+    {
+        if (View.Speed > 0 && Pauses)
+            ask(new DelayRequest(TimeSpan.FromMilliseconds(10 * View.Speed)) { Chained = true });
     }
 
     public void Detach(Fight fight)
@@ -208,6 +225,7 @@ public sealed partial class CombatChooser(Func<PlayerRequest, object?> ask, Comb
         fight.AttackStarting = null;
         fight.AttackMade = null;
         fight.State.AttackMessage = null;
+        fight.State.Flight = null;
         if (fight.Spells is FightSpells spells)
         {
             spells.Announce = null;
@@ -221,6 +239,7 @@ public sealed partial class CombatChooser(Func<PlayerRequest, object?> ask, Comb
         _announced = null;
         _goal = null;
         _cursorGoal = null;
+        View.Panel.Typed = null;
         View.Clear();
     }
 
@@ -479,6 +498,11 @@ public sealed partial class CombatChooser(Func<PlayerRequest, object?> ask, Comb
         if (View.Fight is not { } fight)
             return;
         var t = Text;
+        if (fight.Spells is FightSpells { Effects.EffectText: { } key })
+        {
+            EffectTextMessage(c, key);
+            return;
+        }
         switch (e)
         {
             case EffectEvent.NonWeaponDamage:
@@ -525,6 +549,17 @@ public sealed partial class CombatChooser(Func<PlayerRequest, object?> ask, Comb
     }
 
     /// <summary>
+    /// An effect added with a text (0x2C540 at 0x2C603–0x2C61C, read s25): START 0x2B8B(creature, effect frames, text)
+    /// (<see cref="ShowHit"/>: the text from row 10, icon cell 22 = COMSPR 9 in DS:49E2 + 1 rounds of four frames, no
+    /// pause), then START 0x2383 clears rows 10–21. <paramref name="key"/> names the text (Core <see cref="EffectTexts"/>).
+    /// </summary>
+    internal void EffectTextMessage(EclCharacter c, string key)
+    {
+        ShowHit(c, Text.Effect(key), effect: true);
+        ClearMessageWindow();
+    }
+
+    /// <summary>
     /// PrintNameStringAnim (START 0x2B8B, read s19) for damage (<paramref name="effect"/> false) and for an effect's
     /// message (true): a creature not wholly in the view brings the view to it (ScrollView(its square, 3)); START 0x16EC
     /// from row 10 without pause; the picture of icon cell 23 (damage: COMSPR 10) or 22 (effect: COMSPR 9) is drawn on
@@ -549,7 +584,7 @@ public sealed partial class CombatChooser(Func<PlayerRequest, object?> ask, Comb
                 Pause(HitFrameMs);
             }
         View.Flash = null;
-        if (reps == 0)
+        if (!effect)
             Pause(MessageMs);
     }
 

@@ -101,8 +101,9 @@ routine.
   modelled. A page whose picture or texts are missing is left out. The code wheel is still skipped.
 
 **Amiga v1.0 intro (read s24 from disk A's `intro`, decrunched; hunk 4; P, no emulator run).** The program
-(`program`, hunk 10 +0x556) first runs the code wheel (hunk 25 +0x4576), starts song 1 (hunk 27 +0x6E54) `[?]`
-(music: not modelled), then Executes disk A's `intro`. The intro (hunk 1) finds the program's screen, runs hunk 4 +0
+(`program`, hunk 10 +0x556) first runs the code wheel (hunk 25 +0x4576), starts song 1 (hunk 27 +0x6E54;
+played by the Client under Best / Amiga, sound.md §5; stopped after the intro's 3 s Delay, the Client stops it
+at once), then Executes disk A's `intro`. The intro (hunk 1) finds the program's screen, runs hunk 4 +0
 and then Delays 150 ticks (3 s) with the system display back (what shows then is the program's screen, not read
 `[?]`; the Client goes straight on). Hunk 4 +0: a 320×200 4-plane screen with its own copper list (one palette, all
 black at first), then nine pages, each: a black wait (+0xB14), the screen cleared (+0x7EE), the page blitted, a fade
@@ -218,8 +219,9 @@ through the menus with Keep, Exit, Escape and No; `IconEditorProgramTests`).
   icon (row 12) is drawn from slot 12 every loop, the old one (row 6) only at the start. Recolouring (0x1D08E, the
   same as the icon builder's 0x1E585): identity, then for k = 1..6 colour DS:3CF5[k] (1, 2, 3, 4, 6, 7) := the low
   nibble of byte 0xC0 + k and DS:3CF5[k] + 8 := its high nibble, a zero byte included (`CombatArt.ColourMap`).
-- With DS:49FA > 1 (camp on the overland) the editor also redraws the ICON pictures of slots 11 and 12 (0x1D84A); not
-  at creation.
+- With DS:49FA > 1 (camp on the overland) the editor's end loads ICON block 0 into icon slot 11 and block 1 into slot
+  12 (0x1D843–0x1D879, far 03E9:0034(name, block, slot)); not at creation. Slot 11 is the overland marker's third
+  animation slot (geo-format.md "Marker"), so the marker shows the wrong frames afterwards (D, s25; camp.md "Alter").
 
 ## 4. Add, Remove, Drop, View
 
@@ -294,7 +296,22 @@ for fields and values, B Exit, LB / RB move the word highlight (the program's ',
 (the program ignores Return; a controller-support departure). The mouse: a click on a field's row moves the cursor
 there, on the cursor's field left click raises and right click lowers, a word click chooses it, a right click off the
 fields is Exit. Seen on Xvfb (s20): the page with Wisdom and then HP in colour 13, the party list's HP after Keep.
-`[?]` Not compared with a DOSBox-X screen.
+
+**D** (s25, DOSBox-X, `START STING`, scratch saves: save A's party with experience 0 and interface state 0, loaded at
+the menu, then M): the page, Right twice on Strength (17 → 18 → 18(01), damage +2 → +4), Down × 6 to the hit points,
+Left (11 → 10), Up, K, and the menu after Keep, and Escape (all values and the hit points back) equal the Client's pixel
+for pixel (EGA indices, 0 differing pixels each), the field in colour 13 and the words KEEP (highlighted) / EXIT as
+drawn. Two rules came out of it:
+
+- **The portrait window** (columns 27–39, rows 0–12, the box and the head and body) is drawn only when the portraits
+  flag DS:49F5 is set and the disk byte DS:5376 is 3 (View 0x21084's end, 0x21530–0x2153E, far 03D0:0034). At start-up
+  both hold (0xE965, 0x19AE7); a Load at the menu leaves the save's disk byte (0x1FBB0) and picture flags ($49FF), so a
+  state-0 save of disk 2 or with portraits off shows the page with neither portrait nor box (both seen; on disk 3 with
+  portraits on the portrait matched pixel for pixel). The training hall sets the disk to 3. The same holds for Create's
+  and View's page (same routine). Client: `PartyMenuFlow.PortraitShown`.
+- **The refusal** is the message routine's (bottom line, column 0, yellow), shown for game speed × 225 ms; the menu's
+  prompt then comes back without a key (seen with a loaded save of speed 4). Client: the party menu shows it through
+  `HallScreens.Message` (the hall already did); pixel-equal to DOSBox-X during and after the pause.
 
 ## 5. Roster files (SaveLoad unit 0x1DFE6)
 
@@ -328,6 +345,11 @@ JSON file has the name. `[?]` The program's file name is the name through its 8.
   stem; Begin starts the new game, 15,1 W 00:00 and the area's first text). The program's Load also re-reads map
   $49C5 = 0 (location type 1) and wall set 0 into slot 1 (0x1FBB3, 0x1FBEE) `[?]`; the engine notes a missing map 0
   as a diagnostic, and the block's init loads its own.
+  **D** (s25): the re-read uses the save's disk byte: a scratch save with disk 3 and map 20 (no GEO3 block 20) stops the
+  program at the Load with a DOS-screen "unable to load geo" message; disk 3 with map 0 (the training hall's own,
+  ECL3 block 11) loads. A hall save (state 0, disk 3, $6DA8 = 0xFF) loaded at the start-up menu kept the menu up with
+  Train offered (the flags 0x19B2D read $6DA8 from the loaded memory; nothing at the menu or in Load clears it; Client
+  `PartyMenuFlow.HallMask` from the loaded game, screen equal pixel for pixel).
 - **Exit with a party** (0x19E0E): after Yes, while DS:557D = 0 and the party list is not empty, the save 0x1FD3E
   (Escape at the slot menu just asks again: a slot must be written), then the quit 0899:0000. DS:557D is cleared by
   any non-extended menu key but E and S (the set at CS:0116, 0x19CB3), so S then E quits at once. **D** (s20): after
@@ -361,15 +383,12 @@ before it uses them (`PorProgramData.CreationTables`). `[?]` Not decoded into a 
 ## 7. Open `[?]`
 
 - Home / End wrapping on the party menu; the drop message's line and how long it stays.
-- Modify's page against a DOSBox-X screen (the highlight colour and positions are read from 0x2193B / START 0x973,
-  not seen in DOSBox-X); how long the refusal message stays (START 0x7DF8: game speed × 225 ms; the engine shows it as
-  the menu's notice until the next key).
 - The icon editor's frame boxes (icon slot 25) and its palette are drawn as seen, not decoded. The camp's Alter Icon
   runs the same routine (camp.md "Alter").
+- The party menu's View is the camp's View menu (Items, Trade, Drop, Exit under the page; DOSBox-X s25); the Client
+  shows the page only.
 - File names of roster characters (8.3 clean-up); the save's deletion of the members' roster files (camp.md).
 - Load at the party menu of a state-0 save: what the program's re-read of map $49C5 = 0 and wall set 0 gives.
-- Load in the training hall of a state-0 save: the program's menu would stay up with the save's party; the engine
-  ends the hall and starts the loaded game.
 
 ## 8. After the game loop: the party destroyed (0x403E, START 0x013D) — P, D
 

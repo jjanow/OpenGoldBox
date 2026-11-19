@@ -341,6 +341,7 @@ public sealed class EncounterHost : IEclHost
                     State.PictureShown = false;
                     State.SpriteShown = false;
                     Memory.ViewRedrawFlags = ViewRedraw.None;
+                    Explore.Overland.Redrawn(Memory); // 0x3A7E: on the overland the marker too (DS:6DDC + 1)
                     Ui.ViewRedrawn();
                 }
                 Inner.Call(routine);
@@ -483,6 +484,7 @@ public sealed class EncounterHost : IEclHost
     {
         if (!State.SpriteShown)
             return;
+        Explore.Overland.Redrawn(Memory); // 0x37F6: the redraw 0x2DCF4 (on the overland, DS:6DDC + 1)
         Ui.RestoreView();
         State.SpriteShown = false;
         State.PictureShown = false;

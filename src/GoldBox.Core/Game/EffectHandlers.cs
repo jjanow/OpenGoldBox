@@ -298,10 +298,15 @@ public sealed partial class EffectHandlers : IFightEffects
     /// 0x2C540: DS:6817 = id and the creature's immunity effects (class 9) run. Unaffected (a message, nothing added)
     /// when they cleared DS:6817, or when it saved and the save negates (<paramref name="saveNegates"/> = 1). Else an
     /// existing record with this id leaves first when it has minutes left and the new duration is longer, or the new
-    /// one is permanent (0); then the new record is added and the message shows. Returns true when added.
+    /// one is permanent (0); then the new record is added. Last, when the caller's text (<paramref name="text"/>: its
+    /// key in the program's text catalog, <see cref="EffectTexts"/>) is not empty, the message shows: START 0x2B8B
+    /// (creature, effect frames, text) then START 0x2383 (rows 10–21 cleared); <see cref="EffectText"/> holds the key
+    /// during that event (<paramref name="message"/>, or <see cref="EffectEvent.EffectGained"/>). An empty text (null)
+    /// shows nothing (0x2C603 tests its length); <paramref name="message"/> is then still raised for listeners.
+    /// Returns true when added.
     /// </summary>
     public bool AddEffectWithMessage(EclCharacter c, byte id, ushort minutes, byte param, bool onRemove, byte saveNegates,
-        bool saved, EffectEvent? message = null)
+        bool saved, EffectEvent? message = null, string? text = null)
     {
         Cells.PendingEffect = id;
         Trigger(9, c, F);
@@ -317,10 +322,28 @@ public sealed partial class EffectHandlers : IFightEffects
                 RemoveEffect(c, id, old);
         }
         AddEffect(c, id, minutes, param, onRemove);
-        if (message is { } m)
+        if (text is not null)
+        {
+            EffectText = text;
+            try
+            {
+                Emit(c, message ?? EffectEvent.EffectGained);
+            }
+            finally
+            {
+                EffectText = null;
+            }
+        }
+        else if (message is { } m)
             Emit(c, m);
         return true;
     }
+
+    /// <summary>
+    /// The text key of the effect message being shown (0x2C540's text argument, <see cref="EffectTexts"/>) while its
+    /// event runs; null otherwise.
+    /// </summary>
+    public string? EffectText { get; private set; }
 
     /// <summary>0xEC7A: adds the effect with "removal runs the handler" unless the effect lock DS:681F is set.</summary>
     private bool AddEffectIfNoLock(EclCharacter c, byte id, byte param, ushort minutes)
@@ -485,13 +508,13 @@ public sealed partial class EffectHandlers : IFightEffects
         bool saved = SavingThrow(c, 0, 0);
         if (saved)
         {
-            AddEffectWithMessage(c, 0x1E, 1, 0xFF, false, 0, saved, EffectEvent.Coughing);
+            AddEffectWithMessage(c, 0x1E, 1, 0xFF, false, 0, saved, EffectEvent.Coughing, EffectTexts.Coughs); // text 0x2BACB
             CallHandler(0x1E, c, FindEffect(c, 0x1E), false);
         }
         else
         {
             ushort minutes = (ushort)(Dice(1, 4) + 1);
-            AddEffectWithMessage(c, 0x1F, minutes, 0xFF, false, 0, saved, EffectEvent.Other);
+            AddEffectWithMessage(c, 0x1F, minutes, 0xFF, false, 0, saved, EffectEvent.Other, EffectTexts.Nausea); // text 0x2BB1A
             CallHandler(0x1F, c, FindEffect(c, 0x1F), false);
         }
     }

@@ -251,6 +251,40 @@ public class PorAmigaArtTests(ITestOutputHelper output)
     }
 
     [PorAmigaFact]
+    public void The_overlay_holds_the_amiga_players_data()
+    {
+        var (dir, report) = Imported.Value;
+        Assert.True(report.Amiga!.Sound);
+        var path = Path.Combine(dir, AmigaSoundDocument.RelativePath.Replace('/', Path.DirectorySeparatorChar));
+        var doc = (AmigaSoundDocument)System.Text.Json.JsonSerializer.Deserialize(File.ReadAllText(path), typeof(AmigaSoundDocument), ModuleSchemas.Strict)!;
+        Assert.Equal(AmigaSoundDocument.DriverPor10, doc.Driver);
+        var fromModule = PorModule.Open(dir).AmigaSound()!;
+        var direct = PorAmigaSound.Read(File.ReadAllBytes(PorAmigaArt.Locate(PorAmigaData.Dir!).Program))!;
+        Assert.Equal(direct.Music, fromModule.Music);
+        Assert.Equal(direct.MusicRelocs, fromModule.MusicRelocs);
+        Assert.Equal(direct.Effects, fromModule.Effects);
+        Assert.Equal(direct.EffectRelocs, fromModule.EffectRelocs);
+        Assert.Equal(direct.EffectSamples, fromModule.EffectSamples);
+        Assert.Equal([5, 9, 8, 10, 12, 11, 6, 11, 4, 7, 0, 2, 2], fromModule.Cues);
+        // A module without the overlay has none.
+        Assert.Null(PorModule.Open(PorModuleData.Dir).AmigaSound());
+    }
+
+    [PorAmigaFact]
+    public void A_program_that_is_not_amiga_por_has_no_players()
+    {
+        var program = File.ReadAllBytes(PorAmigaArt.Locate(PorAmigaData.Dir!).Program);
+        Assert.NotNull(PorAmigaSound.Read(program));
+        // One operand moved: the song table's lea no longer points at hunk 28 +0x197C.
+        var hunks = AmigaHunks.Parse(program);
+        int at = hunks[PorAmigaSound.CodeHunk].DataOffset!.Value + 0x78F2;
+        var changed = (byte[])program.Clone();
+        changed[at + 3] ^= 0x10;
+        Assert.Null(PorAmigaSound.Read(changed));
+        Assert.Null(PorAmigaSound.Read(new byte[64]));
+    }
+
+    [PorAmigaFact]
     public void Every_overlay_sidecar_reads_strictly()
     {
         var root = Path.Combine(Imported.Value.Dir, "art", "amiga");

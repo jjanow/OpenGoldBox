@@ -206,6 +206,22 @@ public class EffectHandlersTests
     }
 
     [Fact]
+    public void Effect_message_text_is_raised_only_when_added_with_a_text()
+    {
+        // 0x2C540: the text shows after the record is added and only when not empty (0x2C603); unaffected ignores it.
+        var c = Creature();
+        var (fx, _) = Engine(new Rng(), c);
+        var seen = new List<(EffectEvent E, string? Key, int Effects)>();
+        fx.Event += (who, e) => seen.Add((e, fx.EffectText, who.Effects.Count));
+        fx.AddEffectWithMessage(c, 1, 5, 1, false, 0, false, text: EffectTexts.Asleep);
+        fx.AddEffectWithMessage(c, 2, 5, 1, false, 0, false, EffectEvent.Charmed);
+        fx.AddEffectWithMessage(c, 0x35, 5, 1, false, 1, saved: true, text: EffectTexts.Held);
+        Assert.Equal([(EffectEvent.EffectGained, EffectTexts.Asleep, 1), (EffectEvent.Charmed, null, 2),
+            (EffectEvent.Unaffected, null, 2)], seen);
+        Assert.Null(fx.EffectText);
+    }
+
+    [Fact]
     public void Removal_runs_the_handler_only_when_the_record_says_so()
     {
         var c = Creature();

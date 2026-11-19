@@ -136,11 +136,11 @@ public static class HallScreens
                     if (h.Hooks.For(entry) is { } run)
                     {
                         // The roster entries move the party size $6E3E with the list (the join 0x1F42C adds one,
-                        // 0x1CC10 takes one off).
+                        // 0x1CC10 takes one off). Load brings the save's own $6E3E with its memory.
                         int before = party.Members.Count;
                         run();
                         int delta = camp.Party.Members.Count - before;
-                        if (delta != 0)
+                        if (delta != 0 && entry != TrainingHall.Entry.Load)
                             h.Memory.Write(EclPartyRules.PartySizeCell,
                                 (ushort)(h.Memory.Read(EclPartyRules.PartySizeCell) + delta));
                         if (h.Hooks.Notice?.Invoke() is { } note)
@@ -477,9 +477,10 @@ public sealed class HallTrainer
 
 /// <summary>
 /// The entries this screen does not run itself, by the program's routine: Create 0x19EEB, Drop 0x1B8B6, Modify
-/// 0x1BA1E, Add 0x1C9EC, Remove 0x1E684 + 0x1CC10, Load 0x1F5E8. Null = a notice. A successful Load ends the hall and
-/// the game with <see cref="HallLoadException"/>: the program leaves the menu (0x19D91) and runs the game loop on the
-/// loaded state.
+/// 0x1BA1E, Add 0x1C9EC, Remove 0x1E684 + 0x1CC10, Load 0x1F5E8. Null = a notice. Load of a save with interface state
+/// 0 keeps the hall up with the save's party and memory (<see cref="Data.Por.PorGame.LoadInMenu"/>); any other ends the
+/// hall and the game with <see cref="HallLoadException"/>: the program leaves the menu (0x19D91) and runs the game loop
+/// on the loaded state.
 /// </summary>
 public sealed class HallHooks
 {

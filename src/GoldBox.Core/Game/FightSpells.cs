@@ -323,6 +323,9 @@ public sealed partial class FightSpells : IFightSpells
                 // their own cue (docs/re/sound.md §2.4).
                 fight.State.Sound.BeginResident();
                 fight.State.Sound.Cue(spell switch { 47 => Sound.SoundCue.Fireball, 51 => Sound.SoundCue.LightningBolt, _ => Sound.SoundCue.Cast });
+                // 0x27E37–0x27E4D: the moving icon (cell 0x12 = COMSPR 5, built by 0x257E at 0x27DA9) from the caster's
+                // square to the aimed one, 4 frames, 30 ms.
+                fight.State.Flight?.Invoke(FlightAnimation.Spell(cx, cy, ax, ay));
                 fight.State.Sound.EndResident();
             }
             Effects.RemoveInvisibility(caster);
@@ -455,7 +458,7 @@ public sealed partial class FightSpells : IFightSpells
                 Effects.NonWeaponDamage(t, damage, info.Save, saved);
             if (info.Effect > 0)
                 Effects.AddEffectWithMessage(t, info.Effect, Duration(spell), level, onRemove, info.Save, saved,
-                    EffectEvent.EffectGained);
+                    EffectEvent.EffectGained, EffectTexts.ForSpell(spell));
         }
         F.DamageFlags = 0;
     }
@@ -695,13 +698,21 @@ public sealed partial class FightSpells : IFightSpells
                 // 0x286F5–0x2874E: a further target gets the cast's flight from the caster, resident (sound.md §2.4).
                 F.Sound.BeginResident();
                 F.Sound.Cue(Sound.SoundCue.Cast);
+                // 0x28703–0x28745: 0x257E(cell 0x12), the moving icon from the current character's square to the
+                // target's, 4 frames, 30 ms.
+                if (F.Flight is { } fly && _fight?.Geometry is CombatMap hm && Current is { } hc && hm.OnMap(hc) && hm.OnMap(t))
+                {
+                    var (fx, fy) = hm.Position(hc);
+                    var (tx, ty) = hm.Position(t);
+                    fly(FlightAnimation.Spell(fx, fy, tx, ty));
+                }
                 F.Sound.EndResident();
             }
             bool saved = Effects.SavingThrow(t, info.SaveType, mod);
             if (t[EffectHandlers.CreatureType] > 1 || t[EffectHandlers.Size] > 1)
                 saved = true;
             Effects.AddEffectWithMessage(t, info.Effect, Duration(spell), CasterLevel(spell), false, info.Save, saved,
-                EffectEvent.EffectGained);
+                EffectEvent.EffectGained, EffectTexts.ForSpell(spell)); // text 0x287DD
         }
     }
 

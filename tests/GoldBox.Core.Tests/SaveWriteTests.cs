@@ -140,6 +140,52 @@ public class SaveWriteTests
         }
     }
 
+    /// <summary>
+    /// The training hall's Load of a state-0 save (DOSBox-X s25): the menu stays up, the save's memory and script area
+    /// replace the running game's, the ECL PC and vectors stay, and the hall's party object takes the save's members
+    /// (first current). A save of another state is left alone (the program leaves the menu for the game).
+    /// </summary>
+    [PorFact]
+    public void Hall_load_of_a_state_0_save_keeps_the_running_script()
+    {
+        var content = PorData.Open();
+        var bytes = File.ReadAllBytes(content.Find("SAVGAMA.DAT")!);
+        var tmp = Directory.CreateTempSubdirectory("goldbox-save-");
+        try
+        {
+            var camp = Path.Combine(tmp.FullName, "a.json");
+            GoldBox.Data.Module.Por.PorEngineSave.Write(camp, GoldBox.Data.Module.Por.PorEngineSave.FromFolders(bytes,
+                "SAVGAMA.DAT", GoldBox.Data.Module.Por.PorEngineSave.Identity(content), content.LoadBlock, [content.Root]));
+            var hall = (byte[])bytes.Clone();
+            hall[PorSaveGame.OffInterface] = 0;
+            hall[PorSaveGame.OffScript + 0x700] = 0x5A; // a script byte the running game does not have
+            var hallPath = Path.Combine(tmp.FullName, "b.json");
+            GoldBox.Data.Module.Por.PorEngineSave.Write(hallPath, GoldBox.Data.Module.Por.PorEngineSave.FromFolders(hall,
+                "SAVGAMB.DAT", GoldBox.Data.Module.Por.PorEngineSave.Identity(content), content.LoadBlock, [content.Root]));
+            var player = new PorPlayer(new ScriptedEclHost { StopWhenInputMissing = true },
+                new ScriptedEncounterUi { StopWhenInputMissing = true }, new RecordingCombatRunner(), new ScriptedAreaUi());
+            var g = PorGame.Enter(content, PorViewArt.Load(content), 20, 15, 4, 6, player, 1);
+            var party = new GoldBox.Core.Ecl.EclParty();
+            g.Memory.Party = party;
+            ushort pc = g.Vm.Pc;
+            var vectors = g.Vm.Vectors.ToArray();
+            Assert.False(g.LoadInMenu(camp, party));
+            Assert.Empty(party.Members);
+            Assert.True(g.LoadInMenu(hallPath, party));
+            Assert.Same(party, g.Memory.Party);
+            Assert.Equal(6, party.Members.Count);
+            Assert.Equal(0, party.CurrentIndex);
+            Assert.Equal(0x5A, g.Memory.ScriptArea[0x700]);
+            Assert.Equal(pc, g.Vm.Pc);
+            Assert.Equal(vectors, g.Vm.Vectors);
+            Assert.Equal(new PorSaveGame(hall).X, g.Memory.Position.X);
+        }
+        finally
+        {
+            tmp.Delete(recursive: true);
+        }
+    }
+
     [PorFact]
     public void Shipped_save_a_round_trips()
     {

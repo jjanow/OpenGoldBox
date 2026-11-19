@@ -258,7 +258,8 @@ public sealed partial class FightSpells
             budget--;
             if (Effects.Revive(p, p[EffectHandlers.HpMax]))
             {
-                Effects.AddEffectWithMessage(p, 0x20, 0, param, true, 0, false, EffectEvent.EffectGained);
+                Effects.AddEffectWithMessage(p, 0x20, 0, param, true, 0, false, EffectEvent.EffectGained,
+                    EffectTexts.Animated); // 0x291FF
                 p[EffectHandlers.Status] = 1;
             }
         }
@@ -485,6 +486,9 @@ public sealed partial class FightSpells
                 lastSlot = slot;
                 if (terrain == 0)
                     left = 0;
+                // 0x29AEC–0x29B02: the moving icon (cell 0x13 = COMSPR 6, 0x2997C) from the line's start ([bp−0x37],
+                // [bp−0x38], set after 0x2FCF2) to the cell about to be hit, 4 frames, 50 ms.
+                F.Flight?.Invoke(FlightAnimation.Bolt(tx, ty, line.Cx, line.Cy));
                 bool rebound = BoltHit(line.Cx, line.Cy, damage, saveType);
                 if (rebound)
                 {

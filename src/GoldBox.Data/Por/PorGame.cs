@@ -100,10 +100,11 @@ public sealed class PorGame
     /// <c>SAVGAMx.DAT</c>, converted first (<see cref="Module.Por.PorEngineSave"/>; its party files are looked up next
     /// to it, then in the content's save folder).
     /// </summary>
-    public static PorGame FromSave(IPorContent content, PorViewArt art, string savePath, PorPlayer player, uint seed)
+    public static PorGame FromSave(IPorContent content, PorViewArt art, string savePath, PorPlayer player, uint seed,
+        int markerCounter = 0)
     {
         var (doc, problem) = ReadSave(content, savePath);
-        var g = FromSave(content, art, doc, player, seed);
+        var g = FromSave(content, art, doc, player, seed, markerCounter);
         if (problem is not null)
             g.Vm.Diagnostics.Insert(0, problem);
         return g;
@@ -115,10 +116,10 @@ public sealed class PorGame
     /// diagnostic, as before).
     /// </summary>
     public static PorGame FromSave(IPorContent content, PorViewArt art, byte[] save, string saveDir, PorPlayer player, uint seed,
-        string? fileName = null)
+        string? fileName = null, int markerCounter = 0)
     {
         var (doc, problem) = ConvertOriginal(content, save, saveDir, fileName);
-        var g = FromSave(content, art, doc, player, seed);
+        var g = FromSave(content, art, doc, player, seed, markerCounter);
         if (problem is not null)
             g.Vm.Diagnostics.Insert(0, problem);
         return g;
@@ -151,10 +152,12 @@ public sealed class PorGame
     /// script switch). The save must be for the content's VM profile and module id
     /// and version (<see cref="Module.Por.PorEngineSave.Check"/>); different module content is noted in the diagnostics.
     /// </summary>
-    public static PorGame FromSave(IPorContent content, PorViewArt art, Module.EngineSaveDocument save, PorPlayer player, uint seed)
+    /// <param name="markerCounter">DS:6DDC as the session left it (a load keeps it; 0 at the start-up).</param>
+    public static PorGame FromSave(IPorContent content, PorViewArt art, Module.EngineSaveDocument save, PorPlayer player, uint seed,
+        int markerCounter = 0)
     {
         var g = Loaded(content, art, save, player, seed);
-        g.RunLoadedEntry();
+        g.RunLoadedEntry(markerCounter);
         return g;
     }
 
@@ -170,14 +173,17 @@ public sealed class PorGame
     /// the game loop's first pass on that memory (<see cref="RunNewGameEntry"/>). <see cref="LoadedInterfaceState"/>
     /// tells which.
     /// </summary>
-    public static PorGame LoadAtPartyMenu(IPorContent content, PorViewArt art, string savePath, PorPlayer player, uint seed)
+    public static PorGame LoadAtPartyMenu(IPorContent content, PorViewArt art, string savePath, PorPlayer player, uint seed,
+        int markerCounter = 0)
     {
         var (doc, problem) = ReadSave(content, savePath);
         var g = Loaded(content, art, doc, player, seed);
         if (problem is not null)
             g.Vm.Diagnostics.Insert(0, problem);
         if (g.LoadedInterfaceState != 0)
-            g.RunLoadedEntry();
+            g.RunLoadedEntry(markerCounter);
+        else
+            g.Memory.MarkerCounter = markerCounter;
         return g;
     }
 
@@ -193,33 +199,85 @@ public sealed class PorGame
         sg.ApplyTo(g.Memory);
         g.LoadedInterfaceState = sg.InterfaceState;
         g.Vm.SetCurrentScript(sg.ScriptId, sg.Disk);
-        // Load game (0x1FBB3–0x1FBC4) re-reads map $49C5 before vector 4 when DS:49FA (the save's location type) < 2.
-        if (g.Memory.ViewMode < 2)
-        {
-            g.Loop.LoadMap(g.Memory.Read(0x49C5));
-            // 0x1FBEE–0x1FC86 (location type ≤ 1): for i = 1..3 the cache DS:6AAE+4i := $4AF9+i (id), DS:6AB0+4i :=
-            // $4AFC+i (slot), and LoadWallSet(id, slot) when the id is not negative; a slot whose id is negative keeps
-            // what it held. So an area whose vector 4 loads no wall sets still shows the saved walls (DOSBox-X s22).
-            for (int i = 1; i <= 3; i++)
-            {
-                short id = (short)g.Memory.Read((ushort)(0x4AF9 + i));
-                int slot = g.Memory.Read((ushort)(0x4AFC + i)) & 0xFF;
-                if (id >= 0)
-                    g.AreaHost.LoadWallSet(slot, id & 0xFF);
-            }
-        }
+        g.ReloadSavedMap();
         return g;
     }
 
-    private void RunLoadedEntry()
+    /// <summary>
+    /// Load game (0x1FBB3–0x1FBC4) re-reads map $49C5 when DS:49FA (the save's location type) &lt; 2; then
+    /// (0x1FBEE–0x1FC86, location type ≤ 1) for i = 1..3 the cache DS:6AAE+4i := $4AF9+i (id), DS:6AB0+4i := $4AFC+i
+    /// (slot), and LoadWallSet(id, slot) when the id is not negative; a slot whose id is negative keeps what it held. So
+    /// an area whose vector 4 loads no wall sets still shows the saved walls (DOSBox-X s22).
+    /// </summary>
+    private void ReloadSavedMap()
     {
+        if (Memory.ViewMode >= 2)
+            return;
+        Loop.LoadMap(Memory.Read(0x49C5));
+        for (int i = 1; i <= 3; i++)
+        {
+            short id = (short)Memory.Read((ushort)(0x4AF9 + i));
+            int slot = Memory.Read((ushort)(0x4AFC + i)) & 0xFF;
+            if (id >= 0)
+                AreaHost.LoadWallSet(slot, id & 0xFF);
+        }
+    }
+
+    /// <summary>
+    /// The training hall's Load (0x1F5E8 from the hall menu 0x19AE0, ECL PROGRAM 0) of a save with interface state 0
+    /// (written at the party menu or in a hall): the menu stays up (0x19D8A) and the program goes on in this game. Load
+    /// copies the save's memory (the four areas with the script area, the square, location type, speed, disk byte) and
+    /// party over the running game's and re-reads the map and wall sets (<see cref="ReloadSavedMap"/>); it does not touch
+    /// the ECL PC, the vectors DS:49E3–49EB or the current block DS:84DC, and DS:49F8 stays 0. So after Begin the
+    /// running script goes on at its PC in the loaded script area (DOSBox-X s25: a hall save whose text after
+    /// PROGRAM 0 was patched printed the patched text). The party is <paramref name="party"/> (the hall's list, kept as
+    /// the same object): its members are replaced by the save's, the first current (0x1FB99). False, with nothing
+    /// changed, for a save of another interface state (the program leaves the menu: the caller loads it as a game).
+    /// </summary>
+    public bool LoadInMenu(string savePath, EclParty party)
+    {
+        var (doc, problem) = ReadSave(Content, savePath);
+        var notes = Module.Por.PorEngineSave.Check(doc, Content.VmProfile, Module.Por.PorEngineSave.Identity(Content));
+        var sg = Module.Por.PorEngineSave.ToSaveGame(doc);
+        if (sg.InterfaceState != 0)
+            return false;
+        Vm.Diagnostics.AddRange(notes);
+        if (problem is not null)
+            Vm.Diagnostics.Add(problem);
+        var members = Module.Por.PorEngineSave.Party(doc)?.Members ?? [];
+        sg.ApplyTo(Memory);
+        party.Members.Clear();
+        party.Members.AddRange(members);
+        party.CurrentIndex = party.Members.Count > 0 ? 0 : -1;
+        Memory.Party = party;
+        LoadedInterfaceState = 0;
+        ReloadSavedMap();
+        return true;
+    }
+
+    /// <summary>
+    /// The game loop's first pass on a loaded game (0x403E). The overland marker counter DS:6DDC is not in the save and
+    /// Load does not write it, so it goes on from <paramref name="markerCounter"/> (the session's; 0 after the start-up,
+    /// 0xE9D3). The loop sets the interface state DS:49F3 := 4, or 3 when $49F2 (the block read at the last command)
+    /// is 25–27 with $49E6 = 0 (0x405D–0x408E), before vector 4. At 3 nothing is drawn before the first command (whose
+    /// overland interface, START 0x36FE, draws frames c and c + 1). At 4, START 0x3379 (case 4: the redraw, 0x341F)
+    /// runs once, inside the first LOADFILES/LOADPIECES once both have run (0x1B05–0x1B2C) or else at 0x40BE, then the
+    /// redraw 0x40C8: two marker draws when the overland is shown. A save made on the overland has $49F2 = 25–27, so
+    /// its load draws nothing; `save-overland`'s test saves keep save A's $49F2 = 20, so 2 (DOSBox-X: frames 2 + 3).
+    /// </summary>
+    private void RunLoadedEntry(int markerCounter = 0)
+    {
+        Memory.MarkerCounter = ((markerCounter % 6) + 6) % 6;
+        int block = Memory.Read(AreaLoop.PreviousScript) & 0xFF;
+        bool outdoors = block is >= 25 and <= 27 && Memory.Read(AreaLoop.View3DCell) == 0; // DS:49F3 := 3 (0x408E)
         // A NEWECL in this vector 4 is followed only after the next command's vector (DS:442F stays set).
         EntryRun = Vm.RunLoadedGame();
-        FinishEntry(follow: false);
-        // [?] DS:6DDC after a load onto the overland: DOSBox-X shows frames 2 + 3 at the first command (load from the
-        // main menu after the program start); the redraws of the load that advance it are not traced.
-        if (Overland.Shown(Memory))
-            Loop.MarkerCounter = 2;
+        int afterVector = Memory.MarkerCounter;
+        FinishEntry(follow: false); // its view redraw is 0x40C8's
+        if (outdoors)
+            Memory.MarkerCounter = afterVector; // DS:49F3 = 3: neither 0x3379 nor 0x40C8 runs
+        else
+            Overland.Redrawn(Memory); // START 0x3379 case 4 (0x1B1A or 0x40BE → 0x341F)
     }
 
     /// <summary>Enters area script <paramref name="script"/> with fresh VM memory at a square: script init, then vector 4.</summary>

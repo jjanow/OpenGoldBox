@@ -299,9 +299,9 @@ public sealed partial class EffectHandlers
             bool saved = SavingThrow(p, 4, 0);
             sbyte hd = (sbyte)p[0x73];
             if (hd is >= 0 and <= 3)
-                AddEffectWithMessage(p, 0x34, 0, 0x0C, false, 1, saved, EffectEvent.Other);
+                AddEffectWithMessage(p, 0x34, 0, 0x0C, false, 1, saved, EffectEvent.Other, EffectTexts.FearParalysis); // 0x10794
             else if (hd is 4 or 5)
-                AddEffectWithMessage(p, 0x02, 0, 0x0C, false, 1, saved, EffectEvent.Other);
+                AddEffectWithMessage(p, 0x02, 0, 0x0C, false, 1, saved, EffectEvent.Other, EffectTexts.FearWeakened); // 0x107CB
         }
     }
 
@@ -325,7 +325,7 @@ public sealed partial class EffectHandlers
                 mod += 2;
             bool saved = SavingThrow(p, 0, mod);
             ushort minutes = Dice(1, 4);
-            AddEffectWithMessage(p, 0x34, minutes, 0x0C, false, 1, saved, EffectEvent.Other);
+            AddEffectWithMessage(p, 0x34, minutes, 0x0C, false, 1, saved, EffectEvent.Other, EffectTexts.AuraParalysis); // 0x108C7
         }
     }
 
@@ -387,7 +387,8 @@ public sealed partial class EffectHandlers
         Emit(c, EffectEvent.Other);
         Cells.Spell = 0x0A;
         bool saved = SavingThrow(o!, 4, -2);
-        AddEffectWithMessage(o!, 0x0B, 0, (byte)(((sbyte)c[Hostile] << 7) + 0x0C), true, 1, saved, EffectEvent.Charmed);
+        AddEffectWithMessage(o!, 0x0B, 0, (byte)(((sbyte)c[Hostile] << 7) + 0x0C), true, 1, saved, EffectEvent.Charmed,
+            EffectTexts.CharmGaze); // 0x10C20
         if (FindEffect(o!, 0x0B) is { } n)
             CallHandler(0x0B, o!, n, false);
     }

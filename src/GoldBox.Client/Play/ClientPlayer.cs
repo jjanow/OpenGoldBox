@@ -25,7 +25,7 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
     /// <summary>The game (set once it is built): its random generator and encounter host.</summary>
     public Func<GoldBox.Data.Por.PorGame?> Game { get; set; } = () => null;
 
-    /// <summary>CLEARBOX blanked the picture window (1,1)–(15,15) [?] until the next command (the redraw is not read).</summary>
+    /// <summary>CLEARBOX blanked the picture window (1,1)–(15,15) until the next command, or the script switch's redraw (0x3FF5, <see cref="SwitchRedrawn"/>).</summary>
     public bool ViewBlanked { get; set; }
 
     private Dialog? _dialog;
@@ -70,6 +70,9 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
     /// </remarks>
     public bool PictureArmed { get; set; }
 
+    /// <summary>PRINT types its text out (DS:4A00, <see cref="Print"/>); off only in tests that step through scripts.</summary>
+    public bool TypesText { get; set; } = true;
+
     /// <summary>HMENU's and ENCMENU's animate flag: DS:84E0 and DS:84E1.</summary>
     private bool CloseUpAnimates => PictureArmed && ViewPicture is { Kind: ViewPictureKind.Picture };
 
@@ -97,12 +100,28 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
     private bool _pagePrompted;
 
     // ---- Text ----------------------------------------------------------------------------------------------------
-    /// <summary>PRINT / PRINTCLR (GAME.OVR 0x174F): PRINTCLR starts at column 1, row 17 and blanks the box; colour 10.</summary>
+    /// <summary>
+    /// PRINT / PRINTCLR (GAME.OVR 0x174F): PRINTCLR starts at column 1, row 17 and blanks the box; colour 10. The
+    /// handler sets DS:4A00 = 1 (0x1763) before the text and 0 after it (0x17DC), so the text is typed out: Delay(DS:49E2
+    /// × 10) ms after each character (START 0x777B).
+    /// </summary>
     public void Print(string text, bool clearFirst)
     {
+        // (TypesText off: tests that walk the scripts step by step.)
         if (clearFirst)
             Text.Home();
-        Text.Print(text, clearFirst);
+        int speed = memory().GameSpeed;
+        Text.Typed = speed > 0 && TypesText
+            ? () => runner.Ask(new DelayRequest(TimeSpan.FromMilliseconds(10 * speed)) { Chained = true })
+            : null;
+        try
+        {
+            Text.Print(text, clearFirst);
+        }
+        finally
+        {
+            Text.Typed = null;
+        }
     }
     public void PrintReturn() => Text.NewLine();
     /// <summary>CLEARBOX (0x385A): blanks the picture window, not the text box.</summary>
@@ -363,6 +382,16 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
     {
         PositionLineErased = false;
         Interlocked.Increment(ref _positionLineDraws);
+    }
+
+    /// <summary>
+    /// The script switch's redraw (0x3FF5 → 0x2DCF4) drew the view over the window: a CLEARBOX blank or a picture of
+    /// the old script's is gone from the screen (the flags DS:84E0 / 84E1 are not touched).
+    /// </summary>
+    public void SwitchRedrawn()
+    {
+        ViewBlanked = false;
+        ViewOverlay = null;
     }
 
     public void RestoreView()
@@ -626,13 +655,24 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
     /// <summary>The bump of a refused step or failed door (OVR 0x176FE): cue DS:2622.</summary>
     public void Bump() => Sound.Cue(GoldBox.Core.Sound.SoundCue.Impact);
 
-    public void Message(AreaMessage message)
+    /// <summary>
+    /// The command routine's two messages (0x170F1: A where $49FB ≠ 0, 3D view only; 0x16FEE: the overland step onto a
+    /// river while $4AA2 = 0) go through START 0x7DF8 with colour 14 (<see cref="Flash"/>).
+    /// </summary>
+    public void Message(AreaMessage message) =>
+        Flash(Resources.Texts[message == AreaMessage.NoAreaMapHere ? Msg.NoAreaMapHere : Msg.RiverBlocks], 14);
+
+    /// <summary>
+    /// The bottom-line message START 0x7DF8 (0x709:0xD68; the combat routine 0x2233 with a colour argument): row 24
+    /// cleared (0x767B over columns 0–39), the text at column 0 in <paramref name="colour"/> (0x76B6), PauseOnly
+    /// (0x7E4E: Delay(DS:49E2 × 225) ms), row 24 cleared. The rest of the screen stays as it was; the command line comes
+    /// back with the next command read. Speed 0 waits 0 ms, so nothing is seen.
+    /// </summary>
+    public void Flash(string text, byte colour)
     {
-        if (message == AreaMessage.NoAreaMapHere)
-            Notice = "NO AREA MAP HERE.";
-        // [?] The program flashes it on row 24 in colour 14 for DS:49E2 × 225 ms (START 0x7DF8); shown as a notice.
-        else if (message == AreaMessage.RiverBlocks)
-            Notice = Resources.Texts[Msg.RiverBlocks];
+        int speed = memory().GameSpeed;
+        if (speed is > 0 and <= 9)
+            runner.Ask(new DelayRequest(TimeSpan.FromMilliseconds(225 * speed)) { BottomLine = (text, colour) });
     }
 
     /// <summary>
@@ -718,7 +758,8 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
             Resources = Resources,
             Save = SaveGame,
             Quit = Quit,
-            EditIcon = IconEditor,
+            // On the overland the editor's end reloads icon slots 11 and 12 (0x1D84A), one of them a marker slot.
+            EditIcon = IconEditor is { } edit ? c => { edit(c); game?.Loop.IconEditorDone(); } : null,
         };
     }
 

@@ -22,15 +22,17 @@ public sealed class ClientAudio : ISoundSink, IDisposable
     private const int Chunk = SampleRate / 60;
     private readonly object _lock = new();
     private readonly PcSoundPlayer _player;
+    private readonly AmigaMusic? _music;
     private readonly DynamicSoundEffectInstance _out;
     private readonly Thread _pump;
     private readonly int _uiThread;
     private volatile bool _stop;
     private bool _resident, _closing;
 
-    private ClientAudio(PcSoundPlayer player, DynamicSoundEffectInstance output, int uiThread)
+    private ClientAudio(PcSoundPlayer player, AmigaMusic? music, DynamicSoundEffectInstance output, int uiThread)
     {
         _player = player;
+        _music = music;
         _out = output;
         _uiThread = uiThread;
         _pump = new Thread(Pump) { IsBackground = true, Name = "GoldBox audio" };
@@ -46,15 +48,19 @@ public sealed class ClientAudio : ISoundSink, IDisposable
         _ => null,
     };
 
-    /// <summary>Opens the audio output for <paramref name="sound"/>, or null (sound off, no driver data, no audio device).</summary>
-    public static ClientAudio? Open(PorSound? sound, PcSoundDevice? device)
+    /// <summary>
+    /// Opens the audio output for <paramref name="sound"/>, or null (sound off, no driver data, no audio device). With
+    /// <paramref name="amiga"/> (the module's Amiga players' data) the Amiga music can be played too (<see cref="PlaySong"/>).
+    /// </summary>
+    public static ClientAudio? Open(PorSound? sound, PcSoundDevice? device, AmigaSoundImage? amiga = null)
     {
         if (sound is null || device is not { } d)
             return null;
         try
         {
             var output = new DynamicSoundEffectInstance(SampleRate, AudioChannels.Mono);
-            return new ClientAudio(sound.Player(d, SampleRate), output, Environment.CurrentManagedThreadId);
+            return new ClientAudio(sound.Player(d, SampleRate), amiga is null ? null : new AmigaMusic(amiga, SampleRate),
+                output, Environment.CurrentManagedThreadId);
         }
         catch (Exception e) when (e is NoAudioHardwareException or InvalidOperationException or TypeInitializationException
                                        or DllNotFoundException)
@@ -65,6 +71,22 @@ public sealed class ClientAudio : ISoundSink, IDisposable
     }
 
     public PcSoundDevice Device => _player.Device;
+
+    /// <summary>The module has the Amiga music (docs/re/sound.md §5).</summary>
+    public bool HasAmigaMusic => _music is not null;
+
+    /// <summary>
+    /// The Amiga's PlaySong(n) (hunk 27 +0x6E54): 0 stops, 1–6 start song n (docs/re/sound.md §5.3: 1 the intro and the
+    /// camp, 2 a battle, 3 a character or icon accepted, 5 the party killed). Nothing without the Amiga music.
+    /// </summary>
+    public void PlaySong(int song)
+    {
+        if (_music is null)
+            return;
+        Log($"song {song}");
+        lock (_lock)
+            _music.Play(song);
+    }
 
     /// <summary>GOLDBOX_SOUND_LOG=1: each sound call on stderr with the time (for comparing with captures).</summary>
     private static readonly bool LogCalls = Environment.GetEnvironmentVariable("GOLDBOX_SOUND_LOG") == "1";
@@ -145,6 +167,7 @@ public sealed class ClientAudio : ISoundSink, IDisposable
                 lock (_lock)
                 {
                     _player.Render(samples);
+                    _music?.Render(samples);
                     if (_resident && _closing && !_player.Driver.Busy(_player.Device))
                         CloseBracket();
                 }

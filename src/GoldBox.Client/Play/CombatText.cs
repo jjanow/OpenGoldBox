@@ -1,3 +1,4 @@
+using GoldBox.Core.Game;
 using GoldBox.Data.Por;
 
 namespace GoldBox.Client.Play;
@@ -177,6 +178,51 @@ public sealed class CombatText
         [CombatMsg.PanelHelpless] = "(HELPLESS)",
     };
 
+    /// <summary>
+    /// Our wordings of the effect messages (0x2C540's texts, Core <see cref="EffectTexts"/>), used when the game files
+    /// do not give the program's own.
+    /// </summary>
+    private static readonly Dictionary<string, string> EffectTable = new()
+    {
+        [EffectTexts.Blessed] = "GAINS A BLESSING",
+        [EffectTexts.Cursed] = "GETS A CURSE",
+        [EffectTexts.Affected] = "FEELS THE SPELL",
+        [EffectTexts.Protected] = "GAINS PROTECTION",
+        [EffectTexts.ColdResistant] = "RESISTS COLD",
+        [EffectTexts.Charmed] = "FALLS UNDER A CHARM",
+        [EffectTexts.Friendly] = "TURNS FRIENDLY",
+        [EffectTexts.Shielded] = "GAINS A SHIELD",
+        [EffectTexts.Asleep] = "DOZES OFF",
+        [EffectTexts.Held] = "CANNOT MOVE",
+        [EffectTexts.FireResistant] = "RESISTS FIRE",
+        [EffectTexts.Silenced] = "GOES SILENT",
+        [EffectTexts.SlowPoison] = "FEELS THE SPELL",
+        [EffectTexts.SnakeCharm] = "FALLS UNDER A CHARM",
+        [EffectTexts.Invisible] = "VANISHES",
+        [EffectTexts.Knock] = "HEARS A KNOCK",
+        [EffectTexts.Duplicated] = "GAINS IMAGES",
+        [EffectTexts.Weakened] = "LOSES STRENGTH",
+        [EffectTexts.Animated] = "RISES AGAIN",
+        [EffectTexts.Blind] = "LOSES SIGHT",
+        [EffectTexts.Diseased] = "FALLS ILL",
+        [EffectTexts.Praying] = "PRAYS",
+        [EffectTexts.BestowCurse] = "GETS A CURSE",
+        [EffectTexts.Blinking] = "FLICKERS",
+        [EffectTexts.Hasted] = "SPEEDS UP",
+        [EffectTexts.Slowed] = "SLOWS DOWN",
+        [EffectTexts.Speedy] = "SPEEDS UP",
+        [EffectTexts.Paralyzed] = "CANNOT MOVE",
+        [EffectTexts.InvisibleItem] = "VANISHES",
+        [EffectTexts.Reading] = "CAN READ IT",
+        [EffectTexts.FearParalysis] = "FREEZES IN FEAR",
+        [EffectTexts.FearWeakened] = "SHAKES IN FEAR",
+        [EffectTexts.AuraParalysis] = "CANNOT MOVE",
+        [EffectTexts.CharmGaze] = "FALLS UNDER A CHARM",
+        [EffectTexts.Coughs] = "COUGHS",
+        [EffectTexts.Nausea] = "RETCHES",
+    };
+
+    private readonly Dictionary<string, string> _effects = [];
     private readonly Dictionary<CombatMsg, string> _texts = [];
 
     /// <summary>Our wordings only (no game files, or another version of GAME.OVR).</summary>
@@ -191,7 +237,18 @@ public sealed class CombatText
         foreach (var id in Table.Keys.Concat(StartTable.Keys))
             if (program.Text("CombatMsg." + id) is { } s)
                 _texts[id] = s;
+        foreach (var key in EffectTexts.All)
+            if (program.Text(key) is { } s)
+                _effects[key] = s;
     }
+
+    /// <summary>How many of the effect messages came from the game files.</summary>
+    public int EffectsFromGame => _effects.Count;
+
+    /// <summary>An effect message (0x2C540's text) by its key (Core <see cref="EffectTexts"/>), upper case: the
+    /// program's from the game files, else our wording (the key itself for an unknown key).</summary>
+    public string Effect(string key) =>
+        (_effects.TryGetValue(key, out var s) ? s : EffectTable.TryGetValue(key, out var t) ? t : key).ToUpperInvariant();
 
     /// <summary>How many of the texts came from the game files.</summary>
     public int FromGame => _texts.Count;

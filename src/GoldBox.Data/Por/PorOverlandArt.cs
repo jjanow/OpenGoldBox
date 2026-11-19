@@ -118,7 +118,7 @@ public sealed class PorOverlandArt
     /// <paramref name="marker"/> (<see cref="Overland.MarkerCell"/>). A missing tile is drawn black.
     /// </summary>
     public void Draw(IndexedFrame f, int x, int y, byte[] tiles, (int Col, int Row) marker, int counter, int facing,
-        bool outdoor = true)
+        bool outdoor = true, IReadOnlyList<int>? slots = null)
     {
         for (int i = 0; i < tiles.Length && i < Overland.ViewTiles * Overland.ViewTiles; i++)
         {
@@ -128,13 +128,15 @@ public sealed class PorOverlandArt
             else
                 f.FillRect(tx, ty, Size, Size, 0);
         }
-        DrawMarker(f, x, y, marker, counter, facing);
+        DrawMarker(f, x, y, marker, counter, facing, slots);
     }
 
-    /// <summary>The marker frame of <paramref name="counter"/> alone, over what the view at (x, y) holds.</summary>
-    public void DrawMarker(IndexedFrame f, int x, int y, (int Col, int Row) marker, int counter, int facing)
+    /// <summary>The marker frame of <paramref name="counter"/> alone, over what the view at (x, y) holds; the animation
+    /// slots hold <paramref name="slots"/> (<see cref="AreaLoop.MarkerSlots"/>; null: as loaded on entry).</summary>
+    public void DrawMarker(IndexedFrame f, int x, int y, (int Col, int Row) marker, int counter, int facing,
+        IReadOnlyList<int>? slots = null)
     {
-        var (block, mirrored) = Overland.MarkerFrame(((counter % 6) + 6) % 6, facing);
+        var (block, mirrored) = Overland.MarkerFrame(((counter % 6) + 6) % 6, facing, slots);
         if (Marker(block) is { } m)
             Blit(f, m, x + Size * marker.Col, y + Size * marker.Row, mirrored, x, y);
     }
@@ -169,21 +171,23 @@ public sealed class PorOverlandArt
         int c = loop.MarkerCounter;
         if (!loop.OverlandInterfacePending)
         {
-            Draw(f, x, y, m, map, column, c + 5);
+            Draw(f, x, y, m, map, column, c + 5, loop.MarkerSlots);
             return;
         }
+        // The interface loads the animation slots afresh first (0x17285).
         Draw(f, x, y, m, map, column, c);
         var (px, py) = Overland.Position(m);
         DrawMarker(f, x, y, Overland.MarkerCell(column, px, py), c + 1, m.Position.Facing);
     }
 
     /// <summary>Draws the party's view now at (x, y) (see <see cref="Render"/>).</summary>
-    public void Draw(IndexedFrame f, int x, int y, Core.Ecl.EclMemory m, OverlandMap map, int column, int counter)
+    public void Draw(IndexedFrame f, int x, int y, Core.Ecl.EclMemory m, OverlandMap map, int column, int counter,
+        IReadOnlyList<int>? slots = null)
     {
         var (px, py) = Overland.Position(m);
         var (left, top) = Overland.ViewOrigin(column, px, py);
         Draw(f, x, y, Overland.ComposeView(map, left, top, m.Read), Overland.MarkerCell(column, px, py), counter,
-            m.Position.Facing);
+            m.Position.Facing, slots: slots);
     }
 
     /// <summary>Draws a picture's opaque pixels, mirrored when asked, clipped to the view at (x0, y0).</summary>

@@ -18,8 +18,8 @@ public enum Msg
     ShopTitle, ShopOverloaded, ShopNoMoney, ShopMoneyLeft, ShopGoBack,
     // Camp (0x19654)
     MakesCamp, CampPrompt, QuitToDos,
-    // Overland step (0x16EBF)
-    RiverBlocks,
+    // Command routine 0x17054: the overland step's river (0x16EBF), A where there is no area map (0x17046)
+    RiverBlocks, NoAreaMapHere,
     // HMENU (0x1E17)
     HmenuButton, HmenuEnter,
     // ENCMENU and PARLEY (0x2BE1–0x2C3D, 0x32EE)
@@ -81,6 +81,7 @@ public sealed class GameText
         [Msg.TempleGoBack] = "GO BACK FOR IT?",
         [Msg.LostDuel] = "THE DUEL IS LOST.",
         [Msg.RiverBlocks] = "THE RIVER BLOCKS THE WAY.",
+        [Msg.NoAreaMapHere] = "NO AREA MAP HERE.",
         [Msg.HmenuButton] = "",
         [Msg.HmenuEnter] = "",
         [Msg.EncounterMenuParley] = "~FIGHT ~WAIT ~RUN ~TALK",

@@ -202,8 +202,10 @@ Menu DS:055A (Order, Drop, Speed, Icon, Pics, Exit), prompt 0x19441; extended ke
   §3, Core `IconEditor`) on the current character (DS:5D92), then the screen redrawn for the interface state (START
   0x3379, 00BA:27D9). Client: `CampContext.EditIcon` runs the party menu's editor (`PartyMenuFlow.EditIcon`); the
   explore screen puts its icon page over the camp (keys, pad, mouse) and closes it when the Alter menu asks again.
-  `[?]` The editor's overland redraw (DS:49FA > 1: ICON slots 11 and 12) has no Client counterpart: the Client's
-  overland marker does not use the party's icons.
+  On the overland (DS:49FA > 1) the editor's end loads ICON blocks 0 and 1 into icon slots 11 and 12 (0x1D84A); slot 11
+  is the marker's third animation slot, which held block 2, so the marker draws the wrong frames for counters 4 and 5
+  until the overland is entered again (**D**, s25; geo-format.md "Marker"). Client: `AreaLoop.IconEditorDone` after
+  the camp's editor, matched to DOSBox-X.
 - **Pics**: monsters on/off, portraits on/off, Exit (0x19449–0x19485); M and P toggle the two flags (saved as $49FF bit 1 and bit 0).
 
 ## Save (0x1FD3E) — P

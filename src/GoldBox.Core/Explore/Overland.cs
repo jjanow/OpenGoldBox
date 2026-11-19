@@ -130,13 +130,32 @@ public static class Overland
     }
 
     /// <summary>
+    /// The view redraw 0x2DCF4 ran: on the overland (<see cref="Shown"/>) it draws the marker (0x2DE20 → 0x2DB87),
+    /// which advances DS:6DDC (<see cref="EclMemory.MarkerCounter"/>); a 3D redraw does not. Callers of 0x2DCF4 the
+    /// engine models: the step and Look/Search/Encamp redraws of the area loop (0x41D8, 0x414C, 0x3B48), the script
+    /// switch (0x3FF5), CALL $2C90 (0x3A7E), SPRITEOFF (0x37F6), the loaded game's entry (0x40BE / 0x1B1A via START
+    /// 0x3379 case 3–4, and 0x40C8) and the overland interface (START 0x370B, plus its own marker at 0x3710).
+    /// </summary>
+    public static void Redrawn(EclMemory m)
+    {
+        if (Shown(m))
+            m.MarkerCounter = (m.MarkerCounter + 1) % 6;
+    }
+
+    /// <summary>
     /// The marker's animation counter DS:6DDC (0–5): each overland redraw draws ICON block (counter / 2) (+ 128 when
     /// the counter is odd), then adds 1 mod 6 (0x2DC18–0x2DC42). Facings above 3 (S, W) draw the frame mirrored
-    /// (0x31FD2). [?] The counter's value at a load (0 assumed: the game init's) and every redraw that advances it
-    /// between commands (CALL $2C90 redraws too) are not traced; the Client advances it once per redraw it shows.
+    /// (0x31FD2). The start-up sets it to 0 (0xE9D3); nothing else writes it (<see cref="Redrawn"/>).
     /// </summary>
-    public static (int IconBlock, bool Mirrored) MarkerFrame(int counter, int facing) =>
-        (counter / 2 + (counter % 2 == 1 ? 128 : 0), facing > 3);
+    public static (int IconBlock, bool Mirrored) MarkerFrame(int counter, int facing) => MarkerFrame(counter, facing, null);
+
+    /// <summary>
+    /// As <see cref="MarkerFrame(int, int)"/>, with what the animation slots 9–11 hold: the draw takes icon slot
+    /// 9 + counter / 2, frame counter % 2 (0x2DC18–0x2DC30), and slot s holds ICON block <paramref name="slots"/>[s − 9]
+    /// and that + 128 (<see cref="AreaLoop.MarkerSlots"/>; null: 0, 1, 2 as the overland interface loads them).
+    /// </summary>
+    public static (int IconBlock, bool Mirrored) MarkerFrame(int counter, int facing, IReadOnlyList<int>? slots) =>
+        ((slots is null ? counter / 2 : slots[counter / 2]) + (counter % 2 == 1 ? 128 : 0), facing > 3);
 
     /// <summary>
     /// The position line's x and y in an overland mode (START 0x34C2–0x34F3): $49C3 + 13 in mode 3, + 26 in mode 4

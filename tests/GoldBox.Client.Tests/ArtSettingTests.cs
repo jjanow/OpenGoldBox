@@ -438,7 +438,8 @@ public class ArtSettingTests
         var palette = new ScreenPalette();
         var now = TimeSpan.Zero;
         var host = new Host();
-        var screen = new AmigaIntroScreen([page, page, page], palette, host, () => now);
+        int done = 0;
+        var screen = new AmigaIntroScreen([page, page, page], palette, host, () => now) { Done = () => done++ };
         var f = new IndexedFrame(320, 200);
         var input = new ActionInput(InputBindings.Defaults());
         int run = screen.Run;
@@ -458,8 +459,10 @@ public class ArtSettingTests
         Assert.Null(screen.MapClick(new ScreenClick(10, 10, false)));
         screen.Update(input);
         Assert.Equal(1, host.Pops);
+        Assert.Equal(1, done);                                       // the music is stopped as it ends
         screen.Update(input);
         Assert.Equal(1, host.Pops);                                  // once only
+        Assert.Equal(1, done);
 
         // Keyboard and pad: a press during a fade waits for the next wait or hold.
         foreach (bool pad in new[] { false, true })

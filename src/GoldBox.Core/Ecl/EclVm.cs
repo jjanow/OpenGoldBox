@@ -361,6 +361,12 @@ public sealed class EclVm
     public Func<bool, byte>? ScriptSwitchEventByte { get; set; }
 
     /// <summary>
+    /// The script switch redrew the view after vector 4 (0x3FD2–0x3FF5 → 0x2DCF4): the window shows the view (3D or
+    /// overland) again, over a picture or a CLEARBOX blank left by the old script.
+    /// </summary>
+    public event Action? ScriptSwitchRedrawn;
+
+    /// <summary>
     /// After a run that switched scripts (routine 0x3EFA), while the script-changed flag DS:442F is set: the new script
     /// is already loaded and initialised by NEWECL. Each pass reads the event byte of the party's square again
     /// (<see cref="ScriptSwitchEventByte"/>), clears the edge-step cell $6DD5 (0x3F00–0x3F16), saves the current
@@ -395,6 +401,11 @@ public sealed class EclVm
             bool redraw = (before == 1 && now == 1) || ((before > 1 || now == 1) && Memory.FilesLoadedSinceSwitch);
             if (redraw && (now == 1 || ReadMem(0x49E6) != 0) && ScriptSwitchEventByte?.Invoke(true) is { } ev2)
                 Memory.Position.EventByte = ev2;
+            if (redraw)
+            {
+                Explore.Overland.Redrawn(Memory); // on the overland the redraw draws the marker (DS:6DDC + 1)
+                ScriptSwitchRedrawn?.Invoke();
+            }
             ScriptChanged = false;
             last = RunVector(0, maxStepsPerRun);
             if (last.Reason is not (EclStopReason.Exit or EclStopReason.NewScript))

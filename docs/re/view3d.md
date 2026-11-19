@@ -24,7 +24,8 @@ Map format: `geo-format.md`. Pictures: `por-art-formats.md`.
 - The view is an 11 × 11 grid of 8 × 8 cells (88 × 88 pixels). On the 320 × 200 EGA screen its top-left pixel is at
   (24, 24) (measured in DOSBox-X).
 - The 3D view and the area map share this window. The A command switches between them, unless the area's script set
-  $49FB ≠ 0; then the program refuses with a short message `[?]`.
+  $49FB ≠ 0; then the program refuses with a short message (cs:0x97B, row 24 in colour 14 for DS:49E2 × 225 ms,
+  START 0x7DF8; geo-format.md "Row-24 messages").
 
 ## Program tables (START.EXE)
 
@@ -197,7 +198,8 @@ Code: `GoldBox.Core.Explore.AreaLoop` (one command at a time), `GameClock`, `Are
 (`AreaLoopTests`).
 
 - **Command routine 0x17054.** Every command read starts with $6DC9 = 0. With the 3D command line (DS:04B6):
-  - A: area map on/off (DS:6AAC) when $49FB = 0, else a short message (cs:0x97B, colour 14);
+  - A: area map on/off (DS:6AAC) when $49FB = 0, else a short message (cs:0x97B at 0x170F1, START 0x7DF8: row 24,
+    colour 14, DS:49E2 × 225 ms, then row 24 cleared);
   - C cast (0x17CD2, needs status 0), V view (0x21AED): not built;
   - S: $6DCA bit 0 toggles (Search mode); no time;
   - L (Look): $6DCA |= 2, 10 minutes (clock unit 2), the routine returns;
@@ -260,7 +262,7 @@ EXIT: (1, 17), no clear).
    pass prints it on the new row. (A test at 0x79A9 for a word ending exactly on x1 can never be true.)
 4. Else the word is drawn (0x7737), one cell per character; while DS:4A00 is set (PRINT sets it) each character is
    followed by Delay(DS:49E2 × 10) (START 0x7782 → the Crt-style Delay START 0xA69C, calibrated milliseconds; s15)
-   (the Client shows the text at once).
+   (Client: `TextWindow.Typed`, for PRINT and the fight panel; combat-menu.md "The panel's text").
 5. After the string a cursor past x1 goes to column x0 of the next row.
 The window never scrolls. Code: `GoldBox.Client.Play.TextWindow`.
 
@@ -323,8 +325,8 @@ turn (Core `FightKit.AiKey` → `MonsterAi.ReadKey`, `ActionInput.TakeAiKey`): t
 pad's right-stick press) puts the party back under the player's control, `FightQuickMagic` (Alt-M, left trigger)
 reads as 0x32 and `FightAltX` (Alt-X, left-stick press) as 0x2D (s23), any other key is taken with no effect. The
 check compares the byte only, extended or not, so the '2' key acts as Alt-M and '-' as Alt-X there (0xBBB0, 0xBC5F). The
-mouse has no way to them during a pause (clicks are dropped). Enter does not end a pause. The Client shows script text at once (no typing
-time), so pauses are the only busy time it has. QoL
+mouse has no way to them during a pause (clicks are dropped). Enter does not end a pause. The Client types PRINT text and the fight
+panel's as the program does (s25); pauses and typing are its busy time. QoL
 `SkipPauses` (settings, off = original): Enter or a click ends a pause, and keys pressed during it are dropped (the
 Client's behaviour before s22).
 

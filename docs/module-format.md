@@ -85,7 +85,7 @@ rules/program.json             the program's data segment and table offsets (sec
 rules/overland.json            the overland tile map and special locations (sections 6, 12)
 text/<lang>.json               program and module text by key (section 13)
 audio/dos/pcsound.json         the program's PC-speaker / Tandy sound driver data (section 10a; optional)
-audio/<variant>/               further sound variants (Amiga: not yet; section 10a)
+audio/amiga/sound.json         the Amiga version's music and effect players' data (section 10a; with the Amiga overlay)
 transfer.json                  what characters bring in and take out (section 14)
 saves/                         shipped saves / premade characters (optional; section 15; PoR: engine saves a.json, j.json)
 ```
@@ -426,10 +426,15 @@ For FRUA designs, and later for hand-made modules that don't want bytecode.
   and `cueTable`: the data-segment offset (in `rules/program.json`) of the program's 16 cue words, which the engine
   reads from there (not copied). The engine (`GoldBox.Core.Sound`) runs the driver and synthesises the speaker or
   the SN76489 from its port writes. Engine side: `IPorContent.Sound()`.
-- **Variants** follow the art rule: `dos` is always there when the program had a driver; an `amiga` variant would
-  hold the Amiga version's sampled sounds where it has one, and the player's setting picks (Original DOS / Best /
-  Amiga, as for art). The Amiga player is located but not decoded (docs/re/sound.md §5), so no `amiga` folder is
-  written yet and every setting plays DOS.
+- **Variants** follow the art rule: `dos` is always there when the program had a driver; `amiga` is written by the
+  Amiga overlay import (importer 0.7.9, s25): `audio/amiga/sound.json` (`AmigaSoundDocument`): `driver`
+  (`amiga-por-1.0`, the players of docs/re/sound.md §5), `music` (base64: the music player's data hunk 28 whole,
+  unrelocated: tables, songs, patterns, samples) and `musicRelocs` (offsets of the longs in it that point into it),
+  `effects` (hunk 33 from `effectsOrigin` 0x574: the effect player's tables), `effectRelocs` (hunk 33 offsets of
+  its sample pointers) and `effectSamples` (hunk 29), and `cues` (the 13 cue words at hunk 31 +0x18A8). Found
+  through the players' code (`PorAmigaSound`: the relocated table operands must match). Engine side:
+  `IPorContent.AmigaSound()`; the engine runs the music player itself (`AmigaMusicPlayer`, `PaulaSynth`). The Client
+  plays the Amiga music under Best / Amiga (so far the intro's song 1); the effects stay DOS for every setting.
 - Kind names for later modules: `sound` (an effect by id) and `music` (a song by id), each with its own format
   (PCM WAV for sampled sound is the plan `[?]`).
 
@@ -649,7 +654,7 @@ With `--amiga` (Amiga v1.0, s17): 508 Amiga pictures over 16 files (every pictur
    take only an `IPorContent`.
 2. `GoldBox.Importer` (CLI `goldbox-import por GAMEDIR OUTDIR [--amiga AMIGADIR]`): scripts, maps, records, item
    types first. Then art (DOS, then Amiga), rules tables, text, saves. **Done (s16; the Amiga overlay s17; the
-   overland `rules/overland.json` s18, importer 0.6 after the s18 merges; `audio/dos/pcsound.json` and new `PartyMsg`, `CombatMsg`, `Hall`, `End`, river texts s19, importer 0.7; the icon editor's size and hair / face words `PartyMsg.Icon*` s20, importer 0.7.1; HMENU's one-word swap `Msg.HmenuButton` / `Msg.HmenuEnter` s21, importer 0.7.2; the encounter menus, messages and parley attitudes `Msg.Encounter*`, `Msg.BothSidesWait`, `Msg.MonstersFlee`, `Msg.ParleyAttitudes` s21, importer 0.7.3; the introduction's credits `Intro.0`–`Intro.28` s22, importer 0.7.4; the Amiga party-icon colour pairs `art/amiga/icon-colours.json` s22, importer 0.7.5; the Amiga intro's credits panels `art/amiga/intro/0/2`–`/9` s24, importer 0.7.8).** The importer and the round
+   overland `rules/overland.json` s18, importer 0.6 after the s18 merges; `audio/dos/pcsound.json` and new `PartyMsg`, `CombatMsg`, `Hall`, `End`, river texts s19, importer 0.7; the icon editor's size and hair / face words `PartyMsg.Icon*` s20, importer 0.7.1; HMENU's one-word swap `Msg.HmenuButton` / `Msg.HmenuEnter` s21, importer 0.7.2; the encounter menus, messages and parley attitudes `Msg.Encounter*`, `Msg.BothSidesWait`, `Msg.MonstersFlee`, `Msg.ParleyAttitudes` s21, importer 0.7.3; the introduction's credits `Intro.0`–`Intro.28` s22, importer 0.7.4; the Amiga party-icon colour pairs `art/amiga/icon-colours.json` s22, importer 0.7.5; the Amiga intro's credits panels `art/amiga/intro/0/2`–`/9` s24, importer 0.7.8; the Amiga players' data `audio/amiga/sound.json` s25, importer 0.7.9; the spell effect messages `EffectMsg.*` s25, importer 0.7.12; the area map refusal `Msg.NoAreaMapHere` s25, importer 0.7.13).** The importer and the round
    trip live in `GoldBox.Data/Module/Por/` (the Client imports with them); the CLI stays in `GoldBox.Importer`.
 3. **Round-trip test:** for every raw resource, module → original block must be byte-identical to the DAX block. All
    existing real-data tests also pass with the Client and Core reading the module instead of the game folder.

@@ -292,6 +292,27 @@ every later target** and counts as saved; damage > 0 → non-weapon damage with 
 id → 0x2C540 for the duration (dice rolled per target for the dice-duration spells). Element mask 0 at the end.
 Draw order per target: save 1d20, attack 1d20, duration dice; and inside: handler draws (mirror image).
 
+**Effect messages** (read s25, P): the resolution's last argument is a text (far pointer, copied to a 40-byte local at
+0x278E1) that it passes on to 0x2C540 for each target. 0x2C540 (stub 0xB0:0x84) adds the effect and then, only when
+the text is not empty (0x2C603), shows START 0x2B8B(creature, 1 = effect frames, text) and START 0x2383 (rows 10–21
+cleared); the unaffected path shows its own string (0x2C532) instead. Every spell routine passes a Pascal string that
+sits just before its own code (`mov di, off; push cs; push di` + the string copy 0xAF8:0x0B0B before `call 0x8C3`);
+Bless/Curse (0x27F67) and Haste/Slow (0x2977C) take it from their wrappers. Spell → string (GAME.OVR offset; call
+site): 1 0x2801C, 2 0x2804E (via 0x28013); 5, 11, 18, 22, 29 0x280F5 (0x28127); 6, 7, 16, 17, 52–54 0x2812E
+(0x28161); 8 0x28168 (0x281A0); 10 0x281EA (0x2827A); 14 0x283E4 (0x28449); 19 0x284A5 (0x284D7); 21 0x28526
+(0x28661); 24 0x287EF (0x28827); 25 0x2882E (0x28860); 26 0x28867 (0x288E6); 27 0x2891C (0x289D3); 30, 50 0x28A21
+(0x28A54); 31 0x28A5B (0x28A8D); 32 0x28A94 (0x28AD1); 33 0x28AD8 (0x28B0A); 38 0x2926C (0x2929B); 40 0x29358
+(0x2938A); 42 0x294E3 (0x2952F); 44 0x2960B (0x29642); 45 0x29649 (0x2967B); 48 0x298A0, 55 0x29C17 (via 0x2984A);
+57 0x29E10 (0x29E54); 61 0x29FA4 (0x29FD7); 63 0x2A035 (0x2A068); 67 0x2A0AF (0x2A0E0). An **empty** string (no
+message): 4 (0x280EE), 9 (0x281D5), 15 (0x2849E), 20 (0x2851F), 28 (0x28A01), 47/64 (0x29775), 65 (0x2A0A3). That is
+the 33 call sites of 0x278DB. The other callers of 0x2C540 pass their own: Hold Person 23/49 0x28668 (0x287DD),
+Animate Dead 0x2907B (0x291FF), the fear aura 0x106DA (paralysis 0x34, 0x10794) / 0x106F1 (Curse 2, 0x107CB), the
+paralysing aura 0x107EC (0x108C7), the charm gaze 0x10AC7 (0x10C20), the stinking-cloud terrain check 0x2B9A5 (0x1E
+on a save, 0x2BACB) / 0x2B9B5 (0x1F, 0x2BB1A). Spells 12, 13, 35, 59 and the cures do not go through 0x2C540 (their
+messages are their own routines' `[?]` not mapped). Code: Core `EffectTexts` (keys), `PorTextCatalog` `EffectMsg.*`
+(offsets), the Client's `CombatChooser.EffectTextMessage`. Outside a fight START 0x2B8B's display (the camp's Cast) is
+not read `[?]`: the camp still lists the events in our words.
+
 **Routines**:
 
 | Spell | Routine | Rule (draws before the resolution) |

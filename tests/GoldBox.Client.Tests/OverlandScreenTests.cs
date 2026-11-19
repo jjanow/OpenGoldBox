@@ -38,7 +38,7 @@ public class OverlandScreenTests
         var save = PorSaveGame.PlaceOnOverland(File.ReadAllBytes(savePath), dir, script, x, y, Facing.North);
         var runner = new ScriptRunner();
         PorGame? game = null;
-        var player = new ClientPlayer(runner, () => game!.Memory) { Resources = ClientResources.Load(dir) };
+        var player = new ClientPlayer(runner, () => game!.Memory) { Resources = ClientResources.Load(dir), TypesText = false };
         game = PorGame.FromSave(dir, PorViewArt.Load(dir), save, Path.GetDirectoryName(savePath)!,
             new PorPlayer(player, player, player, player), seed);
         var input = new ActionInput(InputBindings.Defaults());
@@ -139,17 +139,107 @@ public class OverlandScreenTests
     }
 
     [Fact]
-    public void A_river_turns_the_party_back_with_the_programs_message()
+    public void A_river_turns_the_party_back_with_the_programs_message_flashed_on_row_24()
     {
         if (Dir() is null)
             return;
         var r = Start(26, 5, 19);                          // the river east of 18,19 ($4AA2 = 0)
+        r.Game.Memory.GameSpeed = 4;
         long t0 = GameClock.TotalMinutes(r.Game.Memory);
         Press(r, GameAction.TurnRight);
+        // START 0x7DF8 (0x16FEE): row 24 in colour 14 for DS:49E2 × 225 ms, nothing else on that row.
+        var d = Assert.IsType<DelayRequest>(r.Runner.Pending);
+        Assert.Equal(("THE RIVER'S STENCH DRIVES YOU BACK.", (byte)14), d.BottomLine);
+        Assert.Equal(TimeSpan.FromMilliseconds(900), d.Duration);
+        Assert.Null(r.Player.Notice);
+        var f = new IndexedFrame(320, 200);
+        r.Screen.Draw(f, r.Input);
+        Assert.Equal(14, Row24Colour(f, 0));               // 'T' at column 0
+        Assert.Equal(0, Row24Colour(f, 39));               // the command line is gone
+        r.Runner.Answer(null);
         Settle(r);
+        Assert.Null(r.Runner.Pending);
         Assert.Equal((5, 19), Where(r));
         Assert.Equal(t0, GameClock.TotalMinutes(r.Game.Memory));
-        Assert.Equal("THE RIVER'S STENCH DRIVES YOU BACK.", r.Player.Notice);
         r.Runner.Dispose();
+    }
+
+    [Fact]
+    public void Speed_0_shows_no_river_message()
+    {
+        if (Dir() is null)
+            return;
+        var r = Start(26, 5, 19);
+        r.Game.Memory.GameSpeed = 0;                       // Delay(0): printed and cleared at once
+        Press(r, GameAction.TurnRight);
+        Assert.Null(r.Runner.Pending);
+        Assert.Equal((5, 19), Where(r));
+        r.Runner.Dispose();
+    }
+
+    [Fact]
+    public void A_where_there_is_no_area_map_flashes_not_here_on_row_24()
+    {
+        if (Dir() is null)
+            return;
+        var dir = new PorGameDirectory(Dir()!);
+        var savePath = dir.Find("SAVGAMA.DAT")!;           // save A: a 3D map
+        var runner = new ScriptRunner();
+        PorGame? game = null;
+        var player = new ClientPlayer(runner, () => game!.Memory) { Resources = ClientResources.Load(dir) };
+        game = PorGame.FromSave(dir, PorViewArt.Load(dir), File.ReadAllBytes(savePath), Path.GetDirectoryName(savePath)!,
+            new PorPlayer(player, player, player, player), 7);
+        var input = new ActionInput(InputBindings.Defaults());
+        var r = new Rig(new ExploreScreen(game, player, runner, new NoHost(), 'B',
+            new ClientArt(dir, game.Art, new ScreenPalette(), PorArtChoice.Dos)), game, runner, input, player);
+        game.Memory.Write(AreaLoop.NoAreaMap, 1);
+        game.Memory.GameSpeed = 2;
+        Press(r, GameAction.AreaMap);
+        var d = Assert.IsType<DelayRequest>(r.Runner.Pending);
+        Assert.Equal(("NOT HERE", (byte)14), d.BottomLine); // cs:0x97B of the unit at 0x166CB (0x170F1)
+        Assert.Equal(TimeSpan.FromMilliseconds(450), d.Duration);
+        r.Runner.Answer(null);
+        Assert.Null(r.Runner.Pending);
+        Assert.False(game.Loop.ShowAreaMap);
+        r.Runner.Dispose();
+    }
+
+    /// <summary>
+    /// Phlan's north edge: the site's text, picture and HMENU (CLEARBOX first), then CITY switches to block 14, whose
+    /// vector 4 loads files, so the switch redraws the 3D view (0x3FF5) over the blanked window (live vpad run, s25:
+    /// the window had stayed black until the next command).
+    /// </summary>
+    [Fact]
+    public void Entering_phlan_shows_its_3d_view_at_once()
+    {
+        if (Dir() is null)
+            return;
+        var r = Start(26, 12, 25, 1);
+        Press(r, GameAction.TurnAround);                   // South onto 12,26
+        var menu = Assert.IsType<ChoiceRequest>(r.Runner.Pending);
+        Assert.Equal("CITY", menu.Items[0]);
+        Press(r, GameAction.Confirm);                      // CITY
+        Settle(r);
+        Assert.Equal(14, r.Game.Vm.CurrentScript);
+        Assert.False(r.Player.ViewBlanked);
+        var f = new IndexedFrame(320, 200);
+        r.Screen.Draw(f, r.Input);
+        int lit = 0;
+        for (int y = 0; y < 88; y++)
+            for (int x = 0; x < 88; x++)
+                if (f[24 + x, 24 + y] != 0)
+                    lit++;
+        Assert.True(lit > 88 * 88 / 2, $"3D view drawn ({lit} lit pixels)");
+        r.Runner.Dispose();
+    }
+
+    /// <summary>The colour of the first lit pixel in the 8 × 8 cell of row 24, column <paramref name="col"/> (0: none).</summary>
+    private static int Row24Colour(IndexedFrame f, int col)
+    {
+        for (int y = 192; y < 200; y++)
+            for (int x = col * 8; x < col * 8 + 8; x++)
+                if (f[x, y] != 0)
+                    return f[x, y];
+        return 0;
     }
 }

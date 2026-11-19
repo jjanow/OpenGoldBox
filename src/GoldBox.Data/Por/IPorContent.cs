@@ -86,6 +86,12 @@ public interface IPorContent : IEclScriptSource, IAreaMapSource
     /// </summary>
     PorSound? Sound() => null;
 
+    /// <summary>
+    /// The Amiga version's music and effect players' data (docs/re/sound.md §5): <c>audio/amiga/sound.json</c> of a
+    /// module with the Amiga overlay; null otherwise.
+    /// </summary>
+    GoldBox.Core.Sound.AmigaSoundImage? AmigaSound() => null;
+
     /// <summary>The folder holding the shipped saves, or null: a game folder's originals (<c>SAVGAM?.DAT</c>, <c>CHRDAT*</c>), a module's engine saves (<c>x.json</c>; <see cref="PorShippedSave"/> reads either).</summary>
     string? SaveFolder { get; }
 

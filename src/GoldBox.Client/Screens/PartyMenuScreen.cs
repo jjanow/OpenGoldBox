@@ -688,6 +688,9 @@ public sealed class PartyMenuScreen(PartyMenuFlow flow, ScriptRunner runner, ISc
                 Chrome.Text(f, font, col, row, Fit(text, 40 - col),
                     field is { } h && (h < 6 ? row == 7 + h && col is >= 5 and <= 7 : row == 18 && col == 4)
                         ? PromptColour : colour);
+        // The portrait window only with portraits on and the disk byte 3 (0x21530; DOSBox-X s25).
+        if (!flow.PortraitShown)
+            return;
         Chrome.Box(f, 27, 0, 39, 12);
         int head = c[CharacterCreation.PortraitHead], body = c[CharacterCreation.PortraitBody];
         if (head > 0 && body > 0)

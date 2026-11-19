@@ -110,6 +110,12 @@ public sealed class FightState
     /// </summary>
     public Action<AttackMessage>? AttackMessage { get; set; }
 
+    /// <summary>
+    /// Display hook (no game state): the moving icon START 0x25C9 (a missile's, a spell's or a bolt's flight), called
+    /// where the program calls it, inside its resident sound bracket. A front end animates it there.
+    /// </summary>
+    public Action<FlightAnimation>? Flight { get; set; }
+
     // Cells the monster AI (GAME.OVR 0xABCF, docs/re/combat-ai.md) passes to the effect handlers and the map.
     /// <summary>DS:6825: the morale value the trigger-0x11 effects see (morale check 0xBC97).</summary>
     public byte Morale { get; set; }
