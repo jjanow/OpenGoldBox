@@ -284,7 +284,7 @@ public class ArtSettingTests
         c.Amiga[("BODY", 5)] = [Pic(88, 48, Fill(88 * 48, _ => 8))];
         c.Dos[("HEAD3", 1)] = [Pic(88, 40, Fill(88 * 40, _ => 6))];  // DOS-only head (the Amiga lacks HEAD 1 and 3)
         c.Dos[("SPRIT3", 9)] = [PicAt(8, 4, 0, 1, Fill(32, _ => 8)),
-            PicAt(8, 3, 1, 1, Fill(24, i => (byte)(i < 8 ? 0 : 10))),
+            PicAt(8, 3, 1, 1, Fill(24, i => (byte)(i == 1 ? 13 : i < 8 ? 0 : 10))),
             PicAt(8, 2, 2, 1, Fill(16, _ => 11))];
         var palette = new ScreenPalette();
         var pics = new ViewPictures(c, PorArtChoice.Dos, palette.Base);
@@ -316,11 +316,12 @@ public class ArtSettingTests
         Assert.Equal(6, f[24, 24]);
         Assert.Equal(12, f[24, 24 + 40]);
 
-        // Distance 1 selects the second sprite frame at its block position, with index 0 see-through.
+        // Distance 1 selects the second sprite frame. DOS source 0 is see-through and 13 becomes opaque black.
         f.Clear(1);
         var sprite = new ViewPicture(ViewPictureKind.Sprite, 9, null, 1, 3);
         Assert.True(pics.Draw(f, 24, 24, sprite));
         Assert.Equal(1, f[32, 32]);
+        Assert.Equal(0, f[33, 32]);
         Assert.Equal(10, f[32, 33]);
         Assert.Equal(1, f[31, 33]);
         Assert.True(pics.Draw(f, 24, 24, sprite with { Distance = 2 }));

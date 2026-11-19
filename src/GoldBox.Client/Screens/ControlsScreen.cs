@@ -1,4 +1,5 @@
 using GoldBox.Client.Input;
+using GoldBox.Client.Audio;
 using GoldBox.Client.Play;
 using GoldBox.Core.Explore;
 
@@ -14,7 +15,7 @@ namespace GoldBox.Client.Screens;
 /// usable with keyboard, mouse or pad alone.
 /// </summary>
 public sealed class ControlsScreen(TextFont font, IScreenHost host, ClientArt? art = null, WordSetting? word = null,
-    IReadOnlyList<SettingToggle>? toggles = null) : IScreen
+    IReadOnlyList<SettingToggle>? toggles = null, SoundSetting? sound = null) : IScreen
 {
     private readonly IReadOnlyList<SettingToggle> _toggles = toggles ?? [];
 
@@ -56,6 +57,7 @@ public sealed class ControlsScreen(TextFont font, IScreenHost host, ClientArt? a
     [
         .. art is null ? Array.Empty<string>() : ["ART: " + ClientArt.Label(art.Choice)],
         .. word is null ? Array.Empty<string>() : [WordLabel],
+        .. sound is null ? Array.Empty<string>() : [sound.Row],
         .. _toggles.Select(t => t.Row),
         "RESET TO DEFAULTS", "BACK TO THE GAME", "QUIT",
     ];
@@ -65,8 +67,10 @@ public sealed class ControlsScreen(TextFont font, IScreenHost host, ClientArt? a
     /// <summary>Index in <see cref="Extra"/> of the start word row, or -1.</summary>
     private int WordExtra => word is null ? -1 : art is null ? 0 : 1;
 
-    /// <summary>Index in <see cref="Extra"/> of the first toggle (after the art and word rows when shown).</summary>
-    private int FirstToggle => (art is null ? 0 : 1) + (word is null ? 0 : 1);
+    private int SoundExtra => (art is null ? 0 : 1) + (word is null ? 0 : 1);
+
+    /// <summary>Index in <see cref="Extra"/> of the first toggle (after the optional art, word and sound rows).</summary>
+    private int FirstToggle => SoundExtra + (sound is null ? 0 : 1);
 
     /// <summary>Index in <see cref="Extra"/> of RESET TO DEFAULTS (after the art row, the word row and the toggles).</summary>
     private int FirstFixedExtra => FirstToggle + _toggles.Count;
@@ -203,6 +207,19 @@ public sealed class ControlsScreen(TextFont font, IScreenHost host, ClientArt? a
         if (input.Pressed(GameAction.Cancel) || input.Pressed(GameAction.Controls))
         {
             host.Pop();
+            return;
+        }
+        if (sound is not null && input.NewInput is (InputDevice.Keyboard, "Ctrl+S"))
+        {
+            sound.ToggleMute();
+            _note = sound.Row + ".";
+            return;
+        }
+        if (sound is not null && _selected - Rows.Length == SoundExtra
+            && (input.Pressed(GameAction.Confirm) || input.Pressed(GameAction.MenuLeft) || input.Pressed(GameAction.MenuRight)))
+        {
+            sound.Step(!input.Pressed(GameAction.MenuLeft));
+            _note = sound.Row + ".";
             return;
         }
         bool onArt = art is not null && _selected == Rows.Length;

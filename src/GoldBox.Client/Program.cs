@@ -1,4 +1,5 @@
 using GoldBox.Client;
+using GoldBox.Client.Audio;
 using GoldBox.Client.Play;
 using GoldBox.Client.Screens;
 using GoldBox.Data.Module.Por;
@@ -62,7 +63,13 @@ ClientArt? clientArt = null;
 var runner = new ScriptRunner();
 PorGame? game = null;
 ClientPlayer? player = null;
-GoldBox.Client.Audio.ClientAudio? audio = null;
+ClientAudio? audio = null;
+var soundSetting = new SoundSetting(settings, device => audio?.SetDevice(device), hasAmiga: () => audio?.HasAmigaEffects == true);
+void PlayAmigaSong(int song)
+{
+    if (clientArt is { Choice: not PorArtChoice.Dos } || audio?.Device == ClientSoundDevice.Amiga)
+        audio?.PlaySong(song);
+}
 // No --save and no --area: the party menu, the original's first screen (create, add, load, begin).
 PartyMenuFlow? partyMenu = null;
 // The program's one menu highlight cell DS:6B2B, shared by the party menu, the hall and the game's menus.
@@ -109,6 +116,8 @@ else
         clientArt = new ClientArt(content, art, palette, settings.ArtChoice);
         clientArt.Changed = c =>
         {
+            if (c == PorArtChoice.Dos && audio?.Device != ClientSoundDevice.Amiga)
+                audio?.PlaySong(0);
             settings.ArtChoice = c;
             settings.Save();
         };
@@ -117,13 +126,14 @@ else
         {
             Resources = ClientResources.Load(content),
             Game = () => game,
+            PlaySong = PlayAmigaSong,
         };
         var endArt = clientArt;
         player.EndArt = (disk, block) => endArt.Pictures.Find("FINAL", block, disk, anyDisk: true);
         player.InstallPaging();
         // Sound (docs/re/sound.md): the program's driver data from the content, on the device the setting names.
-        audio = GoldBox.Client.Audio.ClientAudio.Open(content.Sound(), GoldBox.Client.Audio.ClientAudio.Parse(settings.Sound), content.AmigaSound());
-        Console.Error.WriteLine($"sound: {(audio is null ? "off" : audio.Device.ToString().ToLowerInvariant())}");
+        audio = ClientAudio.Open(content.Sound(), ClientAudio.Parse(settings.Sound), content.AmigaSound());
+        Console.Error.WriteLine($"sound: {audio?.Device?.ToString().ToLowerInvariant() ?? "off"}");
         if (audio is not null)
         {
             player.Sound = audio;
@@ -181,6 +191,7 @@ else
                 // J and Train at the start-up menu (the hall's, on the menu's party).
                 Resources = player.Resources,
                 ProgramWord = () => player.ProgramWord,
+                PlaySong = PlayAmigaSong,
             };
             // The training hall (PROGRAM 0) runs the same menu routine 0x19AE0 on the game's party: its Create, Drop,
             // Add, Remove and Load are the party menu's, drawing from the game's generator.
@@ -298,6 +309,7 @@ IScreen MenuScreen(PartyMenuFlow flow, IScreenHost host) =>
         Program = menuProgram,
         Items = menuItems,
         Toggles = toggles,
+        Sound = soundSetting,
         StartWord = player.ProgramWordSetting,
     };
 IScreen? NewMenu(IScreenHost host)
@@ -339,6 +351,7 @@ ExploreScreen ExploreFor(PorGame g, char letter, IScreenHost host) => new(g, pla
             Items = menuItems,
             Overlay = true,
             Toggles = toggles,
+            Sound = soundSetting,
             StartWord = player!.ProgramWordSetting,
         }
         : null,
@@ -346,6 +359,7 @@ ExploreScreen ExploreFor(PorGame g, char letter, IScreenHost host) => new(g, pla
     // Read when the party is destroyed, so a change on the controls screen applies at once (null: quit, the original).
     PartyMenu = () => settings.AfterDefeatMenu ? NewMenu(host) : null,
     Toggles = toggles,
+    Sound = soundSetting,
 };
 
 using var window = new GoldBoxGame(
@@ -395,6 +409,7 @@ using var window = new GoldBoxGame(
     Palette = palette,
 };
 window.Input.SkipPauses = settings.SkipPauses;
+window.Input.ToggleSound = soundSetting.ToggleMute;
 if (player is not null)
     player.Quit = window.Exit;
 window.Run();

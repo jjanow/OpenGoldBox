@@ -15,7 +15,8 @@ The talonius source reconstruction (prior-art.md §3d) was used as a map only; e
   effects only**, synthesised by its own timer-driven sequencer in START.EXE. There are no sound files; the data is
   in the program.
 - **Ctrl-S** toggles sound (the key reader: mode → 2 with the stop command; back to the saved mode). Leaving the
-  game sends the stop command (START 0x8990).
+  game sends the stop command (START 0x8990). The toggle happens on GetKey's first read, before any extra bytes drain
+  from the buffer. The Client uses the same ordering when it reads game keys.
 
 ## 2. The driver (START.EXE, one unit; P, E)
 
@@ -166,10 +167,12 @@ for far calls to CS:00DC, CS:01A5, CS:017B):
   targets, the second missile flight 0x1417E of a weapon of type 0x2F with its own bracket and cues, s26). Not hooked
   `[?]`: the name animation (START 0x2B8B, cues 261A/261C; 10 callers in GAME.OVR: damage and effect messages), sounds
   outside a fight in the body routine.
-- **Client**: `--sound speaker|tandy|off` (settings `Sound`, default speaker); 44.1 kHz mono through MonoGame's
-  dynamic sound instance. The logic thread waits out an auto-stop sound while the UI thread services the stream.
-  A silent backend probe (s31) confirmed that queued buffers drain during the wait. Xvfb/Pulse timing remains to
-  be checked. `[?]` A resident
+- **Client**: `--sound speaker|tandy|amiga|off` (settings `Sound`, default speaker), also selectable on the SOUND
+  row in Controls. Ctrl-S mutes or restores the configured device for the session. With Amiga selected, the
+  Client uses the module's sampled effects if available and falls back to the PC speaker otherwise. Output is
+  44.1 kHz mono. The logic thread waits out a DOS auto-stop sound while the UI thread services the stream.
+  Under Xvfb/PulseAudio (s32), a step called both cues 114 ms apart and the dedicated null-sink recording
+  contained both pulses. `[?]` A resident
   bracket's length is the program's animation. The missile, spell and Hold Person flights are drawn inside it (s25,
   `FightState.Flight`, combat-menu.md "Moving icon"), so their tune sounds for the flight; the body drawing and the
   message pause are not yet: such a bracket stays open until its tune ends by itself or the next sound call.
@@ -291,7 +294,7 @@ as notes past the 46-entry table `[?]` (none in the data). In the data only spee
 | Song | Played by | Length |
 |---|---|---|
 | 1 | start-up (hunk 10 +0x580) while disk A's `intro` runs, stopped after it (+0x59A); the **camp** menu (hunk 1 +0x4FBC, stopped on leaving, +0x513C) | loops |
-| 2 | **"A battle begins..."** (hunk 13 +0x24E2): the song number is the word at hunk 31 +0x18C0 (2), skipped when the byte at hunk 32 +0x2D1 is non-zero `[?]` (meaning not read) | stops |
+| 2 | **"A battle begins..."** (hunk 13 +0x24E2): the song number is the word at hunk 31 +0x18C0 (2), skipped when the byte at hunk 32 +0x2D1 is non-zero `[?]` (initially zero, and the battle check is its only direct relocated reference) | stops |
 | 3 | a new character's name accepted (hunk 10 +0x235C, after the name checks) and an icon accepted ("Is this icon ok?" Y, +0x433E) | stops |
 | 5 | the party is killed (hunk 16 +0x46C2; in a fight, hunk 19 +0x102E) | stops |
 | 4, 6 | no caller (4 stops, 6 loops) | |
@@ -321,7 +324,9 @@ is cut by the fight's first sound.
   drops by the decay each tick and the channel stops at < 0 (or at once with no decay). Output (+0x442): periods,
   DMACON, volumes. Every 20th tick (+0x4BA) looping samples get their repeat LC/LEN. Only request byte 0 is ever
   written, so effects play on **channel 0** only.
-- Engine: not modelled yet (the engine plays the DOS effects for every setting).
+- The engine's effect player reproduces the same register writes in the same order for all 15 effects over
+  600 ticks each (E, `AmigaSoundProgramTests`). The Amiga effect player takes over the music player's vertical
+  blank and shares its Paula channels. The DOS-only missile departure cue is skipped in Amiga mode.
 
 ### 5.5 Engine and module
 
@@ -340,12 +345,13 @@ is cut by the fight's first sound.
   Amiga the song also plays through hunk 25 +0x12A8 (called between Execute and +0x59A; read s28: the Amiga's copy of
   DOS's start-up 0xE600, allocations, start values and the start-up loads with the loading message on row 24,
   start-menu.md §1a "After the intro"; no sound call but the out-of-memory quit, hunk 1 +0x6E), so it stops after the disk time `[?]`; the Client, whose
-  loads take no time, stops it at the end of the 3 s. Not hooked yet: the camp (1), the battle (2), name and icon accepted
-  (3), the party killed (5); the effect player and the rule that an effect ends the music.
+  loads take no time, stops it at the end of the 3 s. The camp (1), battle (2), name and icon acceptance (3), and
+  party defeat (5) use these same hooks under Best / Amiga presentation or when the selected sound device is
+  Amiga. Amiga effects interrupt a song until another song starts. The camp exit stops the camp song.
 
 ## 6. Open `[?]`
 
 - Auto-stop length and onset in DOSBox-X (§2.4); the speaker's analogue filter; the Tandy noise register.
-- Amiga (§5): PAL or NTSC rate; Paula's restart and latch timing; the flag at hunk 32 +0x2D1 that skips the battle
-  song; the screens of hunks 4, 16 and 19; the effect player in the engine.
+- Amiga (§5): PAL or NTSC rate; Paula's restart and latch timing; how the flag at hunk 32 +0x2D1 can change;
+  the screens of hunks 4, 16 and 19.
 - Which other SSI games share this driver and its tunes 12–20.

@@ -90,6 +90,8 @@ public sealed class CombatView
     public bool Dungeon { get; set; } = true;
     /// <summary>The character screen over the whole frame (View, Items, drop money), or null for the map.</summary>
     public CombatPage? Page { get; set; }
+    /// <summary>The text window handler 131 draws over the current screen during its pause.</summary>
+    public TextWindow? ItemEffectText { get; set; }
     /// <summary>The message routine's line (START 0x1693: row 24, green) while a page waits out its pause.</summary>
     public string? PageMessage { get => _pageMessage; set { _pageMessage = value; if (value is not null) Row24Written(); } }
     private string? _pageMessage;
@@ -161,6 +163,7 @@ public sealed class CombatView
         StatusLine = null;
         MovePrompt = null;
         Page = null;
+        ItemEffectText = null;
         PageMessage = null;
         Mode = CombatMode.Watch;
     }
@@ -372,10 +375,9 @@ public sealed partial class CombatChooser(Func<PlayerRequest, object?> ask, Comb
     }
 
     /// <summary>
-    /// 0x31232 with frame 1 (the cast's facing, 0x27E00): the cell is drawn again (0x30C65), so a cursor box on it goes
-    /// (DOSBox-X s29: Brother Sean's Bless and Hold Person, the box gone from the cast on, his plain icon at the cast's
-    /// facing, equal to the Client's frames). [?] Why frame 1 shows the plain icon here and the attack pose in
-    /// MakeAttack (0x14113, also frame 1) is not read.
+    /// The cast's facing (0x27E00) draws frame 1 and clears the cursor. A travelling spell then rebuilds the view
+    /// with frame 0 before its first delay (START 0x27BB), and 0x27EA4 restores frame 0 when the caster is visible.
+    /// MakeAttack (0x14113) pauses on frame 1 before it rolls.
     /// </summary>
     private void Posed(EclCharacter c)
     {
@@ -787,7 +789,7 @@ public sealed partial class CombatChooser(Func<PlayerRequest, object?> ask, Comb
                 HandlerMessage(c, t[CombatMsg.HandlerSucksBlood], CombatView.MessageTop, true);
                 break;
             case EffectEvent.Stronger:
-                PageTextWindow(c, t[CombatMsg.HandlerStronger]);
+                ItemEffectTextWindow(c, t[CombatMsg.HandlerStronger]);
                 break;
             case EffectEvent.AirClears:
                 PageSay(t[CombatMsg.HandlerAirClears]);
@@ -816,22 +818,23 @@ public sealed partial class CombatChooser(Func<PlayerRequest, object?> ask, Comb
 
     /// <summary>
     /// Handler 131's message in a fight (0x11C8A–0x11CB6): DS:49F3 = 2 around START 0x16EC(creature, text, row 10, pause
-    /// 1), so the out-of-fight layout is drawn over the Items page: the name at (1, 18), the text from (1, 19) in green,
-    /// the pause, rows 18–22 cleared. [?] The text box frame (03F1:0000) and the clear of (1, 17)–(38, 22) before it are
-    /// not drawn on the page; not seen in DOSBox-X. Without a page, the panel's row 10 is used instead.
+    /// 1), so the text window covers rows 17–22 of the current screen during the pause.
     /// </summary>
-    private void PageTextWindow(EclCharacter c, string text)
+    private void ItemEffectTextWindow(EclCharacter c, string text)
     {
-        if (View.Page is not { } page)
+        var window = new TextWindow { Typed = TypeDelay };
+        View.ItemEffectText = window;
+        try
         {
-            Say(c, text);
-            return;
+            window.Put(TextWindow.Top + 1, TextWindow.Left, Name(c), NameColour(c));
+            window.PrintIn(TextWindow.Left, TextWindow.Top + 2, TextWindow.Right, TextWindow.Bottom, text, true,
+                TextWindow.ScriptColour);
+            Pause(MessageMs);
         }
-        int before = page.Texts.Count;
-        page.Texts.Add((1, 18, Name(c), NameColour(c)));
-        page.Texts.Add((1, 19, text.Length > 38 ? text[..38] : text, 10));
-        Pause(MessageMs);
-        page.Texts.RemoveRange(before, page.Texts.Count - before);
+        finally
+        {
+            View.ItemEffectText = null;
+        }
     }
 
     /// <summary>

@@ -11,21 +11,23 @@ namespace GoldBox.Data.Por;
 public static class PorParty
 {
     /// <summary>
-    /// Refresh the derived saving throws on a party loaded into play from a legacy save. Load joins each member
-    /// (GAME.OVR 0x1F9C9 → 0x1F42C), which calls the level-stat routine (0x1F55A → 0x2AA87 → 0x2ACDC).
+    /// Refresh a legacy party when it enters play. Load joins each member into an empty roster, assigning icon
+    /// slots in party order and running the level-stat routine (GAME.OVR 0x1F9C9 → 0x1F42C → 0x2AA87).
     /// </summary>
-    internal static void RefreshSavingThrows(EclParty party, LevelStatsTables? tables)
+    internal static void RefreshOnLoad(EclParty party, LevelStatsTables? tables)
     {
-        if (tables is null)
-            return;
-        foreach (var member in party.Members)
-            LevelStats.SavingThrows(member, tables);
+        for (int slot = 0; slot < party.Members.Count; slot++)
+        {
+            var member = party.Members[slot];
+            member[PartyMenu.IconOrder] = (byte)slot;
+            if (tables is not null)
+                LevelStats.Apply(member, tables);
+        }
     }
 
     /// <summary>
     /// Loads the members named by <paramref name="stems"/>; <paramref name="find"/> maps a file name to a path or
-    /// null. Missing <c>.SAV</c> files are skipped. The current character is member 0 ([?] which character is current
-    /// after a load is not read).
+    /// null. Missing <c>.SAV</c> files are skipped. The current character is member 0 (GAME.OVR 0x1FB99).
     /// </summary>
     public static EclParty Load(IEnumerable<string> stems, Func<string, string?> find)
     {

@@ -29,7 +29,7 @@ public sealed partial class FightSpells
                 return true;
             case 37: // 0x2922F Cure Blindness: the first target loses Blindness 0x21 (message) → message
                 if (First is { } t37 && RemoveWithMessage(t37, 0x21))
-                    Event?.Invoke(t37, spell, EffectEvent.Other);
+                    Event?.Invoke(t37, spell, EffectEvent.SpellBlindnessCured);
                 return true;
             case 38 or 44 or 45 or 61 or 63: // 0x29275, 0x2961C, 0x29655, 0x29FB1, 0x2A042: plain resolution
                 Resolve(spell, 0, false, 0, 0, caster);
@@ -81,7 +81,7 @@ public sealed partial class FightSpells
                 if (First is not { } t59)
                     return true;
                 if (Effects.RaiseStrength(t59, 0x15, 0, out byte code))
-                    Event?.Invoke(t59, spell, EffectEvent.Other);
+                    Event?.Invoke(t59, spell, EffectEvent.SpellStrengthened);
                 EffectHandlers.AddEffect(t59, 0x26, Duration(spell), code, true);
                 return true;
             }
@@ -165,7 +165,7 @@ public sealed partial class FightSpells
             if (cloud.Used[i])
                 map.Arena[x, y] = 0x1E;
         }
-        Event?.Invoke(cur, spell, EffectEvent.Other);
+        Event?.Invoke(cur, spell, EffectEvent.SpellCloudFormed);
         for (int i = 1; i <= 4; i++)
             if (slots[i] > 0 && map.SlotCreature(slots[i]) is { } c)
                 Effects.TerrainCheck(c);
@@ -216,7 +216,7 @@ public sealed partial class FightSpells
             str = 0x12;
         }
         if (Effects.RaiseStrength(t, str, exc, out byte code))
-            Event?.Invoke(t, spell, EffectEvent.Other);
+            Event?.Invoke(t, spell, EffectEvent.SpellStrengthened);
         EffectHandlers.AddEffect(t, 0x26, Duration(spell), code, true);
     }
 
@@ -330,7 +330,7 @@ public sealed partial class FightSpells
                 }
             }
             if (any)
-                Event?.Invoke(t, spell, EffectEvent.Other);
+                Event?.Invoke(t, spell, EffectEvent.SpellMagicDispelled);
         }
     }
 
@@ -344,14 +344,14 @@ public sealed partial class FightSpells
             return;
         if (RemoveWithMessage(t, 0x24))
         {
-            Event?.Invoke(t, spell, EffectEvent.Other);
+            Event?.Invoke(t, spell, EffectEvent.SpellCurseLifted);
             return;
         }
         foreach (var it in t.Items)
             if (it.Length > 0x36 && it[0x36] != 0)
             {
                 it[0x36] = 0;
-                Event?.Invoke(t, spell, EffectEvent.Other);
+                Event?.Invoke(t, spell, EffectEvent.SpellItemUncursed);
                 return;
             }
     }
@@ -611,7 +611,7 @@ public sealed partial class FightSpells
             ls(t);
         else
             Diag("[?] level stats 0x2AA87 not modelled");
-        Event?.Invoke(t, spell, EffectEvent.Other);
+        Event?.Invoke(t, spell, EffectEvent.SpellLevelRestored);
     }
 
     private bool NoRaceLimit()

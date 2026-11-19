@@ -153,7 +153,8 @@ public sealed class ViewPictures
                 if (Find("SPRIT", v.Id, v.Disk) is not { Frames.Count: > 0 } img)
                     return false;
                 var p = img.Frames[SpriteFrame(v.Distance, img.Frames.Count, v.OnOverland)];
-                Blit(f, x, y, p.X * 8, p.Y * 8, p, Base(img), transparent: true);
+                Blit(f, x, y, p.X * 8, p.Y * 8, p, Base(img), transparent: true,
+                    blackenMagenta: img.Variant == "dos");
                 return true;
             }
         }
@@ -197,11 +198,11 @@ public sealed class ViewPictures
     /// <summary>
     /// Copies item 0 of <paramref name="p"/> to (<paramref name="dx"/>, <paramref name="dy"/>) inside the window at
     /// (<paramref name="x"/>, <paramref name="y"/>), its indices moved into the run at <paramref name="b"/>, at most
-    /// <paramref name="clipRows"/> rows, clipped to the window; index 0 skipped when <paramref name="transparent"/> [?]
-    /// (the sprites' background: every DOS and Amiga sprite frame has index 0 in its corners).
+    /// <paramref name="clipRows"/> rows, clipped to the window. Skip source index 0 for sprites. For DOS sprites the
+    /// loader changes index 13 to black after making the mask (GAME.OVR 0x2E4CE / 0x2E508).
     /// </summary>
     private static void Blit(IndexedFrame f, int x, int y, int dx, int dy, DaxPicture p, int b, bool transparent,
-        int clipRows = Window)
+        int clipRows = Window, bool blackenMagenta = false)
     {
         if (p.Items.Count == 0)
             return;
@@ -214,6 +215,8 @@ public sealed class ViewPictures
                 if ((transparent && v == 0) || wx < 0 || wy < 0 || wx >= Window || wy >= Window
                     || xx < 0 || yy < 0 || xx >= f.Width || yy >= f.Height)
                     continue;
+                if (blackenMagenta && v == 13)
+                    v = 0;
                 f[xx, yy] = (byte)(b + v);
             }
     }

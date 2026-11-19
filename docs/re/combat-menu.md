@@ -500,9 +500,10 @@ and Speed menus, an AI attack at game speed 9). Code: `src/GoldBox.Client/Screen
     START 0x1693 message): the menu row stays, with the chosen entry lit (a hotkey moves the highlight, 0x2CF48),
     while the panel types after Aim / Next / Prev, and a Done menu stays through the next creature's panel. Aim's
     range line (row 23) is drawn before the panel types.
-  - The cast's facing (0x27E00: 0x31232 with frame 1) redraws the caster's cell, so its cursor box goes; DOSBox-X
-    then showed the plain icon at the cast's facing (the Client's frames equal); why frame 1 is the plain icon here
-    and the attack pose in MakeAttack (0x14113) is not read `[?]`. The cast's end (0x27F44–0x27F5C) clears rows 10–21 and, in a
+  - The cast's facing (0x27E00: 0x31232 with frame 1) redraws the caster's cell, so its cursor box goes. The flight's
+    view rebuild (START 0x27BB, delta 255) draws frame 0 before its first delay, and 0x27EA4 draws frame 0 when the
+    caster is visible after the flight (s32 program read). MakeAttack holds frame 1 through Delay(100). The cast's
+    end (0x27F44–0x27F5C) clears rows 10–21 and, in a
     fight, row 23 (the spell label).
   - The end of round (0xA087) shows the teammate-dying words (GAME.OVR 0xA05F) through START 0x1693 when 0xA806
     finds a party member dying (0xA11A–0xA134; **D**: row 24, the pause, cleared). Client `Fight.PartyMemberDying`.
@@ -545,9 +546,9 @@ and Speed menus, an AI attack at game speed 9). Code: `src/GoldBox.Client/Screen
     pixels**: COMSPR 11 is drawn whole, its three colour-0 pixels included (grey under the combat palette); the
     Client drew colour 0 see-through, showing what lay under it (fixed, real-data test). The attacker's pose under a
     downed picture (s29: kept once, gone once) not seen in s30 `[?]`. Set-up note: party saves written into CHRDAT 0x6D were back to the class values in DOSBox-X's
-    memory after Load. Load's party join at 0x1F9C9 → 0x1F42C calls level stats at 0x1F55A → 0x2AA87, which calls the
-    saving-throw routine 0x2ACDC. The Client refreshes those fields when loading a legacy save (s31). Other derived
-    fields changed by the level-stats routine still need targeted checks.
+    memory after Load. Load's party join at 0x1F9C9 → 0x1F42C calls the full level-stat routine at 0x1F55A → 0x2AA87,
+    including the saving-throw routine 0x2ACDC. The Client applies the full routine when loading a legacy save (s32,
+    `save-format.md` "How a save game ties the files together").
   - **Fights entered through ENCMENU and after a PRINT** (this tool's own texts; ENCMENU sprite 4, distance 1,
     close-up 4, every reaction 1, then COMBAT; or PRINT, COMBAT): the **panel's weapon name shows at once** in both
     (DOSBox-X: the whole name in one frame on every member's panel), as read (DS:4A00 = 0 after ENCMENU's 0x32E0 and
@@ -556,10 +557,13 @@ and Speed menus, an AI attack at game speed 9). Code: `src/GoldBox.Client/Screen
     the fight, outside combat `[?]`: (1) DOSBox-X keeps the area command line on row 24 while the step's script types
     its PRINT / ENCMENU text, until a menu or fight-start line replaces it. The Client keeps an already visible
     command line during typing as of s31 (headless regression test).
-    (2) The s30 capture showed SPRIT2 block 4's third frame (16 × 49). The effective distance $6DC1 was not read
-    from that state. The frame slot now follows the renderer's inputs, as described under SETUPMON in ecl-format.md.
-  - The **cast's plain icon** at its facing (s29): equal again in both casts (Darkstar's Sleep and Charm Person); why
-    frame 1 is the plain icon there stays `[?]`. CLEARBOX and the runes: ecl-format.md "PROTECT" (s30).
+    (2) The s30 capture's red pixels span (60,67)–(73,85), exactly the bounds of indices 4 and 12 in SPRIT2 block
+    4's second frame (32 × 65) at its draw position. The loader changes index 13 to opaque black, which explains
+    the earlier frame identification from the visible colours. The test used distance 1, and the second slot is
+    the 3D renderer's distance 1. A fresh DOSBox-X state at the same menu confirmed $6DC0 = $6DC1 = 1 and
+    DS:6F81 = 4. The Client uses that slot and applies the colour remap (s32; see SETUPMON in `ecl-format.md`).
+  - The **cast's plain icon** at its facing (s29): equal again in both casts (Darkstar's Sleep and Charm Person).
+    CLEARBOX and the runes: ecl-format.md "PROTECT" (s30).
   - "A battle begins" (s29 `[?]`, DOSBox-X 3000 cycles only): on row 24 for 0.817 s (three boots: from the full line to
     the cleared row), 0.75 s after the blank pause began; the PauseOnly at speed 3 is 675 ms, the rest presumably the
     fight set-up's CPU time `[?]`. The Client guarantees a rendered frame for the battle-start line even if updates

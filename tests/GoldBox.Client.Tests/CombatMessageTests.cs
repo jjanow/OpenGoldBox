@@ -184,6 +184,33 @@ public class CombatMessageTests
     }
 
     [Fact]
+    public void Cure_blindness_shows_the_removal_pause_then_the_spell_effect_frames()
+    {
+        if (Dir() is not { } dir)
+            return;
+        var r = new Rig(dir);
+        var cleric = Creature("Cleric", 0);
+        var target = Creature("Target", 0);
+        var effects = new EffectHandlers(_ => 0);
+        var spells = new FightSpells(new SpellTable(new Dictionary<int, SpellInfo>()), effects, _ => 0);
+        r.Fight.Spells = spells;
+        spells.Targets.Add(target);
+        EffectHandlers.AddEffect(target, 0x21, 1, 1, false);
+        r.Chooser.Typing = () => false;
+        r.Chooser.Attach(r.Fight);
+        spells.Routine(37, cleric);
+
+        Assert.Null(EffectHandlers.FindEffect(target, 0x21));
+        Assert.Equal([225, 70, 70, 70, 70, 70, 70, 70, 70], r.Pauses.Select(p => (int)p.Wait.TotalMilliseconds));
+        Assert.All(r.Pauses, p => Assert.Equal("TARGET", Rig.Row(p.Rows, 10)));
+        Assert.Equal(r.T(CombatMsg.SpellEffectRemoved), Rig.Join(r.Pauses[0].Rows, 11, 12));
+        Assert.All(r.Pauses.Skip(1), p => Assert.Equal(r.T(CombatMsg.SpellBlindnessCured), Rig.Join(p.Rows, 11, 12)));
+        var fallbacks = new CombatText();
+        Assert.NotEqual(fallbacks[CombatMsg.SpellEffectRemoved], r.T(CombatMsg.SpellEffectRemoved));
+        Assert.NotEqual(fallbacks[CombatMsg.SpellBlindnessCured], r.T(CombatMsg.SpellBlindnessCured));
+    }
+
+    [Fact]
     public void Every_effect_message_comes_from_the_game_files()
     {
         if (Dir() is not { } dir)

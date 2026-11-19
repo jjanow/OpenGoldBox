@@ -375,33 +375,49 @@ public class PorModuleTests(ITestOutputHelper output)
     }
 
     [PorFact]
-    public void Loading_a_converted_save_refreshes_stale_saving_throws_without_changing_its_export()
+    public void Loading_a_converted_save_refreshes_party_stats_and_icon_slots_without_changing_its_export()
     {
         var dir = PorData.OpenRelease();
         var savePath = dir.Find("SAVGAMA.DAT")!;
         var bytes = File.ReadAllBytes(savePath);
         var name = new PorSaveGame(bytes).PartyFileStems[0] + ".SAV";
         var raw = File.ReadAllBytes(dir.Find(name)!);
-        var expected = new EclCharacter([.. raw]);
-        LevelStats.SavingThrows(expected, dir.Program()!.LevelTables()!);
-        byte[] stale = [40, 41, 42, 43, 44];
-        stale.CopyTo(raw, LevelStats.Saves);
+        raw[LevelStats.Levels] = 3;
+        raw[LevelStats.Levels + 2] = 7;
+        raw[LevelStats.Levels + 5] = 3;
+        raw[LevelStats.ThiefLevel] = 3;
+        raw[LevelStats.Wisdom] = 17;
+        raw[LevelStats.LevelHighest] = 0;
+        raw[LevelStats.Thac0Base] = 40;
+        raw[LevelStats.FighterAttacks] = 0;
+        raw.AsSpan(LevelStats.KnownBase + 1, 0x38).Clear();
+        raw.AsSpan(LevelStats.Saves, 5).Fill(40);
+        raw.AsSpan(LevelStats.ThiefSkills + 1, 8).Fill(255);
+        raw.AsSpan(LevelStats.SlotsBase + 1, 6).Fill(40);
+        raw[PartyMenu.IconOrder] = 7;
+        var expected = new EclCharacter(raw);
+        LevelStats.Apply(expected, dir.Program()!.LevelTables()!);
+        expected[PartyMenu.IconOrder] = 0;
         var identity = PorEngineSave.Identity(dir);
         var converted = PorEngineSave.FromOriginal(bytes, file => file == name ? raw :
             dir.Find(file) is { } path ? File.ReadAllBytes(path) : null, identity,
             dir.LoadBlock, new SourceRef { Container = Path.GetFileName(savePath) });
-        const int start = LevelStats.Saves, end = start + 5;
-        byte[] Throws(PorGame g) => g.Memory.Party!.Members[0].Record[start..end];
         var art = PorViewArt.Load(dir);
 
         NewGame(p => PorGame.FromSave(dir, art, converted, p, 99,
-            started: g => Assert.Equal(expected.Record[start..end], Throws(g))));
+            started: g =>
+            {
+                var party = g.Memory.Party!;
+                Assert.Equal(expected.Record, party.Members[0].Record);
+                Assert.Equal(Enumerable.Range(0, party.Members.Count), party.Members.Select(m => (int)m[PartyMenu.IconOrder]));
+                Assert.Same(party.Members[0], party.Current);
+            }));
         Assert.Equal(raw, PorEngineSave.ToOriginalFiles(converted).Single(f => f.Name == name).Bytes);
-        Assert.Equal(stale, converted.Party![0].Raw[start..end]);
+        Assert.Equal(raw, converted.Party![0].Raw);
 
         var native = PorEngineSave.FromOriginal(bytes, PorEngineSave.Party(converted), identity, dir.LoadBlock);
         NewGame(p => PorGame.FromSave(dir, art, native, p, 99,
-            started: g => Assert.Equal(stale, Throws(g))));
+            started: g => Assert.Equal(raw, g.Memory.Party!.Members[0].Record)));
     }
 
     /// <summary>The importer's engine saves name the module's content hash, and re-importing gives the same hash.</summary>

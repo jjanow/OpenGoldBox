@@ -7,7 +7,7 @@ namespace GoldBox.Client.Audio;
 
 /// <summary>
 /// The Client's sound (docs/re/sound.md): the program's sound calls (<see cref="ISoundSink"/>, from the game-logic
-/// thread) go to a <see cref="PcSoundPlayer"/> on the device the setting picks, rendered at 44.1 kHz mono into a
+/// thread) go to the DOS driver or Amiga effects on the device the setting picks, rendered at 44.1 kHz mono into a
 /// MonoGame <see cref="DynamicSoundEffectInstance"/> on the UI thread through its buffer callback.
 /// <list type="bullet">
 /// <item>Auto-stop cues (step, impact, miss, bump): game logic waits for the driver to finish while the UI thread
@@ -22,18 +22,22 @@ public sealed class ClientAudio : ISoundSink, IDisposable
     public const int SampleRate = 44100;
     private const int Chunk = SampleRate / 60;
     private readonly object _lock = new();
-    private readonly PcSoundPlayer _player;
+    private readonly PorSound? _sound;
+    private PcSoundPlayer? _player;
     private readonly AmigaMusic? _music;
+    private ClientSoundDevice? _device;
     private readonly DynamicSoundEffectInstance _out;
     private readonly float[] _samples = new float[Chunk];
     private readonly byte[] _bytes = new byte[Chunk * 2];
     private readonly int _uiThread;
     private bool _resident, _closing;
 
-    private ClientAudio(PcSoundPlayer player, AmigaMusic? music, DynamicSoundEffectInstance output, int uiThread)
+    private ClientAudio(PorSound? sound, ClientSoundDevice? device, AmigaMusic? music, DynamicSoundEffectInstance output,
+        int uiThread)
     {
-        _player = player;
+        _sound = sound;
         _music = music;
+        SetDevice(device);
         _out = output;
         _uiThread = uiThread;
         _out.BufferNeeded += FillBuffers;
@@ -42,28 +46,27 @@ public sealed class ClientAudio : ISoundSink, IDisposable
     }
 
     /// <summary>The sound device setting (<see cref="ClientSettings.Sound"/>) as a device; null = off.</summary>
-    public static PcSoundDevice? Parse(string? word) => word?.Trim().ToLowerInvariant() switch
+    public static ClientSoundDevice? Parse(string? word) => word?.Trim().ToLowerInvariant() switch
     {
-        "speaker" or "pc" or "p" => PcSoundDevice.Speaker,
-        "tandy" or "t" => PcSoundDevice.Tandy,
+        "speaker" or "pc" or "p" => ClientSoundDevice.Speaker,
+        "tandy" or "t" => ClientSoundDevice.Tandy,
+        "amiga" => ClientSoundDevice.Amiga,
         _ => null,
     };
 
     /// <summary>
-    /// Opens the audio output for <paramref name="sound"/>, or null (sound off, no driver data, no audio device). With
-    /// <paramref name="amiga"/> (the module's Amiga players' data) the Amiga music can be played too (<see cref="PlaySong"/>).
+    /// Opens the audio output for the imported DOS or Amiga players, or null when neither is present or audio is unavailable.
     /// </summary>
-    public static ClientAudio? Open(PorSound? sound, PcSoundDevice? device, AmigaSoundImage? amiga = null)
+    public static ClientAudio? Open(PorSound? sound, ClientSoundDevice? device, AmigaSoundImage? amiga = null)
     {
-        if (sound is null || device is not { } d)
+        if (sound is null && amiga is null)
             return null;
         DynamicSoundEffectInstance? output = null;
         try
         {
-            var player = sound.Player(d, SampleRate);
             var music = amiga is null ? null : new AmigaMusic(amiga, SampleRate);
             output = new DynamicSoundEffectInstance(SampleRate, AudioChannels.Mono);
-            return new ClientAudio(player, music, output, Environment.CurrentManagedThreadId);
+            return new ClientAudio(sound, device, music, output, Environment.CurrentManagedThreadId);
         }
         catch (Exception e) when (e is NoAudioHardwareException or InvalidOperationException or TypeInitializationException
                                        or DllNotFoundException)
@@ -74,10 +77,42 @@ public sealed class ClientAudio : ISoundSink, IDisposable
         }
     }
 
-    public PcSoundDevice Device => _player.Device;
+    public ClientSoundDevice? Device
+    {
+        get
+        {
+            lock (_lock)
+                return _device;
+        }
+    }
 
-    /// <summary>The module has the Amiga music (docs/re/sound.md §5).</summary>
-    public bool HasAmigaMusic => _music is not null;
+    /// <summary>Applies a change of device or a mute made at a key read, on either game thread.</summary>
+    public void SetDevice(ClientSoundDevice? device)
+    {
+        lock (_lock)
+        {
+            if (device == ClientSoundDevice.Amiga && !HasAmigaEffects)
+                device = ClientSoundDevice.Speaker;
+            if (_sound is null && device != ClientSoundDevice.Amiga)
+                device = null;
+            if (_device == device)
+                return;
+            if (_device == ClientSoundDevice.Amiga || device is null)
+                _music?.Play(0);
+            _device = device;
+            _player = device switch
+            {
+                ClientSoundDevice.Speaker => _sound!.Player(PcSoundDevice.Speaker, SampleRate),
+                ClientSoundDevice.Tandy => _sound!.Player(PcSoundDevice.Tandy, SampleRate),
+                _ => null,
+            };
+            _resident = false;
+            _closing = false;
+        }
+    }
+
+    /// <summary>The module has the data needed to play sampled effects.</summary>
+    public bool HasAmigaEffects => _music?.HasEffects == true;
 
     /// <summary>
     /// The Amiga's PlaySong(n) (hunk 27 +0x6E54): 0 stops, 1–6 start song n (docs/re/sound.md §5.3: 1 the intro and the
@@ -87,9 +122,14 @@ public sealed class ClientAudio : ISoundSink, IDisposable
     {
         if (_music is null)
             return;
-        Log($"song {song}");
         lock (_lock)
-            _music.Play(song);
+        {
+            if (_device is not null)
+            {
+                Log($"song {song}");
+                _music.Play(song);
+            }
+        }
     }
 
     /// <summary>GOLDBOX_SOUND_LOG=1: each sound call on stderr with the time (for comparing with captures).</summary>
@@ -104,13 +144,26 @@ public sealed class ClientAudio : ISoundSink, IDisposable
 
     public void Cue(SoundCue cue)
     {
-        Log(cue.ToString());
+        PcSoundPlayer player;
         bool wait;
         lock (_lock)
         {
+            if (_device == ClientSoundDevice.Amiga)
+            {
+                Log($"amiga {cue}");
+                if (cue == SoundCue.Stop)
+                    _music!.Play(0);
+                else
+                    _music!.PlayEffect(cue);
+                return;
+            }
+            if (_player is not { } active)
+                return;
+            player = active;
+            Log(cue.ToString());
             if (_resident && _closing)
                 CloseBracket();
-            _player.Cue(cue);
+            player.Cue(cue);
             wait = !_resident;
         }
         // The program busy-waits in the sound command until an auto-stop sound is cut; the logic thread does too.
@@ -120,7 +173,7 @@ public sealed class ClientAudio : ISoundSink, IDisposable
             while (Clock.Elapsed - started < TimeSpan.FromMilliseconds(500))
             {
                 lock (_lock)
-                    if (!_player.Busy)
+                    if (_player != player || !player.Busy)
                         break;
                 Thread.Sleep(2);
             }
@@ -133,7 +186,7 @@ public sealed class ClientAudio : ISoundSink, IDisposable
         lock (_lock)
         {
             _closing = false;
-            if (_resident)
+            if (_player is null || _resident)
                 return; // a new bracket right after a deferred one: the timer stays
             _resident = true;
             _player.BeginResident();
@@ -150,7 +203,7 @@ public sealed class ClientAudio : ISoundSink, IDisposable
 
     private void CloseBracket()
     {
-        _player.EndResident();
+        _player?.EndResident();
         _resident = false;
         _closing = false;
     }
@@ -165,10 +218,16 @@ public sealed class ClientAudio : ISoundSink, IDisposable
         {
             lock (_lock)
             {
-                _player.Render(_samples);
-                _music?.Render(_samples);
-                if (_resident && _closing && !_player.Driver.Busy(_player.Device))
-                    CloseBracket();
+                if (_player is { } player)
+                {
+                    player.Render(_samples);
+                    if (_resident && _closing && !player.Driver.Busy(player.Device))
+                        CloseBracket();
+                }
+                else
+                    Array.Clear(_samples);
+                if (_device is not null)
+                    _music?.Render(_samples);
             }
             for (int i = 0; i < Chunk; i++)
             {

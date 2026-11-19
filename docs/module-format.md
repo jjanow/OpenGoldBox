@@ -435,8 +435,9 @@ For FRUA designs, and later for hand-made modules that don't want bytecode.
   `effects` (hunk 33 from `effectsOrigin` 0x574: the effect player's tables), `effectRelocs` (hunk 33 offsets of
   its sample pointers) and `effectSamples` (hunk 29), and `cues` (the 13 cue words at hunk 31 +0x18A8). Found
   through the players' code (`PorAmigaSound`: the relocated table operands must match). Engine side:
-  `IPorContent.AmigaSound()`; the engine runs the music player itself (`AmigaMusicPlayer`, `PaulaSynth`). The Client
-  plays the Amiga music under Best / Amiga (so far the intro's song 1); the effects stay DOS for every setting.
+  `IPorContent.AmigaSound()`; the engine runs the music and effect players through a shared `PaulaSynth`. The
+  Client plays Amiga music under Best / Amiga presentation or Amiga sound. Selecting Amiga sound enables the
+  imported sampled effects. The other sound choices use the DOS effect driver.
 - Kind names for later modules: `sound` (an effect by id) and `music` (a song by id), each with its own format
   (PCM WAV for sampled sound is the plan `[?]`).
 

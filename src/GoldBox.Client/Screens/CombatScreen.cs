@@ -769,6 +769,7 @@ public sealed class CombatScreen
         if (_view.Page is { } cp)
         {
             DrawPage(f, cp, input);
+            DrawItemEffectText(f);
             if (cp.Grey)
                 SwapGrey(f);
             return;
@@ -778,7 +779,25 @@ public sealed class CombatScreen
         DrawMap(f);
         DrawPanel(f);
         DrawLines(f, input);
+        DrawItemEffectText(f);
         SwapGrey(f);
+    }
+
+    private void DrawItemEffectText(IndexedFrame f)
+    {
+        if (_view.ItemEffectText is not { } window)
+            return;
+        Chrome.Box(f, TextWindow.Left - 1, TextWindow.Top - 1, TextWindow.Right + 1, TextWindow.Bottom + 1);
+        for (int row = TextWindow.Top; row <= TextWindow.Bottom; row++)
+        {
+            Chrome.Clear(f, TextWindow.Left, row, TextWindow.Right - TextWindow.Left + 1);
+            for (int col = TextWindow.Left; col <= TextWindow.Right; col++)
+            {
+                var (glyph, colour) = window.Cell(row, col);
+                if (glyph != '\0')
+                    Text(f, col, row, glyph.ToString(), colour);
+            }
+        }
     }
 
     /// <summary>The combat palette: EGA colours 0 and 8 trade places (see the class summary). Exposed for tests.</summary>

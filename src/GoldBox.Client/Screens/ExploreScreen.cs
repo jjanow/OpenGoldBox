@@ -140,6 +140,7 @@ public sealed class ExploreScreen : IScreen
 
     /// <summary>The on/off settings the controls screen shows (<see cref="SettingToggle"/>).</summary>
     public IReadOnlyList<SettingToggle>? Toggles { get; init; }
+    public Audio.SoundSetting? Sound { get; init; }
 
     /// <summary>This screen handed over to another game or the menu.</summary>
     private bool _left;
@@ -476,7 +477,7 @@ public sealed class ExploreScreen : IScreen
         _keys = input;
         if (input.Pressed(GameAction.Controls))
         {
-            _host.Push(new ControlsScreen(_game.Art.Font, _host, _art, _player.ProgramWordSetting, Toggles));
+            _host.Push(new ControlsScreen(_game.Art.Font, _host, _art, _player.ProgramWordSetting, Toggles, Sound));
             return;
         }
         if (_combat.Active)

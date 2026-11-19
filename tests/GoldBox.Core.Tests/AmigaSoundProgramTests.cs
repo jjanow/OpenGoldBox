@@ -67,8 +67,37 @@ public class AmigaSoundProgramTests
 
         public void Long(int register, int address)
         {
+            int sample = address - AmigaEffectPlayer.Base;
+            if ((uint)sample < (uint)Image.Value.EffectSamples.Length)
+            {
+                Add($"{register:x}:29:{sample:x}");
+                return;
+            }
             int o = address - AmigaMusicPlayer.Base;
             Add((uint)o < (uint)Image.Value.Music.Length ? $"{register:x}:28:{o:x}" : $"{register:x}:{address:x}");
+        }
+    }
+
+    [AmigaOracleFact]
+    public void Every_sampled_effect_writes_what_the_program_writes()
+    {
+        var root = Root.Value;
+        int block = root.GetProperty("block").GetInt32(), ticks = Math.Min(600, root.GetProperty("ticks").GetInt32());
+        var effects = root.GetProperty("effects").EnumerateObject().ToArray();
+        Assert.Equal(15, effects.Length);
+        foreach (var effect in effects)
+        {
+            var rec = new Recorder();
+            var player = Assert.IsType<AmigaEffectPlayer>(AmigaEffectPlayer.Create(Image.Value, rec));
+            Assert.True(player.Play(int.Parse(effect.Name)));
+            var lines = new List<string>();
+            for (int tick = 0; tick < ticks; tick++)
+            {
+                rec.Line.Clear();
+                player.Tick();
+                lines.Add(rec.Line.ToString());
+            }
+            Check("effect " + effect.Name, lines, effect.Value, block);
         }
     }
 

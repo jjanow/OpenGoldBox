@@ -298,6 +298,10 @@ The sprite renderer takes a one-based frame slot. The 3D call at 0x7AA8 passes d
 pass slot 2 at 0x7AB7. The renderer at 0x2E7D6 looks up that slot in the loaded frame table. The Client uses the
 last available frame if the chosen art has fewer frames than the requested slot (s31).
 
+The DOS sprite loader (0x2E170) builds the mask from source index 0 at 0x2E4CE, then remaps EGA index 13 to
+opaque black through DS:0C6C/0C7C at 0x2E508. The remap leaves the mask intact. The Client applies both when
+drawing DOS encounter sprites (s32).
+
 **APPROACH** (0x155D): if $6DC1 > 0, $6DC1 − 1 and redraw. At 0 nothing.
 
 **LOADMON v1 v2 v3** (0x1196). Nothing when DS:4435 (monsters added since CLRMON) is ≥ 63. Else:

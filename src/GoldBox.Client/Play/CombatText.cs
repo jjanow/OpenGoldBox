@@ -59,6 +59,8 @@ public enum CombatMsg
     // handler texts 87 (0x110E0), 73 (0x16240), 77 (0x10629), 75 (0x10485), 131 (0x11CB1), 40 (0xF9A4), 135 (0x11DCA).
     StatusRevivedEnemy, StatusRevived, StatusEscapes, HandlerDiseased, HandlerRakes, HandlerHeldFast, HandlerSucksBlood,
     HandlerStronger, HandlerAirClears, HandlerNeedsGiantStrength,
+    SpellReduced, SpellEffectRemoved, SpellCloudFormed, SpellBlindnessCured, SpellMagicDispelled,
+    SpellCurseLifted, SpellItemUncursed, SpellLevelRestored,
 }
 
 /// <summary>
@@ -214,6 +216,14 @@ public sealed class CombatText
         [CombatMsg.HandlerStronger] = "GAINS MIGHT",
         [CombatMsg.HandlerAirClears] = "THE CLOUD THINS",
         [CombatMsg.HandlerNeedsGiantStrength] = "NEEDS A GIANT'S MIGHT",
+        [CombatMsg.SpellReduced] = "RETURNS TO NORMAL SIZE",
+        [CombatMsg.SpellEffectRemoved] = "LOSES AN EFFECT",
+        [CombatMsg.SpellCloudFormed] = "CONJURES NOXIOUS FOG",
+        [CombatMsg.SpellBlindnessCured] = "REGAINS SIGHT",
+        [CombatMsg.SpellMagicDispelled] = "LOSES AN ENCHANTMENT",
+        [CombatMsg.SpellCurseLifted] = "IS FREED FROM THE CURSE",
+        [CombatMsg.SpellItemUncursed] = "CARRIES ONE FEWER CURSED ITEM",
+        [CombatMsg.SpellLevelRestored] = "REGAINS A LEVEL",
     };
 
     /// <summary>START.EXE strings (offsets in the unpacked image, PorProgram.Image), read before the status panel 0x1583.</summary>
@@ -302,6 +312,21 @@ public sealed class CombatText
     /// <summary>The text, upper case as the font draws it (spaces kept: the program's strings carry their own).</summary>
     public string this[CombatMsg id] =>
         (_texts.TryGetValue(id, out var s) ? s : Table.TryGetValue(id, out var t) ? t : StartTable[id]).ToUpperInvariant();
+
+    /// <summary>A spell routine's own text and whether it goes through START 0x2B8B with effect frames.</summary>
+    internal static (CombatMsg Text, bool Animated)? SpellMessage(EffectEvent e) => e switch
+    {
+        EffectEvent.SpellStrengthened => (CombatMsg.HandlerStronger, false),
+        EffectEvent.SpellReduced => (CombatMsg.SpellReduced, false),
+        EffectEvent.SpellEffectRemoved => (CombatMsg.SpellEffectRemoved, false),
+        EffectEvent.SpellCloudFormed => (CombatMsg.SpellCloudFormed, false),
+        EffectEvent.SpellBlindnessCured => (CombatMsg.SpellBlindnessCured, true),
+        EffectEvent.SpellMagicDispelled => (CombatMsg.SpellMagicDispelled, true),
+        EffectEvent.SpellCurseLifted => (CombatMsg.SpellCurseLifted, true),
+        EffectEvent.SpellItemUncursed => (CombatMsg.SpellItemUncursed, true),
+        EffectEvent.SpellLevelRestored => (CombatMsg.SpellLevelRestored, false),
+        _ => null,
+    };
 
     /// <summary>The words of a menu text ("VIEW AIM " → VIEW, AIM): the program builds its menu lines from these.</summary>
     public IReadOnlyList<string> Words(CombatMsg id) => this[id].Split(' ', StringSplitOptions.RemoveEmptyEntries);

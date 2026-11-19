@@ -313,10 +313,25 @@ message): 4 (0x280EE), 9 (0x281D5), 15 (0x2849E), 20 (0x2851F), 28 (0x28A01), 47
 the 33 call sites of 0x278DB. The other callers of 0x2C540 pass their own: Hold Person 23/49 0x28668 (0x287DD),
 Animate Dead 0x2907B (0x291FF), the fear aura 0x106DA (paralysis 0x34, 0x10794) / 0x106F1 (Curse 2, 0x107CB), the
 paralysing aura 0x107EC (0x108C7), the charm gaze 0x10AC7 (0x10C20), the stinking-cloud terrain check 0x2B9A5 (0x1E
-on a save, 0x2BACB) / 0x2B9B5 (0x1F, 0x2BB1A). Spells 12, 13, 35, 59 and the cures do not go through 0x2C540 (their
-messages are their own routines' `[?]` not mapped). Code: Core `EffectTexts` (keys), `PorTextCatalog` `EffectMsg.*`
+on a save, 0x2BACB) / 0x2B9B5 (0x1F, 0x2BB1A). Spells 12, 13, 35, 59 and the cures use the messages below.
+Code: Core `EffectTexts` (keys), `PorTextCatalog` `EffectMsg.*`
 (offsets), the Client's `CombatChooser.EffectTextMessage`. Outside a fight START 0x2B8B is START 0x16EC with the pause and no picture (read s27; layout in camp.md "Cast",
 Client `CampScreens.EffectMessage`).
+
+**Spell routine messages** (s32, DOS v1.3 program read). Direct messages use START 0x16EC with row 10 and the
+game-speed pause. Animated messages use START 0x2B8B (far entry 00BA:1FEB) with effect frames. They use the same
+paused text window in camp. The importer reads the strings from the player's program.
+
+| Routine | Calls that show text | GAME.OVR string | Display |
+|---|---|---|---|
+| Enlarge, Strength, Giant Strength | 0x2834C, 0x29054, 0x29F3C | 0x282B1, 0x28F4D, 0x29EF1 (same as handler 131) | Direct after a successful raise |
+| Effect removal (including Cure Disease and Heal) | 0x2BFA8 | 0x2BF62 | Direct before the effect leaves. Cure Disease has only these messages |
+| Reduce | 0x283DB | 0x28375 | Direct after removing Enlarge |
+| Stinking Cloud | 0x28EEC | 0x28B11 | Direct without the pause flag, redraw centred on the aimed cell (0x28EFF, delta 255), pause and clear, then terrain checks |
+| Cure Blindness | 0x29263 | 0x29227 | Animated after the removal message |
+| Dispel Magic | 0x294CF | 0x29391 | Animated after a pass that removed an effect |
+| Remove Curse (43) | 0x2958C, 0x29602 | 0x29536, 0x29543 | Animated after removing Bestow Curse or uncursing the first cursed item |
+| Restoration | 0x29E07 | 0x29C4F | Direct after level stats |
 
 **Handler messages** (read s27, P): the monster specials print through START 0x16EC(creature, text, row, pause
 flag) directly, not through 0x2B8B (no view scroll, no effect frames). Each text is a Pascal string in the handler's
@@ -343,13 +358,11 @@ s30 (P): those seven were raised as `EffectEvent.Other` and not shown; now `Dise
 `Rakes`, `Stronger`, `AirClears`, `NeedsGiantStrength` with the texts `CombatMsg.Handler*` (catalog entries added; the
 importer copies texts, so they reach a module only after an importer bump). Client: the panel from row 10 with the pause
 (`CombatChooser.HandlerMessage`), row 24 for 40 and 135 (`PageSay`); 131 in a fight puts the name on row 18 and the text
-on row 19 of the Items page during the pause (`PageTextWindow`; `[?]` the frame and the clear of rows 17–22 over the
-page are not drawn). Item handlers in a fight: Ready / unready (0x2250A, the menu's Items page and the AI's) now runs
+on row 19 during the pause, on a framed text window over the Items page that clears rows 17–22 (`ItemEffectTextWindow`,
+s32). Item handlers in a fight: Ready / unready (0x2250A, the menu's Items page and the AI's) now runs
 the item's handler 0x3E through 0x2AEEA (`FightKit` wires `FightItemScreens` and `MonsterAi.ItemHandler`, s30; before,
-nothing ran). Outside a fight the Client has no Ready yet (`CharacterView` TODO), so 131 / 135 there are `[?]`. `[?]` None seen in DOSBox-X. Still `EffectEvent.Other` (spell
-routines, not handlers; texts not mapped): 13 Reduce's and the removal 0x2BF6B's messages (FightSpells.cs), Enlarge's
-and spell 59's raise messages, 34 Stinking Cloud's, 37 Cure Blindness, 35 Strength's raise, 39/58 Cure Disease
-(0x292A2), 44 Remove Curse (0x29558, two), Restoration's (FightSpells.Routines.cs) `[?]`.
+nothing ran). Outside a fight the Client has no Ready yet (`CharacterView` TODO), so 131 / 135 there are `[?]`.
+Handler 131's overlay has yet to be captured in DOSBox-X `[?]`.
 
 0xECB3 shows its text for every caller (row 10, no pause flag), before its dead / stone / gone test; every caller's
 text is mapped (s29, "Status changes"). Code: Core `EffectEvent.Gazes`, `GazeReflected`, `Stoned`,

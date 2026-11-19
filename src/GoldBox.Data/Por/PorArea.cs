@@ -95,7 +95,7 @@ public sealed class PorArea
         try
         {
             var party = PorParty.Load(sg, [saveDir, .. content.SaveFolder is { } f ? new[] { f } : []]);
-            PorParty.RefreshSavingThrows(party, content.Program()?.LevelTables());
+            PorParty.RefreshOnLoad(party, content.Program()?.LevelTables());
             vm.Memory.Party = party;
         }
         catch (Exception e) when (e is IOException or FormatException)

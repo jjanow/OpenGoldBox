@@ -218,9 +218,9 @@ public sealed class PorGame
     private EclParty? ReadLoadedParty(Module.EngineSaveDocument save, bool originalFile = false)
     {
         var party = Module.Por.PorEngineSave.Party(save);
-        // Converted saves keep the original bytes for export. Refresh their derived stats only when entering play.
+        // Converted saves keep the original bytes for export. Apply the original Load's party updates on entering play.
         if (party is not null && (originalFile || save.Source is not null))
-            PorParty.RefreshSavingThrows(party, Content.Program()?.LevelTables());
+            PorParty.RefreshOnLoad(party, Content.Program()?.LevelTables());
         return party;
     }
 

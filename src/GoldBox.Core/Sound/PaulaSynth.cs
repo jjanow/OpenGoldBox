@@ -107,31 +107,53 @@ public sealed class PaulaSynth : IPaulaRegisters
 }
 
 /// <summary>
-/// The Amiga music as the Client plays it: <see cref="AmigaMusicPlayer"/> ticked at the vertical blank (50 Hz PAL
-/// `[?]`, docs/re/sound.md §5.1) into a <see cref="PaulaSynth"/>, rendered on demand. Not thread-safe.
+/// The Amiga audio: the active music or effect player ticks at the vertical blank (50 Hz PAL `[?]`,
+/// docs/re/sound.md §5.1) into a shared <see cref="PaulaSynth"/>, rendered on demand. Not thread-safe.
 /// </summary>
 public sealed class AmigaMusic
 {
     public const double TickHz = 50.0;
     private readonly AmigaMusicPlayer _player;
+    private readonly AmigaEffectPlayer? _effects;
+    private readonly int[] _cues;
     private readonly PaulaSynth _paula;
     private readonly double _samplesPerTick;
     private double _untilTick;
+    private bool _playingEffects;
 
     public AmigaMusic(AmigaSoundImage image, int sampleRate)
     {
-        AmigaMusicPlayer? p = null;
-        _paula = new PaulaSynth(a => p!.SampleAt(a), sampleRate);
-        _player = p = new AmigaMusicPlayer(image, _paula);
+        _paula = new PaulaSynth(SampleAt, sampleRate);
+        _player = new AmigaMusicPlayer(image, _paula);
+        _effects = AmigaEffectPlayer.Create(image, _paula);
+        _cues = image.Cues;
         _samplesPerTick = sampleRate / TickHz;
     }
 
     public AmigaMusicPlayer Player => _player;
+    public bool HasEffects => _effects is not null;
+
+    private sbyte SampleAt(int address) =>
+        address >= AmigaEffectPlayer.Base ? _effects?.SampleAt(address) ?? 0 : _player.SampleAt(address);
 
     /// <summary>PlaySong(n): 0 stops, 1–7 start song n (taken at the next tick).</summary>
-    public void Play(int song) => _player.PlaySong(song);
+    public void Play(int song)
+    {
+        _playingEffects = false;
+        _player.PlaySong(song);
+    }
 
-    /// <summary>Adds the music to <paramref name="mono"/>, ticking the player at its rate.</summary>
+    /// <summary>Queues the corresponding sampled cue, taking over the music player's vertical blank.</summary>
+    public void PlayEffect(SoundCue cue)
+    {
+        // The Amiga has no caller for MissileOut. Its combat sound plays on arrival.
+        int index = (int)cue - (int)SoundCue.Cast;
+        if (cue != SoundCue.MissileOut && (uint)index <= (int)SoundCue.MissileIn - (int)SoundCue.Cast
+            && index < _cues.Length && _effects?.Play(_cues[index]) == true)
+            _playingEffects = true;
+    }
+
+    /// <summary>Adds the audio to <paramref name="mono"/>, ticking the selected player.</summary>
     public void Render(Span<float> mono)
     {
         int i = 0;
@@ -139,7 +161,10 @@ public sealed class AmigaMusic
         {
             if (_untilTick <= 0)
             {
-                _player.Tick();
+                if (_playingEffects)
+                    _effects!.Tick();
+                else
+                    _player.Tick();
                 _untilTick += _samplesPerTick;
             }
             int n = Math.Min(mono.Length - i, Math.Max(1, (int)Math.Ceiling(_untilTick)));

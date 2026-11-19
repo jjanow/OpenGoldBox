@@ -176,8 +176,10 @@ its first page (combat-menu.md "Spell lists' Next / Prev"). Nothing between clea
 stays. Client: the page stays under the box while the cast runs (`TradeContext.ShowPageUnder` →
 `ClientPlayer.PageUnder`, drawn by `ExploreScreen.DrawOverPage`: the page, the frame, the box's text, row 24 kept
 unless a key prompt or menu takes it), then the list comes back afresh (tests `CampEffectMessageTests`,
-`CampPlayTests.A_camp_cast_keeps_the_spell_list_under_the_text_box`). `[?]` The page itself is the Client's layout
-(title rows, no choose-spell prompt before the menu on row 24).
+`CampPlayTests.A_camp_cast_keeps_the_spell_list_under_the_text_box`). A DOSBox-X check in s32 put 21 memorised
+spells in one character. The title is on row 1, the first level heading on row 5, and the choose-spell prompt
+precedes the menu on row 24. PgDn exposes the last four spells and keeps the selection on row 22. PgUp restores
+the first page and its selection. The Client places the choose-spell prompt with the title.
 
 **Memorize (0x1813B)**: the check; the pending list (type 5) first: when not empty, the keep question 0x180F0 — No
 clears the pending slots (0x1798A), Yes ends here. Then until done: no slot byte at all (0x17DD5: cleric or

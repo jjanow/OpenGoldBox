@@ -82,8 +82,8 @@ public sealed class EclParty
     public List<EclCharacter> Members { get; } = [];
 
     /// <summary>
-    /// 0-based index of the current character, or -1 for none. [?] Which character is current right after a save
-    /// is loaded is not read; loaders set 0.
+    /// 0-based index of the current character, or -1 for none. The first member is current after a save is loaded
+    /// (PoR GAME.OVR 0x1FB99).
     /// </summary>
     public int CurrentIndex { get; set; } = -1;
 

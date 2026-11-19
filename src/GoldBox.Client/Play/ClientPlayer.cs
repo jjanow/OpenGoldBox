@@ -596,6 +596,9 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
     /// <summary>What the combat screen shows (<see cref="Screens.CombatScreen"/>); active while a fight runs.</summary>
     public CombatView FightView { get; } = new();
 
+    /// <summary>The Amiga song hooks, when the module and presentation setting provide them.</summary>
+    public Action<int>? PlaySong { get; init; }
+
     private CombatChooser? _chooser;
 
     /// <summary>The player's side of the combat menu (passed to the game as <c>PorPlayer.FightMenu</c>).</summary>
@@ -617,6 +620,7 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
         FightView.Dungeon = memory().ViewMode == 1; // DUNGCOM only when DS:49FA = 1, else WILDCOM (0xD81B; combat-menu.md "Ground")
         // The fight start's line on the area screen (0xE430–0xE452). The program shows it before the arena is built;
         // the build draws nothing and only the arena's own dice, so showing it after FightKit.Create changes nothing.
+        PlaySong?.Invoke(2);
         Chooser.BattleBegins();
         Chooser.Attach(fight);
         fight.State.Sound = Sound;
@@ -658,6 +662,7 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
     /// </summary>
     public void PartyDestroyed(EncounterState state)
     {
+        PlaySong?.Invoke(5);
         var t = Resources.Texts;
         var box = new TextWindow(1, 1, 38, 22);
         string title = t[Msg.EndTitle];
@@ -718,6 +723,7 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
         var t = Resources.Texts;
         if (partyKilled)
         {
+            PlaySong?.Invoke(5);
             var box = new TextWindow(1, 1, 38, 22);
             TypesInto(box);
             box.PrintIn(1, 1, 38, 22, t[Msg.PartyKilled], clear: true, colour: 10);
@@ -943,10 +949,12 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
         Interface = Venue.Camp;
         try
         {
+            PlaySong?.Invoke(1);
             return VenueScreens.Camp(CampContextFor(t), Resources.CampMenu);
         }
         finally
         {
+            PlaySong?.Invoke(0);
             Interface = before;
         }
     }

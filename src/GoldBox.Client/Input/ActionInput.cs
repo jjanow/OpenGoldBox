@@ -173,6 +173,9 @@ public sealed class ActionInput(InputBindings bindings)
     /// </summary>
     public bool SkipPauses { get; set; }
 
+    /// <summary>Ctrl-S changes the sound when the first key of a game read is taken.</summary>
+    public Action? ToggleSound { get; set; }
+
     /// <summary>A key or button press waiting in the buffer: its actions, its name, and the bytes the BIOS holds for it
     /// (<see cref="DosKeys.Of"/>; null for a pad button, a held key's repeat or a key the PC has no BIOS key for).</summary>
     private sealed record Waiting(HashSet<GameAction> Pressed, (InputDevice Device, string Name)? New, (byte Ascii, byte Scan)? Dos);
@@ -204,7 +207,11 @@ public sealed class ActionInput(InputBindings bindings)
         if (reading)
         {
             if (_waiting.Count == 0)
+            {
+                if (_newInput is (InputDevice.Keyboard, "Ctrl+S"))
+                    ToggleSound?.Invoke();
                 return;
+            }
             if (_injected)
             {
                 Discard();
@@ -212,6 +219,7 @@ public sealed class ActionInput(InputBindings bindings)
             }
             if (_pressed.Count > 0 || _newInput is not null)
                 Keep();
+            ToggleSoundIfRead(_waiting[0]);
             Waiting? read;
             if (!scanRead && _waiting.Count > 0 && _waiting[0].Dos is { Ascii: 0 } first)
                 read = ResolveSingle(first.Scan);
@@ -237,6 +245,12 @@ public sealed class ActionInput(InputBindings bindings)
         _pressed.Clear();
         _clicks.Clear();
         _newInput = null;
+    }
+
+    private void ToggleSoundIfRead(Waiting key)
+    {
+        if (key.Dos is { Ascii: 0x13 })
+            ToggleSound?.Invoke();
     }
 
     private void Keep()
@@ -312,6 +326,7 @@ public sealed class ActionInput(InputBindings bindings)
     {
         if (_waiting.Count == 0)
             return 0;
+        ToggleSoundIfRead(_waiting[0]);
         var read = Resolve(_waiting, Bindings);
         Discard();
         if (read is null)

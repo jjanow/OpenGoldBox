@@ -120,6 +120,9 @@ public sealed class PartyMenuFlow(Func<PlayerRequest, object?> ask, PartyMenuTex
     /// <summary>The word after START on the DOS command line (ParamStr(1)), or null: J compares it.</summary>
     public Func<string?> ProgramWord { get; init; } = () => null;
 
+    /// <summary>The Amiga song hook, when the module and presentation setting provide it.</summary>
+    public Action<int>? PlaySong { get; init; }
+
     /// <summary>Where the original stops on a run-time error (Train's payment; not reached with the debug flag).</summary>
     public Action<ProgramHaltException>? Halt { get; init; }
 
@@ -332,6 +335,7 @@ public sealed class PartyMenuFlow(Func<PlayerRequest, object?> ask, PartyMenuTex
             name = (ask(new TextRequest(texts.CharacterName, false, EclCharacter.MaxNameLength)) as string ?? "").Trim();
         while (name.Length == 0);
         cc.SetName(name.ToUpperInvariant());
+        PlaySong?.Invoke(3);
         Portrait(c);
         EditIcon(c);
         roster.Save(c, Party);
@@ -378,7 +382,10 @@ public sealed class PartyMenuFlow(Func<PlayerRequest, object?> ask, PartyMenuTex
                 continue;
             Highlight.Index = 1;
             if (ask(new IconRequest(c, old, texts.YesNo) { Prompt = texts.IconOk }) is 0)
+            {
+                PlaySong?.Invoke(3);
                 return;
+            }
             ed.Restart();
             old = (byte[])c.Record.Clone();
         }

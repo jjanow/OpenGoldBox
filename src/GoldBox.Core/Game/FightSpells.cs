@@ -548,7 +548,7 @@ public sealed partial class FightSpells : IFightSpells
                 return;
             case 13: // 0x28386 Reduce: first target fails a save vs. 4 and loses an Enlarge (0x2BF6B) → message
                 if (Targets.Count > 0 && First is { } r && !Effects.SavingThrow(r, 4, 0) && RemoveWithMessage(r, 0x0C))
-                    Event?.Invoke(r, spell, EffectEvent.Other);
+                    Event?.Invoke(r, spell, EffectEvent.SpellReduced);
                 return;
             case 14: // 0x283F0 Friends: first target's Charisma + 2d4 (at most 25); effect strength = the old value
             {
@@ -608,7 +608,7 @@ public sealed partial class FightSpells : IFightSpells
     {
         if (EffectHandlers.FindEffect(c, id) is not { } n)
             return false;
-        Event?.Invoke(c, 0, EffectEvent.Other);
+        Event?.Invoke(c, 0, EffectEvent.SpellEffectRemoved);
         Effects.RemoveEffect(c, id, n);
         return true;
     }
@@ -646,7 +646,7 @@ public sealed partial class FightSpells : IFightSpells
         if (First is not { } t)
             return;
         if (Effects.RaiseStrength(t, 0x12, Ds4845, out byte code))
-            Event?.Invoke(t, spell, EffectEvent.Other);
+            Event?.Invoke(t, spell, EffectEvent.SpellStrengthened);
         EffectHandlers.AddEffect(t, 0x0C, Duration(spell), code, true);
     }
 

@@ -42,12 +42,12 @@ public sealed record ClientOptions
     public string? AmigaDirectory { get; init; }
     /// <summary>--art dos|best|amiga (remembered).</summary>
     public Data.Por.PorArtChoice? Art { get; init; }
-    /// <summary>--sound speaker|tandy|off (remembered).</summary>
+    /// <summary>--sound speaker|tandy|amiga|off (remembered).</summary>
     public string? Sound { get; init; }
     /// <summary>--param WORD: the word after START on the DOS command line (remembered; --no-param clears it, as "").</summary>
     public string? ProgramWord { get; init; }
 
-    public const string Usage = "usage: GoldBox.Client [--game DIR] [--amiga DIR] [--module DIR] [--art dos|best|amiga] [--save A|FILE] [--area N --at X,Y,F] [--scale K] [--stretch|--no-stretch] [--sound speaker|tandy|off] [--param WORD|--no-param] [--seed N]";
+    public const string Usage = "usage: GoldBox.Client [--game DIR] [--amiga DIR] [--module DIR] [--art dos|best|amiga] [--save A|FILE] [--area N --at X,Y,F] [--scale K] [--stretch|--no-stretch] [--sound speaker|tandy|amiga|off] [--param WORD|--no-param] [--seed N]";
 
     public static ClientOptions Parse(IReadOnlyList<string> args)
     {
@@ -71,7 +71,7 @@ public sealed record ClientOptions
                 "--no-param" => o with { ProgramWord = "" },
                 "--sound" => Next() is var sw && (Audio.ClientAudio.Parse(sw) is not null || sw.Equals("off", StringComparison.OrdinalIgnoreCase))
                     ? o with { Sound = sw.ToLowerInvariant() }
-                    : throw new ArgumentException($"--sound {sw}: use speaker, tandy or off"),
+                    : throw new ArgumentException($"--sound {sw}: use speaker, tandy, amiga or off"),
                 "--art" => Next() is var w && Play.ClientArt.Parse(w) is { } art
                     ? o with { Art = art }
                     : throw new ArgumentException($"--art {w}: use dos, best or amiga"),

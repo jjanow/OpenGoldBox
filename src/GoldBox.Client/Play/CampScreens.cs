@@ -555,7 +555,13 @@ public static class CampScreens
         w.ClearRect(TextWindow.Left, TextWindow.Top + 1, TextWindow.Right, TextWindow.Bottom);
         var heard = new List<string>();
         var shown = c.OutsideMessages(resting: false);
-        void OnSpell(EclCharacter t, int s, EffectEvent e) => heard.Add(t.Name.ToUpperInvariant() + ": " + e.ToString().ToUpperInvariant());
+        void OnSpell(EclCharacter t, int s, EffectEvent e)
+        {
+            if (CombatText.SpellMessage(e) is { } message)
+                shown.Message(t, c.Resources.CombatTexts[message.Text], true);
+            else
+                heard.Add(t.Name.ToUpperInvariant() + ": " + e.ToString().ToUpperInvariant());
+        }
         void OnEffect(EclCharacter t, EffectEvent e)
         {
             // 0x2C540's text (START 0x2B8B) and its unaffected words (0x2C532) are shown where they happen.
@@ -591,7 +597,7 @@ public static class CampScreens
             cast.Spells.Event -= OnSpell;
             cast.Spells.Effects.Event -= OnEffect;
         }
-        // [?] The other events' messages outside a fight (damage, healing, the spells' own) are not matched: they are
+        // [?] The other events' messages outside a fight (damage, healing) are not matched: they are
         // listed in our words.
         if (heard.Count > 0)
         {

@@ -127,6 +127,9 @@ public enum EffectEvent
     AirClears,
     /// <summary>Handler 135 (0x11DCA, text CS:311B): START 0x1693, row 24 in green with the pause.</summary>
     NeedsGiantStrength,
+    // Spell routines' own messages (docs/re/spells-effects.md "Spell routine messages").
+    SpellStrengthened, SpellReduced, SpellEffectRemoved, SpellCloudFormed, SpellBlindnessCured,
+    SpellMagicDispelled, SpellCurseLifted, SpellItemUncursed, SpellLevelRestored,
 }
 
 /// <summary>The data-segment cells the effect handlers read and write besides those in <see cref="FightState"/>.</summary>

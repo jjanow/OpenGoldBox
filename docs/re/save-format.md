@@ -34,8 +34,8 @@ ready-made level-1 party of six, so a new player can start without creating char
 - The game writes the 285 record bytes as they are in memory, then walks the item list and the effect list and writes
   each record. Pointers inside the records (character 0x7F, 0xC8, 0xCC..0xFF, 0x104, 0x108; the link fields inside
   item and effect records) are stale on disk. On load the game reads the record, clears those pointers, reads
-  `.ITM`/`.SPC` records until end of file and relinks them, then recalculates the character (talonius `LoadChar`,
-  DrEvil `ReadCharacter`).
+  `.ITM`/`.SPC` records until end of file and relinks them (GAME.OVR 0x1EAD2; talonius `LoadChar`,
+  DrEvil `ReadCharacter`). The join then refreshes level stats as described below.
 - Shipped examples of absent files: `CHRDATA4.SPC`, `CHRDATA5.SPC` (no effects). `CHRDATA1.ITM` = 2 items (126 bytes),
   `CHRDATA1.SPC` = 4 effects (36 bytes).
 - Location: the save directory is a path read from the game's configuration text file at start-up (talonius
@@ -134,7 +134,12 @@ Loading `SAVGAMx.DAT` (talonius `LoadGame`, DrEvil `ov17_1602`):
 1. Read the fixed layout above. Restore the options from $49FC/$49FF and the disk number.
 2. For i = 1..k: read `CHRDATxi.SAV` (+ `.ITM`, `.SPC` if present) by the stem stored in name slot i and append the
    character to the party. The stem is not rebuilt from the slot letter; a renamed set would still load. Missing
-   `.SAV` files are skipped.
+   `.SAV` files are skipped. Each join (0x1F9C9 → 0x1F42C) assigns the first free icon slot (record byte 0xBF) and
+   calls the full level-stat routine (0x1F55A → 0x2AA87). This refreshes base THAC0, the highest-level floor and
+   fighter attacks, and the applicable spell slots, known cleric spells, saving throws and thief skills
+   (`spells-effects.md` "Level stats"). After loading the party icons, DS:5D92 points to the first member (0x1FB99).
+   The engine applies the icon and level-stat updates when loading a legacy save into play. Converted saves retain
+   their source bytes for export and native engine saves retain the stored party state.
 3. Load the combat icons of each member; reload the current 3D map (`GEOn` block `map_id`) when the location type
    is < 2, and the three wall sets from $4AFA..$4AFF; outdoors, load the wilderness icons instead. Program read
    (s23, GAME.OVR 0x1FBEE–0x1FC86, location type ≤ 1): for i = 1..3 the cache DS:6AAE+4i := $4AF9+i (id) and

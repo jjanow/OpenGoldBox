@@ -50,6 +50,7 @@ public sealed class PartyMenuScreen(PartyMenuFlow flow, ScriptRunner runner, ISc
 
     /// <summary>The on/off settings the controls screen shows (<see cref="SettingToggle"/>).</summary>
     public IReadOnlyList<SettingToggle>? Toggles { get; init; }
+    public Audio.SoundSetting? Sound { get; init; }
 
     /// <summary>The requests the overlay answers: the creation and roster pages, and the questions asked over them.</summary>
     public static bool IsPage(PlayerRequest? r) => r is PickRequest or SheetRequest or IconRequest or ModifyRequest;
@@ -68,7 +69,7 @@ public sealed class PartyMenuScreen(PartyMenuFlow flow, ScriptRunner runner, ISc
     {
         if (input.Pressed(GameAction.Controls))
         {
-            host.Push(new ControlsScreen(font, host, art, StartWord, Toggles));
+            host.Push(new ControlsScreen(font, host, art, StartWord, Toggles, Sound));
             return;
         }
         if (HandOver())

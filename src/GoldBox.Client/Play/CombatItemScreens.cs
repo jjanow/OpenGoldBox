@@ -151,11 +151,30 @@ public sealed partial class CombatChooser
         View.StatusLine = null;
     }
 
-    /// <summary>The spells' events: an AI's cast with a casting time begins (the menu's own goes through Notice).</summary>
+    /// <summary>The AI's cast begins, or a spell routine shows a direct or animated creature message.</summary>
     private void SpellEvent(EclCharacter who, int spell, EffectEvent e)
     {
         if (e == EffectEvent.BeginsCasting)
+        {
             Say(who, Text[CombatMsg.BeginsCasting]);
+            return;
+        }
+        if (CombatText.SpellMessage(e) is not { } message)
+            return;
+        string text = Text[message.Text];
+        if (message.Animated)
+            ShowHit(who, text, effect: true);
+        else if (e == EffectEvent.SpellCloudFormed && View.Fight?.Spells is FightSpells spells)
+        {
+            View.Page = null;
+            View.Mode = CombatMode.Watch;
+            PrintCreatureMessage(who, text, CombatView.MessageTop, false);
+            View.Scroll(spells.Aim.X, spells.Aim.Y, 255);
+            Pause(MessageMs);
+            ClearMessageWindow();
+        }
+        else
+            Say(who, text);
     }
 
     /// <summary>

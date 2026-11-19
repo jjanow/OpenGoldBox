@@ -350,6 +350,15 @@ public static class PorTextCatalog
         ["CombatMsg.HandlerStronger"] = 0x11BA6,
         ["CombatMsg.HandlerAirClears"] = 0xF903,
         ["CombatMsg.HandlerNeedsGiantStrength"] = 0x11D76,
+        // Spell routines' messages (direct START 0x16EC or START 0x2B8B, docs/re/spells-effects.md).
+        ["CombatMsg.SpellReduced"] = 0x28375,
+        ["CombatMsg.SpellEffectRemoved"] = 0x2BF62,
+        ["CombatMsg.SpellCloudFormed"] = 0x28B11,
+        ["CombatMsg.SpellBlindnessCured"] = 0x29227,
+        ["CombatMsg.SpellMagicDispelled"] = 0x29391,
+        ["CombatMsg.SpellCurseLifted"] = 0x29536,
+        ["CombatMsg.SpellItemUncursed"] = 0x29543,
+        ["CombatMsg.SpellLevelRestored"] = 0x29C4F,
         // The effect messages, 0x2C540's text argument (Core EffectTexts; docs/re/spells-effects.md "Effect messages"):
         // the strings just before the spell routines that pass them (the resolution 0x278DB's callers) and the handlers.
         ["EffectMsg.Blessed"] = 0x2801C,
