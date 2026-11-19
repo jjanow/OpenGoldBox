@@ -55,7 +55,11 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
             return;
         var m = memory();
         if (m.TypesText && m.GameSpeed > 0)
-            runner.Ask(new DelayRequest(TimeSpan.FromMilliseconds(10 * m.GameSpeed)) { Chained = true });
+            runner.Ask(new DelayRequest(TimeSpan.FromMilliseconds(10 * m.GameSpeed))
+            {
+                Chained = true,
+                KeepCommandLine = true,
+            });
     }
 
     /// <summary>The program's texts for the screens (our wordings until <see cref="Resources"/> are set).</summary>
@@ -515,7 +519,10 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
             ? head != 255
                 ? new ViewPicture(ViewPictureKind.Portrait, picture, head, 0, memory().Disk)
                 : new ViewPicture(ViewPictureKind.Picture, picture, null, 0, memory().Disk)
-            : new ViewPicture(ViewPictureKind.Sprite, sprite, null, distance, memory().Disk);
+            : new ViewPicture(ViewPictureKind.Sprite, sprite, null, distance, memory().Disk)
+            {
+                OnOverland = memory().ViewMode != 1,
+            };
     }
 
     public void ShowPicture(byte picture, byte? head)

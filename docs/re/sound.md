@@ -167,7 +167,9 @@ for far calls to CS:00DC, CS:01A5, CS:017B):
   `[?]`: the name animation (START 0x2B8B, cues 261A/261C; 10 callers in GAME.OVR: damage and effect messages), sounds
   outside a fight in the body routine.
 - **Client**: `--sound speaker|tandy|off` (settings `Sound`, default speaker); 44.1 kHz mono through MonoGame's
-  dynamic sound instance; the logic thread waits out an auto-stop sound as the program does. `[?]` A resident
+  dynamic sound instance. The logic thread waits out an auto-stop sound while the UI thread services the stream.
+  A silent backend probe (s31) confirmed that queued buffers drain during the wait. Xvfb/Pulse timing remains to
+  be checked. `[?]` A resident
   bracket's length is the program's animation. The missile, spell and Hold Person flights are drawn inside it (s25,
   `FightState.Flight`, combat-menu.md "Moving icon"), so their tune sounds for the flight; the body drawing and the
   message pause are not yet: such a bracket stays open until its tune ends by itself or the next sound call.

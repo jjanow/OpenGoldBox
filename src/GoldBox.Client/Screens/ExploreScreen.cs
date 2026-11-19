@@ -44,6 +44,7 @@ public sealed class ExploreScreen : IScreen
     private int _selected;
     private string _typed = "";
     private TimeSpan _delayEnd;
+    private DelayRequest? _bottomLineDrawn;
     private readonly ListPage _list = new();
     /// <summary>The training hall's screen (PROGRAM 0), drawn while <see cref="ClientPlayer.Hall"/> is set.</summary>
     private readonly HallView _hall = new();
@@ -508,6 +509,7 @@ public sealed class ExploreScreen : IScreen
             {
                 if (answer.Value is ChoiceRequest.PreviousMember or ChoiceRequest.NextMember)
                     _memberPicked = true; // the pick (0x23819) redraws the list with the new current member
+                _bottomLineDrawn = null;
                 _runner.Answer(answer.Value);
                 if (_runner.Fault is { } e)
                     Report(e);
@@ -663,6 +665,11 @@ public sealed class ExploreScreen : IScreen
                     return new Reply(true);
                 return _clock.Elapsed >= _delayEnd ? new Reply(false) : null;
 
+            case DelayRequest { BottomLine: not null } d when d.Duration == TimeSpan.Zero
+                && (_player.Hall is null || _player.PageUnder is not null) && !ReferenceEquals(d, _bottomLineDrawn):
+                // A draw can be skipped between updates. Keep the line until it has had a frame on screen.
+                return null;
+
             case DelayRequest:
                 return _clock.Elapsed >= _delayEnd || input.SkipsPause ? new Reply(null) : null;
 
@@ -752,8 +759,12 @@ public sealed class ExploreScreen : IScreen
     // Draw
     // ---------------------------------------------------------------------------------------------------------------
 
+    private bool _commandLineDrawn;
+
     public void Draw(IndexedFrame f, ActionInput input)
     {
+        bool commandLineWasDrawn = _commandLineDrawn;
+        _commandLineDrawn = false;
         if (_combat.Active)
         {
             _combat.Draw(f, input);
@@ -785,8 +796,8 @@ public sealed class ExploreScreen : IScreen
                 Chrome.Text(f, font, line.Column, line.Row, Fit(line.Text, 39 - line.Column), line.Colour);
             if (pending is KeyRequest wk)
                 Chrome.Text(f, font, 0, MenuRow, Fit(KeyPrompt(wk, input), 40), KeyColour(wk));
-            else if (pending is DelayRequest { BottomLine: { } bline })
-                Chrome.Text(f, font, 0, MenuRow, Fit(bline.Text, 40), bline.Colour);
+            else if (pending is DelayRequest { BottomLine: not null } windowDelay)
+                DrawBottomLine(f, font, windowDelay);
             else if (pending is DelayRequest && !_player.WindowAfterFight)
                 DrawLine(f, font, Commands, _highlight.Start(Commands.Length), 0); // the DAMAGE wipe's pause: row 24 kept (DOSBox-X s22)
             return;
@@ -843,17 +854,19 @@ public sealed class ExploreScreen : IScreen
                 Chrome.Text(f, font, 0, MenuRow, mp, MenuPromptColour);
             DrawLine(f, font, h.Items, _selected, start, h.HotkeyOf);
         }
-        else if (pending is null || (pending is DelayRequest { BottomLine: null } && _player.Scene is not null))
+        else if (pending is null || pending is DelayRequest { BottomLine: null } delay
+            && (_player.Scene is not null || (delay.KeepCommandLine && commandLineWasDrawn)))
         {
             // The end game (PROGRAM 8) does not draw on row 24: the command line stays (DOSBox-X s22).
             DrawLine(f, font, Commands, _highlight.Start(Commands.Length), 0);
+            _commandLineDrawn = true;
         }
         else if (pending is TextRequest tr)
             Chrome.Text(f, font, 0, MenuRow, Fit(tr.Prompt + (tr.Prompt.Length > 0 ? " " : "") + _typed + "_", 40), Chrome.White);
         else if (pending is KeyRequest k)
             Chrome.Text(f, font, 0, MenuRow, Fit(KeyPrompt(k, input), 40), KeyColour(k));
-        else if (pending is DelayRequest { BottomLine: { } bline })
-            Chrome.Text(f, font, 0, MenuRow, Fit(bline.Text, 40), bline.Colour);
+        else if (pending is DelayRequest { BottomLine: not null } bottomDelay)
+            DrawBottomLine(f, font, bottomDelay);
 
         if (pending is null && !_runner.Busy)
             _player.BottomRowDrawn(); // the run ended: the command line is on row 24 again
@@ -900,11 +913,19 @@ public sealed class ExploreScreen : IScreen
             Chrome.Clear(f, 0, MenuRow, 40);
             Chrome.Text(f, font, 0, MenuRow, Fit(KeyPrompt(k, input), 40), KeyColour(k));
         }
-        else if (pending is DelayRequest { BottomLine: { } bline })
+        else if (pending is DelayRequest { BottomLine: not null } delay)
         {
             Chrome.Clear(f, 0, MenuRow, 40);
-            Chrome.Text(f, font, 0, MenuRow, Fit(bline.Text, 40), bline.Colour);
+            DrawBottomLine(f, font, delay);
         }
+    }
+
+    private void DrawBottomLine(IndexedFrame f, TextFont font, DelayRequest delay)
+    {
+        if (delay.BottomLine is not { } line)
+            return;
+        Chrome.Text(f, font, 0, MenuRow, Fit(line.Text, 40), line.Colour);
+        _bottomLineDrawn = delay;
     }
 
     private static byte KeyColour(KeyRequest k) => k.Colour ?? (k.AsMenu ? Chrome.White : MenuPromptColour);

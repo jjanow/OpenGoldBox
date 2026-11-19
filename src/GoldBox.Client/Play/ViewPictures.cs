@@ -20,7 +20,11 @@ public enum ViewPictureKind
 /// HEAD block of a portrait, <paramref name="Distance"/> the encounter distance ($6DC1), <paramref name="Disk"/> the
 /// disk digit of the file names (DS:5376).
 /// </summary>
-public sealed record ViewPicture(ViewPictureKind Kind, int Id, int? Head, int Distance, int Disk);
+public sealed record ViewPicture(ViewPictureKind Kind, int Id, int? Head, int Distance, int Disk)
+{
+    /// <summary>Use the fixed encounter sprite frame for the overland view.</summary>
+    public bool OnOverland { get; init; }
+}
 
 /// <summary>
 /// Draws <see cref="ViewPicture"/>s into the picture window from the content, in the chosen art (DOS, or a variant
@@ -29,8 +33,8 @@ public sealed record ViewPicture(ViewPictureKind Kind, int Id, int? Head, int Di
 /// An animated PIC is drawn at the frame <see cref="PictureAnimation"/> picks: the later frames are XOR deltas against
 /// the first (the loader 0x2E170 XORs them in, read s19; the Amiga loader does the same, hunk 19 +0x13D6). [?] Amiga
 /// timing: its program changes frames every 3000 polls of the menu wait (CPU speed), not by the stored delay; the
-/// Client uses the delay with the DOS rule. [?] The sprite frame for a distance (frame distance − 1, the nearest first) and
-/// the frame's place (its block x, y in 8-pixel units inside the window) are from the art, not from the program. A
+/// Client uses the delay with the DOS rule. The sprite frame follows the view mode and encounter distance. Its place
+/// comes from the frame's block x, y in 8-pixel units inside the window. A
 /// portrait draws both parts from one variant (one palette): when the variant lacks either part, both are DOS. The
 /// Amiga HEAD is 56 px wide with no position; it is drawn at x = 16 [?] (outline matching, por-art-formats.md §3).
 /// </summary>
@@ -148,7 +152,7 @@ public sealed class ViewPictures
             {
                 if (Find("SPRIT", v.Id, v.Disk) is not { Frames.Count: > 0 } img)
                     return false;
-                var p = img.Frames[SpriteFrame(v.Distance, img.Frames.Count)];
+                var p = img.Frames[SpriteFrame(v.Distance, img.Frames.Count, v.OnOverland)];
                 Blit(f, x, y, p.X * 8, p.Y * 8, p, Base(img), transparent: true);
                 return true;
             }
@@ -178,8 +182,12 @@ public sealed class ViewPictures
         return DaxPicture.Create(delta.Width, delta.Height, delta.X, delta.Y, [px], delay: delta.Delay);
     }
 
-    /// <summary>[?] The sprite frame for an encounter distance: distance − 1 (frame 0 is the nearest), within the frames.</summary>
-    public static int SpriteFrame(int distance, int frames) => Math.Clamp(distance - 1, 0, Math.Max(0, frames - 1));
+    /// <summary>
+    /// The encounter renderer selects a one-based slot of distance + 1 in 3D, or slot 2 on the overland.
+    /// Short art variants use their last available frame.
+    /// </summary>
+    public static int SpriteFrame(int distance, int frames, bool onOverland = false) =>
+        Math.Clamp(onOverland ? 1 : distance, 0, Math.Max(0, frames - 1));
 
     private int Base(PorArtImage img) => img.Variant == "dos" || _paletteBase is null ? 0 : _paletteBase(img.PaletteRgb);
 

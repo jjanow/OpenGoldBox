@@ -1,5 +1,6 @@
 using GoldBox.Core.Sound;
 using GoldBox.Data.Por;
+using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Audio;
 
 namespace GoldBox.Client.Audio;
@@ -7,10 +8,10 @@ namespace GoldBox.Client.Audio;
 /// <summary>
 /// The Client's sound (docs/re/sound.md): the program's sound calls (<see cref="ISoundSink"/>, from the game-logic
 /// thread) go to a <see cref="PcSoundPlayer"/> on the device the setting picks, rendered at 44.1 kHz mono into a
-/// MonoGame <see cref="DynamicSoundEffectInstance"/> by a pump thread of its own.
+/// MonoGame <see cref="DynamicSoundEffectInstance"/> on the UI thread through its buffer callback.
 /// <list type="bullet">
-/// <item>Auto-stop cues (step, impact, miss, bump): the program waits in the sound command until the sound is cut
-/// (sound delay 10, 59–110 ms), so the logic thread waits here too (not the window's thread).</item>
+/// <item>Auto-stop cues (step, impact, miss, bump): game logic waits for the driver to finish while the UI thread
+/// continues to service the sound output.</item>
 /// <item>Resident brackets: the program's bracket lasts as long as its animation (a missile's or spell's flight, the
 /// body drawing, the message pause), which the Client does not draw yet. `[?]` Until it does, a bracket stays open
 /// until its tune ends by itself or the next sound call outside a bracket.</item>
@@ -24,9 +25,9 @@ public sealed class ClientAudio : ISoundSink, IDisposable
     private readonly PcSoundPlayer _player;
     private readonly AmigaMusic? _music;
     private readonly DynamicSoundEffectInstance _out;
-    private readonly Thread _pump;
+    private readonly float[] _samples = new float[Chunk];
+    private readonly byte[] _bytes = new byte[Chunk * 2];
     private readonly int _uiThread;
-    private volatile bool _stop;
     private bool _resident, _closing;
 
     private ClientAudio(PcSoundPlayer player, AmigaMusic? music, DynamicSoundEffectInstance output, int uiThread)
@@ -35,9 +36,9 @@ public sealed class ClientAudio : ISoundSink, IDisposable
         _music = music;
         _out = output;
         _uiThread = uiThread;
-        _pump = new Thread(Pump) { IsBackground = true, Name = "GoldBox audio" };
+        _out.BufferNeeded += FillBuffers;
+        FillBuffers(_out, EventArgs.Empty);
         _out.Play();
-        _pump.Start();
     }
 
     /// <summary>The sound device setting (<see cref="ClientSettings.Sound"/>) as a device; null = off.</summary>
@@ -56,15 +57,18 @@ public sealed class ClientAudio : ISoundSink, IDisposable
     {
         if (sound is null || device is not { } d)
             return null;
+        DynamicSoundEffectInstance? output = null;
         try
         {
-            var output = new DynamicSoundEffectInstance(SampleRate, AudioChannels.Mono);
-            return new ClientAudio(sound.Player(d, SampleRate), amiga is null ? null : new AmigaMusic(amiga, SampleRate),
-                output, Environment.CurrentManagedThreadId);
+            var player = sound.Player(d, SampleRate);
+            var music = amiga is null ? null : new AmigaMusic(amiga, SampleRate);
+            output = new DynamicSoundEffectInstance(SampleRate, AudioChannels.Mono);
+            return new ClientAudio(player, music, output, Environment.CurrentManagedThreadId);
         }
         catch (Exception e) when (e is NoAudioHardwareException or InvalidOperationException or TypeInitializationException
                                        or DllNotFoundException)
         {
+            output?.Dispose();
             Console.Error.WriteLine($"sound off: no audio output ({e.Message})");
             return null;
         }
@@ -112,8 +116,8 @@ public sealed class ClientAudio : ISoundSink, IDisposable
         // The program busy-waits in the sound command until an auto-stop sound is cut; the logic thread does too.
         if (wait && Environment.CurrentManagedThreadId != _uiThread)
         {
-            var until = DateTime.UtcNow.AddMilliseconds(500);
-            while (DateTime.UtcNow < until)
+            var started = Clock.Elapsed;
+            while (Clock.Elapsed - started < TimeSpan.FromMilliseconds(500))
             {
                 lock (_lock)
                     if (!_player.Busy)
@@ -151,45 +155,34 @@ public sealed class ClientAudio : ISoundSink, IDisposable
         _closing = false;
     }
 
-    private void Pump()
+    /// <summary>Service the audio backend while the UI thread waits for a synchronous game command.</summary>
+    internal void Update() => FrameworkDispatcher.Update();
+
+    private void FillBuffers(object? sender, EventArgs args)
     {
-        var samples = new float[Chunk];
-        var bytes = new byte[Chunk * 2];
-        while (!_stop)
+        // The dispatcher removes played buffers and calls this handler. Both operations must stay on the UI thread.
+        while (_out.PendingBufferCount < 3)
         {
-            try
+            lock (_lock)
             {
-                if (_out.PendingBufferCount >= 3)
-                {
-                    Thread.Sleep(4);
-                    continue;
-                }
-                lock (_lock)
-                {
-                    _player.Render(samples);
-                    _music?.Render(samples);
-                    if (_resident && _closing && !_player.Driver.Busy(_player.Device))
-                        CloseBracket();
-                }
-                for (int i = 0; i < Chunk; i++)
-                {
-                    int v = (int)Math.Round(Math.Clamp(samples[i], -1f, 1f) * 32767);
-                    bytes[2 * i] = (byte)v;
-                    bytes[2 * i + 1] = (byte)(v >> 8);
-                }
-                _out.SubmitBuffer(bytes);
+                _player.Render(_samples);
+                _music?.Render(_samples);
+                if (_resident && _closing && !_player.Driver.Busy(_player.Device))
+                    CloseBracket();
             }
-            catch (ObjectDisposedException)
+            for (int i = 0; i < Chunk; i++)
             {
-                return;
+                int v = (int)Math.Round(Math.Clamp(_samples[i], -1f, 1f) * 32767);
+                _bytes[2 * i] = (byte)v;
+                _bytes[2 * i + 1] = (byte)(v >> 8);
             }
+            _out.SubmitBuffer(_bytes);
         }
     }
 
     public void Dispose()
     {
-        _stop = true;
-        _pump.Join(500);
+        _out.BufferNeeded -= FillBuffers;
         _out.Stop();
         _out.Dispose();
     }

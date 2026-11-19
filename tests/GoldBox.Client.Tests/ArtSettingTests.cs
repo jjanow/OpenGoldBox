@@ -283,8 +283,9 @@ public class ArtSettingTests
         c.Amiga[("HEAD", 2)] = [Pic(56, 40, Fill(56 * 40, _ => 3))];
         c.Amiga[("BODY", 5)] = [Pic(88, 48, Fill(88 * 48, _ => 8))];
         c.Dos[("HEAD3", 1)] = [Pic(88, 40, Fill(88 * 40, _ => 6))];  // DOS-only head (the Amiga lacks HEAD 1 and 3)
-        c.Dos[("SPRIT3", 9)] = [PicAt(40, 80, 3, 1, Fill(40 * 80, i => (byte)(i < 40 ? 0 : 10))),
-            PicAt(24, 65, 4, 1, Fill(24 * 65, _ => 11))];
+        c.Dos[("SPRIT3", 9)] = [PicAt(8, 4, 0, 1, Fill(32, _ => 8)),
+            PicAt(8, 3, 1, 1, Fill(24, i => (byte)(i < 8 ? 0 : 10))),
+            PicAt(8, 2, 2, 1, Fill(16, _ => 11))];
         var palette = new ScreenPalette();
         var pics = new ViewPictures(c, PorArtChoice.Dos, palette.Base);
         var f = new IndexedFrame(320, 200);
@@ -315,15 +316,22 @@ public class ArtSettingTests
         Assert.Equal(6, f[24, 24]);
         Assert.Equal(12, f[24, 24 + 40]);
 
-        // Sprite at distance 1: the nearest frame at its block place (x 3, y 1 in 8-pixel units), 0 see-through.
+        // Distance 1 selects the second sprite frame at its block position, with index 0 see-through.
         f.Clear(1);
-        Assert.True(pics.Draw(f, 24, 24, new ViewPicture(ViewPictureKind.Sprite, 9, null, 1, 3)));
-        Assert.Equal(1, f[24 + 24, 24 + 8]);                     // index 0 left the view as it was
-        Assert.Equal(10, f[24 + 24, 24 + 9]);
-        Assert.Equal(1, f[24 + 23, 24 + 9]);
-        Assert.Equal(1, ViewPictures.SpriteFrame(2, 3));
+        var sprite = new ViewPicture(ViewPictureKind.Sprite, 9, null, 1, 3);
+        Assert.True(pics.Draw(f, 24, 24, sprite));
+        Assert.Equal(1, f[32, 32]);
+        Assert.Equal(10, f[32, 33]);
+        Assert.Equal(1, f[31, 33]);
+        Assert.True(pics.Draw(f, 24, 24, sprite with { Distance = 2 }));
+        Assert.Equal(11, f[40, 32]);
+
+        f.Clear(1);
+        Assert.True(pics.Draw(f, 24, 24, sprite with { Distance = 2, OnOverland = true }));
+        Assert.Equal(10, f[32, 33]);
+        Assert.Equal(1, f[40, 32]);
         Assert.Equal(2, ViewPictures.SpriteFrame(9, 3));
-        Assert.Equal(0, ViewPictures.SpriteFrame(0, 3));
+        Assert.Equal(0, ViewPictures.SpriteFrame(2, 1));
 
         Assert.False(pics.Draw(f, 24, 24, new ViewPicture(ViewPictureKind.Picture, 99, null, 0, 3)));
     }

@@ -122,7 +122,7 @@ public sealed class PorGame
         string? fileName = null, int markerCounter = 0, Action<PorGame>? started = null)
     {
         var (doc, problem) = ConvertOriginal(content, save, saveDir, fileName);
-        var g = FromSave(content, art, doc, player, seed, markerCounter, started);
+        var g = StartLoaded(content, art, doc, player, seed, markerCounter, started, originalFile: true);
         if (problem is not null)
             g.Vm.Diagnostics.Insert(0, problem);
         return g;
@@ -159,8 +159,12 @@ public sealed class PorGame
     /// <param name="started">Called with the loaded game before vector 4 runs (see the save-file overload).</param>
     public static PorGame FromSave(IPorContent content, PorViewArt art, Module.EngineSaveDocument save, PorPlayer player, uint seed,
         int markerCounter = 0, Action<PorGame>? started = null)
+        => StartLoaded(content, art, save, player, seed, markerCounter, started, originalFile: false);
+
+    private static PorGame StartLoaded(IPorContent content, PorViewArt art, Module.EngineSaveDocument save, PorPlayer player,
+        uint seed, int markerCounter, Action<PorGame>? started, bool originalFile)
     {
-        var g = Loaded(content, art, save, player, seed);
+        var g = Loaded(content, art, save, player, seed, originalFile);
         started?.Invoke(g);
         g.RunLoadedEntry(markerCounter);
         return g;
@@ -195,19 +199,29 @@ public sealed class PorGame
     }
 
     /// <summary>The save's memory, party and script set up (Load 0x1F5E8 up to its return), nothing run.</summary>
-    private static PorGame Loaded(IPorContent content, PorViewArt art, Module.EngineSaveDocument save, PorPlayer player, uint seed)
+    private static PorGame Loaded(IPorContent content, PorViewArt art, Module.EngineSaveDocument save, PorPlayer player,
+        uint seed, bool originalFile = false)
     {
         var notes = Module.Por.PorEngineSave.Check(save, content.VmProfile, Module.Por.PorEngineSave.Identity(content));
         var sg = Module.Por.PorEngineSave.ToSaveGame(save);
         var g = new PorGame(content, art, player, seed);
         g.Vm.Diagnostics.AddRange(notes);
-        if (Module.Por.PorEngineSave.Party(save) is { } party)
+        if (g.ReadLoadedParty(save, originalFile) is { } party)
             g.Memory.Party = party;
         sg.ApplyTo(g.Memory);
         g.LoadedInterfaceState = sg.InterfaceState;
         g.Vm.SetCurrentScript(sg.ScriptId, sg.Disk);
         g.ReloadSavedMap();
         return g;
+    }
+
+    private EclParty? ReadLoadedParty(Module.EngineSaveDocument save, bool originalFile = false)
+    {
+        var party = Module.Por.PorEngineSave.Party(save);
+        // Converted saves keep the original bytes for export. Refresh their derived stats only when entering play.
+        if (party is not null && (originalFile || save.Source is not null))
+            PorParty.RefreshSavingThrows(party, Content.Program()?.LevelTables());
+        return party;
     }
 
     /// <summary>
@@ -251,7 +265,7 @@ public sealed class PorGame
         Vm.Diagnostics.AddRange(notes);
         if (problem is not null)
             Vm.Diagnostics.Add(problem);
-        var members = Module.Por.PorEngineSave.Party(doc)?.Members ?? [];
+        var members = ReadLoadedParty(doc)?.Members ?? [];
         sg.ApplyTo(Memory);
         party.Members.Clear();
         party.Members.AddRange(members);

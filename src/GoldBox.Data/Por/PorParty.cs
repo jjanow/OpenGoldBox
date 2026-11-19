@@ -1,4 +1,5 @@
 using GoldBox.Core.Ecl;
+using GoldBox.Core.Game;
 
 namespace GoldBox.Data.Por;
 
@@ -9,6 +10,18 @@ namespace GoldBox.Data.Por;
 /// </summary>
 public static class PorParty
 {
+    /// <summary>
+    /// Refresh the derived saving throws on a party loaded into play from a legacy save. Load joins each member
+    /// (GAME.OVR 0x1F9C9 → 0x1F42C), which calls the level-stat routine (0x1F55A → 0x2AA87 → 0x2ACDC).
+    /// </summary>
+    internal static void RefreshSavingThrows(EclParty party, LevelStatsTables? tables)
+    {
+        if (tables is null)
+            return;
+        foreach (var member in party.Members)
+            LevelStats.SavingThrows(member, tables);
+    }
+
     /// <summary>
     /// Loads the members named by <paramref name="stems"/>; <paramref name="find"/> maps a file name to a path or
     /// null. Missing <c>.SAV</c> files are skipped. The current character is member 0 ([?] which character is current

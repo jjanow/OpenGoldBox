@@ -125,7 +125,10 @@ else
         audio = GoldBox.Client.Audio.ClientAudio.Open(content.Sound(), GoldBox.Client.Audio.ClientAudio.Parse(settings.Sound), content.AmigaSound());
         Console.Error.WriteLine($"sound: {(audio is null ? "off" : audio.Device.ToString().ToLowerInvariant())}");
         if (audio is not null)
+        {
             player.Sound = audio;
+            runner.ServiceWhileWaiting = audio.Update;
+        }
         player.SaveFolder = ClientSettings.SavesFolder;
         player.ProgramWord = settings.ProgramWord;
         player.ProgramWordChanged = w =>

@@ -154,6 +154,9 @@ public sealed record DelayRequest(TimeSpan Duration) : PlayerRequest
     /// <summary>A bottom line left on the screen during the pause (text, colour), or null.</summary>
     public (string Text, byte Colour)? BottomLine { get; init; }
 
+    /// <summary>Keep the exploration commands if they were visible when the pause began.</summary>
+    public bool KeepCommandLine { get; init; }
+
     /// <summary>
     /// The pause runs on from the end of the pause just before it (a loop that times each frame from the last change,
     /// as the end game's 0x206A3), so the screen's frame of delay in noticing each end does not add up.
@@ -176,6 +179,9 @@ public sealed class ScriptRunner : IDisposable
     private Thread? _thread;
     private object? _answer;
     private volatile bool _cancel;
+
+    /// <summary>UI services that need to advance during a synchronous command. Must not read game state.</summary>
+    internal Action? ServiceWhileWaiting { get; set; }
 
     /// <summary>A command is in progress (running or parked on a request).</summary>
     public bool Busy { get; private set; }
@@ -221,7 +227,7 @@ public sealed class ScriptRunner : IDisposable
         };
         _thread.Start();
         _toWorker.Release();
-        _toUi.Wait();
+        WaitForWorker();
     }
 
     /// <summary>UI thread: answers the pending request and runs the worker until it parks again or finishes.</summary>
@@ -232,7 +238,19 @@ public sealed class ScriptRunner : IDisposable
         _answer = value;
         Pending = null;
         _toWorker.Release();
-        _toUi.Wait();
+        WaitForWorker();
+    }
+
+    private void WaitForWorker()
+    {
+        if (ServiceWhileWaiting is not { } service)
+        {
+            _toUi.Wait();
+            return;
+        }
+
+        while (!_toUi.Wait(4))
+            service();
     }
 
     /// <summary>Worker thread: parks on <paramref name="request"/> and returns the UI's answer.</summary>

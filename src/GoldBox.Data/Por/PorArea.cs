@@ -94,7 +94,9 @@ public sealed class PorArea
         var (vm, host, recorder) = NewVm(content, art, sg.Disk);
         try
         {
-            vm.Memory.Party = PorParty.Load(sg, [saveDir, .. content.SaveFolder is { } f ? new[] { f } : []]);
+            var party = PorParty.Load(sg, [saveDir, .. content.SaveFolder is { } f ? new[] { f } : []]);
+            PorParty.RefreshSavingThrows(party, content.Program()?.LevelTables());
+            vm.Memory.Party = party;
         }
         catch (Exception e) when (e is IOException or FormatException)
         {

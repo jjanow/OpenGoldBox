@@ -374,6 +374,36 @@ public class PorModuleTests(ITestOutputHelper output)
             Assert.Equal(original.States[i], engine.States[i]);
     }
 
+    [PorFact]
+    public void Loading_a_converted_save_refreshes_stale_saving_throws_without_changing_its_export()
+    {
+        var dir = PorData.OpenRelease();
+        var savePath = dir.Find("SAVGAMA.DAT")!;
+        var bytes = File.ReadAllBytes(savePath);
+        var name = new PorSaveGame(bytes).PartyFileStems[0] + ".SAV";
+        var raw = File.ReadAllBytes(dir.Find(name)!);
+        var expected = new EclCharacter([.. raw]);
+        LevelStats.SavingThrows(expected, dir.Program()!.LevelTables()!);
+        byte[] stale = [40, 41, 42, 43, 44];
+        stale.CopyTo(raw, LevelStats.Saves);
+        var identity = PorEngineSave.Identity(dir);
+        var converted = PorEngineSave.FromOriginal(bytes, file => file == name ? raw :
+            dir.Find(file) is { } path ? File.ReadAllBytes(path) : null, identity,
+            dir.LoadBlock, new SourceRef { Container = Path.GetFileName(savePath) });
+        const int start = LevelStats.Saves, end = start + 5;
+        byte[] Throws(PorGame g) => g.Memory.Party!.Members[0].Record[start..end];
+        var art = PorViewArt.Load(dir);
+
+        NewGame(p => PorGame.FromSave(dir, art, converted, p, 99,
+            started: g => Assert.Equal(expected.Record[start..end], Throws(g))));
+        Assert.Equal(raw, PorEngineSave.ToOriginalFiles(converted).Single(f => f.Name == name).Bytes);
+        Assert.Equal(stale, converted.Party![0].Raw[start..end]);
+
+        var native = PorEngineSave.FromOriginal(bytes, PorEngineSave.Party(converted), identity, dir.LoadBlock);
+        NewGame(p => PorGame.FromSave(dir, art, native, p, 99,
+            started: g => Assert.Equal(stale, Throws(g))));
+    }
+
     /// <summary>The importer's engine saves name the module's content hash, and re-importing gives the same hash.</summary>
     [PorFact]
     public void The_engine_saves_name_the_module()

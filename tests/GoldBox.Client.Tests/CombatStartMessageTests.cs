@@ -1,5 +1,9 @@
+using GoldBox.Client.Input;
 using GoldBox.Client.Play;
+using GoldBox.Client.Screens;
+using GoldBox.Client.Tests.Support;
 using GoldBox.Core.Ecl;
+using GoldBox.Core.Explore;
 using GoldBox.Core.Game;
 using GoldBox.Data.Por;
 
@@ -69,6 +73,40 @@ public class CombatStartMessageTests
         chooser.Pauses = false;                           // the tests' no-wait setting asks nothing
         chooser.BattleBegins();
         Assert.Empty(seen);
+    }
+
+    [Fact]
+    public void A_zero_duration_bottom_line_waits_for_a_draw_even_if_updates_catch_up()
+    {
+        if (Dir() is not { } dir)
+            return;
+        var content = new PorGameDirectory(dir);
+        using var runner = new ScriptRunner();
+        PorGame? game = null;
+        var player = TestRig.Player(runner, () => game!.Memory);
+        game = PorGame.FromSave(content, PorViewArt.Load(content), content.Find("SAVGAMA.DAT")!,
+            new PorPlayer(player, player, player, player), 7);
+        var screen = new ExploreScreen(game, player, runner, new TestRig.NoHost());
+        var input = new ActionInput(InputBindings.Defaults());
+        var frame = new IndexedFrame(320, 200);
+        runner.Start(() =>
+        {
+            runner.Ask(new DelayRequest(TimeSpan.Zero) { BottomLine = ("READY", 10) });
+            runner.Ask(new DelayRequest(TimeSpan.Zero) { BottomLine = ("READY", 10) });
+        });
+
+        for (int i = 0; i < 2; i++)
+        {
+            var pending = Assert.IsType<DelayRequest>(runner.Pending);
+            screen.Update(input);
+            screen.Update(input);
+            Assert.Same(pending, runner.Pending);
+            screen.Draw(frame, input);
+            Assert.Contains((byte)10, frame.Pixels.Skip(192 * frame.Width));
+            screen.Update(input);
+            Assert.NotSame(pending, runner.Pending);
+        }
+        Assert.False(runner.Busy);
     }
 
     /// <summary>A chooser with a 50 × 25 ground map, whose AI's messages are recorded at each pause.</summary>

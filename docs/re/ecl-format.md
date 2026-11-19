@@ -294,6 +294,10 @@ the sprite at distance 1–2; at distance 0 the close-up, from `PIC` when $6DE1 
 The two cells are stored straight into the area, not through the VM writer. DOSBox: `encmenu_clamp` (ENCMENU uses
 the same start) holds $6DC0 = 2, $6DC1 = 1 with a wall one square ahead.
 
+The sprite renderer takes a one-based frame slot. The 3D call at 0x7AA8 passes distance + 1. Other view modes
+pass slot 2 at 0x7AB7. The renderer at 0x2E7D6 looks up that slot in the loaded frame table. The Client uses the
+last available frame if the chosen art has fewer frames than the requested slot (s31).
+
 **APPROACH** (0x155D): if $6DC1 > 0, $6DC1 − 1 and redraw. At 0 nothing.
 
 **LOADMON v1 v2 v3** (0x1196). Nothing when DS:4435 (monsters added since CLRMON) is ≥ 63. Else:

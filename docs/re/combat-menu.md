@@ -545,23 +545,25 @@ and Speed menus, an AI attack at game speed 9). Code: `src/GoldBox.Client/Screen
     pixels**: COMSPR 11 is drawn whole, its three colour-0 pixels included (grey under the combat palette); the
     Client drew colour 0 see-through, showing what lay under it (fixed, real-data test). The attacker's pose under a
     downed picture (s29: kept once, gone once) not seen in s30 `[?]`. Set-up note: party saves written into CHRDAT 0x6D were back to the class values in DOSBox-X's
-    memory after Load (the Client kept the file's values): the original's Load recomputes saving throws `[?]` (routine
-    not read).
+    memory after Load. Load's party join at 0x1F9C9 → 0x1F42C calls level stats at 0x1F55A → 0x2AA87, which calls the
+    saving-throw routine 0x2ACDC. The Client refreshes those fields when loading a legacy save (s31). Other derived
+    fields changed by the level-stats routine still need targeted checks.
   - **Fights entered through ENCMENU and after a PRINT** (this tool's own texts; ENCMENU sprite 4, distance 1,
     close-up 4, every reaction 1, then COMBAT; or PRINT, COMBAT): the **panel's weapon name shows at once** in both
     (DOSBox-X: the whole name in one frame on every member's panel), as read (DS:4A00 = 0 after ENCMENU's 0x32E0 and
     PRINT's 0x17DC). Every fight frame equal but one AI panel frame (PRINT: 12 of 32 in all, ENCMENU: 15 of 37; every other miss is before
     the fight, below, or the help lines). Before
     the fight, outside combat `[?]`: (1) DOSBox-X keeps the area command line on row 24 while the step's script types
-    its PRINT / ENCMENU text (cleared only when ENCMENU draws its menu over it, or at the fight start); the Client
-    blanks row 24 during the typing (20 PRINT frames, explore screen; not changed here: the typing lane owns it).
-    (2) At distance 1, DOSBox-X drew SPRIT2 block 4's third frame (16 × 49) in the view; the Client a larger frame
-    with other colours (ViewPictures' "frame distance − 1" is from the art, `[?]`; $6DC1 not read from a state).
+    its PRINT / ENCMENU text, until a menu or fight-start line replaces it. The Client keeps an already visible
+    command line during typing as of s31 (headless regression test).
+    (2) The s30 capture showed SPRIT2 block 4's third frame (16 × 49). The effective distance $6DC1 was not read
+    from that state. The frame slot now follows the renderer's inputs, as described under SETUPMON in ecl-format.md.
   - The **cast's plain icon** at its facing (s29): equal again in both casts (Darkstar's Sleep and Charm Person); why
     frame 1 is the plain icon there stays `[?]`. CLEARBOX and the runes: ecl-format.md "PROTECT" (s30).
   - "A battle begins" (s29 `[?]`, DOSBox-X 3000 cycles only): on row 24 for 0.817 s (three boots: from the full line to
     the cleared row), 0.75 s after the blank pause began; the PauseOnly at speed 3 is 675 ms, the rest presumably the
-    fight set-up's CPU time `[?]`.
+    fight set-up's CPU time `[?]`. The Client guarantees a rendered frame for the battle-start line even if updates
+    catch up before drawing (s31). The measured interval is still a reference observation.
 - **The panel's text** (read s19): START 0x16EC in a fight clears (23, row)–(38, 21), writes the name at (23, row)
   (START 0x23B6: out of play light red, hostile = 1 yellow, else cyan) and word-wraps the text into
   (23, row + 1)–(38, 21) in green through START 0x77F8 (the text window routine, `TextWindow`; break set DS:0D16 =

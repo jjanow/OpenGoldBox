@@ -203,6 +203,47 @@ public class ExploreScreenTests
         Assert.Equal(before, party.CurrentIndex);
     }
 
+    [Fact]
+    public void Typing_keeps_visible_exploration_commands_until_a_prompt_replaces_them()
+    {
+        if (Dir() is null)
+            return;
+        var r = Start();
+        using var runner = r.Runner;
+        byte[] CommandRow()
+        {
+            var f = new IndexedFrame(320, 200);
+            r.Screen.Draw(f, r.Input);
+            return f.Pixels.Skip(192 * 320).ToArray();
+        }
+
+        var commands = CommandRow();
+        Assert.Contains(commands, pixel => pixel != 0);
+        r.Player.TypesText = true;
+        r.Game.Memory.TypesText = true;
+        r.Game.Memory.GameSpeed = 2;
+        runner.Start(() =>
+        {
+            r.Player.Print("AB", clearFirst: true);
+            runner.Ask(new KeyRequest("Continue"));
+            r.Player.Print("C", clearFirst: true);
+        });
+
+        for (int i = 0; i < 2; i++)
+        {
+            Assert.IsType<DelayRequest>(runner.Pending);
+            Assert.Equal(commands, CommandRow());
+            runner.Answer(null);
+        }
+        Assert.IsType<KeyRequest>(runner.Pending);
+        Assert.NotEqual(commands, CommandRow());
+        runner.Answer(null);
+        Assert.IsType<DelayRequest>(runner.Pending);
+        Assert.All(CommandRow(), pixel => Assert.Equal(0, pixel));
+        runner.Answer(null);
+        Assert.Equal(commands, CommandRow());
+    }
+
     private static byte[] ViewBox(Rig r)
     {
         var f = new IndexedFrame(320, 200);
