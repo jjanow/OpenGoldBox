@@ -230,11 +230,11 @@ the program's data; `PorSpellData.Names` reads them from the player's program.
 | 77 | 0x10590 | target Str < 19: 0x4A on the creature (permanent, slot, removal on), 0x3A on the target, handler 58, message |
 | 81 | 0x10705 | fight start: every creature in play on the other side (START 0x2F57) saves vs. 4 (one draw each); hit dice 0x73 0..3 → paralysis 0x34, 4–5 → Curse 2; permanent, param 12, save negates |
 | 82 | 0x10803 | fight start: each creature's first 0x52 goes (the carrier's too); in play on the other side: save vs. 0 with +1 when DS:6814 + its side ≥ 6 and +2 for race 7, then 0x34 for 1d4 min (after the save), param 12, save negates |
-| 83 | 0x10908 | gaze at the last target (message); gazer with 0x7F and a target's readied item with name word 0x76 (bytes 0x2F–0x31) → reflected (message), the gazer is the victim; victim fails a save vs. 1 → stone (0xECB3, status 7) |
-| 84 | 0x10AD2 | charm gaze: target check 0x13880 and sight 0x2FF74 (`[?]` range = an uninitialised stack byte; 255 taken); message; DS:681B = 10 and **left so** (a later weapon hit on a Mirror Image creature then counts as a spell, see 28); save vs. 4 with −2; charm 0x0B (permanent, param = hostile × 128 + 12, removal on, save negates); charm handler on it |
+| 83 | 0x10908 | gaze at the last target (message: gazer, row 10, no pause); gazer with 0x7F and a target's readied item with name word 0x76 (bytes 0x2F–0x31) → reflected (message: target, row 12, no pause), the gazer is the victim; victim fails a save vs. 1 → stone (0xECB3, status 7, its message: victim, row 10, no pause). **D** (s27, a medusa, MON5 49): the gaze message, the flight and the stone message on a member with no mirror; on Rhiannon with word 0x76 only on her armour and shield (not on the sword, her first readied item) the reflect message and the flight back, so any readied item counts (Core walks them all); the medusa then resisted |
+| 84 | 0x10AD2 | charm gaze: target check 0x13880 and sight 0x2FF74 (`[?]` range = an uninitialised stack byte; 255 taken); message; DS:681B = 10 and **left so** (a later weapon hit on a Mirror Image creature then counts as a spell, see 28); save vs. 4 with −2; charm 0x0B (permanent, param = hostile × 128 + 12, removal on, save negates); charm handler on it. Its own message (gazer, row 10, no pause) comes after the sight check and before the flight |
 | 85, 86 | 0x10FFF, 0x1101D | level drain (0x10D7D) of 1 / 2 on the last target: animated → gone (status 8), max HP 0. Else per level unless gone: 0x74 + 1; n = max HP ÷ Σ class levels (0 → divide error `[?]`); n × (max HP, 0xB1, HP − 1 floor 0; 0x75 + 1); 0x73 < 2 → gone, max HP 0, and draining 2 zeroes the top class's level; else the top class (0x10C5D: highest level, threshold ≥, last wins) − 1, HP 0 → dead, level stats 0x2AA87. Then 0x73 = top class level, XP 0xAC = its threshold (DS:409B, 0 for level ≤ 1), recalculation START 0x1758 |
-| 88 | 0x2A0F1 | lightning breath (read s26; the entry DS:6988 is written at 0x2A7B9 by the spell table builder 0x2A42B, not by 0x11DFD; MON5 id 66 carries it with byte 3 = 0xFF): round counter DS:6DE3 ≠ 0 and 1d100 ≤ 50 → nothing. Else message (CS:0x30CF, "Breathes!", START 0x16EC from row 10 with the pause), the target pick DS:6B84 (0x148BE) for spell 0x33 with ai = 1 (its picked flag DS:70C6 not read); the aim DS:6DB9/6DBA := the breather's square + sign(aim − square) (0x2FB52) per axis, then + 1 more on an axis where it is square + 1 (so two squares toward +x / +y, one toward −x / −y, as read); invisibility off (0x2BEBC); the moving icon 0x257E(cell 0x13), breather → aim, 4 frames, 50 ms (0x2A1E4); bolt hit 0x298D4 on the aim and the bolt 0x29973 (length 10, no rebound bonus), damage = the breather's byte 0x32, save type 3; byte 3 > 0xFD → byte 3 − 1, else the record goes (so 0xFF breathes three times); actions end (START 0x2637). When the pick aims nowhere the aim stays on the breather's square: the flight draws nothing, 0x298D4 hits the breather's own slot and the bolt does nothing (as read, `[?]` not seen). Core: `EffectHandlers.LightningBreath`, `FightSpells.LightningBreath` |
-| 121 | 0x11877 | acid breath: 1d100 ≤ 25 and the target nearer than 4 (START 0x30FB): actions end, message, 8d4 (count to 681C), save vs. 3 (after the dice), non-weapon damage halved when saved (element left as it was); this record and the first 0x50 go |
+| 88 | 0x2A0F1 | lightning breath (read s26; the entry DS:6988 is written at 0x2A7B9 by the spell table builder 0x2A42B, not by 0x11DFD; MON5 id 66 carries it with byte 3 = 0xFF): round counter DS:6DE3 ≠ 0 and 1d100 ≤ 50 → nothing. Else message (CS:0x30CF, START 0x16EC from row 10 with the pause), the target pick DS:6B84 (0x148BE) for spell 0x33 with ai = 1 (its picked flag DS:70C6 not read); the aim DS:6DB9/6DBA := the breather's square + sign(aim − square) (0x2FB52) per axis, then + 1 more on an axis where it is square + 1 (so two squares toward +x / +y, one toward −x / −y, as read); invisibility off (0x2BEBC); the moving icon 0x257E(cell 0x13), breather → aim, 4 frames, 50 ms (0x2A1E4); bolt hit 0x298D4 on the aim and the bolt 0x29973 (length 10, no rebound bonus), damage = the breather's byte 0x32, save type 3; byte 3 > 0xFD → byte 3 − 1, else the record goes (so 0xFF breathes three times); actions end (START 0x2637). When the pick aims nowhere the aim stays on the breather's square: the flight draws nothing, 0x298D4 hits the breather's own slot and the bolt does nothing (as read, `[?]` not seen). **D** (s27, DOSBox-X): Tyranithraxus breathed on his first turn of round 0 (message, the pause, the flight to the nudged aim, the bolt's flights, 80 damage to the first member hit), the Client matched it to the next menu with the same seed. Its fear aura 81 ran at the fight start before it: the paralysis / unaffected messages on the combat screen, one per party member with the effect frames. Core: `EffectHandlers.LightningBreath`, `FightSpells.LightningBreath` |
+| 121 | 0x11877 | acid breath: 1d100 ≤ 25 and the target nearer than 4 (START 0x30FB): actions end, message (breather, row 10, with the pause), 8d4 (count to 681C), save vs. 3 (after the dice), non-weapon damage halved when saved (element left as it was); this record and the first 0x50 go |
 
 ## The stat recalculation — `[?]`
 
@@ -310,8 +310,27 @@ Animate Dead 0x2907B (0x291FF), the fear aura 0x106DA (paralysis 0x34, 0x10794) 
 paralysing aura 0x107EC (0x108C7), the charm gaze 0x10AC7 (0x10C20), the stinking-cloud terrain check 0x2B9A5 (0x1E
 on a save, 0x2BACB) / 0x2B9B5 (0x1F, 0x2BB1A). Spells 12, 13, 35, 59 and the cures do not go through 0x2C540 (their
 messages are their own routines' `[?]` not mapped). Code: Core `EffectTexts` (keys), `PorTextCatalog` `EffectMsg.*`
-(offsets), the Client's `CombatChooser.EffectTextMessage`. Outside a fight START 0x2B8B's display (the camp's Cast) is
-not read `[?]`: the camp still lists the events in our words.
+(offsets), the Client's `CombatChooser.EffectTextMessage`. Outside a fight START 0x2B8B is START 0x16EC with the pause and no picture (read s27; layout in camp.md "Cast",
+Client `CampScreens.EffectMessage`).
+
+**Handler messages** (read s27, P): the monster specials print through START 0x16EC(creature, text, row, pause
+flag) directly, not through 0x2B8B (no view scroll, no effect frames). Each text is a Pascal string in the handler's
+own code segment, copied to a local first (0xAF8:0x0B0B). Without the pause flag the text stays in the panel through
+the moving icon that follows until the next 0x16EC call clears its rows; with it, PauseOnly then START 0x2383.
+
+| Handler | Call | Creature | Text (GAME.OVR) | Row | Pause |
+|---|---|---|---|---|---|
+| 83 gaze | 0x10940 | gazer | 0x108E8 (CS:1C8D of unit 0xEC5B) | 10 | no |
+| 83 reflected | 0x10A1A | target | 0x108F1 (CS:1C96) | 12 | no |
+| 83 stone | 0xECDD in 0xECB3, text from 0x10AAA | victim | 0x108FE (CS:1CA3) | 10 | no |
+| 84 charm gaze | 0x10B7F | gazer | 0x10ABE (CS:1E63) | 10 | no |
+| 88 lightning breath | 0x2A147 | breather | 0x2A0E7 (CS:30CF of the spell unit) | 10 | yes |
+| 121 acid breath | 0x118E9 | breather | 0x1186C (CS:2C11) | 10 | yes |
+
+0xECB3 shows its text for every caller (row 10, no pause), before its dead / stone / gone test; only handler 83's text is
+mapped so far (the other callers' texts `[?]` not shown). Code: Core `EffectEvent.Gazes`, `GazeReflected`, `Stoned`,
+`CharmGazes`, `Breathes`, `SpitsAcid`; `PorTextCatalog` `CombatMsg.Handler*`; the Client's
+`CombatChooser.HandlerMessage`. Not checked in DOSBox-X `[?]`.
 
 **Routines**:
 
@@ -363,7 +382,8 @@ creature there: DS:6819 = 0x0C, save (type, 0), 0x2C22E halved when saved, DS:68
 **Bolt** (0x29973, length, damage, save type, bonus): nothing when the caster (0x31321 / 0x31349) stands on the aim.
 DS:6820 = 1, left = 2 × length, last slot = the aim's, direction 1. While left: line (0x2FCF2) from the aim to aim +
 (aim − caster) × direction × left; step (0x2FE1E) until the end, a slot ≠ last, terrain 0, cost > 1, or the line's
-distance ≥ left; last slot = that cell's; terrain 0 → left 0; (draw); bolt hit there. Rebound: the aim moves there, a
+distance ≥ left; last slot = that cell's; terrain 0 → left 0; (draw: the moving icon from the cell the walk went on from, set at
+0x29A68 on entry and after each hit, to this cell; **D** s27); bolt hit there. Rebound: the aim moves there, a
 line is walked back to the caster, and when the bonus is still on and that is ≤ 8 half squares the line's distance
 + 8; direction reversed, bonus off, last slot 0. Left − the line's **total** distance (not the part since the last
 hit), at least 0; without a rebound the same line goes on, else a new line. DS:6820 = 0.

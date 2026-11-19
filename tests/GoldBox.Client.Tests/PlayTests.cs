@@ -216,6 +216,21 @@ public class ExploreScreenTests
     }
 
     [Fact]
+    public void The_view_redraw_takes_a_picture_off_the_window()
+    {
+        // The step's redraw 0x2DCF4 draws the view over a picture still up (DOSBox-X s24: PICTURE 2 stays until the step).
+        if (Dir() is null)
+            return;
+        var r = Start();
+        Settle(r);
+        var view = ViewBox(r);
+        r.Player.ShowPicture(2, null);
+        Assert.NotEqual(view, ViewBox(r));
+        r.Game.Loop.Redraw();
+        Assert.Equal(view, ViewBox(r));
+    }
+
+    [Fact]
     public void The_close_up_animates_only_after_the_steps_pass()
     {
         // DS:84E1 is set by the step's pass before vector 1 (0x4223), not before vector 0: after a load a PICTURE in the

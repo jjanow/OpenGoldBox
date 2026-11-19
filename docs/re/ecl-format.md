@@ -95,7 +95,8 @@ block offset  VM address     content
     snapshot (2026-11-17): encamp ran vector 2 only; vector 3 ran when an 8-hour rest was interrupted.
   - The script init 0x7689 sets $6DD2 = $6DD3 = 0, so rest is never interrupted unless the script sets them.
 - **On load** (script init 0x7689): PC = $9900, the GOSUB stack is cleared, the six compare flags are cleared,
-  $6DE1 = 255, $6DD2 = $6DD3 = 0, $49E5 = 0, and after reading the vectors $49E6 = 1. Unless DS:49F8 is set, VM
+  $6DE1 = 255, $6DD2 = $6DD3 = 0, $49E5 = 0, and after reading the vectors $49E6 = 1 (display bytes too: DS:84E0,
+  84E2, 84D2, 84D3 and 84C8/84C9 cleared, 0x768F–0x76BE; DS:84E1 is not touched). Unless DS:49F8 is set, VM
   $4A00–$4A1F (32 cells) and $6E79–$6E82 (10 cells) are zeroed. DS:49F8 is set only by the "Load game" command of
   the main menu (0x19D91, after a successful load); the area loop 0x403E then also skips reading the script file
   (the script comes from the save), and 0x7689 clears DS:49F8 again (0x77EC). Also cleared at start-up (0xE979).
@@ -361,7 +362,9 @@ a 1d10 picks 34–38, 91–94 → 73, 95–97 → 93, 98–100 → 77; 48 and 49
 written to a.
 
 **PICTURE v** (0x159C): v ≠ 255 shows `PIC` block v when $6DE1 = 255, else head $6DE1 + body v (0x79E4); outdoors the
-window is cleared first. v = 255 redraws the view if a picture or the sprite is shown. Display only; no VM cell. The
+window is cleared first; DS:84E0 := 1 (0x15F8), and a head + body clears DS:84E1 (0x79E7). v = 255 redraws the view
+if a picture or the sprite is shown (DS:84E0 / 84E3), in the 3D view or with DS:49F9 > 1 (0x1659–0x1675), and then
+clears both and sets DS:84E1 (0x1684, the picture animation's arm, por-art-formats.md §3). Display only; no VM cell. The
 block is read from `PIC<disk>` (0x3D0:2A into DS:6ABE, drawn at cell (3, 3) by 0x3D0:25) of the current disk only:
 a block that file lacks draws nothing and the window keeps what it showed (DOSBox-X s22; Client `ViewPictures.Find`
 since s23, also for HEAD/BODY/SPRIT). DOSBox-X s24 (save A, disk 2): PICTURE 3 (only in PIC4) over the 3D view leaves
@@ -499,7 +502,8 @@ also when c = 0. The Real arithmetic gives floor(word · (100 − v2) / 100): DO
 roll per item (RandSeed).
 
 **PRINTRET** (0x3831) and **CLEARBOX** (0x385A) load no operands (they step the PC themselves).
-- The text cursor is DS:5E24 (column) / DS:5E25 (line); EXIT puts it at column 1, line 17 and clears DS:84DE.
+- The text cursor is DS:5E24 (column) / DS:5E25 (line); EXIT puts it at column 1, line 17 and clears DS:84DE; it
+  also clears DS:84C8/84C9 and the close-up flag DS:84E0 (0xDC6–0xDD7; por-art-formats.md §3).
 - PRINTRET: column 1, line + 1, DS:84DF = 0.
 - CLEARBOX: clears the **picture window** (1,1)–(15,15) (not the text box) and sets DS:84DE = 1.
 - **PROTECT a** (0x3BC3) is not a copy-protection check: it draws a line of glyphs. 84C8/84C9 and 84E0 cleared; if

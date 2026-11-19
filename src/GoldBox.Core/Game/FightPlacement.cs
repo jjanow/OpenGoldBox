@@ -50,7 +50,10 @@ public static class FightPlacement
     /// the bodies (DS:6715 = 0) and the stinking-cloud list DS:6DBB = nil (<see cref="EffectHandlers.Clouds"/> emptied).
     /// Sets <see cref="Fight.Geometry"/>'s map: pass the same <paramref name="map"/> as the fight's geometry.
     /// </summary>
-    public static void Start(Fight fight, CombatMap map, FightStartArea area)
+    /// <remarks><paramref name="deferStartEffects"/>: the trigger-8 effects and the HP percentage are left to
+    /// <see cref="Fight.Run"/> (<see cref="Fight.PendingStart"/>), so a display attached between the build and the run
+    /// shows their messages on the combat screen, where the program shows them (after the screen is drawn).</remarks>
+    public static void Start(Fight fight, CombatMap map, FightStartArea area, bool deferStartEffects = false)
     {
         fight.State.RoundCounter = 0;
         fight.State.AttackRoll = 0;
@@ -74,9 +77,16 @@ public static class FightPlacement
             map.Arena.ViewX = (sbyte)(x - 3);
             map.Arena.ViewY = (sbyte)(y - 3);
         }
-        foreach (var c in fight.List.ToList())
-            fight.Effects.Trigger(TriggerFightStart, c, fight.State);
-        FightRules.UpdateHostileHpPercent(fight.List, fight.State);
+        void StartEffects()
+        {
+            foreach (var c in fight.List.ToList())
+                fight.Effects.Trigger(TriggerFightStart, c, fight.State);
+            FightRules.UpdateHostileHpPercent(fight.List, fight.State);
+        }
+        if (deferStartEffects)
+            fight.PendingStart = StartEffects;
+        else
+            StartEffects();
     }
 
     /// <summary>The map part of 0xD8B2 (records are zeroed on creation): +0x13 = 1 for 1-based list positions past

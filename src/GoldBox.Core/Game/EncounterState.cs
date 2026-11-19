@@ -52,9 +52,11 @@ public sealed class EncounterState
     /// </summary>
     public byte[]? LastThrownItem { get; set; }
 
-    /// <summary>Display bookkeeping (DS:84E3 sprite on screen, DS:84E0 picture on screen). Not compared with captures.</summary>
+    /// <summary>
+    /// Display bookkeeping: DS:84E3, the sprite on screen (the picture's DS:84E0 is <see cref="Ecl.EclMemory.PictureShown"/>,
+    /// which the VM clears too). Not compared with captures.
+    /// </summary>
     public bool SpriteShown { get; set; }
-    public bool PictureShown { get; set; }
 
     /// <summary>The ENCMENU loop is running (DS:84E9).</summary>
     public bool InEncounterMenu { get; set; }

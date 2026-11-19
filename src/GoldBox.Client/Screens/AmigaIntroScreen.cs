@@ -12,6 +12,8 @@ namespace GoldBox.Client.Screens;
 /// (<see cref="Play.ClientArt.AmigaIntroPages"/>), each faded in and out through a palette run of its own that is
 /// rewritten every frame. The Amiga reads only the left mouse button, in its waits; here a key, pad button or click
 /// counts too (full controller support), kept until the next wait if it comes during a fade. The host swallows it.
+/// After the pages (or the press) the closing screen: 3 s of black with the music still playing (intro hunk 1's
+/// Delay over the program's screen, which the code wheel left filled with black pen 0); nothing ends it early.
 /// </summary>
 public sealed class AmigaIntroScreen : IScreen
 {
@@ -43,7 +45,7 @@ public sealed class AmigaIntroScreen : IScreen
 
     public AmigaIntroSequence Sequence => _seq;
 
-    /// <summary>Called once when the intro ends (the program stops its music then).</summary>
+    /// <summary>Called once when the intro ends, after the closing screen (the program stops its music then).</summary>
     public Action? Done { get; init; }
 
     /// <summary>The first index of the run the pages are drawn in.</summary>
@@ -73,13 +75,15 @@ public sealed class AmigaIntroScreen : IScreen
     public void Draw(IndexedFrame f, ActionInput input)
     {
         _seq.Advance(_clock());
-        if (_seq.Phase == AmigaIntroPhase.Done)
+        if (_seq.Phase is AmigaIntroPhase.Closing or AmigaIntroPhase.Done)
         {
-            f.Clear(0);
+            // The program's screen, cleared to pen 0 (black) by the code wheel: the run's first colour, made black.
+            _palette.SetRun(_run, new byte[16 * 3]);
+            f.Clear((byte)_run);
             return;
         }
         var page = _pages[_seq.Page];
-        // In the gap the colours are black (the last fade out; the screen is cleared after the wait).
+        // In the wait and the set-up the colours are black (the last fade out; the screen is cleared after the wait).
         _palette.SetRun(_run, AmigaIntroSequence.FadedRgb(page.PaletteRgb, _seq.Divisor));
         TitleScreen.Paint(f, page, _run);
     }

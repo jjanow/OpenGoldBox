@@ -545,7 +545,38 @@ public sealed partial class CombatChooser(Func<PlayerRequest, object?> ask, Comb
             case EffectEvent.Unaffected:
                 Say(c, t[CombatMsg.Unaffected]);
                 break;
+            case EffectEvent.Gazes:
+                HandlerMessage(c, t[CombatMsg.HandlerGazes], CombatView.MessageTop, false);
+                break;
+            case EffectEvent.GazeReflected:
+                HandlerMessage(c, t[CombatMsg.HandlerGazeReflected], 12, false);
+                break;
+            case EffectEvent.Stoned:
+                HandlerMessage(c, t[CombatMsg.HandlerStoned], CombatView.MessageTop, false);
+                break;
+            case EffectEvent.CharmGazes:
+                HandlerMessage(c, t[CombatMsg.HandlerCharmGazes], CombatView.MessageTop, false);
+                break;
+            case EffectEvent.Breathes:
+                HandlerMessage(c, t[CombatMsg.HandlerBreathes], CombatView.MessageTop, true);
+                break;
+            case EffectEvent.SpitsAcid:
+                HandlerMessage(c, t[CombatMsg.HandlerSpitsAcid], CombatView.MessageTop, true);
+                break;
         }
+    }
+
+    /// <summary>
+    /// A monster special's own message (class 0x0E handlers 83, 84, 88, 121 and the stoning 0xECB3, read s27): START
+    /// 0x16EC(creature, text, row, pause flag) as the handler calls it. The gazes (row 10), the reflection (row 12) and
+    /// the stoning (row 10) pass no pause: the text stays in the panel through the flight that follows until the next
+    /// text overwrites it. The two breaths (row 10) pass the pause: PauseOnly, then rows 10–21 cleared (START 0x2383).
+    /// </summary>
+    private void HandlerMessage(EclCharacter c, string text, int row, bool pause)
+    {
+        View.Page = null;
+        View.Mode = CombatMode.Watch;
+        PrintCreatureMessage(c, text, row, pause);
     }
 
     /// <summary>

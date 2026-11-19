@@ -107,9 +107,20 @@ public sealed class Fight
     /// <summary>Rounds fought by <see cref="Run"/>.</summary>
     public int Rounds { get; private set; }
 
+    /// <summary>
+    /// The end of the fight start (0xE402) when the build deferred it (<see cref="FightPlacement.Start"/>): every
+    /// creature's trigger-8 effects and the enemy HP percentage. <see cref="Run"/> runs it first, once.
+    /// </summary>
+    public Action? PendingStart { get; set; }
+
     /// <summary>Runs the fight to its end. Returns the number of rounds.</summary>
     public int Run(int maxRounds = 1000)
     {
+        if (PendingStart is { } start)
+        {
+            PendingStart = null;
+            start();
+        }
         foreach (var c in List)
         {
             var rec = Record(c);

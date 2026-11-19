@@ -201,6 +201,18 @@ To test a rule in a fight the game does not offer where you need it, build the f
   `Fight.Round` does until the next party menu, and `Fields`/`Diff` compare RandSeed, round, current creature,
   squares, HP, status, Quick, memorised spells, effects and combat records. `GOLDBOX_FIGHT_TRACE` logs every draw.
 
+- **Monsters of another disk** (s27): copy `MON<n>CHA.DAX`, `MON<n>ITM.DAX`, **`MON<n>SPC.DAX`** and `CPIC<n>.DAX`
+  over the current disk's names in the scratch copy (with CHA alone the monsters load with **no effects** on both
+  sides). The s27 flight checks used save A on disk 2 with MON5/CPIC5 in place: vector 0 = CLRMON; LOADMON 66, 1, 66
+  (Tyranithraxus) or 49, 1, 49 (medusa); COMBAT; every member's HP 200 (bytes 0x32, 0xB1, 0x11B of `CHRDAT*.SAV`),
+  Phineas's dagger replaced by the sling (ITEM1.DAX block 53 record 12, readied), name word 118 (Mirror) at byte 0x2F
+  of Thrender's and Bakshi's weapons and of Rhiannon's and Sean's armour and shields. Party turns: Done, Quit (no
+  draws). Seeds (DS:4428 before the step, `--seed` for the Client): 424744245 (breath), 273946116 (medusa).
+- **Frame sampling**: python-xlib `get_image` on the window in a loop (~500 grabs a second on Xvfb), each distinct
+  frame kept with its time; per frame the bounding box of changed pixels in the map, panel and bottom row gives a
+  flight's positions and timing, compared line by line with the Client's window sampled the same way (its window
+  has no menu bar: DOSBox-X's y − 17).
+
 The s13 captures (fixtures README: `fight_casts`, `fight_mirror`, `fight_undead`) and what they settled:
 
 | Check | Capture | Original | Core |

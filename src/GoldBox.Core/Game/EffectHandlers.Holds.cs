@@ -349,15 +349,16 @@ public sealed partial class EffectHandlers
 
     /// <summary>
     /// 0x10908 (class 0x0E): (message) the gaze at the last target, the moving icon from the gazer to it (0x10987).
-    /// When the gazer carries 0x7F, the target's first readied item (byte 0x34) with name word 0x76 at 0x2F, 0x30 or
+    /// When the gazer carries 0x7F, any readied item (byte 0x34) of the target with name word 0x76 at 0x2F, 0x30 or
     /// 0x31 reflects it (message, the icon back from the target to the gazer, 0x10A59): the gazer becomes the victim.
+    /// (DOSBox-X s27: the word on the armour and shield alone, not on the weapon read first, reflected.)
     /// The victim saves vs. type 1; failing, it turns to stone (0xECB3, status 7).
     /// </summary>
     private void Gaze(EclCharacter c, CombatRecord rec)
     {
         var o = rec.Other;
         Cells.Other = o;
-        Emit(c, EffectEvent.Other);
+        Emit(c, EffectEvent.Gazes); // 0x10930: START 0x16EC from row 10, no pause
         // 0x10945–0x10987: 0x257E(cell 0x12), the moving icon from the gazer to the target, 4 frames, 45 ms.
         Fly(c, o, FlightAnimation.Gaze);
         if (o is null)
@@ -367,7 +368,7 @@ public sealed partial class EffectHandlers
             {
                 if (it.Length > 0x34 && it[0x34] != 0 && (it[0x2F] == 0x76 || it[0x30] == 0x76 || it[0x31] == 0x76))
                 {
-                    Emit(o, EffectEvent.Other);
+                    Emit(o, EffectEvent.GazeReflected); // 0x10A0A: START 0x16EC from row 12, no pause
                     // 0x10A1F–0x10A59: the same sprite back from the target to the gazer.
                     Fly(o, c, FlightAnimation.Gaze);
                     o = c;
@@ -376,7 +377,7 @@ public sealed partial class EffectHandlers
                 }
             }
         if (!SavingThrow(o, 1, 0))
-            InflictStatus(o, 7, EffectEvent.StatusChange);
+            InflictStatus(o, 7, EffectEvent.Stoned); // 0x10AAA: 0xECB3's message, row 10, no pause
     }
 
     /// <summary>
@@ -408,7 +409,7 @@ public sealed partial class EffectHandlers
         }
         else
             Diag("[?] handler 84's line of sight (0x2FF74) needs the combat map");
-        Emit(c, EffectEvent.Other);
+        Emit(c, EffectEvent.CharmGazes); // 0x10B6F: START 0x16EC from row 10, no pause
         Fly(c, o, FlightAnimation.Gaze); // 0x10B84–0x10BC6
         Cells.Spell = 0x0A;
         bool saved = SavingThrow(o!, 4, -2);
@@ -429,7 +430,7 @@ public sealed partial class EffectHandlers
     {
         if (F.RoundCounter != 0 && Dice(1, 100) <= 0x32)
             return;
-        Emit(c, EffectEvent.Other);
+        Emit(c, EffectEvent.Breathes); // 0x2A137: START 0x16EC from row 10 with the pause
         if (_attached is { Spells: FightSpells spells } f)
             spells.LightningBreath(f, c);
         else
@@ -461,7 +462,7 @@ public sealed partial class EffectHandlers
         if (Geometry.Distance(c, o) >= 4)
             return;
         FightRules.EndActions(rec);
-        Emit(c, EffectEvent.Other);
+        Emit(c, EffectEvent.SpitsAcid); // 0x118D9: START 0x16EC from row 10 with the pause
         Fly(c, o, FlightAnimation.AcidBreath); // 0x118EE–0x11930
         byte d = DamageDiceRoll(8, 4);
         bool saved = SavingThrow(o, 3, 0);

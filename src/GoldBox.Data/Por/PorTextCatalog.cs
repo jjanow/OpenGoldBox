@@ -311,6 +311,15 @@ public static class PorTextCatalog
         ["CombatMsg.SpellAndIsDying"] = 0x2C1F5,
         ["CombatMsg.SpellIsKilled"] = 0x2C224,
         ["CombatMsg.Unaffected"] = 0x2C532,
+        // The monster specials' messages (docs/re/spells-effects.md "Handler messages"): CS strings of the effect
+        // handler unit 0xEC5B (gaze 83 at CS:1C8D / 1C96 / 1CA3, charm gaze 84 at CS:1E63, acid breath 121 at CS:2C11)
+        // and of the spell unit (lightning breath 88 at CS:30CF, just before 0x2A0F1).
+        ["CombatMsg.HandlerGazes"] = 0x108E8,
+        ["CombatMsg.HandlerGazeReflected"] = 0x108F1,
+        ["CombatMsg.HandlerStoned"] = 0x108FE,
+        ["CombatMsg.HandlerCharmGazes"] = 0x10ABE,
+        ["CombatMsg.HandlerBreathes"] = 0x2A0E7,
+        ["CombatMsg.HandlerSpitsAcid"] = 0x1186C,
         // The effect messages, 0x2C540's text argument (Core EffectTexts; docs/re/spells-effects.md "Effect messages"):
         // the strings just before the spell routines that pass them (the resolution 0x278DB's callers) and the handlers.
         ["EffectMsg.Blessed"] = 0x2801C,

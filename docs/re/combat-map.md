@@ -81,6 +81,17 @@ entries DS:66DD cleared; 0xD815 (arena); 0xD8B2 (records: also facing = DS:02F2[
 1); 0xDFC6 (placement); the moving-icon picture; view upper-left = first creature's cell − 3; the combat screen; for
 every creature the trigger-8 effects; enemy HP % (0x15074); DS:49F3 = 5.
 
+**Start messages** (s27, P + D): before any of this, 0xE430 calls 0x3C5:0x2F, PauseOnly (0x709:0xDBE, DS:49E2 × 225 ms),
+then writes the unit's string CS:0x1E1E (the battle-start text, GAME.OVR 0xE3EF) through 0x709:0x626 at row 24,
+column 0, colour 10; DOSBox-X shows it on the area screen's bottom row ~0.9 s after the step, then the screen clears
+to the combat screen. The Client does not show it yet (its text is not imported) `[?]`. The trigger-8 effects run
+after the combat screen is drawn: DOSBox-X showed Tyranithraxus's fear aura as one message per party member
+(paralysis / unaffected texts, with the effect frames) on the combat screen before the first turn. The
+Client built the fight (and ran those triggers) before its screen attached, so they showed nothing: the build now
+leaves them to the run when a display is attached (`FightKit.Create(deferStartEffects)`, `Fight.PendingStart`,
+`PorGame` with a fight menu), and the five messages came at the same squares and spacing as in DOSBox-X (~2.55 s
+each at speed 4).
+
 **DS:6DBB** is not part of the start: a list of 19-byte records made by an area spell (0x28B29: +0 caster, +4 next,
 +0x0B.. one flag per cell covered, +0x10/+0x11 the centre cell, +0x12 a count; the cells hold terrain 0x1E). The fight
 start sets it to nil and the clean-up (0x9807) frees it (Core: `FightPlacement.Start` empties

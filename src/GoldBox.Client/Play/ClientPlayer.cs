@@ -59,22 +59,25 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
         runner.Ask(new ChoiceRequest(prompt, items, vertical, cancel) { Animates = animates }) is int i ? i : 0;
 
     /// <summary>
-    /// DS:84E1 (read s19): cleared when a head and body are loaded (0x79E4, 0x7B77), set by PICTURE 255 (0x1684) and by
-    /// the area loop's pass (0x4223). HMENU (0x1EB2) and ENCMENU (0x2DA1) animate only while it and DS:84E0 (a close-up
-    /// loaded by PICTURE or the encounter, 0x15F8 / 0x7B0B; cleared with the view's redraw) are both set.
+    /// DS:84E1, the picture animation's arm (<see cref="EclMemory.PictureArmed"/>; set by the step's pass 0x4223 and by
+    /// PICTURE 255's redraw 0x1684, cleared by a head + body load 0x79E7 / 0x7B77). It is kept across a load in the
+    /// game: the program's Load does not touch it (the Client carries it into the loaded game).
     /// </summary>
-    /// <remarks>
-    /// Clear until the first step's pass after a start or load (DOSBox-X s24: a PICTURE and HMENU in the first step's
-    /// vector 0 after loading a save from the main menu show the first frame, still). [?] A load in mid-session keeps
-    /// the program's value; the Client starts clear each time.
-    /// </remarks>
-    public bool PictureArmed { get; set; }
+    public bool PictureArmed
+    {
+        get => memory().PictureArmed;
+        set => memory().PictureArmed = value;
+    }
 
     /// <summary>PRINT types its text out (DS:4A00, <see cref="Print"/>); off only in tests that step through scripts.</summary>
     public bool TypesText { get; set; } = true;
 
-    /// <summary>HMENU's and ENCMENU's animate flag: DS:84E0 and DS:84E1.</summary>
-    private bool CloseUpAnimates => PictureArmed && ViewPicture is { Kind: ViewPictureKind.Picture };
+    /// <summary>
+    /// HMENU's and ENCMENU's animate flag: DS:84E0 and DS:84E1 (0x1E9E–0x1EB2, 0x2D8D–0x2DA1). [?] Only over a PIC
+    /// picture: with DS:84E0 still set under a sprite (PICTURE, then SETUPMON at a distance in the same run) the
+    /// program would play its frame table, which then holds the sprite; not checked, the Client keeps the sprite still.
+    /// </summary>
+    private bool CloseUpAnimates => memory().PictureShown && PictureArmed && ViewPicture is { Kind: ViewPictureKind.Picture };
 
     /// <summary>A notice the player must acknowledge (stand-ins for screens not built yet).</summary>
     private void Acknowledge(string text)
@@ -367,8 +370,6 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
     {
         ViewBlanked = false; // a picture after CLEARBOX shows (DOSBox-X, s19: CLEARBOX, CALL $0806, PICTURE 40)
         ViewOverlay = head is { } h ? ["PICTURE", $"HEAD {h}", $"BODY {picture}"] : ["PICTURE", $"{picture}"];
-        if (head is not null)
-            PictureArmed = false;
         ViewPicture = head is { } hd
             ? new ViewPicture(ViewPictureKind.Portrait, picture, hd, 0, memory().Disk)
             : new ViewPicture(ViewPictureKind.Picture, picture, null, 0, memory().Disk);
@@ -388,16 +389,19 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
     /// The script switch's redraw (0x3FF5 → 0x2DCF4) drew the view over the window: a CLEARBOX blank or a picture of
     /// the old script's is gone from the screen (the flags DS:84E0 / 84E1 are not touched).
     /// </summary>
-    public void SwitchRedrawn()
+    public void SwitchRedrawn() => ViewDrawn();
+
+    public void RestoreView() => ViewOverlay = null;
+
+    /// <summary>
+    /// The view redraw 0x2DCF4 (the step, Look, the camp's end, an area's entry: <c>AreaLoop.Redrawn</c>) drew the
+    /// view over the window: a picture, sprite or CLEARBOX blank is gone from the screen (DOSBox-X s24: a picture stays
+    /// up until the step's redraw). The flags DS:84E0 / 84E3 are not touched here.
+    /// </summary>
+    public void ViewDrawn()
     {
         ViewBlanked = false;
         ViewOverlay = null;
-    }
-
-    public void RestoreView()
-    {
-        ViewOverlay = null;
-        PictureArmed = true;
     }
 
     public int ChooseEncounterAction(EncounterMenuKind kind, string? text, int distance)

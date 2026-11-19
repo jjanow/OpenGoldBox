@@ -11,6 +11,8 @@ namespace GoldBox.Client.Play;
 public sealed class ClientResources
 {
     public GameText Texts { get; init; } = new();
+    /// <summary>The fight's texts (also the effect messages a camp Cast shows, <see cref="CampScreens"/>).</summary>
+    public CombatText CombatTexts { get; init; } = new();
     public Func<int, string?> ItemWord { get; init; } = _ => null;
     public Func<byte, bool> IsScroll { get; init; } = _ => false;
     public IReadOnlyList<string>? TempleNames { get; init; }
@@ -71,6 +73,7 @@ public sealed class ClientResources
         return new ClientResources
         {
             Texts = new GameText(program),
+            CombatTexts = new CombatText(program),
             ItemWord = program is null ? _ => null : program.ItemWord,
             IsScroll = items is null ? _ => false : t => items[t, BaseItemTable.Slot] is >= 11 and <= 13,
             TempleNames = program?.TempleNames(),

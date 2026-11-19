@@ -333,9 +333,10 @@ is cut by the fight's first sound.
   (7.7 s at 50 Hz), song 4 769; songs 1 and 6 loop after 12,288 and 7,680 ticks.
 - `PaulaSynth` turns the writes into sound (the `[?]` hardware model above, mono); `AmigaMusic` ticks the player at
   50 Hz. Client: with the module's Amiga data and sound not off, the Amiga intro (Best / Amiga) starts song 1 and
-  stops it when it ends (`ClientAudio.PlaySong`). Departure: on the Amiga the `intro` then Delays 150 ticks
-  (3 s) before the program reaches PlaySong(0) (hunk 10 +0x59A), so song 1 sounds 3 s longer; the Client goes
-  straight on. Not hooked yet: the camp (1), the battle (2), name and icon accepted
+  stops it when it ends (`ClientAudio.PlaySong`), after the intro's closing 3 s (`intro` hunk 1 Delays 150 ticks
+  before returning; the program reaches PlaySong(0) at hunk 10 +0x59A after Execute returns, s27). Departure: on the
+  Amiga the song also plays through hunk 25 +0x12A8 (called between Execute and +0x59A: buffer allocations and more, not
+  read further); the Client stops it at the end of the 3 s. Not hooked yet: the camp (1), the battle (2), name and icon accepted
   (3), the party killed (5); the effect player and the rule that an effect ends the music.
 
 ## 6. Open `[?]`

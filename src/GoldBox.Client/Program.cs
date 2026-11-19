@@ -224,12 +224,19 @@ else
             player.HallHooks.Notice = hf.TakeNotice;
             // The camp's Alter Icon runs the same icon editor 0x1D1AC on the current character.
             player.IconEditor = hf.EditIcon;
-            loadSlot = (slot, started) => game = WithSound(PorGame.FromSave(content, art, SlotPath(slot), who, seed,
-                game?.Memory.MarkerCounter ?? 0, g =>
-                {
-                    game = WithSound(g);
-                    started(g);
-                }));
+            loadSlot = (slot, started) =>
+            {
+                // DS:84E1 (the picture animation's arm) is not in the save and Load (0x1F5E8) does not write it: the
+                // loaded game goes on with the running one's.
+                bool armed = game?.Memory.PictureArmed ?? false;
+                return game = WithSound(PorGame.FromSave(content, art, SlotPath(slot), who, seed,
+                    game?.Memory.MarkerCounter ?? 0, g =>
+                    {
+                        g.Memory.PictureArmed = armed;
+                        game = WithSound(g);
+                        started(g);
+                    }));
+            };
         }
         if (startAtMenu)
         {

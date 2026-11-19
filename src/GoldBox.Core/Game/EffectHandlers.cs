@@ -34,6 +34,20 @@ public enum EffectEvent
     FearsDragon, Charmed, Healed, SpellCast, SpellAborted, BeginsCasting, Other,
     /// <summary>Non-weapon damage put the creature out of play (0x2C44A: the "goes down" / dying / killed message).</summary>
     GoesDown,
+    // The monster specials' own messages (class 0x0E handlers; each START 0x16EC(creature, its text, row, pause flag)
+    // with the text a Pascal string in the handler's code segment; docs/re/spells-effects.md "Handler messages").
+    /// <summary>Handler 83 (0x10930): the gazer's gaze, row 10, no pause.</summary>
+    Gazes,
+    /// <summary>Handler 83 (0x10A0A): the target's mirror turns the gaze back, row 12, no pause.</summary>
+    GazeReflected,
+    /// <summary>Handler 83 (0x10AAA → 0xECB3): the victim turns to stone, row 10, no pause.</summary>
+    Stoned,
+    /// <summary>Handler 84 (0x10B6F): the charm gaze, row 10, no pause.</summary>
+    CharmGazes,
+    /// <summary>Handler 88 (0x2A137): the lightning breath, row 10, with the pause.</summary>
+    Breathes,
+    /// <summary>Handler 121 (0x118D9): the acid breath, row 10, with the pause.</summary>
+    SpitsAcid,
 }
 
 /// <summary>The data-segment cells the effect handlers read and write besides those in <see cref="FightState"/>.</summary>

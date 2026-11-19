@@ -152,8 +152,15 @@ starting at DS:6DB5; giving up clears the targets and DS:6DB5 and nothing is cas
 other modes: nothing. On a pick: invisibility leaves the caster (0x2BEBC), the memorised spell is used up (START
 0x202B), DS:681B := spell, the spell routine runs (table DS:6B84), DS:681B := 0.
 Core models every spell routine 1–67 (`FightSpells.Modelled`, s13); a spell without one would be refused with a
-notice, the spell kept. `[?]` The effect messages' rows and words are not matched (the
-Client lists the effect engine's events).
+notice, the spell kept. **Effect messages outside a fight** (read s27, P): 0x2C540's text goes to START 0x2B8B, whose
+out-of-fight branch (DS:49F3 ≠ 5, at START BA:2004 → BA:217E) is START 0x16EC(creature, text, 10, pause 1) with no
+picture; the unaffected words (0x2C532) call START 0x16EC with the same arguments. START 0x16EC outside a fight ignores
+its row: r = 18 while DS:6DDA is set (rest), else 17 and the text box's frame is drawn again first (03F1:0000 with 1, 17,
+38, 22, style 0: the frame one cell outside the box); (1, r)–(38, 22) cleared, the name at (1, r + 1) (START 0x1816),
+the text word-wrapped into (1, r + 2)–(38, 22) in colour 10 (START 0x709:0x0768); with the pause flag PauseOnly then
+START 0x2383, which outside a fight clears (1, 18)–(38, 22). Client: `CampScreens.EffectMessage` for 0x2C540's text and
+the unaffected words. `[?]` The other messages of a camp cast (damage through 0x2B8B, healing, the spells' own) are
+still listed in our words; typing (DS:4A00) in the camp is not followed.
 
 **Memorize (0x1813B)**: the check; the pending list (type 5) first: when not empty, the keep question 0x180F0 — No
 clears the pending slots (0x1798A), Yes ends here. Then until done: no slot byte at all (0x17DD5: cleric or
@@ -229,6 +236,6 @@ slots are written as zero (leftover memory in the program).
 
 ## Open `[?]`
 
-- The camp Cast's effect messages' layout.
+- The camp Cast's other messages (damage, healing, the spells' own) and typing in the camp.
 - The roster-file deletion on save.
 - Cell positions of the camp's messages other than the rest's (the Client keeps its own frame).

@@ -60,9 +60,11 @@ public sealed class FightKit
     /// fight]. The VM-cell part of 0xE402 (<see cref="EncounterHost"/>) is the caller's.
     /// </summary>
     /// <remarks><paramref name="time"/>: the session's program variables (the effect flags DS:471E the end of round's
-    /// clock uses, <see cref="WireClock"/>); null = a fresh set for this fight.</remarks>
+    /// clock uses, <see cref="WireClock"/>); null = a fresh set for this fight. <paramref name="deferStartEffects"/>: the
+    /// trigger-8 effects wait for <see cref="Fight.Run"/> (a display attaches in between; <see cref="FightPlacement.Start"/>).</remarks>
     public Fight Create(EclMemory memory, EncounterState encounter, Func<ushort, ushort> random, FightStartArea area,
-        IFightMenuChooser? chooser = null, IFightItemScreens? screens = null, CampState? time = null)
+        IFightMenuChooser? chooser = null, IFightItemScreens? screens = null, CampState? time = null,
+        bool deferStartEffects = false)
     {
         var map = new CombatMap(Tables);
         var effects = new EffectHandlers(random, Names);
@@ -87,7 +89,7 @@ public sealed class FightKit
         fight.Spells = new FightSpells(Spells, effects, random);
         effects.Attach(fight);
         WireClock(fight, effects, time ?? new CampState());
-        FightPlacement.Start(fight, map, area);
+        FightPlacement.Start(fight, map, area, deferStartEffects);
         return fight;
     }
 

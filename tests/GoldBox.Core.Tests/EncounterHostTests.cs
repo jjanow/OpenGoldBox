@@ -521,6 +521,112 @@ public class EncounterHostTests
     }
 
     [Fact]
+    public void Picture_sets_the_close_up_flag_and_255_rearms_the_animation_only_when_it_redraws()
+    {
+        // DS:84E0 / 84E1 (por-art-formats.md §3): PICTURE sets 84E0 (0x15F8); a head + body clears 84E1 (0x79E7);
+        // PICTURE 255 redraws, clears 84E0 and sets 84E1 only while a picture or the sprite is up (0x1667–0x1684).
+        var rig = new Rig(new EclAsm().Op(EclOpcodes.Exit));
+        var m = rig.Memory;
+        m.PictureArmed = true;
+        rig.Host.Picture(7);
+        Assert.True(m.PictureShown);
+        Assert.True(m.PictureArmed);
+        m.Write(0x6DE1, 3);
+        rig.Host.Picture(8);
+        Assert.True(m.PictureShown);
+        Assert.False(m.PictureArmed);
+        rig.Host.Picture(255);
+        Assert.False(m.PictureShown);
+        Assert.True(m.PictureArmed);
+        m.PictureArmed = false;
+        rig.Host.Picture(255); // nothing up: no redraw, the arm stays as it was
+        Assert.False(m.PictureArmed);
+        Assert.Equal(["ShowPicture 7 -", "ShowPicture 8 3", "RestoreView"], rig.Ui.Calls);
+    }
+
+    [Fact]
+    public void Picture_255_right_after_a_switch_to_the_overland_leaves_the_flags()
+    {
+        // 0x1659–0x1665: with DS:49F9 ≤ 1 and DS:49FA ≠ 1 the redraw branch is skipped.
+        var rig = new Rig(new EclAsm().Op(EclOpcodes.Exit));
+        var m = rig.Memory;
+        rig.Host.Picture(7);
+        m.PreviousViewMode = 1;
+        m.ViewMode = 2;
+        rig.Host.Picture(255);
+        Assert.True(m.PictureShown);
+        Assert.Equal(["ShowPicture 7 -"], rig.Ui.Calls);
+        m.PreviousViewMode = 2;
+        rig.Host.Picture(255);
+        Assert.False(m.PictureShown);
+        Assert.True(m.PictureArmed);
+    }
+
+    [Fact]
+    public void Exit_clears_the_close_up_flag_but_not_the_arm()
+    {
+        // EXIT 0xDD7: DS:84E0 := 0; DS:84E1 is not written.
+        var rig = new Rig(new EclAsm().Op(EclOpcodes.Picture, Imm8(7)).Op(EclOpcodes.Exit));
+        rig.Memory.PictureArmed = true;
+        rig.Run();
+        Assert.False(rig.Memory.PictureShown);
+        Assert.True(rig.Memory.PictureArmed);
+    }
+
+    [Fact]
+    public void Protect_clears_the_close_up_flag_so_picture_255_does_not_redraw()
+    {
+        // PROTECT 0x3BDA: DS:84E0 := 0, so the PICTURE 255 after it finds nothing up (0x1667) and arms nothing.
+        var rig = new Rig(new EclAsm()
+            .Op(EclOpcodes.Picture, Imm8(7))
+            .Op(EclOpcodes.Protect, Mem(0x9F00))
+            .Op(EclOpcodes.Picture, Imm8(255))
+            .Op(EclOpcodes.Exit));
+        rig.Run();
+        Assert.DoesNotContain("RestoreView", rig.Ui.Calls);
+        Assert.False(rig.Memory.PictureArmed);
+    }
+
+    [Fact]
+    public void Script_init_and_call_2C90_clear_the_close_up_flag_without_arming()
+    {
+        var rig = new Rig(new EclAsm()
+            .Op(EclOpcodes.Picture, Imm8(7))
+            .Op(EclOpcodes.Call, Mem(0x2C90))
+            .Op(EclOpcodes.Exit));
+        rig.Memory.FilesLoadedSinceSwitch = true;
+        rig.Memory.PictureArmed = false;
+        rig.Run();
+        Assert.False(rig.Memory.PictureShown);
+        Assert.False(rig.Memory.PictureArmed); // 0x3A97 clears DS:84E0 only
+        rig.Memory.PictureShown = true;
+        rig.Vm.InitScript(); // 0x768F
+        Assert.False(rig.Memory.PictureShown);
+    }
+
+    [Theory]
+    [InlineData(255, true)]
+    [InlineData(3, false)]
+    public void The_encounter_close_up_sets_the_close_up_flag_and_a_head_clears_the_arm(int head, bool armed)
+    {
+        // 0x7B09: DS:84E0 := 1 at distance 0 in the 3D view; with a head 0x79E4 / 0x7B77 clear DS:84E1.
+        var rig = new Rig(new EclAsm().Op(EclOpcodes.Exit));
+        rig.Memory.Write(0x6DE1, (ushort)head);
+        rig.Memory.PictureArmed = true;
+        rig.Host.SetupMonster(4, 0, 7);
+        Assert.True(rig.Memory.PictureShown);
+        Assert.Equal(armed, rig.Memory.PictureArmed);
+    }
+
+    [Fact]
+    public void The_encounter_sprite_at_a_distance_leaves_the_close_up_flag()
+    {
+        var rig = new Rig(new EclAsm().Op(EclOpcodes.Exit));
+        rig.Host.SetupMonster(4, 2, 7);
+        Assert.False(rig.Memory.PictureShown);
+    }
+
+    [Fact]
     public void Call_2C90_redraws_after_a_position_write_once()
     {
         // 0x3A54–0x3A9C: DS:84E6 (set by the write to $C04B, 0x823F) is enough for the redraw, which draws the position

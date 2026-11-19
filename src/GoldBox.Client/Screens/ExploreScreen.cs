@@ -90,9 +90,9 @@ public sealed class ExploreScreen : IScreen
         game.Loop.Redrawn += () =>
         {
             player.PositionLineErased = false; // the step redraws the position line (0x17707)
-            Interlocked.Increment(ref _viewRedraws); // and the view replaces a picture kept on screen (DrawView)
+            player.ViewDrawn(); // the view replaces the picture, sprite or blank on screen
+            Interlocked.Increment(ref _viewRedraws); // and a picture kept on screen (DrawView)
         };
-        game.Loop.PassBeforeVector1 += () => player.PictureArmed = true; // the step's pass sets DS:84E1 (0x4223)
         game.Vm.ScriptSwitchRedrawn += () =>
         {
             player.SwitchRedrawn(); // 0x3FF5: the new area's view over the old script's picture or blank

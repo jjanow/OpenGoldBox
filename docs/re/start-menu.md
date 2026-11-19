@@ -102,10 +102,15 @@ routine.
 
 **Amiga v1.0 intro (read s24 from disk A's `intro`, decrunched; hunk 4; P, no emulator run).** The program
 (`program`, hunk 10 +0x556) first runs the code wheel (hunk 25 +0x4576), starts song 1 (hunk 27 +0x6E54;
-played by the Client under Best / Amiga, sound.md §5; stopped after the intro's 3 s Delay, the Client stops it
-at once), then Executes disk A's `intro`. The intro (hunk 1) finds the program's screen, runs hunk 4 +0
-and then Delays 150 ticks (3 s) with the system display back (what shows then is the program's screen, not read
-`[?]`; the Client goes straight on). Hunk 4 +0: a 320×200 4-plane screen with its own copper list (one palette, all
+played by the Client under Best / Amiga, sound.md §5; stopped after `intro` returns, hunk 10 +0x59A), then Executes
+disk A's `intro`. The intro (hunk 1) finds the program's screen (by its title; it stores the screen's plane pointers,
+which hunk 4 never reads), runs hunk 4 +0 and then Delays 150 ticks with the system display back (+0x26C puts the
+system copper list, GfxBase+0x26, back). dos.library ticks are 50 a second on PAL and NTSC: **3 s**, with song 1
+still playing and nothing read. What shows is the program's screen as the code wheel left it: after the right
+answer the wheel (hunk 25 +0x47B0) does SetAPen(0) and RectFill(0, 0, 320, 204), so the screen is all pen 0, and
+pen 0 is black (the screen's start-up colours, hunk 2 +0, copied by hunk 1 +0x200; no palette setter runs on the
+way: the only one hunk 25 reaches is table 3's, from the 3D view module, and table 0, the one whose colour 0 is not
+black, is set only at hunk 10 +0x5566 and hunk 13 +0x5F0E, later menus). The Intuition pointer over it is not read `[?]`. Hunk 4 +0: a 320×200 4-plane screen with its own copper list (one palette, all
 black at first), then nine pages, each: a black wait (+0xB14), the screen cleared (+0x7EE), the page blitted, a fade
 in, a hold (+0xAE4), a fade out (+0x8EC). Pages: eight credits panels from the 320×600 sheet (sheet row, screen row,
 rows): SSI logo (93, 30, 48), a joining word (455, 60, 16), Ubi Soft (398, 30, 56), the presenting word (474, 60, 19), the AD&D logo
@@ -114,15 +119,43 @@ credits box (288, 20, 110), the Amiga version's credits (499, 20, 100); last the
 in and held, then +0x26C ends at once (no fade out). Fades: 16 steps, each colour component (4 bits) divided by
 16, 15 … 1 in and 1 … 16 out (`divu`, integer), 9 beam passes per step. Waits and holds count passes of a loop that
 returns while the beam is on line 128 (gap 81, hold 1001) and test the left mouse button (CIA-A bit 6) each pass: a
-press ends the whole intro (+0xB02 → +0x26C). Keys are not read. `[?]` Timing: several passes fall in one frame and
-how many depends on the CPU; from 68000 cycle counts (7.09 MHz PAL) about 4 wait passes per frame (hold ≈ 5.0 s,
-gap ≈ 0.4 s) and two frames per fade step (≈ 0.64 s per fade). **Engine:** the importer writes each panel as a whole
+press ends the pages (+0xB02 → +0x26C, then the return address is replaced by +0x260, so hunk 1's Delay still
+follows). Keys are not read. Each page blit (+0x512, the title +0x680) first waits for the beam on line 240
+(`VHPOSR & $FF00 = $F000`).
+
+**Timing (s27, from 68000 cycle counts; no emulator run).** The wait (+0x830) polls `VHPOSR & $FF00 = $8000`: it
+returns while the beam is on line 128 (only line 128: PAL has 313 lines, NTSC 263), so a count of passes is a count
+of returns during that one line each frame. The poll loop is 42 cycles (`move.w abs.l` 16, `andi` 8, `cmpi` 8,
+`bne.w` taken 10), so the first return comes within 42 cycles of the line's start.
+- Wait and hold pass (+0xAE4 / +0xB14): `jsr abs.l` 20, the poll falling through (16 + 8 + 8 + 12), `rts` 16,
+  `btst #6,$BFE001` 20, `beq.w` not taken 12, `dbra` 10 = 122 nominal, the CIA-A read being an E-clock-synchronous
+  access (E = CPU clock / 10). Back-to-back E-clock accesses fall a multiple of 10 cycles apart and the read takes at
+  least 12 (4 plus at least 8 of wait), so a pass is 130 cycles: returns at t, t + 130, t + 260, t + 390 (≤ 431)
+  inside a 454-cycle PAL line (455 NTSC), the next (≥ 520) on line 129. **Four passes a frame**: gap 81 passes =
+  20.25 frames, hold 1001 = 250.25 frames.
+- Fade pass: `jsr` 20, the poll 60 with `rts`, `dbra` 10 = 90 cycles, no CIA: five or six on the line, so a step's 9
+  passes span **two frames** whatever the phase; the colour arithmetic of a step (16 colours, three `divu`) takes
+  some 25 lines, after line 128, so the next step's passes start on the next frame's line 128. A fade = 32 frames.
+- Set-up between the gap and the fade: a whole-screen blitter clear begun on line 128 (16,000 words, two clears
+  before the first page), then the blit waits for line 240; at about 2 colour clocks a blitter word the clear ends
+  past line 240, so the fade's first pass comes two frames after the gap's last `[?]` (blitter speed, not the
+  program; one frame if the clear were faster).
+- PAL: frame 313 × 227 colour clocks at 3,546,895 Hz = 20.03 ms; a panel page ≈ 20.25 + 2 + 32 + 250.25 + 32
+  frames ≈ 6.7 s, all nine ≈ 60 s plus the 3 s close. NTSC (7.16 MHz, 455-cycle lines) gives the same frame counts
+  at 16.72 ms (hold ≈ 4.2 s); the Client uses PAL, as its Amiga music does. The 3 s close is real time on both.
+- `[?]` A faster CPU (68020+, accelerator) gives more passes a frame and so shorter gaps and holds (a fade step stays
+  two frames only while 5–8 passes fit a line); an interrupt landing on line 128 (keyboard, CIA timers; the music is
+  a vertical-blank server, at the frame's top) would remove passes. The intro's own copper list only sets pointers
+  and colours at the top; 4 low-resolution planes take no CPU cycles. **Engine:** the importer writes each panel as a whole
 320×200 screen with its colours (`art/amiga/intro/0/2`–`/9`, rows and places read from the code by
-`AmigaIntro.Panels`); Core `AmigaIntroSequence` (phases, divisor, the estimate as named constants); Client
+`AmigaIntro.Panels`); Core `AmigaIntroSequence` (phases incl. the set-up and the 3 s closing black, divisor, the
+timing above as named constants); Client
 `AmigaIntroScreen` (one palette run reserved and rewritten each frame, `ScreenPalette.Reserve` / `SetRun`), shown at
-start-up under Best / Amiga when the module has all nine pages. Departure: a key, pad button or click also counts
-(full controller support), and one that comes during a fade ends the intro at the next wait or hold (the Amiga reads
-the button's level only then).
+start-up under Best / Amiga when the module has all nine pages; after the title's hold (or a press) it shows 3 s of
+black (the reserved run made black) with song 1 still playing, then stops the song and hands over. Departures: a key,
+pad button or click also counts (full controller support), and one that comes during a fade or set-up ends the
+pages at the next wait or hold (the Amiga reads the button's level only then); nothing skips the closing 3 s (the
+Amiga reads nothing then).
 
 ## 2. The party menu (0x19AE0)
 

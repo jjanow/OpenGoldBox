@@ -204,6 +204,7 @@ public sealed class EclVm
     public void InitScript()
     {
         _gosub.Clear();
+        Memory.PictureShown = false; // 0x768F
         Memory.Ds84D2 = false; // 0x7699
         Memory.Ds84D3 = false;
         Array.Clear(Flags);
@@ -1006,8 +1007,9 @@ public sealed class EclVm
             }
             case EclOpcodes.Protect:
             {
-                // P (0x3BC3): glyph g = (VM read at a + i) + 1 as a byte, drawn while g > 1.
+                // P (0x3BC3): glyph g = (VM read at a + i) + 1 as a byte, drawn while g > 1. DS:84E0 cleared (0x3BDA).
                 var a = RawWord(1);
+                Memory.PictureShown = false;
                 var glyphs = new List<byte>();
                 for (int i = 0; i < 256; i++)
                 {
@@ -1081,6 +1083,7 @@ public sealed class EclVm
     private void DoExit()
     {
         RestoreSelected(); // 0xDAC
+        Memory.PictureShown = false; // 0xDD7 (DS:84E1 is not touched)
         _gosub.Clear();
         StopFlag = true;
         Host.TextHome(); // display only: the text cursor back to column 1, row 17 (not traced)

@@ -473,6 +473,9 @@ public sealed partial class FightSpells
             var line = CombatMap.LineWalk.Start(tx, ty, (short)(tx + (tx - sx) * dir * left), (short)(ty + (ty - sy) * dir * left));
             while (true)
             {
+                // 0x29A68: the flight's start [bp−0x37] / [bp−0x38] is the line's current cell, set on entry (the line's
+                // start) and again each time the walk goes on after a hit (jmp 0x29A68 at 0x29BBE): the cell last hit.
+                int fx = line.Cx, fy = line.Cy;
                 int slot = 0, terrain = 0;
                 while (true)
                 {
@@ -486,9 +489,10 @@ public sealed partial class FightSpells
                 lastSlot = slot;
                 if (terrain == 0)
                     left = 0;
-                // 0x29AEC–0x29B02: the moving icon (cell 0x13 = COMSPR 6, 0x2997C) from the line's start ([bp−0x37],
-                // [bp−0x38], set after 0x2FCF2) to the cell about to be hit, 4 frames, 50 ms.
-                F.Flight?.Invoke(FlightAnimation.Bolt(tx, ty, line.Cx, line.Cy));
+                // 0x29AEC–0x29B02: the moving icon (cell 0x13 = COMSPR 6, 0x2997C) from the cell the walk went on from
+                // ([bp−0x37], [bp−0x38]) to the cell about to be hit, 4 frames, 50 ms (DOSBox-X s27: the third flight of a
+                // breath started on the second's end square, the view centred on the midpoint).
+                F.Flight?.Invoke(FlightAnimation.Bolt(fx, fy, line.Cx, line.Cy));
                 bool rebound = BoltHit(line.Cx, line.Cy, damage, saveType);
                 if (rebound)
                 {

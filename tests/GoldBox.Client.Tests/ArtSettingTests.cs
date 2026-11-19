@@ -430,7 +430,7 @@ public class ArtSettingTests
     }
 
     [Fact]
-    public void The_amiga_intro_fades_its_pages_through_a_run_of_its_own_and_a_click_in_a_hold_ends_it()
+    public void The_amiga_intro_fades_its_pages_through_a_run_of_its_own_and_a_click_in_a_hold_ends_it_after_3_s_of_black()
     {
         // Pages: index = column / 20 (0..15); the palette's colour i is (i, i, i) in 4-bit steps.
         byte[] grey = [.. Enumerable.Range(0, 48).Select(i => (byte)(i / 3 * 17))];
@@ -449,14 +449,25 @@ public class ArtSettingTests
         screen.Draw(f, input);                                       // the first wait: black
         Assert.Equal(run + 15, f[319, 0]);
         Assert.Equal(new Color(0, 0, 0), palette.Colours[run + 15]);
-        now = AmigaIntroSequence.GapTime + AmigaIntroSequence.FadeStepTime * 14;   // fade in, divisor 2
+        now = AmigaIntroSequence.FadeInStart + AmigaIntroSequence.FadeStepTime * 14;   // fade in, divisor 2
         screen.Draw(f, input);
         Assert.Equal(new Color(7 * 17, 7 * 17, 7 * 17), palette.Colours[run + 15]);
-        now = AmigaIntroSequence.GapTime + AmigaIntroSequence.FadeStepTime * 16;   // the hold: full colours
+        now = AmigaIntroSequence.FadeInStart + AmigaIntroSequence.FadeStepTime * 16;   // the hold: full colours
         screen.Draw(f, input);
         Assert.Equal(new Color(255, 255, 255), palette.Colours[run + 15]);
         Assert.Equal(AmigaIntroPhase.Hold, screen.Sequence.Phase);
         Assert.Null(screen.MapClick(new ScreenClick(10, 10, false)));
+        screen.Update(input);
+        Assert.Equal(AmigaIntroPhase.Closing, screen.Sequence.Phase);  // the closing Delay: black, music on
+        Assert.Equal(0, host.Pops);
+        Assert.Equal(0, done);
+        screen.Draw(f, input);
+        Assert.Equal(run, f[319, 199]);
+        Assert.Equal(new Color(0, 0, 0), palette.Colours[run]);
+        Assert.Null(screen.MapClick(new ScreenClick(10, 10, false)));   // nothing ends it early
+        screen.Update(input);
+        Assert.Equal(0, host.Pops);
+        now += AmigaIntroSequence.ClosingTime;
         screen.Update(input);
         Assert.Equal(1, host.Pops);
         Assert.Equal(1, done);                                       // the music is stopped as it ends
@@ -471,7 +482,7 @@ public class ArtSettingTests
             var host2 = new Host();
             var keyed = new AmigaIntroScreen([page, page], palette, host2, () => now);
             var keys = new ActionInput(InputBindings.Defaults());
-            now = AmigaIntroSequence.GapTime + AmigaIntroSequence.FadeStepTime * 3;
+            now = AmigaIntroSequence.FadeInStart + AmigaIntroSequence.FadeStepTime * 3;
             if (pad)
                 keys.Update(default, new Microsoft.Xna.Framework.Input.GamePadState(default,
                     default, new Microsoft.Xna.Framework.Input.GamePadButtons(Microsoft.Xna.Framework.Input.Buttons.A), default),
@@ -482,8 +493,11 @@ public class ArtSettingTests
             Assert.NotNull(keys.NewInput);
             keyed.Update(keys);
             Assert.Equal(0, host2.Pops);
-            now = AmigaIntroSequence.GapTime + AmigaIntroSequence.FadeStepTime * 16;
+            now = AmigaIntroSequence.FadeInStart + AmigaIntroSequence.FadeStepTime * 16;
             keys.Update(default, default, default, now, _ => null);
+            keyed.Update(keys);
+            Assert.Equal(AmigaIntroPhase.Closing, keyed.Sequence.Phase);
+            now += AmigaIntroSequence.ClosingTime;
             keyed.Update(keys);
             Assert.Equal(1, host2.Pops);
         }

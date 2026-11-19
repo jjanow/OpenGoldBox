@@ -504,11 +504,19 @@ and Speed menus, an AI attack at game speed 9). Code: `src/GoldBox.Client/Screen
     - the missile 0x15057 in 0x14EAB (sprite by the item's type, Core `FlightAnimation.Missile`; resident bracket
       0x15011–0x15069 with cues 2620 / 262C), called from MakeAttack 0x1407F at 0x14152 with the ammunition and
       (s26) **again at 0x1417E** with the attacker's weapon (+0xCC) when its type is 0x2F, whatever the ammunition, in
-      melee too (so COMSPR 8's two frames, 20 ms, in its own bracket). `[?]` With no weapon the program reads the type
-      byte at 0000:002E (an interrupt vector byte); taken as no flight.
+      melee too (so COMSPR 8's two frames, 20 ms, in its own bracket). Base type 0x2F is the **Sling** (words table
+      47, base row 47: one hand, rate 2, range 21; every type-47 record of ITEM1/3/5.DAX is a sling): it has no
+      ammunition item, so a sling shot is this one flight. **D** (s27): Phineas with a sling at range 5, one stone
+      flight (COMSPR 8) before the attack message, the same positions in the Client. With no weapon the program
+      reads the type byte at 0000:002E, the high-segment low byte of INT 0Bh: **0x00** in DOSBox-X (vector F000:CE60,
+      read from a state), so no flight there, as the Client does; on real DOS it depends on what hooked IRQ 3 `[?]`.
     - the cast 0x27E4D (cell 0x12, 4 frames, 30 ms; bracket 0x27E08–0x27E56), Hold Person's further targets 0x28745
-      (same), Lightning Bolt 0x29B02 (cell 0x13, 4, 50 ms, from the line's start to the cell about to be hit).
-    - (s26) effect handlers, **no sound bracket**, each after its message (START 0x16EC from row 10): the petrifying
+      (same), Lightning Bolt 0x29B02 (cell 0x13, 4, 50 ms, to the cell about to be hit, **from the cell the walk
+      went on from**: [bp−0x37] / [bp−0x38] are set at 0x29A68 from the line's current cell, on entry and again on
+      every jump back after a hit (0x29BBE), so each flight starts on the previous one's end; s26 had read the line's
+      start. **D** (s27): a breath's third flight started on the second's end square and centred the view on the
+      midpoint first; fixed in `FightSpells.Bolt`).
+    - (s26) effect handlers, **no sound bracket**, each after its message (START 0x16EC from row 10; rows, pauses and texts in spells-effects.md "Handler messages", s27): the petrifying
       gaze 83 (0x10908): 0x257E(cell 0x12) at 0x10948, gazer → its last target (+0x0A), 4 frames, 45 ms (0x10987);
       reflected (0x7F and a mirror item): after the reflect message (row 12) target → gazer, same sprite and pace
       (0x10A59). The charm gaze 84: gazer → target after the target check, the sight line and the message (0x10BC6,
@@ -533,7 +541,22 @@ and Speed menus, an AI attack at game speed 9). Code: `src/GoldBox.Client/Screen
     origin is the view's: square (col, row) of the view at (col·3, row·3). The Client places it as the squares
     (`CombatScreen.DrawMap`).
   - Client: `CombatChooser.Flight`, `CombatView.Flying`. Core: `FightState.Flight` (`FlightAnimation.Gaze`,
-    `AcidBreath`, `AimCursor`, `Bolt`, `Missile`, `Spell`). Not checked in DOSBox-X `[?]`.
+    `AcidBreath`, `AimCursor`, `Bolt`, `Missile`, `Spell`).
+  - **D** (s27, DOSBox-X 3000 cycles against the Client with `--seed` = DS:4428 from the same scratch saves:
+    Tyranithraxus (MON5 66) and a medusa (MON5 49) loaded on disk 2 with MON5's CHA/ITM/SPC and CPIC5; windows
+    sampled at ~500 grabs/s, the changed-pixel boxes per frame compared): the breath 88 (breather → aim, then the
+    bolt's three flights), the gaze 83 (gazer → target; a diagonal one across the view), the reflected gaze
+    (target → gazer) and the sling flight all give the same positions in the same order in both; the views scroll
+    alike (after the Bolt fix above). A drawn position takes ~57 ms in DOSBox-X at 3000 cycles against the 50 ms Delay
+    (the draw time); the Client waits the Delay alone. Not seen yet: the charm gaze 84, the acid breath 121 and the
+    aim cursor 0x15D02 (delay 0) `[?]`.
+  - **D** (s27) messages around them in DOSBox-X: the breath message typed from row 10 under the panel, then the
+    pause (~0.9 s at speed 4), rows cleared, then the flight; the gaze message typed with no pause before the flight;
+    the reflect message on row 12 (typed, no pause) before the return flight; the stone message with the hit frames
+    (COMSPR 10) on its square; a poisoned hit's poison / death messages. The game state after them matched the
+    Client's (same screen at the next menu). The handler messages are now shown by the Client (spells-effects.md
+    "Handler messages", s27; not yet compared with these captures `[?]`); status-change messages (stone via 0xECB3
+    for other callers, poison, death) still are not.
 - **Manual in the Client**: Aim's Manual answers `AimKey.Manual` and each cursor pass is Core's (`ChooseManual`):
   arrows / pad move it one square, Return / T Target (ending Manual even where it is not offered), E / Escape Exit,
   C / shoulders re-centre; the panel shows `ManualView.Creature`, row 23 the range to the square in attack mode when the line got

@@ -85,7 +85,26 @@ public sealed class EclMemory
     public bool FilesLoadedSinceSwitch { get; set; }
 
     /// <summary>
-    /// The view's redraw flags besides the picture's and sprite's (DS:84E0 / 84E3, <see cref="Game.EncounterState"/>):
+    /// DS:84E0, a close-up is up (docs/re/por-art-formats.md §3 "Playback"): set by PICTURE (0x15F8, a PIC or a head +
+    /// body) and by the encounter close-up (0x7B09); cleared by EXIT (0xDD7), the script init (0x768F), PROTECT
+    /// (0x3BDA), COMBAT (0x2630), SPRITEOFF (0x3800), PICTURE 255 and CALL $2C90 when they redraw (0x167A, 0x3A97), the
+    /// step's pass before vector 1 (0x421E) and the start-up (0xE9F7). With <see cref="PictureArmed"/> it makes HMENU
+    /// (0x1E9E) and ENCMENU (0x2D8D) animate the picture; PICTURE 255 and CALL $2C90 redraw the view while it (or the
+    /// sprite's DS:84E3) is set. Load (0x1F5E8) does not touch it. Not saved.
+    /// </summary>
+    public bool PictureShown { get; set; }
+
+    /// <summary>
+    /// DS:84E1, the picture animation's arm (por-art-formats.md §3): set by the step's pass before vector 1 (0x4223) and
+    /// by PICTURE 255 when it redraws (0x1684); cleared by the head + body loader 0x79E4 (0x79E7, PICTURE with $6DE1 ≠
+    /// 255 and the encounter close-up with a head, which clears it again at 0x7B77). Nothing else writes it: not the
+    /// start-up, not Load (0x1F5E8), so a load keeps the value it had. Its start value is the program's uninitialised
+    /// data (past the EXE's image, no clear in the start-up code): 0 in DOSBox-X (s24). Not saved.
+    /// </summary>
+    public bool PictureArmed { get; set; }
+
+    /// <summary>
+    /// The view's redraw flags besides the picture's and sprite's (DS:84E0 <see cref="PictureShown"/> / 84E3, <see cref="Game.EncounterState"/>):
     /// DS:84E5 (backdrop: the script init 0x76AD and writes to $C059 / $C05F), DS:84E6 (position: writes to
     /// $C04B–$C04D), DS:84E8 (sky: writes to $49FD / $49FE). Only CALL $2C90 clears them (0x3A88–0x3A92), after it
     /// redraws the view and the position line. Not saved.

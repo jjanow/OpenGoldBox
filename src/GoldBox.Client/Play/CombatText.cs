@@ -43,6 +43,9 @@ public enum CombatMsg
     // Non-weapon damage (0x2C22E): the damage, the element, a lost spell, the down words; an effect resisted (0x2C540).
     Takes, PointsOfDamage, TakesOnePoint, FromFire, FromCold, FromElectricity, FromAcid, FromMagic, SpellLostSpell,
     SpellGoesDown, SpellAndIsDying, SpellIsKilled, Unaffected,
+    // The monster specials' messages (class 0x0E handlers): the gaze 83 (0x10908) with its reflection and the stoning
+    // (0xECB3's text), the charm gaze 84 (0x10AD2), the lightning breath 88 (0x2A0F1), the acid breath 121 (0x11877).
+    HandlerGazes, HandlerGazeReflected, HandlerStoned, HandlerCharmGazes, HandlerBreathes, HandlerSpitsAcid,
 }
 
 /// <summary>
@@ -168,6 +171,12 @@ public sealed class CombatText
         [CombatMsg.SpellAndIsDying] = ", DYING",
         [CombatMsg.SpellIsKilled] = "IS DEAD",
         [CombatMsg.Unaffected] = "NO EFFECT",
+        [CombatMsg.HandlerGazes] = "STARES",
+        [CombatMsg.HandlerGazeReflected] = "TURNS THE STARE BACK",
+        [CombatMsg.HandlerStoned] = "BECOMES STONE",
+        [CombatMsg.HandlerCharmGazes] = "STARES",
+        [CombatMsg.HandlerBreathes] = "EXHALES LIGHTNING",
+        [CombatMsg.HandlerSpitsAcid] = "SPRAYS ACID",
     };
 
     /// <summary>START.EXE strings (offsets in the unpacked image, PorProgram.Image), read before the status panel 0x1583.</summary>

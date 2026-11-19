@@ -73,7 +73,18 @@ public sealed class EncounterHost : IEclHost
     private void Draw()
     {
         State.SpriteShown = true;
-        Ui.ShowEncounter(State.Sprite, State.Picture, Memory.Read(Distance));
+        ushort distance = Memory.Read(Distance);
+        // 0x7AD9–0x7B77: the close-up at distance 0 in the 3D view (DS:49FA = 1), not inside ENCMENU (DS:84E9) with the
+        // monster pictures off (DS:49F6), sets DS:84E0; with a head ($6DE1 ≠ 255) the head + body loader 0x79E4 and
+        // 0x7B77 clear DS:84E1. [?] Not modelled: the skip when the close-up is already up with the same head (DS:84C9
+        // and DS:84EA = $6DE1, 0x7ABC–0x7AD6).
+        if (distance == 0 && Memory.ViewMode == 1 && !(State.InEncounterMenu && !CampSettings.MonsterPictures(Memory)))
+        {
+            Memory.PictureShown = true;
+            if (Memory.Read(HeadPicture) != 255)
+                Memory.PictureArmed = false;
+        }
+        Ui.ShowEncounter(State.Sprite, State.Picture, distance);
     }
 
     private void CloseIn()
@@ -220,7 +231,7 @@ public sealed class EncounterHost : IEclHost
         }
         Memory.Write(SearchMode, (ushort)(Memory.Read(SearchMode) & 1));
         State.SpriteShown = false;
-        State.PictureShown = false;
+        Memory.PictureShown = false; // 0x2630
     }
 
     /// <summary>
@@ -334,11 +345,11 @@ public sealed class EncounterHost : IEclHost
                 // shows anyway; every redraw also draws the position line (0x3A83 → START 0x34AB).
                 Memory.Position.EventByte = EventByteHere();
                 if (Memory.FilesLoadedSinceSwitch
-                    && (State.PictureShown || State.SpriteShown || Memory.ViewRedrawFlags != ViewRedraw.None))
+                    && (Memory.PictureShown || State.SpriteShown || Memory.ViewRedrawFlags != ViewRedraw.None))
                 {
-                    if (State.PictureShown || State.SpriteShown)
+                    if (Memory.PictureShown || State.SpriteShown)
                         Ui.RestoreView();
-                    State.PictureShown = false;
+                    Memory.PictureShown = false; // 0x3A97 (DS:84E1 is not touched)
                     State.SpriteShown = false;
                     Memory.ViewRedrawFlags = ViewRedraw.None;
                     Explore.Overland.Redrawn(Memory); // 0x3A7E: on the overland the marker too (DS:6DDC + 1)
@@ -469,15 +480,24 @@ public sealed class EncounterHost : IEclHost
         byte v = (byte)picture;
         if (v != 255)
         {
-            State.PictureShown = true;
+            Memory.PictureShown = true; // 0x15F8
             ushort head = Memory.Read(HeadPicture);
+            if (head != 255)
+                Memory.PictureArmed = false; // the head + body loader 0x79E4 (0x79E7)
             Ui.ShowPicture(v, head == 255 ? null : (byte)head);
             return;
         }
-        if (State.PictureShown || State.SpriteShown)
-            Ui.RestoreView();
-        State.PictureShown = false;
+        // 0x1659–0x1684: only in the 3D view or with DS:49F9 > 1 (not right after a switch from the 3D view to the
+        // overland), and only while a picture or the sprite is up: the view is redrawn, both flags cleared and the
+        // animation armed (DS:84E1 := 1). Otherwise nothing changes.
+        if (Memory.PreviousViewMode <= 1 && Memory.ViewMode != 1)
+            return;
+        if (!Memory.PictureShown && !State.SpriteShown)
+            return;
+        Ui.RestoreView();
+        Memory.PictureShown = false;
         State.SpriteShown = false;
+        Memory.PictureArmed = true;
     }
 
     public void SpriteOff()
@@ -487,7 +507,7 @@ public sealed class EncounterHost : IEclHost
         Explore.Overland.Redrawn(Memory); // 0x37F6: the redraw 0x2DCF4 (on the overland, DS:6DDC + 1)
         Ui.RestoreView();
         State.SpriteShown = false;
-        State.PictureShown = false;
+        Memory.PictureShown = false; // 0x3800
     }
 
     // ---- Everything else goes to the inner host ----------------------------------------------------------------

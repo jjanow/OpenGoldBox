@@ -90,7 +90,7 @@ public sealed class PorGame
         if ((player.FightMenu is not null || player.QuickFight) && kit is not null)
             Encounter.FightBuilder = state => kit.Create(memory, state, Rng.Next,
                 PorFight.Area(memory, (Encounter.Map as MapPlanes)?.Planes, Vm.CurrentScript, state.Duel, content.NoWrapOffMap), player.FightMenu,
-                time: Camp);
+                time: Camp, deferStartEffects: player.FightMenu is not null); // the aura messages on the combat screen
         Loop.MapLoaded += m => Encounter.Map = new MapPlanes(m.PlanesArray);
         front.Target = Encounter;
     }
@@ -279,11 +279,9 @@ public sealed class PorGame
         bool outdoors = block is >= 25 and <= 27 && Memory.Read(AreaLoop.View3DCell) == 0; // DS:49F3 := 3 (0x408E)
         // A NEWECL in this vector 4 is followed only after the next command's vector (DS:442F stays set).
         EntryRun = Vm.RunLoadedGame();
-        int afterVector = Memory.MarkerCounter;
-        FinishEntry(follow: false); // its view redraw is 0x40C8's
-        if (outdoors)
-            Memory.MarkerCounter = afterVector; // DS:49F3 = 3: neither 0x3379 nor 0x40C8 runs
-        else
+        // Its view redraw is 0x40C8's; at DS:49F3 = 3 neither 0x3379 nor 0x40C8 runs (the window keeps what vector 4 drew).
+        FinishEntry(follow: false, redraw: !outdoors);
+        if (!outdoors)
             Overland.Redrawn(Memory); // START 0x3379 case 4 (0x1B1A or 0x40BE → 0x341F)
     }
 
@@ -412,7 +410,7 @@ public sealed class PorGame
         return g;
     }
 
-    private void FinishEntry(bool follow)
+    private void FinishEntry(bool follow, bool redraw = true)
     {
         if (follow && Vm.ScriptChanged)
             EntryRun = Vm.FollowScriptChanges();
@@ -422,7 +420,8 @@ public sealed class PorGame
             var p = Memory.Position;
             p.WallAhead = (byte)m.Wall(p.X, p.Y, p.Facing);
         }
-        Loop.Redraw();
+        if (redraw)
+            Loop.Redraw();
     }
 
     /// <summary>The four backdrop colours now (<see cref="BackdropRule"/>).</summary>

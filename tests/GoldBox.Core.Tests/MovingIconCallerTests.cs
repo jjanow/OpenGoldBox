@@ -87,6 +87,23 @@ public class MovingIconCallerTests
 
     private static Rig Setup(Script s, params (int X, int Y)[] at) => Setup(s, null, at);
 
+    // ---- The fight start's trigger-8 effects left to the run (s27) ---------------------------------------------------
+
+    [PorFact]
+    public void A_deferred_fight_start_runs_once_at_the_start_of_Run()
+    {
+        // FightKit.Create(deferStartEffects: true) leaves the trigger-8 loop to Fight.Run, so a display attached in
+        // between shows the aura messages on the combat screen (DOSBox-X s27: Tyranithraxus's fear aura).
+        var r = Setup(new Script(), (10, 10), (12, 10));
+        int ran = 0;
+        r.Fight.PendingStart = () => ran++;
+        r.Fight.Run(0);
+        Assert.Equal(1, ran);
+        Assert.Null(r.Fight.PendingStart);
+        r.Fight.Run(0);
+        Assert.Equal(1, ran);
+    }
+
     // ---- Gazes (handlers 83, 84) -----------------------------------------------------------------------------------
 
     [PorFact]
@@ -169,9 +186,12 @@ public class MovingIconCallerTests
         var first = r.Log.Flights[0];
         Assert.Equal((10, 10, 12, 10, 50), (first.FromX, first.FromY, first.ToX, first.ToY, first.DelayMs));
         Assert.Equal(FlightAnimation.Burst(FlightAnimation.BoltBlock), first.Frames);
-        // Then the bolt from (12, 10) onwards (0x29973): its flights start there and reach the target at (14, 10).
-        Assert.True(r.Log.Flights.Count > 1);
-        Assert.All(r.Log.Flights.Skip(1), a => Assert.Equal((12, 10), (a.FromX, a.FromY)));
+        // Then the bolt from (12, 10) onwards (0x29973): its first flight starts there, each later one on the cell the
+        // previous one hit ([bp−0x37] / [bp−0x38] set again at 0x29A68; DOSBox-X s27), and one reaches the target.
+        Assert.True(r.Log.Flights.Count > 2);
+        Assert.Equal((12, 10), (r.Log.Flights[1].FromX, r.Log.Flights[1].FromY));
+        for (int i = 2; i < r.Log.Flights.Count; i++)
+            Assert.Equal((r.Log.Flights[i - 1].ToX, r.Log.Flights[i - 1].ToY), (r.Log.Flights[i].FromX, r.Log.Flights[i].FromY));
         Assert.Contains(r.Log.Flights, a => (a.ToX, a.ToY) == (14, 10));
         Assert.True(r.C[1][FightRules.Hp] < 60);
         Assert.Equal(0xFE, EffectHandlers.FindEffect(r.C[0], 0x58)![3]);

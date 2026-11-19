@@ -474,7 +474,16 @@ public static class CampScreens
         c.Dialog.Text.Clear();
         var heard = new List<string>();
         void OnSpell(EclCharacter t, int s, EffectEvent e) => heard.Add(t.Name.ToUpperInvariant() + ": " + e.ToString().ToUpperInvariant());
-        void OnEffect(EclCharacter t, EffectEvent e) => heard.Add(t.Name.ToUpperInvariant() + ": " + e.ToString().ToUpperInvariant());
+        void OnEffect(EclCharacter t, EffectEvent e)
+        {
+            // 0x2C540's text (START 0x2B8B) and its unaffected words (0x2C532) are shown where they happen.
+            if (cast.Spells.Effects.EffectText is { } key)
+                EffectMessage(c, t, c.Resources.CombatTexts.Effect(key));
+            else if (e == EffectEvent.Unaffected)
+                EffectMessage(c, t, c.Resources.CombatTexts[CombatMsg.Unaffected]);
+            else
+                heard.Add(t.Name.ToUpperInvariant() + ": " + e.ToString().ToUpperInvariant());
+        }
         cast.Spells.Event += OnSpell;
         cast.Spells.Effects.Event += OnEffect;
         try
@@ -492,7 +501,8 @@ public static class CampScreens
             cast.Spells.Event -= OnSpell;
             cast.Spells.Effects.Event -= OnEffect;
         }
-        // [?] The effect messages' wording and rows are not read: the events are listed in our words.
+        // [?] The other events' messages outside a fight (damage, healing, the spells' own) are not matched: they are
+        // listed in our words.
         if (heard.Count > 0)
         {
             c.Dialog.Text.Clear();
@@ -504,6 +514,27 @@ public static class CampScreens
             c.Dialog.WaitKey();
             c.Dialog.Text.Clear();
         }
+    }
+
+    /// <summary>
+    /// An effect message outside a fight (read s27): 0x2C540 calls START 0x2B8B, whose out-of-fight branch (DS:49F3 ≠ 5)
+    /// is START 0x16EC(creature, text, row 10, pause 1) (the unaffected words 0x2C532 go to START 0x16EC with the same
+    /// arguments). Outside a fight START 0x16EC ignores the row: with DS:6DDA = 0 (no rest running) the text box's frame
+    /// is drawn again (03F1:0000 around 1, 17–38, 22; the Client's frame is always there), (1, 17)–(38, 22) cleared, the
+    /// name at (1, 18) (START 0x1816, the fight panel's name colours), the text word-wrapped into (1, 19)–(38, 22) in
+    /// green (START 0x709:0x0768), then PauseOnly (DS:49E2 × 225 ms) and START 0x2383, which outside a fight clears
+    /// (1, 18)–(38, 22). [?] Typing (DS:4A00) in the camp is not followed: the text shows at once.
+    /// </summary>
+    internal static void EffectMessage(CampContext c, EclCharacter who, string text)
+    {
+        var w = c.Dialog.Text;
+        w.ClearRect(TextWindow.Left, TextWindow.Top, TextWindow.Right, TextWindow.Bottom);
+        w.Put(TextWindow.Top + 1, TextWindow.Left, who.Name.ToUpperInvariant(), CombatChooser.NameColour(who));
+        w.PrintIn(TextWindow.Left, TextWindow.Top + 2, TextWindow.Right, TextWindow.Bottom, text, true, TextWindow.ScriptColour);
+        int speed = c.Memory.GameSpeed;
+        if (speed > 0)
+            c.Dialog.Ask(new DelayRequest(TimeSpan.FromMilliseconds(225 * speed)));
+        w.ClearRect(TextWindow.Left, TextWindow.Top + 1, TextWindow.Right, TextWindow.Bottom);
     }
 
     /// <summary>
