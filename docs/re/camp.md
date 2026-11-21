@@ -94,7 +94,7 @@ E; Ready Trade Drop Halve Join Sell Id Exit) 7 of 10 (help lines twice, the same
 `TradeContext.ItemsPage` / `Coins` (`PartyMenuFlow.ItemsPage` / `Coins`, `CharacterPageRequest`, drawn by
 `PartyMenuScreen` with `PageChrome`, the fight's page code; `ItemsPages` builds the Items page for both); Sell and Id
 run as before, the other item commands are still our notice; keyboard Up / Down move the row (the Client's, as Left
-/ Right move the word) `[U]`. `[?]` Where Sell's and Id's questions and messages go over the Items page is not seen:
+/ Right move the word; the program ignores both: a deliberate difference, user s40). `[?]` Where Sell's and Id's questions and messages go over the Items page is not seen:
 the Client shows them in the venue's text window. Tests `PartyMenuScreenTests.View_drop_goes_through_the_coin_list`,
 `View_is_the_camp_view_menu_on_the_program_page`.
 

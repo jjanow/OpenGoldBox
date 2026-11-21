@@ -15,9 +15,9 @@ namespace GoldBox.Client.Play;
 /// delay × 10: delay 1 → 2 ticks (0.11 s), 2 → 4 (0.22 s), 3 → 6 (0.33 s), 4 → 8 (0.44 s). DOSBox-X (s24, HMENU with
 /// the slave pen's PIC 42 in ECL6 block 1, delays 4, 3, 1, 2, 3, 2): 0.44, 0.33, 0.11, 0.22, 0.33, 0.22 s, the first
 /// hold counted from the menu's opening; s19's camp PIC 29 (delays 2, 2) alternated every 0.22 s. The Client reads the
-/// same clock from its own time. [U] A delay of 0 changes the frame on the next pass (one draw, ≈ 86.7 k instructions:
+/// same clock from its own time. A delay of 0 changes the frame on the next pass (one draw, ≈ 86.7 k instructions:
 /// CPU-speed dependent, ≈ 29 ms at DOSBox-X's 3000 cycles, ≈ 4.3 ms at 20000); the Client changes it on its next
-/// update (16.7 ms) until the user picks a rate (por-art-formats.md §3 "Delay 0").
+/// update (16.7 ms), as decided (user, s27; por-art-formats.md §3 "Delay 0").
 /// </summary>
 public sealed class PictureAnimation
 {

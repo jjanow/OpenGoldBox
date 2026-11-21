@@ -8,8 +8,8 @@ namespace GoldBox.Client.Play;
 /// The text as the Amiga program draws it (docs/re/por-art-formats.md §4 "Text font"; <see cref="PorAmigaText"/>): disk
 /// A's <c>poolrad.font</c> (module <c>art/amiga/poolrad/0/8</c>), each line twice, in the pen the program uses for that
 /// DOS colour and in the next pen one pixel to the right (<c>art/amiga/text-pens.json</c>), set bits only. Only under the
-/// Amiga art setting `[U]` (whether Best should use it too is the user's call: the pens are read for a few DOS colours
-/// only); Original DOS and Best, or a module without the font, keep the DOS text font.
+/// Amiga art setting (user, s39: Best keeps the DOS font until the pens of the other DOS colours are read);
+/// Original DOS and Best, or a module without the font, keep the DOS text font.
 /// </summary>
 public static class AmigaText
 {

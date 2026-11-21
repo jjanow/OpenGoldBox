@@ -400,8 +400,8 @@ flag.
 ## 6. Open `[?]`
 
 - Auto-stop onset in DOSBox-X (§2.4); the speaker's analogue filter; the early Tandy 1000's SN76496; a spell's cast
-  tune and Lightning Bolt / Fireball in DOSBox-X (not captured, s39); machine-time lengths (§2.4 s39) `[U]` whether
-  to model them.
+  tune and Lightning Bolt / Fireball in DOSBox-X (not captured, s39); machine-time lengths (§2.4 s39) are not
+  modelled (user, s40).
 - Amiga (§5): PAL or NTSC rate; Paula's restart and latch timing; how the flag at hunk 32 +0x2D1 can change;
   the screens of hunks 4, 16 and 19.
 - Which other SSI games share this driver and its tunes 12–20.
