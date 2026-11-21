@@ -202,6 +202,24 @@ public class OverlandScreenTests
         r.Runner.Dispose();
     }
 
+    [Fact]
+    public void Clearbox_on_the_overland_blanks_the_window_without_the_box()
+    {
+        if (Dir() is null)
+            return;
+        // DOSBox-X s41 (vector 1 = CLEARBOX, Look on the overland): cells 1–15 blank, no box; PICTURE draws the box
+        // (0x15C7–0x15E8 with $49E6 = 0).
+        var r = Start();
+        r.Player.ClearBox();
+        Assert.False(OverlandUi.Boxed(r.Player));
+        var f = new IndexedFrame(320, 200);
+        r.Screen.Draw(f, r.Input);
+        for (int y = 8; y < 128; y++)
+            for (int x = 8; x < 128; x++)
+                Assert.Equal(0, f[x, y]);
+        r.Runner.Dispose();
+    }
+
     private static byte[] View(Rig r)
     {
         var f = new IndexedFrame(320, 200);

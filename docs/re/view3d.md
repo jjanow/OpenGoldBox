@@ -207,7 +207,13 @@ Code: `GoldBox.Core.Explore.AreaLoop` (one command at a time), `GameClock`, `Are
 - **Command routine 0x17054.** Every command read starts with $6DC9 = 0. With the 3D command line (DS:04B6):
   - A: area map on/off (DS:6AAC) when $49FB = 0, else a short message (cs:0x97B at 0x170F1, START 0x7DF8: row 24,
     colour 14, DS:49E2 × 225 ms, then row 24 cleared);
-  - C cast (0x17CD2, needs status 0), V view (0x21AED): not built;
+  - C cast (0x17CD2; in the 3D branch only when the current member's status 0x10C is 0, 0x170FC; the overland branch
+    calls it at once, 0x17320), V view (0x21AED): both loop back to the key read (0x17172 → 0x17266, the position
+    line drawn, 0x17073): no vector, no step, no time. View's exit (0x21D4F) and Cast after a list (0x17D96) or its
+    target pick (0x27AFA) draw START 0x3379 for DS:49F3 (s41: `AreaLoop.MenuCommand`, `ClientPlayer.View` / `Cast`,
+    `CharacterView.Run` with `Venue.Explore`: Items offers Use; `CampScreens.CastMenu` with `CampContext.InterfaceRedraw`).
+    Keys V / C, pad Start / R3, a click on the word; the shared cell moves to the word, so View opens on that cell
+    (3D: its 3rd word, overland: its 2nd);
   - S: $6DCA bit 0 toggles (Search mode); no time;
   - L (Look): $6DCA |= 2, 10 minutes (clock unit 2), the routine returns;
   - E (Encamp): returns;
@@ -301,15 +307,32 @@ EXIT: (1, 17), no clear).
      routine). Only View → Items (0x21F32) types: its Drop question (0x223FC) and the refusal of 0x21DAA (0x21E53),
      in (1, 21)–(38, 22) colour 14, while the flag stands (1 at the start-up party menu, 0 in the training hall
      after a PRINT). The Client's party-menu Items commands other than Sell / Id are not built (our notice); Sell / Id
-     (shop) go through the explore text box, which follows the flag, but at rows 17–22, not the program's 21–22 `[?]`.
+     (shop) print into the program's box (1, 21)–(38, 22) over the Items page since s41 (camp.md "View"), typing
+     with the flag like every 0x77F8 text.
    The status panel's weapon name types (s29, `CombatChooser.Typing`).
 5. After the string a cursor past x1 goes to column x0 of the next row.
 The window never scrolls. Code: `GoldBox.Client.Play.TextWindow`.
 
 CLEARBOX (0x385A) blanks the picture window (1, 1)–(15, 15), not this box. The next view redraw (0x2DCF4: a
 command's or a script switch's) draws the 88 × 88 view alone, so the rest of the window, the view's box among it, stays
-blank (**D** s39, geo-format.md "Script switch"; Client `ClientPlayer.ViewBoxBlank`); `[?]` every full-layout redraw
-that ends it is not listed (the Client ends it at the camp, shop, temple, fight and hall, and at EXIT after a PROTECT). The clear (START 0x7E63 on cells 1–15) takes
+blank (**D** s39, geo-format.md "Script switch"; Client `ClientPlayer.ViewBoxBlank`). **What draws the box again
+(P s41, every far call of START 0x3379 and of the window routine START 0x41F8 in GAME.OVR):** START 0x3379 in cases
+1, 2, 4 and 6 (0x32CA with 1 draws the windows (1, 1)–(15, 15) and (3, 3)–(13, 13), each with its frame; case 3, the
+overland, draws no box). Its 28 callers: the area's first pass (0x1B1A / 0x40BE: a load's or new game's entry at
+state 4), COMBAT's end (0x2635: every fight, shop, temple, loot), the temple (0x51A0, 0x528B, 0x5479, 0x548A), the
+treasure and loot menus (0x6295, 0x631E, 0x639B, 0x645C), the shop (0x721E, 0x743C, 0x744D), PROGRAM 0 (0x3B95), the
+camp's entry and an interrupted rest (0x196C7, 0x3B3B) and its Cast, Memorize, Scribe, Display, Alter (0x17D96,
+0x182E1, 0x1865F, 0x18BF9, 0x19524), the end game (0x209DD, 0x20D47), View's exit (0x21D4F), the item and money
+Trade (0x22781, 0x231A4) and Cast's target pick (0x27AFA). Besides: EXIT after a PROTECT into the window (0xD75 /
+0xDA7), the script switch from the overland into a 3D area (0x3FCD: DS:49F9 > 1 and DS:49FA = 1) and PICTURE only
+with $49E6 = 0 (0x15C7–0x15E8: so not in the 3D view; on the overland a PICTURE draws the box and CLEARBOX alone does
+not, D s41). **D** (s41, a scratch save with vector 0 = CLEARBOX, Up: the ring blank): C on a fighter (the no-spells
+message, no list) leaves it blank; V and Escape, and C on Brother Sean with the list and Escape, bring it back.
+Client (s41): `ClientPlayer.InterfaceDrawn` (START 0x3379 by `AreaLoop.DrawInterface`: the hall's end, a load's
+entry, View's exit, Cast) ends it, with the venues, the fight and EXIT as before; the CLEARBOX run's screens equal
+DOSBox-X's but the help lines (test `ExploreScreenTests.View_and_cast_on_the_command_line_by_key_pad_and_mouse`).
+`[?]` A CLEARBOX in a loaded game's vector 4 after its LOADFILES pair (0x1B1A drew the layout before it) would leave
+the ring blank in the program; the Client draws the layout after the vector. The clear (START 0x7E63 on cells 1–15) takes
 the view's own box (cells 2 and 14) too, which EXIT draws again only after a PROTECT went into the window
 (ecl-format.md "PROTECT"); since s29 the Client blanks all of cells 1–15 in the 3D view as well (before: the 88 × 88
 view only) and draws PROTECT's runes there. **D** (s30): DOSBox-X blanks the same cells and the Client's frame is equal
@@ -454,7 +477,11 @@ points above. Client: `ClientPlayer.ReleaseRosterNames` copies the members' reco
 pick draws the list with its pick lit and DS:5D92 unchanged (00BA:2CA1), which stays until the next drawing
 (`ReleaseRosterNamesLit`). DOSBox-X runs: rest with revive, handler 62 and 15 136 of 136; camp Cure Light Wounds 43 of
 43; revive / step / turn / re-encamp / icon editor 85 of 86 (one row-24 transition frame); Drop's yes/no 35 of 42 (the
-misses: the program shows the first 4–5 characters of a typed message at once, the Client types them one by one `[?]`).
+misses then: the first 4–5 characters of a typed message seemed to come at once in DOSBox-X). **D** (s41, save A's camp:
+Alter, Drop, No; the grab that keeps grabbing while a key is held): DOSBox-X types the message from its first
+character, ~42 ms apart at speed 4 as the Client, so the earlier misses were the old blocking grab losing ~0.27 s after
+each key, not the program (the typing 0x7737 draws each glyph straight into both video pages, then Delay(DS:49E2 × 10)).
+31 of 38 Client frames equal, the misses the help lines and the run's first frame.
 Not drawn: a step (0x16D58, the move 0x17438), a turn (0x2ED72 + 0x2EEF4), the area map toggle (0x2EEF4), Search and
 Look (flags and the clock 0x241A1), the view's rebuild 0x2DCF4, PRINT and PICTURE: none of them reaches 0x0767 or
 0x3379 through direct calls (call graph read from each; indirect handler calls are not followed `[?]`). **D** (s39, the

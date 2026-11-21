@@ -52,8 +52,8 @@ public static class PorAmigaArt
     /// The picture files of the overlay: which palette table the program sets before it draws them, the width of the
     /// tiles packed side by side in one item (0 = none), and the art category <c>module.json</c>'s
     /// <c>art.defaults</c> uses. Tables from docs/re/por-art-formats.md §4: PIC → 4 (FINAL block 2 → 4, the other
-    /// FINAL blocks → 3); SPRIT and the 3D view → 3. [?] HEAD/BODY/ICON → 2 (only table 2 gives skin tones; no call
-    /// site found). CPIC/CHEAD/CBODY/COMSPR and the combat grounds → 0: the combat screen's set-up loads table 0 after
+    /// FINAL blocks → 3); SPRIT and the 3D view → 3. HEAD/BODY → 2 (the View page loads it before the portrait, hunk 10
+    /// +0x4900, s41); ICON → 2 [?]. CPIC/CHEAD/CBODY/COMSPR and the combat grounds → 0: the combat screen's set-up loads table 0 after
     /// its two windows (hunk 13 +0x5F0E, s39), and nothing in the fight loads another; tables 0 and 3 differ only in
     /// entry 0 (table 0's is not black: the combat screen's dark ground, as DOS's swapped colour 0).
     /// </summary>

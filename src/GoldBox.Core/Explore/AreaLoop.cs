@@ -33,6 +33,10 @@ public enum AreaCommand
     TravelEast,
     TravelSouth,
     TravelWest,
+    /// <summary>V: View 0x21AED, on both lines (<see cref="AreaLoop.MenuCommand"/>; not through <see cref="AreaLoop.Execute"/>).</summary>
+    View,
+    /// <summary>C: Cast 0x17CD2, on both lines (<see cref="AreaLoop.MenuCommand"/>; not through <see cref="AreaLoop.Execute"/>).</summary>
+    Cast,
 }
 
 /// <summary>Messages the explore loop itself shows (the program's own fixed texts are not reproduced).</summary>
@@ -63,6 +67,12 @@ public interface IAreaUi
     /// rest loop returns (true = vector 3 runs).
     /// </summary>
     bool Camp();
+
+    /// <summary>The command line's V: View 0x21AED on the current member; its exit draws START 0x3379 (0x21D4F).</summary>
+    void View() { }
+
+    /// <summary>The command line's C: Cast 0x17CD2 (the camp Magic menu's routine) outside the camp.</summary>
+    void Cast() { }
 }
 
 /// <summary>
@@ -77,6 +87,20 @@ public sealed class AreaLoop
     /// $49F0/$49F1 (previous x, y), $49F2 (previous script), $49FB (no area map), $49E6 (3D view).</summary>
     public const ushort CancelStep = 0x6DC9, SearchMode = 0x6DCA, PreviousX = 0x49F0, PreviousY = 0x49F1,
         PreviousScript = 0x49F2, NoAreaMap = 0x49FB, View3DCell = 0x49E6;
+
+    /// <summary>
+    /// VM $4AFF (word [DS:49D2]+0x3FE; the save's third wall-set slot cell, $4AFC + 3): the menu routine 0x2CC8C animates
+    /// the picture's frames when its own flag is set or this cell is not 0 (0x2CD5D–0x2CD6D, with frames in the table,
+    /// DS:6ABF), and clears the cell at its end (0x2CFAD); nothing else in START.EXE or GAME.OVR writes it (P s41). A
+    /// Load brings the save's value (non-zero after any save: the wall-set slots), so the first menu after a Load with
+    /// no command line between animates: after a training hall's Load of a camp save the script's HMENU animated the
+    /// camp picture START 0x3379 case 2 had loaded (DOSBox-X s39 / s41), while after a start-up Load the command line
+    /// clears it first (an HMENU in the first step's vector 0 stays on its first frame, DOSBox-X s24 / s41), and a loaded
+    /// game's vector 4 runs before any menu (PICTURE 2 + HMENU there animates, DOSBox-X s41). The engine keeps the
+    /// program's zero apart from the cell (<see cref="EclMemory.MenuAnimates"/>). [?] In the Client only the ECL menus
+    /// and the command line clear it; the camp's, hall's and venues' own menus do not (they animate or show no picture).
+    /// </summary>
+    public const ushort MenuAnimateCell = 0x4AFF;
 
     public AreaLoop(EclVm vm, TurboPascalRandom rng, IAreaUi ui)
     {
@@ -227,7 +251,75 @@ public sealed class AreaLoop
     /// more alone (frame c + 1, over the first). True while that is still to come for the next command: a Client
     /// shows the view as it will look then (DOSBox-X: frames 2 and 3 after a load).
     /// </summary>
-    public bool OverlandInterfacePending => Overland.Commands(Memory) && Memory.PreviousViewMode < 2;
+    public bool OverlandInterfacePending => Overland.Commands(Memory) && Memory.PreviousViewMode < 2 && !_interfaceDrawn;
+
+    /// <summary>
+    /// The overland interface was drawn in this run of the command routine. Only the keys that end the routine reach
+    /// 0x173E7 (DS:49F9 := DS:49FA: the arrows, L, E); S, C, V and the member keys loop back to its key read (0x1738A /
+    /// 0x173D5 → 0x172E3), so the interface is drawn once per routine entry, not once per key.
+    /// </summary>
+    private bool _interfaceDrawn;
+
+    /// <summary>The command routine's start (0x17054): on the overland with DS:49F9 &lt; 2, the interface (START 0x36FE).</summary>
+    private void EnterCommandRoutine()
+    {
+        if (!OverlandInterfacePending)
+            return;
+        MarkerCounter = (MarkerCounter + 2) % 6;
+        Memory.MarkerFacing = Memory.Position.Facing; // drawn before the command's key sets a new facing
+        Memory.MarkerDrawnTwice = true; // frame c + 1 over frame c, until the next redraw
+        MarkerSlots[0] = 0; // 0x17285–0x172D5: ICON 0, 1, 2 into the animation slots 9, 10, 11
+        MarkerSlots[1] = 1;
+        MarkerSlots[2] = 2;
+        Memory.InterfaceState = 3; // START 0x3701
+        _interfaceDrawn = true;
+    }
+
+    /// <summary>0x173E7: the command routine ends with DS:49F9 := DS:49FA (the next entry draws no overland interface).</summary>
+    private void LeaveCommandRoutine()
+    {
+        Memory.PreviousViewMode = Memory.ViewMode;
+        _interfaceDrawn = false;
+    }
+
+    /// <summary>
+    /// START 0x3379 while exploring, by DS:49F3 (<see cref="EclMemory.InterfaceState"/>): the window layout (0x32CA:
+    /// cases 2 and 4 with the 3D view's box, 3 without), then for 3 and 4 the view redraw 0x2DCF4 (<see cref="Redraw"/>),
+    /// for 2 the camp's picture (PIC 0x1D, 0x2E170); then the party list (0x1307) and the position line (0x34AB).
+    /// <see cref="InterfaceDrawn"/> is raised first (the windows come before the view).
+    /// </summary>
+    public void DrawInterface()
+    {
+        byte state = Memory.InterfaceState;
+        InterfaceDrawn?.Invoke(state);
+        if (state is 3 or 4)
+            Redraw();
+    }
+
+    /// <summary>
+    /// START 0x3379 drew the screen for the interface state passed (<see cref="DrawInterface"/>): every window again
+    /// (the text box blanked, the cursor kept), the party list and the position line; raised before the view redraw.
+    /// </summary>
+    public event Action<byte>? InterfaceDrawn;
+
+    /// <summary>
+    /// C and V on the command line (0x17054: 3D 0x170F8 / 0x1710F, overland 0x1731C / 0x17327): Cast 0x17CD2 (3D only
+    /// when the current member's status 0x10C is 0; the overland branch has no check) and View 0x21AED. Neither ends the
+    /// routine: no vector, no time, no step; the position line is drawn again (0x17266 / 0x173D9) and the key read
+    /// loops. View's exit (0x21D4F) and Cast's end after a list (0x17D96) draw START 0x3379 (<see cref="DrawInterface"/>,
+    /// called by the screens). On the overland the interface comes first as for every key (<see cref="EnterCommandRoutine"/>).
+    /// </summary>
+    public void MenuCommand(AreaCommand command)
+    {
+        if (Ended || command is not (AreaCommand.View or AreaCommand.Cast))
+            return;
+        Memory.MenuAnimates = false; // the command line's menu 0x2CC8C ended (0x2CFAD: $4AFF := 0)
+        EnterCommandRoutine();
+        if (command == AreaCommand.View)
+            Ui.View();
+        else if (Overland.Commands(Memory) || Memory.Party?.Current is not { } who || who[0x10C] == 0)
+            Ui.Cast();
+    }
 
     /// <summary>
     /// The ICON blocks in the marker's animation slots 9, 10, 11 (each slot holds block b and b + 128): 0, 1, 2 as the
@@ -267,9 +359,15 @@ public sealed class AreaLoop
     /// <summary>One command, as the area loop runs it after the command routine returns (or inside it, for turns).</summary>
     public void Execute(AreaCommand command)
     {
+        if (command is AreaCommand.View or AreaCommand.Cast)
+        {
+            MenuCommand(command); // no vector, no step: the routine reads the next key
+            return;
+        }
         Runs.Clear();
         if (Ended)
             return;
+        Memory.MenuAnimates = false; // the command line's menu 0x2CC8C ended (0x2CFAD: $4AFF := 0)
         Vm.CommandRead();
         Memory.Write(CancelStep, 0); // 0x17060: every command read starts with $6DC9 = 0
         bool overland = Overland.Commands(Memory);
@@ -278,16 +376,7 @@ public sealed class AreaLoop
             : command is AreaCommand.TravelNorth or AreaCommand.TravelEast or AreaCommand.TravelSouth
                 or AreaCommand.TravelWest)
             return; // not on this mode's command line (0x17054: DS:49FA = 1 or 2–4 branch)
-        if (OverlandInterfacePending)
-        {
-            MarkerCounter = (MarkerCounter + 2) % 6;
-            Memory.MarkerFacing = Memory.Position.Facing; // drawn before the command's key sets a new facing
-            Memory.MarkerDrawnTwice = true; // frame c + 1 over frame c, until the next redraw
-            MarkerSlots[0] = 0; // 0x17285–0x172D5: ICON 0, 1, 2 into the animation slots 9, 10, 11
-            MarkerSlots[1] = 1;
-            MarkerSlots[2] = 2;
-            Memory.PreviousViewMode = Memory.ViewMode; // drawn once per entry of the routine (DS:49F9 := DS:49FA at its end)
-        }
+        EnterCommandRoutine();
         switch (command)
         {
             case AreaCommand.TravelNorth: Memory.Position.Facing = Facing.North; break;
@@ -321,7 +410,7 @@ public sealed class AreaLoop
                 break;
         }
 
-        Memory.PreviousViewMode = Memory.ViewMode; // 0x173E7: the command routine ends with DS:49F9 := DS:49FA
+        LeaveCommandRoutine(); // 0x173E7: the command routine ends with DS:49F9 := DS:49FA
         // The area loop (0x40E3 on): $49F2 = the current block after every command read.
         Memory.Write(PreviousScript, (ushort)Vm.CurrentScript);
         try

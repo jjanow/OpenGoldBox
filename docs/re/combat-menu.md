@@ -181,6 +181,13 @@ Arguments: creature, range (0xFF = from the weapon), attack mode (1 from the men
   Manual ends after Target, Return, E or Escape (set CS:0x2DA7); Aim then builds its list again (0x15AE1) and goes on
   from the same place unless done. The menu's Aim passes square mode 0 (0x9BEE). Core: `FightMenu.Manual`
   (`IFightMenuChooser.ChooseManual`, `ManualView`, `ManualInput`; needs the `CombatMap`).
+  The menu is the menu routine 0x2CC8C (0x1596E, prompt DS:6E31) on the shared highlight cell, so its lit entry is
+  the cell (after Aim's M, the third: Exit) and a hotkey moves the cell to its entry; the line stays on row 24 with
+  the chosen entry lit until row 24 is written again. **D** (s41, Darkstar's Sleep aimed by hand seven squares right of
+  the view, T): Manual's menu line with Exit lit while the cursor moved, Target lit after T
+  through the flight and Rhiannon's panel; her menu then opened on Move (the cell 0). Client: `CombatScreen`
+  (`DrawCursorMenu`, the kept line `_staleCursor`); `[?]` Return (0x0D, Target whatever is lit) is taken to move the
+  cell to Target as T does (not read in 0x2CC8C).
 - **D**: `m09`/`m10` (aim starts on the creature itself at range 0, Next goes to a goblin at range 1 with Target
   offered, Target makes the melee attack); `fight_ranged` (darts, range 6 − 1 = 5: a goblin at range 3 is offered;
   three darts thrown, count 11 → 8). Manual (s18, `fight_manual_use`): the arrow keys move the cursor; it starts on
@@ -200,7 +207,11 @@ can't be cast in a fight (a message that the spell is for camping only, nothing 
 - 0: the spell is cast now (0x27C38, below) and the actions end (START 0x31D7).
 - Else: done, a message that casting has started, +0 = the spell, initiative − casting time when the initiative is larger,
   else 1. The creature is picked again later in the round and step 2 of the menu casts the spell (0x27C38 again, aimed
-  then, not when it was begun).
+  then, not when it was begun). 0x27C38's cast message comes before its pick here too: **D** (s41, Brother Sean's
+  Cure Light Wounds in the share-window test fight, seed 12345): the begins-casting words typed with their pause, his turn again
+  at once, the casts-a-spell words typed with their pause, then the aim menu, T on himself, the healed message. Client:
+  `CombatChooser.ChooseAim` announces a begun spell (combat record +0) at its first aim and the later Announce is
+  skipped, as the list does for a spell cast now.
 
 **The player's aim for a spell** (0x27C38 → target pick 0x148BE with ai = 0 → 0x14611) — P, D (Sleep):
 
@@ -582,8 +593,13 @@ and Speed menus, an AI attack at game speed 9). Code: `src/GoldBox.Client/Screen
     the Core had turned him at 0xBA22). Fixed: Core `Fight.MakeAttack` sets the facings at their places with the hooks
     `AttackStarting`, `DefenderTurned`, `AttackPanel`, `AttackPosed`; `MonsterAi` no longer sets +9 at 0xBA22; the
     Client draws 0x31232 with its scroll (`CombatChooser.FacingDrawn`). Test
-    `MonsterAiTests.Make_attacks_display_hooks_come_in_the_programs_order_…`. `[?]` the cast's facing (0x27E00, also
-    0x31232 with frame 1) is not given the scroll in the Client (no capture with a caster off view).
+    `MonsterAiTests.Make_attacks_display_hooks_come_in_the_programs_order_…`. The cast's facing (0x27E00, 0x31232
+    with frame 1) scrolls the same way: **D** (s41, `fight_save.py BASE OUT 1C36005E00640B00020001000224 --monpatch
+    2:0x32=1,0x11B=1`, seed 12345; Up, Thrender Quick, Darkstar Cast Sleep, Manual, seven Rights, T): the view came
+    back onto Darkstar in the action pose 0.27 s after T, stayed 0.2 s (then 21 ms standing) before the flight: machine
+    time, no wait in the program between 0x27E00 and the flight's first delay, so the Client goes on to the flight at
+    once (frame 1 not shown). Client `CombatChooser.Posed` scrolls as `FacingDrawn` does; the flight's frames equal
+    DOSBox-X's from its first (the flight's view depends on the caster being in view, START 0x2692).
   - **D** (s39 follow-up, the same DOSBox-X capture, the Client recaptured with the non-blocking grab): **583 of 584**
     Client frames equal; the one left is the continue-battle question, which DOSBox-X never reaches (its runtime error;
     the Client goes on, decided). Before the follow-up 570 of 581, before s39's fixes 538 of 550.
@@ -937,6 +953,31 @@ DOSBox-X, save K (Darkstar, Thrender), `Play/CombatItemScreens.cs` (`CombatChoos
   `FightItemScreens.View` / `RedrawsViewPage`.
 - **Drop money** (0x234E1): a coin-type prompt (colour 13) then Exit; the sheet's money lines are the list (picked
   one white; the Client lists them in the sheet's order, kinds 6 down to 0); then an amount question naming the coin, in green on row 24 and the typed number.
+
+### Animation speed (Client QoL, s41)
+
+The program's game speed (DS:49E2, 0–9, Done > Speed here, camp Alter > Speed) scales only the PauseOnly messages
+(speed × 225 ms; 0 = none), the panel's typing (10 ms × speed) and the effect picture's repeat count (DS:49E2 + 1
+rounds). It **never scales** the fixed delays: the moving icon's Delay (each flight's own ms, START 0x25C9), the hit and
+effect picture frames (Delay(70), START 0x2CCB), the attack pose (Delay(100), 0x1412E); an AI creature's steps and turn
+start have no wait of the program's own (the Client shows each for one update; the step's pace is the auto-stop sound's
+busy-wait, sound.md §2). So the Client's **ANIMATION** setting (controls screen; `--anim-speed`; remembered in the
+settings, not in the save) is a QoL option, default **ORIGINAL** (= the program's timings, untouched): SLOWEST ×3,
+SLOWER ×2, FASTER ×0.5, FASTEST ×0.25, INSTANT (skipped). Code: `Play/AnimationSpeed.cs` (`AnimationTiming.Apply`,
+called once in `ScriptRunner.Ask` for every `DelayRequest` tagged `Animation`).
+- INSTANT skips the tagged pauses without drawing them; the loops still run, so every sequence lands on its last
+  state (the flight's view, the pose, the downed picture with its game-speed pause). A one-update display point stays
+  one update when faster and is held one update × the factor when slower.
+- Sounds: the flights' tunes are in resident brackets, cut at the bracket's end, so they end with the flight. At
+  INSTANT the logic no longer waits out an auto-stop sound (step, hit, miss) and a cue arriving while one still sounds
+  is skipped, not queued (`ClientAudio.Instant`), so nothing piles up; this holds outside fights too (the 3D view's
+  step and bump sounds no longer pace walking). Below INSTANT a creature's step stays paced by its step sound's
+  auto-stop wait (~117 ms with sound on): FASTER / FASTEST do not shorten it and SLOWER / SLOWEST add only the held
+  display point (one update × the factor); no sound wait is scaled (none is the program's to scale).
+- Not scaled: every game-speed pause and the typing, the fixed message pauses (encounter line 900 ms, party killed
+  3 s), the DOS end game's frames ((speed + 3) × delay, already game speed); the picture window's looping animations
+  are scaled too (INSTANT = FASTEST there: a loop has no last frame). The intro and title are not scaled (a key ends
+  them). Fastest play: game speed 0 plus INSTANT.
 
 ## Open `[?]`
 

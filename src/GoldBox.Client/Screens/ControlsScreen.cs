@@ -11,7 +11,8 @@ namespace GoldBox.Client.Screens;
 /// AMIGA, when the screen is given a <see cref="ClientArt"/>; Confirm or a click steps to the next, left/right step both
 /// ways), the start word (the word after START on the DOS command line, typed or picked on a <see cref="CharGrid"/>,
 /// when the screen is given a <see cref="WordSetting"/>), the on/off settings it is given (<see cref="SettingToggle"/>,
-/// e.g. AFTER DEFEAT: QUIT / PARTY MENU; Confirm, a click or left/right flip them), reset to defaults, back, quit. Fully
+/// e.g. AFTER DEFEAT: QUIT / PARTY MENU, ANIMATION: SLOWEST … INSTANT; Confirm or a click step to the next value,
+/// left/right step back and on; a toggle's help shows on rows 22–23 while it is selected), reset to defaults, back, quit. Fully
 /// usable with keyboard, mouse or pad alone.
 /// </summary>
 public sealed class ControlsScreen(TextFont font, IScreenHost host, ClientArt? art = null, WordSetting? word = null,
@@ -31,6 +32,8 @@ public sealed class ControlsScreen(TextFont font, IScreenHost host, ClientArt? a
         (GameAction.Search, "SEARCH ON/OFF"),
         (GameAction.Look, "LOOK"),
         (GameAction.Encamp, "ENCAMP"),
+        (GameAction.View, "VIEW"),
+        (GameAction.Cast, "CAST"),
         (GameAction.Controls, "CONTROLS"),
         (GameAction.MenuUp, "MENU UP"),
         (GameAction.MenuDown, "MENU DOWN"),
@@ -232,7 +235,7 @@ public sealed class ControlsScreen(TextFont font, IScreenHost host, ClientArt? a
         if (SelectedToggle is { } toggle && (input.Pressed(GameAction.MenuLeft) || input.Pressed(GameAction.MenuRight)
                                               || input.Pressed(GameAction.Confirm)))
         {
-            toggle.Flip();
+            toggle.Step(!input.Pressed(GameAction.MenuLeft));
             _note = toggle.Row + ".";
             return;
         }
@@ -335,6 +338,13 @@ public sealed class ControlsScreen(TextFont font, IScreenHost host, ClientArt? a
                 InputDevice.Mouse => "CLICK TO CHOOSE  RIGHT CLICK: BACK",
                 _ => $"{PromptLabels.For(b, GameAction.Confirm, InputDevice.Keyboard)} CHOOSE  {PromptLabels.For(b, GameAction.Cancel, InputDevice.Keyboard)} BACK",
             };
+        if (!_waiting && SelectedToggle is { Help.Count: > 0 } explained)
+        {
+            // The row's own help (e.g. ANIMATION: the fastest play) in place of the key help and the note.
+            for (int i = 0; i < Math.Min(2, explained.Help.Count); i++)
+                Chrome.Text(f, font, 2, 22 + i, Fit(explained.Help[i], 37), Chrome.Grey);
+            return;
+        }
         Chrome.Text(f, font, 2, 22, Fit(help, 37), Chrome.Grey);
         if (_note.Length > 0)
             Chrome.Text(f, font, 2, 23, Fit(_note, 37), Chrome.Yellow);

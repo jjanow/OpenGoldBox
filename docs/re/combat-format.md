@@ -300,7 +300,14 @@ fight: the joined NPC's icon, drawn on the map in DOSBox-X, was missing in the C
 "Icons"): 155 of 159 frames equal after that fix, the misses the help line and three frames where the share
 window first shows. There the Client's first three typed states ("L", "LE", "LEV") were caught on screen and
 DOSBox-X showed none of them: its first window frame already held "LEVE", 0.68 s after the last fight frame (the
-Client: 0.43 s). Machine time between the fight's end and the window `[?]` (not read).
+Client: 0.43 s). **Settled s41** (P + D): from the continue-battle answer to the window the program calls no Delay,
+pause or key wait (0x6AA5 → 0x5A47, 0x672A with 0x1CC10 and the frees, 0x6866's division; then 0x695E's window
+03F1:02E8 and the lines). Recaptured with the grab that keeps grabbing while a key is held (same save and seed, all
+Quick, No): the window's first frame 0.07 s after N, its frame drawn over another 0.07 s, then "L", "LE", "LEV",
+"LEVE"… one by one ~43 ms apart. So the missing states and the 0.25 s were the old blocking grab; the ~0.14 s
+DOSBox-X spends ending the fight and drawing the frame at 3000 cycles is machine time (not copied, decisions
+s39 / s40). The Client: 146 of 148 frames equal (every share-window frame; the misses the run's first frame and the
+summary after DOSBox-X's capture ended).
 An earlier set-up stopped with "UNABLE TO FIND ITEM FILE" and quit to DOS. That was the test save's fault, not a
 path to match: its hand-written TREASURE had seven 2-byte operands and a bare `FF`, so the eighth operand's type byte
 was 0xFF (an undefined type, `ecl.py`), followed by LOADMON's opcode byte, and the code after it was misread. v8 was

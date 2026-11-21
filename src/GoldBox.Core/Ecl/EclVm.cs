@@ -417,6 +417,7 @@ public sealed class EclVm
             LoadPending();
             if (ReadMem(Profile.Cells.ViewFlag) == 0 && CurrentScript is >= 25 and <= 27)
                 Memory.ViewMode = (byte)(CurrentScript - 23);
+            Memory.InterfaceState = (byte)(Memory.ViewMode == 1 ? 4 : 3); // DS:49F3 (0x3F3B–0x3F99)
             // The redraw 0x2DCF4 runs (0x3FD2–0x3FF5) when the view mode stayed 1, or when the old mode was outdoors or
             // the new one is 1 and vector 4 loaded files (DS:4431); it re-reads the event byte only in the 3D view
             // (DS:49FA = 1 or $49E6 ≠ 0, 0x2DCFA–0x2DD27).

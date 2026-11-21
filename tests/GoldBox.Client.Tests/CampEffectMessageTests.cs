@@ -184,4 +184,29 @@ public class CampEffectMessageTests
         Assert.NotEqual("", d.Rows[2].Trim());
         Assert.Equal(2, c.Party.Members.Count);
     }
+
+    [Fact]
+    public void The_target_picks_escape_clears_the_pick_and_the_menu_goes_on()
+    {
+        // START 0x37E8 (P s41, D s41): Escape answers 0, which clears the pick (00BA:2DD6) but is not in the exit set
+        // 00BA:2C1F, so the menu comes again with nobody lit; End from no pick lights nobody, Home the last member.
+        var w = new TextWindow();
+        var a = Member();
+        var s = new Script(w,
+            CampScreens.Escaped,          // Escape (the request's cancel answer)
+            ChoiceRequest.NextMember,     // End: still nobody
+            ChoiceRequest.PreviousMember, // Home: the last member
+            0);                           // Select
+        var c = Camp(s, w, a, speed: 2);
+        var b = Member();
+        b.Name = "Ben";
+        c.Party.Members.Add(b);
+        Assert.Same(b, CampScreens.PickTarget(c, a));
+        Assert.Equal(0, s.Left);
+
+        var s2 = new Script(w, CampScreens.Escaped, 0); // Escape, then Select with nobody picked: no target
+        var c2 = Camp(s2, w, a, speed: 2);
+        Assert.Null(CampScreens.PickTarget(c2, a));
+        Assert.Equal(0, s2.Left);
+    }
 }

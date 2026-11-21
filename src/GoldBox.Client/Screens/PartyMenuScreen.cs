@@ -104,11 +104,13 @@ public sealed class PartyMenuScreen(PartyMenuFlow flow, ScriptRunner runner, ISc
             // The icon editor asks only icon pages: after it (the camp's Alter Icon) the next question is the caller's.
             // View's page (the camp's, shop's, temple's, loot menu's) has only our notices over it: after it the next
             // question is the venue's.
-            // Over View's pages only our notices (a key with a bottom-line text) and the drop amount stay; Sell's and Id's
-            // questions go to the venue's text window `[?]`.
+            // Over View's pages only our notices (a key with a bottom-line text) and the drop amount stay, and while Sell
+            // or Id talks over the Items page (flow.TextOverPage) their yes/no, pauses and row-24 messages.
             bool viewPages = _background is SheetRequest { IsView: true } or CharacterPageRequest;
             if (IsPage(r)
                 || (viewPages && r is KeyRequest { Prompt.Length: > 0 } or TextRequest)
+                || (_background is CharacterPageRequest && flow.TextOverPage is not null
+                    && r is ChoiceRequest { Vertical: false } or DelayRequest or KeyRequest)
                 || (!viewPages && r is TextRequest or ChoiceRequest or KeyRequest && _background is not null and not IconRequest))
                 return false;
             _switched = true;
@@ -165,6 +167,8 @@ public sealed class PartyMenuScreen(PartyMenuFlow flow, ScriptRunner runner, ISc
             CharacterPageRequest => flow.Highlight.Start(0),
             IconRequest ic => flow.Highlight.Start(ic.Actions.Count),
             ModifyRequest md => flow.Highlight.Start(md.Actions.Count),
+            // The yes/no routine 0x2D9A0 first sets the cell to No (0x2D9B9), as ExploreScreen does.
+            ChoiceRequest { Selected: > 0 } c => flow.Highlight.Index = c.Selected,
             ChoiceRequest c => flow.Highlight.Start(c.Items.Count),
             _ => 0,
         };
@@ -474,6 +478,11 @@ public sealed class PartyMenuScreen(PartyMenuFlow flow, ScriptRunner runner, ISc
     private static int WordsStart(string? prompt, bool vertical = false) =>
         prompt is { Length: > 0 } p ? p.Length : vertical ? 1 : 0;
 
+    /// <summary>A bottom-line menu's words: <see cref="Dialog"/> trims its prompts, so one space after a trimmed one
+    /// (DOSBox-X s41: Id's deal question over the Items page).</summary>
+    private static int ChoiceStart(string? prompt) =>
+        prompt is { Length: > 0 } p && !p.EndsWith(' ') ? p.Length + 1 : WordsStart(prompt);
+
     public void Hover(int x, int y)
     {
         Sync();
@@ -501,7 +510,7 @@ public sealed class PartyMenuScreen(PartyMenuFlow flow, ScriptRunner runner, ISc
             case ModifyRequest md when row == MenuRow && WordAt(md.Actions, col, WordsStart(md.Prompt)) is { } w:
                 _word = w;
                 break;
-            case ChoiceRequest c when row == MenuRow && WordAt(c.Items, col, WordsStart(c.MenuPrompt)) is { } w:
+            case ChoiceRequest c when row == MenuRow && WordAt(c.Items, col, ChoiceStart(c.MenuPrompt)) is { } w:
                 _word = w;
                 break;
             case TextRequest when CellAt(col, row) is { } k:
@@ -606,7 +615,7 @@ public sealed class PartyMenuScreen(PartyMenuFlow flow, ScriptRunner runner, ISc
             case ChoiceRequest c:
                 if (click.Right)
                     return c.CancelIndex is not null ? GameAction.Cancel : null;
-                if (row == MenuRow && WordAt(c.Items, col, WordsStart(c.MenuPrompt)) is { } cw)
+                if (row == MenuRow && WordAt(c.Items, col, ChoiceStart(c.MenuPrompt)) is { } cw)
                 {
                     flow.Highlight.Chosen(cw);
                     Give(cw);
@@ -700,9 +709,9 @@ public sealed class PartyMenuScreen(PartyMenuFlow flow, ScriptRunner runner, ISc
                 Line(f, md.Prompt, PromptColour, md.Actions, _word);
                 break;
             case ChoiceRequest c:
-                Line(f, c.MenuPrompt, PromptColour, c.Items, _word);
+                Line(f, c.MenuPrompt, PromptColour, c.Items, _word, ChoiceStart(c.MenuPrompt));
                 break;
-            case TextRequest t when back is CharacterPageRequest { PickRows: true } && input.LastDevice == InputDevice.Keyboard:
+            case TextRequest t when back is CharacterPageRequest { PickRows: true } && input.LastDevice == InputDevice.Keyboard && !AmigaView.On:
                 // Drop's amount (input 0x24F1D; DOSBox-X s39): the question in green, a space, the digits typed in white,
                 // no cursor.
                 Chrome.Clear(f, 0, MenuRow, 40);
@@ -717,6 +726,28 @@ public sealed class PartyMenuScreen(PartyMenuFlow flow, ScriptRunner runner, ISc
                 // Our notices over a page (View's commands not built yet): the bottom line, then a key.
                 Line(f, kp, k.Colour ?? PromptColour, [], -1);
                 break;
+        }
+        if (back is CharacterPageRequest && flow.TextOverPage is { } box && pending is not CharacterPageRequest)
+        {
+            // Sell's and Id's text (0x22D28, 0x22F8C, 0x21DAA: START 0x77F8 in the box (1, 21)–(38, 22), colour 14)
+            // straight over the page, no frame; their row-24 messages (START 0x2233) during the pause.
+            for (int row = 21; row <= 22; row++)
+                for (int col = 1; col <= 38; col++)
+                {
+                    var (ch, colour) = box.Cell(row, col);
+                    Chrome.Clear(f, col, row, 1);
+                    if (ch is not '\0' and not ' ')
+                        Chrome.Text(f, font, col, row, ch.ToString(), colour);
+                }
+            if (pending is DelayRequest { BottomLine: { } bl })
+            {
+                Chrome.Clear(f, 0, MenuRow, 40);
+                Chrome.Text(f, font, 0, MenuRow, Fit(bl.Text, 40), bl.Colour);
+            }
+            else if (pending is DelayRequest && back is CharacterPageRequest itemsPage)
+                // Row 24 keeps the page's menu with the chosen entry lit while the text types and pauses (DOSBox-X
+                // s41: the page menu with Id lit under Id's offer).
+                Line(f, itemsPage.Prompt, PromptColour, itemsPage.Entries, flow.Highlight.Index);
         }
         if (back is IconRequest)
             CombatScreen.SwapGrey(f); // the icon editor's palette, row 24 included (D s39)
@@ -785,21 +816,28 @@ public sealed class PartyMenuScreen(PartyMenuFlow flow, ScriptRunner runner, ISc
             weapon = eq[FightRules.SlotWeapon];
             armour = eq[FightRules.SlotBodyArmour];
         }
-        foreach (var (col, row, text, colour) in CombatSheet.Build(resources, c, weapon, armour,
-                     it => ItemNames.Compose(it, resources.ItemWord).Trim().ToUpperInvariant()))
-            if (c.Name.Length > 0 || row != 1)
+        // Under the Amiga art the Amiga's page (AmigaView): the name on row 2, the hit points in their Amiga colours.
+        var amiga = new List<(int Col, int Row, string Text, int AmigaColour)>();
+        int nameRow = AmigaView.On ? AmigaView.NameRow : 1;
+        foreach (var (col, row, text, colour) in AmigaView.Sheet(CombatSheet.Build(resources, c, weapon, armour,
+                     it => AmigaView.Case(ItemNames.Compose(it, resources.ItemWord).Trim())), c, amiga))
+            if (c.Name.Length > 0 || row != nameRow)
                 Chrome.Text(f, font, col, row, Fit(text, 40 - col),
                     field is { } h && (h < 6 ? row == 7 + h && col is >= 5 and <= 7 : row == 18 && col == 4)
                         ? PromptColour : colour);
-        // The portrait window only with portraits on and the disk byte 3 (0x21530; DOSBox-X s25).
+        foreach (var (col, row, text, colour) in amiga)
+            if (field is 6 || !font.DrawAmiga(f, col * 8, row * 8, text, colour))
+                Chrome.Text(f, font, col, row, text, field is 6 ? PromptColour : colour == 8 ? Chrome.Yellow : Chrome.Green);
+        // The portrait window only with portraits on and the disk byte 3 (0x21530; DOSBox-X s25); the Amiga has no disk
+        // test (AmigaView).
         if (!flow.PortraitShown)
             return;
-        Chrome.Box(f, 27, 0, 39, 12);
+        Chrome.Box(f, AmigaView.PortraitCol0, AmigaView.PortraitRow0, AmigaView.PortraitCol1, AmigaView.PortraitRow1);
         int head = c[CharacterCreation.PortraitHead], body = c[CharacterCreation.PortraitBody];
         if (head > 0 && body > 0)
         {
             int headId = Program is { } p ? p.Ds.ElementAtOrDefault(HeadTable + head) : head;
-            int bodyId = Program is { } q ? q.Ds.ElementAtOrDefault(BodyTable + body) : body;
+            int bodyId = AmigaView.BodyId(body, Program is { } q ? q.Ds.ElementAtOrDefault(BodyTable + body) : body);
             art.Pictures.Draw(f, 28 * 8, 8, new ViewPicture(ViewPictureKind.Portrait, bodyId, headId, 0, PortraitDisk));
         }
     }
@@ -871,8 +909,13 @@ public sealed class PartyMenuScreen(PartyMenuFlow flow, ScriptRunner runner, ISc
     {
         string prompt = t.Prompt.ToUpperInvariant();
         Chrome.Clear(f, 0, MenuRow, 40);
-        Chrome.Text(f, font, 0, MenuRow, Fit(prompt, 40), PromptColour);
-        Chrome.Text(f, font, prompt.Length, MenuRow, Fit(_typed + "_", Math.Max(0, 40 - prompt.Length)), Chrome.White);
+        if (AmigaView.On && Chrome.AmigaGadget is { } g)
+            g.Requester(f, font, prompt, _typed, t.MaxLength + 1);   // the Amiga's input requester (hunk 25 +0xEC6)
+        else
+        {
+            Chrome.Text(f, font, 0, MenuRow, Fit(prompt, 40), PromptColour);
+            Chrome.Text(f, font, prompt.Length, MenuRow, Fit(_typed + "_", Math.Max(0, 40 - prompt.Length)), Chrome.White);
+        }
         if (input.LastDevice == InputDevice.Keyboard)
             return;
         // The pick grid for the pad and the mouse, over the page's middle rows.

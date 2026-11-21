@@ -107,6 +107,7 @@ public sealed class ExploreScreen : IScreen
         {
             Report = Report,
             Highlight = _highlight,
+            Pictures = _art.Pictures,
         };
         // The AI's key check (0xBB81) takes a key waiting from the AI turn's pauses (the logic thread runs only while
         // this screen's Update waits for it).
@@ -192,12 +193,30 @@ public sealed class ExploreScreen : IScreen
             _player.ForgetPagePrompt(); // the command line is drawn again over the bottom row
             _player.CommandRedrawn(); // [?] PROTECT's glyphs on the frame go with the redraw (ClientPlayer.ScreenGlyphs)
             _staleLine = null;
-            _lineAtCommand = StatusLine(_game, _player.Camping);
+            _lineAtCommand = StatusLine(_game, _player.CampingLine);
             _scriptAtCommand = _game.Vm.CurrentScript;
         }
         if (command == AreaCommand.Forward)
             _player.Text.Clear(); // [?] when the original clears the text window is not read; we clear on a step
         _runner.Start(() => _game.Loop.Execute(command));
+        if (_runner.Fault is { } e)
+            Report(e);
+        AfterCommand();
+    }
+
+    /// <summary>
+    /// C and V (0x17054 → 0x17CD2 / 0x21AED, both lines): the routine reads the next key after them, so no vector runs and
+    /// no time passes (<see cref="AreaLoop.MenuCommand"/>); the shared highlight moves to the word (the View page opens
+    /// on that cell). A CLEARBOX blank is not touched here: View's exit and Cast's redraw draw START 0x3379
+    /// (<see cref="ClientPlayer.InterfaceDrawn"/>), a Cast with nothing memorised draws nothing (P s41).
+    /// </summary>
+    private void RunMenu(AreaCommand command)
+    {
+        if (_runner.Busy || _game.Loop.Defeated || _player.Halted is not null)
+            return;
+        _player.Notice = null;
+        Took(command == AreaCommand.View ? 'V' : 'C');
+        _runner.Start(() => _game.Loop.MenuCommand(command));
         if (_runner.Fault is { } e)
             Report(e);
         AfterCommand();
@@ -255,6 +274,8 @@ public sealed class ExploreScreen : IScreen
         'E' => GameAction.Encamp,
         'S' => GameAction.Search,
         'L' => GameAction.Look,
+        'V' => GameAction.View,
+        'C' => GameAction.Cast,
         _ => NotYet(word),
     };
 
@@ -501,7 +522,10 @@ public sealed class ExploreScreen : IScreen
         var shown = ShownPicture;
         _anim.Show(shown);
         if (_runner.Pending is ChoiceRequest { Animates: true } && shown is not null)
-            _anim.Tick(_clock.Elapsed, _art.Pictures.Delays(shown));
+        {
+            _anim.Tick(_clock.Elapsed, _art.Pictures.Delays(shown), _runner.AnimationSpeed);
+            _player.PictureUndrawn = false; // the menu draws the frames (a camp picture loaded by START 0x3379 case 2 too)
+        }
         if (_left)
             return;
         if (PartyPages is { } pages && PartyMenuScreen.IsPage(_runner.Pending))
@@ -536,6 +560,8 @@ public sealed class ExploreScreen : IScreen
             if (input.Pressed(GameAction.Search)) Run(AreaCommand.Search);
             else if (input.Pressed(GameAction.Look)) Run(AreaCommand.Look);
             else if (input.Pressed(GameAction.Encamp)) Run(AreaCommand.Encamp);
+            else if (input.Pressed(GameAction.View)) RunMenu(AreaCommand.View);
+            else if (input.Pressed(GameAction.Cast)) RunMenu(AreaCommand.Cast);
             else if (OverlandUi.Travel(input) is { } travel) Run(travel);
             else PickMember(input);
             return;
@@ -544,6 +570,8 @@ public sealed class ExploreScreen : IScreen
         else if (input.Pressed(GameAction.Search)) Run(AreaCommand.Search);
         else if (input.Pressed(GameAction.Look)) Run(AreaCommand.Look);
         else if (input.Pressed(GameAction.Encamp)) Run(AreaCommand.Encamp);
+        else if (input.Pressed(GameAction.View)) RunMenu(AreaCommand.View);
+        else if (input.Pressed(GameAction.Cast)) RunMenu(AreaCommand.Cast);
         else if (input.Pressed(GameAction.TurnLeft)) Run(AreaCommand.TurnLeft);
         else if (input.Pressed(GameAction.TurnRight)) Run(AreaCommand.TurnRight);
         else if (input.Pressed(GameAction.TurnAround)) Run(AreaCommand.TurnAround);
@@ -853,7 +881,7 @@ public sealed class ExploreScreen : IScreen
             foreach (var line in window)
                 Chrome.Text(f, font, line.Column, line.Row, Fit(line.Text, 39 - line.Column), line.Colour);
             if (pending is KeyRequest wk)
-                Chrome.Text(f, font, 0, MenuRow, Fit(KeyPrompt(wk, input), 40), KeyColour(wk));
+                Chrome.Text(f, font, AmigaView.KeyColumn(wk), MenuRow, Fit(KeyPrompt(wk, input), 40 - AmigaView.KeyColumn(wk)), KeyColour(wk));
             else if (pending is DelayRequest { BottomLine: not null } windowDelay)
                 DrawBottomLine(f, font, windowDelay);
             else if (_player.KeepsCombatRow24 && _combatRow24 is { } row24 && row24.Length == f.Width * 8)
@@ -955,7 +983,7 @@ public sealed class ExploreScreen : IScreen
         else if (pending is TextRequest tr)
             Chrome.Text(f, font, 0, MenuRow, Fit(tr.Prompt + (tr.Prompt.Length > 0 ? " " : "") + _typed + "_", 40), Chrome.White);
         else if (pending is KeyRequest k)
-            Chrome.Text(f, font, 0, MenuRow, Fit(KeyPrompt(k, input), 40), KeyColour(k));
+            Chrome.Text(f, font, AmigaView.KeyColumn(k), MenuRow, Fit(KeyPrompt(k, input), 40 - AmigaView.KeyColumn(k)), KeyColour(k));
         else if (pending is DelayRequest { BottomLine: not null } bottomDelay)
             DrawBottomLine(f, font, bottomDelay);
 
@@ -1008,7 +1036,7 @@ public sealed class ExploreScreen : IScreen
         else if (pending is KeyRequest k)
         {
             Chrome.Clear(f, 0, MenuRow, 40);
-            Chrome.Text(f, font, 0, MenuRow, Fit(KeyPrompt(k, input), 40), KeyColour(k));
+            Chrome.Text(f, font, AmigaView.KeyColumn(k), MenuRow, Fit(KeyPrompt(k, input), 40 - AmigaView.KeyColumn(k)), KeyColour(k));
         }
         else if (pending is DelayRequest { BottomLine: not null } delay)
         {
@@ -1025,7 +1053,7 @@ public sealed class ExploreScreen : IScreen
         _bottomLineDrawn = delay;
     }
 
-    private static byte KeyColour(KeyRequest k) => k.Colour ?? (k.AsMenu ? Chrome.White : MenuPromptColour);
+    private static byte KeyColour(KeyRequest k) => AmigaView.KeyColour(k) ?? k.Colour ?? (k.AsMenu ? Chrome.White : MenuPromptColour);
 
     /// <summary>The menu routine's prompt colour and the page prompt's (0x2CC8C / START 0x7C85: 13).</summary>
     private const byte MenuPromptColour = 13;
@@ -1051,7 +1079,7 @@ public sealed class ExploreScreen : IScreen
     {
         InputDevice.Gamepad => $"PRESS {PromptLabels.For(input.Bindings, GameAction.Confirm, InputDevice.Gamepad)} TO CONTINUE",
         InputDevice.Mouse => "CLICK TO CONTINUE",
-        _ => (k.Prompt ?? _player.Resources.PagePrompt ?? "PRESS A KEY").ToUpperInvariant(),
+        _ => AmigaView.KeyText(k) ?? (k.Prompt ?? _player.Resources.PagePrompt ?? "PRESS A KEY").ToUpperInvariant(),
     };
 
     /// <summary>How to switch the party member on the device used last (the original: Home / End).</summary>
@@ -1104,7 +1132,7 @@ public sealed class ExploreScreen : IScreen
         }
         if (_staleLine is null && _lineAtCommand is not null && _game.Vm.CurrentScript != _scriptAtCommand)
             _staleLine = _lineAtCommand;
-        var line = _staleLine ?? StatusLine(_game, _player.Camping);
+        var line = _staleLine ?? StatusLine(_game, _player.CampingLine);
         if (!_player.PositionLineHeld)
         {
             _heldLine = null;
@@ -1158,6 +1186,8 @@ public sealed class ExploreScreen : IScreen
                 OverlandUi.Blank(f); // a picture in the 3D view's box over a blank window (below)
                 Chrome.Box(f, 2, 2, 14, 14);
             }
+            else if (_player.ViewBlanked)
+                OverlandUi.Blank(f); // CLEARBOX: cells 1–15 blank, no box (DOSBox-X s41)
             else if (!OverlandUi.Draw(f, _game, _art.Overland))
                 Chrome.Text(f, font, 3, 7, "NO OVERLAND", Chrome.Cyan);
         }
@@ -1193,6 +1223,14 @@ public sealed class ExploreScreen : IScreen
             foreach (var (c, r, g) in _player.ViewGlyphs)
                 if (_art.Runes?.Draw(f, c, r, g) != true)
                     Chrome.Text(f, font, c, r, g.ToString(), Chrome.White);
+        }
+        else if (_player.PictureUndrawn && !_player.Camping)
+        {
+            // START 0x3379 case 2 loaded the camp's frames without drawing them: the window stays blank until a menu
+            // animates them (ClientPlayer.PictureUndrawn; DOSBox-X s41).
+            for (int y = 0; y < 88; y++)
+                for (int x = 0; x < 88; x++)
+                    f[ViewX + x, ViewY + y] = 0;
         }
         else if (ShownPicture is { } picture && _art.Pictures.Draw(f, ViewX, ViewY, picture, _anim.Frame))
         {
@@ -1368,7 +1406,8 @@ public sealed class ExploreScreen : IScreen
             ? "COMMANDS: CLICK THE BOTTOM LINE"
             : $"SEARCH {L(GameAction.Search)} LOOK {L(GameAction.Look)} CAMP {L(GameAction.Encamp)}";
         Chrome.Text(f, font, 1, HelpRow, Fit(cmds, 38), Chrome.Grey);
-        Chrome.Text(f, font, 1, HelpRow + 1, Fit("CONTROLS: " + controls, 38), Chrome.Grey);
+        string viewCast = d == InputDevice.Mouse ? "" : $"  VIEW {L(GameAction.View)} CAST {L(GameAction.Cast)}";
+        Chrome.Text(f, font, 1, HelpRow + 1, Fit("CONTROLS: " + controls + viewCast, 38), Chrome.Grey);
     }
 
     private static string Fit(string s, int n) => s.Length > n ? s[..n] : s;

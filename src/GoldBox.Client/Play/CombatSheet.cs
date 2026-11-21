@@ -47,7 +47,7 @@ public static class CombatSheet
         ["OKAY", "ANIMATED", "TEMP GONE", "RUNNING", "UNCONSCIOUS", "DYING", "DEAD", "STONED", "GONE"];
     private static readonly string[] Coins = ["CP", "SP", "EP", "GP", "PP", "GEMS", "JEWELS"];
 
-    private static string Or(string? s, string fallback) => (s ?? fallback).ToUpperInvariant();
+    private static string Or(string? s, string fallback) => AmigaView.Case(s ?? fallback);
 
     /// <summary>The coin kinds the money lines show, top to bottom (0x21547: kind 6 down to 0, amount above 0).</summary>
     public static List<int> MoneyKinds(EclCharacter c)
@@ -78,15 +78,16 @@ public static class CombatSheet
     public static List<(int Col, int Row, string Text, byte Colour)> Build(ClientResources r, EclCharacter c,
         byte[]? weapon, byte[]? armour, Func<byte[], string> itemName)
     {
-        var t = r.Texts;
+        var texts = r.Texts;
+        string T(Msg m) => AmigaView.On ? texts.Raw(m) : texts[m];
         var l = new List<(int, int, string, byte)>();
-        void Put(int col, int row, string s, byte colour) => l.Add((col, row, s.ToUpperInvariant(), colour));
+        void Put(int col, int row, string s, byte colour) => l.Add((col, row, AmigaView.Case(s), colour));
 
         // Name and NPC tag.
-        string name = c.Name.ToUpperInvariant();
+        string name = AmigaView.Case(c.Name);
         Put(1, 1, name, NameColour(c));
         if (c[0x84] > 0x7F)
-            Put(name.Length + 3, 1, t[Msg.NpcTag], Green);
+            Put(name.Length + 3, 1, T(Msg.NpcTag), Green);
 
         // Row 3: gender, race, age; rows 4, 5: alignment, class.
         int col = 1;
@@ -99,7 +100,7 @@ public static class CombatSheet
             Put(col, 3, s, White);
             col += s.Length + 1;
         }
-        Put(col, 3, GameText.Cat(t[Msg.Age], N(c.Word(0x30))), White);
+        Put(col, 3, GameText.Cat(T(Msg.Age), N(c.Word(0x30))), White);
         Put(1, 4, Or(r.Alignment(c[0xA0]), "ALIGNMENT " + N(c[0xA0])), White);
         Put(1, 5, Or(r.ClassName(c[0x2F]), "CLASS " + N(c[0x2F])), White);
 
@@ -107,7 +108,7 @@ public static class CombatSheet
         Msg[] labels = [Msg.Str, Msg.Int, Msg.Wis, Msg.Dex, Msg.Con, Msg.Cha];
         for (int i = 0; i < 6; i++)
         {
-            Put(1, 7 + i, t[labels[i]], Green);
+            Put(1, 7 + i, T(labels[i]), Green);
             byte v = c[0x10 + i];
             Put(v < 10 ? 6 : 5, 7 + i, N(v), Green);
             if (i == 0 && v == 18 && c[0x16] > 0)
@@ -129,22 +130,22 @@ public static class CombatSheet
         }
 
         // Level and experience (row 15).
-        Put(1, 15, t[Msg.Level], White);
+        Put(1, 15, T(Msg.Level), White);
         var levels = new List<string>();
         for (int k = 0; k < 8; k++)
             if ((sbyte)c[0x96 + k] > 0)
                 levels.Add(N(c[0x96 + k]));
         Put(7, 15, string.Join("/", levels), White);
         uint xp = (uint)(c[0xAC] | c[0xAD] << 8 | c[0xAE] << 16 | c[0xAF] << 24);
-        Put(17, 15, GameText.Cat(t[Msg.Exp], N(xp)), White);
+        Put(17, 15, GameText.Cat(T(Msg.Exp), N(xp)), White);
 
         // The fighting block (0x21642).
-        Put(1, 17, t[Msg.AcLabel], White);
+        Put(1, 17, T(Msg.AcLabel), White);
         byte ac = c[0x111];
         Put(4, 17, (ac > 60 ? "-" : "") + N(Math.Abs(ac - 60)), Green);
-        Put(1, 18, t[Msg.HpLabel], White);
+        Put(1, 18, T(Msg.HpLabel), White);
         Put(4, 18, N(c[0x11B]), c[0x11B] < c[0x32] ? Yellow : Green);
-        Put(9, 17, t[Msg.Thac0Label], White);
+        Put(9, 17, T(Msg.Thac0Label), White);
         Put(15, 17, N((byte)(60 - c[0x110])), Green);
         string dmg = N(c[0x115]) + "d" + N(c[0x117]);
         sbyte bonus = (sbyte)c[0x119];
@@ -152,33 +153,33 @@ public static class CombatSheet
             dmg += "+" + N(bonus);
         else if (bonus < 0)
             dmg += "-" + N((byte)Math.Abs(bonus));
-        Put(8, 18, t[Msg.DamageLabel], White);
+        Put(8, 18, T(Msg.DamageLabel), White);
         Put(15, 18, dmg, Green);
-        Put(22, 17, t[Msg.Encumbrance], White);
+        Put(22, 17, T(Msg.Encumbrance), White);
         Put(34, 17, N(c.Word(0x102)), Green);
         byte move = c[0x11C];
         if (c.HasEffect(0x2A))
             move = (byte)(move << 1);
         if (c.HasEffect(0x27))
             move = (byte)(move >> 1);
-        Put(25, 18, t[Msg.Movement], White);
+        Put(25, 18, T(Msg.Movement), White);
         Put(34, 18, N(move), Green);
 
         // Weapon, armour, status.
         row = 20;
         if (weapon is not null)
         {
-            Put(1, row, t[Msg.WeaponLabel], White);
+            Put(1, row, T(Msg.WeaponLabel), White);
             Put(8, row, itemName(weapon), Green);
         }
         row++;
         if (armour is not null)
         {
-            Put(2, row, t[Msg.ArmorLabel], White);
+            Put(2, row, T(Msg.ArmorLabel), White);
             Put(8, row, itemName(armour), Green);
         }
         row++;
-        Put(1, row, t[Msg.Status], White);
+        Put(1, row, T(Msg.Status), White);
         byte st = c[0x10C];
         Put(8, row, Or(r.StatusName(st), st < Statuses.Length ? Statuses[st] : N(st)), Green);
         return l;

@@ -15,6 +15,8 @@ public enum Venue
     Loot,
     /// <summary>The party menu and the training hall (0x19AE0 sets DS:49F3 = 0): the items menu has no Use.</summary>
     PartyMenu,
+    /// <summary>The command line's View (DS:49F3 = 4 in the 3D view, 3 on the overland): Use, no Sell / Id.</summary>
+    Explore,
 }
 
 /// <summary>
@@ -100,6 +102,12 @@ public sealed class TradeContext
     /// <summary>View's Items page as the program draws it (<see cref="PartyMenuFlow.ItemsPage"/>, 0x21F32): the entry and
     /// the row; null: our list page.</summary>
     public Func<EclCharacter, IReadOnlyList<ItemsEntry>, int, Func<byte[], string>, ListAnswer>? ItemsPage { get; init; }
+
+    /// <summary>
+    /// On while an Items command talks over <see cref="ItemsPage"/> (Sell 0x22D28, Id 0x22F8C and their check 0x21DAA:
+    /// the text box (1, 21)–(38, 22) of <see cref="Dialog"/>'s window, the yes/no and row-24 messages over the page).
+    /// </summary>
+    public Action<bool> TalkOverItemsPage { get; init; } = _ => { };
 
     /// <summary>View's Drop (0x234E1): the coin list and the amount (<see cref="PartyMenuFlow.Coins"/>); null: not built.</summary>
     public Func<EclCharacter, IReadOnlyList<int>, (int Kind, ushort Amount)?>? Coins { get; init; }

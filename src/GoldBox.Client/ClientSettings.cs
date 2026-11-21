@@ -44,6 +44,23 @@ public sealed class ClientSettings
     /// </summary>
     public string Sound { get; set; } = "speaker";
 
+    /// <summary>
+    /// QoL, off = original (<c>"original"</c>): the animation speed (<see cref="Play.AnimationSpeed"/>), key
+    /// <c>"AnimationSpeed"</c>: <c>"slowest"</c> (×3), <c>"slower"</c> (×2), <c>"original"</c>, <c>"faster"</c> (×0.5),
+    /// <c>"fastest"</c> (×0.25) or <c>"instant"</c>. It scales the fixed delays the game speed does not (flights, hit
+    /// pictures, the attack pose, steps, picture loops); the game speed itself is the party's, kept in the save. Changed
+    /// with <c>--anim-speed</c> or the controls screen's ANIMATION row; an unknown word reads as Original.
+    /// </summary>
+    public string AnimationSpeed { get; set; } = "original";
+
+    /// <summary>The animation speed as a choice (Original for an unknown word).</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public Play.AnimationSpeed AnimationSpeedChoice
+    {
+        get => Play.AnimationTiming.Parse(AnimationSpeed) ?? Play.AnimationSpeed.Original;
+        set => AnimationSpeed = Play.AnimationTiming.Word(value);
+    }
+
     /// <summary>QoL, off = original: show the 320×200 screen stretched to 4:3 (pixels 1.2 times taller, as on a CRT).</summary>
     public bool Stretch43 { get; set; }
 

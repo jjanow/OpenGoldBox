@@ -36,6 +36,7 @@ public static class Program
                 "save-area" => ViewCommands.SaveArea(args[1..]),
                 "save-overland" => OverlandCommands.Save(args[1..]),
                 "overland-compare" => OverlandCommands.Compare(args[1..]),
+                "amiga-sound" => SoundCommands.AmigaRender(args[1..]),
                 _ => Usage(),
             };
         }
@@ -58,6 +59,7 @@ public static class Program
               goldbox-tools save-area    GAMEDIR SAVGAMx.DAT OUT.DAT SCRIPT X,Y,F [--flag0 N] [--walls A,B,C]
               goldbox-tools save-overland GAMEDIR SAVGAMx.DAT OUT.DAT SCRIPT X,Y,F [CELL=VALUE …]
               goldbox-tools overland-compare GAMEDIR SAVGAMx.DAT REF.bin [--keys NESWK] [--counter N] [--dump]
+              goldbox-tools amiga-sound PROGRAM OUT.wav [--song N] [--effect CUE@SECONDS …] [--seconds S] [--rate HZ] [--no-filter] [--mute MASK]
             """);
         return 2;
     }

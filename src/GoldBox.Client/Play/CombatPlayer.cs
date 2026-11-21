@@ -432,11 +432,18 @@ public sealed partial class CombatChooser(Func<PlayerRequest, object?> ask, Comb
     /// <summary>
     /// The cast's facing (0x27E00) draws frame 1 and clears the cursor. A travelling spell then rebuilds the view
     /// with frame 0 before its first delay (START 0x27BB), and 0x27EA4 restores frame 0 when the caster is visible.
-    /// MakeAttack (0x14113) pauses on frame 1 before it rolls.
+    /// MakeAttack (0x14113) pauses on frame 1 before it rolls. 0x31232 first scrolls the view to the caster
+    /// (ScrollView(its square, 3)) when it is not wholly in view, as for the attack pose: DOSBox-X s41, Darkstar's Sleep
+    /// aimed by hand four squares off the view's edge — the view comes back onto Darkstar in the action pose before the
+    /// flight (the pose itself stays up only for the machine's drawing time, no wait in the program).
     /// </summary>
     private void Posed(EclCharacter c)
     {
-        if (Square(c) is { } sq && View.Cursor == sq)
+        if (Square(c) is not { } sq)
+            return;
+        if (!WhollyInView(c))
+            View.Scroll(sq.X, sq.Y, 3);
+        if (View.Cursor == sq)
             View.Cursor = null;
     }
 
@@ -598,7 +605,7 @@ public sealed partial class CombatChooser(Func<PlayerRequest, object?> ask, Comb
     private void AttackPosed(EclCharacter attacker)
     {
         FacingDrawn(attacker, 1);
-        Pause(AttackPoseMs);
+        Pause(AttackPoseMs, animation: true);
     }
 
     /// <summary>
@@ -1018,14 +1025,19 @@ public sealed partial class CombatChooser(Func<PlayerRequest, object?> ask, Comb
     /// from row 10 without pause; the picture of icon cell 23 (damage: COMSPR 10) or 22 (effect: COMSPR 9) is drawn on
     /// its square in the four frames 0x257E builds (stored, mirrored, the + 128 picture mirrored, the + 128 picture),
     /// Delay(70) each (START 0x2CCB), once for damage and DS:49E2 + 1 times for an effect; damage then gets the pause.
+    /// Sound (START 0x2BB1–0x2C18, 0x2D07; docs/re/sound.md §2.4): a resident bracket from before the scroll to the end
+    /// of the frames, the cue 261A (damage, tune 2) or 261C (effect, tune 3) just before the text (DOSBox-X s41).
     /// </summary>
     private void ShowHit(EclCharacter c, string text, bool effect = false)
     {
         View.Page = null;
         View.Mode = CombatMode.Watch;
+        var sound = View.Fight?.State.Sound;
+        sound?.BeginResident(); // START 0x2BB1: set auto-stop(0)
         var sq = Square(c);
         if (sq is { } s0 && !WhollyInView(c)) // START 0x2BD7: 0x30E54(creature, 1)
             View.Scroll(s0.X, s0.Y, 3);
+        sound?.Cue(effect ? GoldBox.Core.Sound.SoundCue.Effect : GoldBox.Core.Sound.SoundCue.Damage); // 0x2C09 / 0x2C14
         PrintCreatureMessage(c, text, CombatView.MessageTop, false);
         int reps = effect ? View.Speed : 0;
         int sprite = effect ? EffectSprite : DamageSprite;
@@ -1034,9 +1046,10 @@ public sealed partial class CombatChooser(Func<PlayerRequest, object?> ask, Comb
             {
                 if (sq is { } s)
                     View.Flash = (s.X, s.Y, j >= 2 ? sprite + 128 : sprite, j is 1 or 2);
-                Pause(HitFrameMs);
+                Pause(HitFrameMs, animation: true);
             }
         View.Flash = null;
+        sound?.EndResident(); // START 0x2D07: set auto-stop(10)
         if (!effect)
             Pause(MessageMs);
     }
@@ -1054,17 +1067,19 @@ public sealed partial class CombatChooser(Func<PlayerRequest, object?> ask, Comb
 
     private object? Ask(PlayerRequest request) => ask(request);
 
-    private void Pause(int ms)
+    /// <summary>A pause; <paramref name="animation"/>: a fixed delay the QoL animation speed scales
+    /// (<see cref="DelayRequest.Animation"/>), not a game-speed one.</summary>
+    private void Pause(int ms, bool animation = false)
     {
         if (Pauses)
-            ask(new DelayRequest(TimeSpan.FromMilliseconds(ms)));
+            ask(new DelayRequest(TimeSpan.FromMilliseconds(ms)) { Animation = animation });
     }
 
     /// <summary>
     /// A display point where the program itself waits nothing (an AI step, a turn change): the screen is shown for one
     /// frame (<see cref="DelayRequest"/> of zero, which the combat screen answers after drawing it once).
     /// </summary>
-    private void Frame() => Pause(0);
+    private void Frame() => Pause(0, animation: true);
 
     private int Choose(CombatMode mode, string? prompt, IReadOnlyList<string> items, int? cancel = null, int selected = 0)
     {
@@ -1202,6 +1217,15 @@ public sealed partial class CombatChooser(Func<PlayerRequest, object?> ask, Comb
 
     public AimKey ChooseAim(FightMenu menu, AimView aim)
     {
+        // 0x27C38 shows the cast message before its target pick, for a spell begun earlier too (combat record +0, cast
+        // from the menu 0x9B21 when its turn comes again): announced at its first aim, the later Announce skipped.
+        // DOSBox-X s41: Brother Sean's Cure Light Wounds: the begins-casting words, the casts-a-spell words, then the aim.
+        if (menu.Record[CombatRecord.SpellCast] is var begun and > 0
+            && !(_announced is { } an && ReferenceEquals(an.Caster, menu.Creature) && an.Spell == begun))
+        {
+            SayCast(menu.Creature, begun);
+            _announced = (menu.Creature, begun);
+        }
         var c = aim.Candidate;
         // A creature a click picked: step through the candidates to it, then show it.
         if (_goal is { } goal)
@@ -1377,8 +1401,8 @@ public sealed partial class CombatChooser(Func<PlayerRequest, object?> ask, Comb
             return null;
         int spell = ids[a.Row];
         // 0x27C38 shows the cast message before its target pick; the Core menu aims first and casts after, so a spell
-        // cast now is announced here (before the aim) and its Announce call is skipped. A begun spell is announced
-        // when it goes off, after its aim [?].
+        // cast now is announced here (before the aim) and its Announce call is skipped. A begun spell is announced at
+        // its first aim (ChooseAim; DOSBox-X s41).
         if (menu.Fight.Spells.UsableInCombat(spell) && menu.Fight.Spells.CastingTime(spell) == 0)
         {
             SayCast(menu.Creature, spell);

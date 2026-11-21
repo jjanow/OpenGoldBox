@@ -152,7 +152,7 @@ public sealed partial class CombatChooser
     {
         View.Flying = (c1, c2, f.Block + (f.Second ? 128 : 0), f.Mirror);
         if (Pauses && ms > 0)
-            ask(new DelayRequest(TimeSpan.FromMilliseconds(ms)) { Chained = true }); // positions follow back to back
+            ask(new DelayRequest(TimeSpan.FromMilliseconds(ms)) { Chained = true, Animation = true }); // positions follow back to back
         View.Flying = null;
     }
 }

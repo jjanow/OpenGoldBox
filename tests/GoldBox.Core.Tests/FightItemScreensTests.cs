@@ -89,6 +89,17 @@ public class FightItemScreensTests
     }
 
     [Fact]
+    public void The_Amiga_view_menu_adds_rename_before_exit_for_non_npcs()
+    {
+        // hunk 10 +0x542C (s41): Rename when record byte 0x84 (Amiga 0x85) is below 0x80.
+        var c = new EclCharacter();
+        IReadOnlyList<ViewEntry> dos = [ViewEntry.Items, ViewEntry.Drop, ViewEntry.Exit];
+        Assert.Equal([ViewEntry.Items, ViewEntry.Drop, ViewEntry.Rename, ViewEntry.Exit], FightItemScreens.WithAmigaRename(dos, c));
+        c[FightItemScreens.Npc] = 0x80;
+        Assert.Equal(dos, FightItemScreens.WithAmigaRename(dos, c));
+    }
+
+    [Fact]
     public void Items_entries_follow_the_fight_record_and_the_no_magic_cell()
     {
         var (f, c) = Setup();

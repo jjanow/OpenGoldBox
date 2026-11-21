@@ -89,9 +89,37 @@ after WAIT the step ran I's vector 1 (J's $991F: EXIT, no vector 1 text). State 
 case 2: the camp picture (PIC 29, animated by the HMENU since 84E0 was still set from PICTURE 2) and "CAMPING" after
 the position line, which stayed after the step (START 0x366D tests DS:49F3 = 2; nothing set DS:49F3 again). Client
 (s39): `PorGame.LoadInHall` (the copy in place, DS:49F8 set) and `HallState.LeaveAfterLoad`; the text and the run
-match (before s39 the Client loaded the save as a new entry and ran its vector 4). `[?]` Not drawn: case 2's camp
-picture and the "CAMPING" suffix for a state-2 save (the Client keeps the script's picture and its usual position line);
-a save from another area runs whatever bytes lie at the old PC in the program. **Decided (user, s39):** the Client
+match (before s39 the Client loaded the save as a new entry and ran its vector 4). A save from another area runs
+whatever bytes lie at the old PC in the program.
+**The camp state after the Load, P + D (s41).** Load reads DS:49F3 back from the save (0x1F87B) and the hall's menu
+ends without its Begin value (0x19DCF sets 4 only on Begin), so PROGRAM 0's START 0x3379 (0x3B95) draws case 2: the
+3D layout (0x32CA with 1: every window blanked, the text box among them, the cursor kept), PIC 0x1D loaded into the
+frame table by 0x2E170 with 0, which does **not** draw it (the box stays blank), the party list and the position line
+with "CAMPING". The picture showed in s39 only because the script's HMENU animated it: the menu routine 0x2CC8C
+animates when its flag is set **or VM $4AFF is not 0** (0x2CD5D–0x2CD6D, frames in the table) and clears $4AFF at its
+end (0x2CFAD; no other writer in START.EXE or GAME.OVR). $4AFF is the save's third wall-set slot cell ($4AFC + 3, 3 in
+save A), so the first menu after any Load animates; after a start-up Load the command line is that menu, which is why
+PICTURE 2 + HMENU in the first step stays on its first frame there (DOSBox-X s24, again s41 with a scratch save H),
+while here no menu runs between the Load and the HMENU (DS:84E1 is 0 after the start-up Load, so it is not the arm).
+DS:49F3 stays 2 until one of its writers runs (EclMemory.InterfaceState): COMBAT's end, a script switch, a load's
+first pass, the overland interface START 0x3701, the hall; not a step, a turn, the camp (it sets 2 and puts the old
+value back, 0x196AC / 0x197F2) or View. **D** (s41, scratch saves I / J from save A, the step's vector 0 = PICTURE 2;
+PROGRAM 0; PRINT; HMENU WAIT; Up in I, Remove × 6, Load J): the camp picture animating under "TEXT OF SAVE J." and
+"15,4 W 10:50 CAMPING"; after WAIT the step to 14,4, still CAMPING; Left, still CAMPING; V then Escape: case 2 again,
+the box **blank**, the text box empty, CAMPING; Encamp, Exit: the view, CAMPING. Client (s41): `EclMemory.
+InterfaceState` with those writers, `ClientPlayer.TrainingHall` → `DrawInterface` (`AreaLoop.DrawInterface`,
+`ClientPlayer.InterfaceDrawn`: case 2 shows PIC 0x1D undrawn, `ClientPlayer.PictureUndrawn`, until a menu animates it),
+`ClientPlayer.CampingLine`, and `EclMemory.MenuAnimates` (the cell's state as the menus see it, set by a Load and a
+save, cleared by the ECL menus, `ClientPlayer.Choose`, and the command line; the cell itself is left for the save);
+every screen of the run equal to DOSBox-X's but the Client's help lines (the picture's two frames as DOSBox-X's, its
+shots caught mid-XOR). Tests `ExploreScreenTests.A_camp_state_left_by_a_hall_load_draws_the_camp_screen`,
+`SaveWriteTests.Hall_load_of_a_game_save_goes_on_in_the_running_script`. **D** (s41, scratch save E: vector 4 =
+PICTURE 2; HMENU, loaded at the start-up): the HMENU animates the picture (no menu between the Load and vector 4), as
+the $4AFF rule predicts; the picture is drawn over the party menu's screen there (START 0x3379 runs after vector 4,
+0x40BE), which the Client does not show `[?]`. Also `[?]`: the camp's, hall's and venues' menus do not clear the
+Client's flag; a turn (0x2EEF4) after case 2's blank box, or over any picture, keeps the picture in the Client (not
+seen in DOSBox-X). Not the same (seen in passing): the Client's Load prompt over an empty party shows the list heading
+and no menu, DOSBox-X the menu's four entries and no heading `[?]`. **Decided (user, s39):** the Client
 does that only for a save of the running area (its $49F2, DS:84DC after a load, and its disk byte equal to the running
 script's block and disk, `PorGame.LoadInHall` → `HallLoad.CarryOn`); a save of another area is not copied in and is
 entered as a loaded game (its entry and vector 4, `HallLoad.EnterArea` → `HallLoadException`), a deliberate

@@ -161,6 +161,36 @@ for far calls to CS:00DC, CS:01A5, CS:017B):
     last 0.36–0.50 s (Client 0.18–0.34 s; the moving icon's positions are drawn ~15–30 ms apart plus a ~0.15 s end),
     and a step → impact gap was ~0.05–0.1 s longer. Auto-stop lengths vary by a few ticks with the BIOS-chain count,
     which follows the real time spent in the brackets.
+- **D (s41, DOSBox-X spell casts, PC speaker and Tandy, each from DOSBox-X's own null sink with `parec`; the Client's
+  from its sink, same save and seed 12345):** save `fight_save.py BASE OUT 1C0B00040004000224 --hp 200 --char
+  5:0x9B=12,0x73=12 --spells 5:15,51,47 --monpatch 4:0x32=250,0xB1=250,0x11B=250` (CLRMON; LOADMON 4, 4, icon 2: four
+  orcs with 250 HP; Darkstar a level-12 magic-user with Magic Missile, Lightning Bolt and Fireball; the list's last
+  entry is lit, so C, C, T casts Fireball in round 1, Lightning Bolt in round 2, Magic Missile in round 3); every
+  other member Done / Quit (`fight_frames.py grab` rules `DARKSTAR\|.*CAST.*DONE=c`, `CHOOSE SPELL=c`, `AIM:=t`,
+  `DELAY.*QUIT=q`, `QUICK.*DONE=d`). DOSBox-X dies when a state is loaded into a boot that went on playing: each run
+  boots, loads A, saves a state, seeds it and loads it at once (dosbox-trace-method.md s29).
+  - **The cast tunes are not heard** on either device for any of the three casts: tune 1 (Magic Missile, cue 2618),
+    7 (Lightning Bolt, 2624) and 10 (Fireball, 262A) give no sample above the noise floor between the target pick and
+    the first damage line, in DOSBox-X as in the Client. The flight bracket (OVR 0x27E05 set auto-stop(0) … 0x27E56
+    set auto-stop(10)) holds a 4-step flight (0x1A29 with 4, 30) whose frames came 21 ms apart (16.531 / 16.552 s);
+    the timer install at the bracket's start reaches the PIT's channel 0 only when the running BIOS period ends (up to
+    55 ms, the §2.4 onset `[?]`), so the driver gets no tick (or none that sounds) before the bracket uninstalls it.
+    The Client's bracket rule ("one that stayed open while the Client drew closes at once", §3) gives the same
+    silence. `[?]` A longer flight (none in PoR's cast path: the flight is always 4 steps) would let the tune start.
+  - **Every damage line in the fight sounds tune 2** (START 0x2B8B, cue 261A): speaker: a 27.5 ms pulse (divisor 0),
+    then half periods of 1.5–2.3 ms (≈ 220–330 Hz) and a closing run of 0.4–0.5 ms halves (≈ 1.1 kHz), 147.9 ms
+    from the first edge to the last, equal edge for edge (to 0.1 ms) in DOSBox-X and in the Client; Tandy: white
+    noise (E4) 199.5–201.5 ms in DOSBox-X, 199.5–213.5 ms in the Client (the bracket closes after the text and the
+    frames: drawing time). Fireball: 9 damage lines (four orcs and the party members in the radius, Darkstar
+    included) = 9 tune-2 sounds on both sides, 2.6–2.8 s apart; Lightning Bolt and Magic Missile one each. Before s41
+    the Client played none of them (the name animation was not hooked, §3).
+  - Not seen: tune 3 (an effect line, cue 261C) in these casts; the FS-UAE Sleep cast (§5) shows its Amiga
+    counterpart. The speaker impacts that follow (orc hits, tune 6 with auto-stop) were 59 ms in the Client against
+    64 ms in DOSBox-X and 84 / 93 ms (machine time, s40: not modelled).
+  - Seen in the same capture, not sound: after Darkstar's own Fireball damage the Client typed the caster's lost-spell
+    line (spells-effects.md "Damage"), which DOSBox-X did not show `[?]`
+    (combat lane); and the Client's audio once repeated ~25 ms of a tune (two Fireball damage sounds 162/176 ms with a
+    repeated tail) `[?]` (a buffer submitted twice or a capture artefact; not seen elsewhere).
 - Tune lengths (speaker / Tandy, driver ticks until silent, from the emulated driver): step 9: 8 / 16; impact 6:
   65 / 20; miss 8: 9 / 60; bump = impact. With auto-stop the impact and miss sounds are cut to 14–26 ticks.
 
@@ -178,8 +208,35 @@ for far calls to CS:00DC, CS:01A5, CS:017B):
   DOSBox-X uses on every machine but the PCjr): a 16-bit register (feedback into bit 15, start 0x8000), white noise
   from bits 1 and 5 with the second inverted, output bit 0; a write of the noise control restarts it only when the
   white/periodic bit changes (the TI part restarts on every write, which with the driver's write every tick would
-  repeat the noise each 4.22 ms); data bytes for the noise register are ignored (`TandyNoiseTests`). `[?]` The early
-  Tandy 1000's SN76496 not checked.
+  repeat the noise each 4.22 ms); data bytes for the noise register are ignored (`TandyNoiseTests`).
+
+**SN76496** (s41): MAME's sn76496.cpp (the code DOSBox-X uses; `tandy_sound.cpp` picks its `sn76496_device` for
+machine=pcjr and its `ncr8496_device` for every other machine) models three variants that matter here:
+
+| | NCR 8496 (Tandy 1000 EX / HX / TX) | SN76496 (first Tandy 1000 models, PCjr) | PSSJ-3 (Tandy 1000 SL / TL / RL) |
+|---|---|---|---|
+| shift register | 16 bits, feedback into bit 15 (0x8000) | 17 bits, feedback into bit 16 (0x10000) | as NCR |
+| white-noise taps | bits 1 and 5, the second inverted (XNOR) | bits 2 and 3 (XOR) | bits 1 and 5, plain XOR |
+| reset on a noise-control write | only when the white/periodic bit changes | **every write** | as NCR |
+| output | inverted | not inverted | not inverted |
+
+(Which models carry which chip: VGMPF "Tandy 1000" / "NCR 8496": the first models used the SN76496, the NCR 8496
+from the EX on, the PSSJ-3 from the SL on.) The tone channels are the same on all three. PoR's driver writes the
+noise control on every tick (§2.3), and Tandy tunes 2, 4, 6, 8, 9, 10, 12–16 and 18 use the noise channel (the
+oracle: 2 damage E4, 4 body E7, 6 impact E7, 8 miss E4, 9 step E6, 10 Fireball E7). On the SN76496 every one of those
+writes restarts the register at 0x10000, whose 1 needs 16 shifts to reach the output: at N/512 (E4, 6,991 shifts/s,
+29.5 per 4.22 ms tick) each tick plays ~16 shifts of 0 and then the same ~13 pseudo-random bits, i.e. a buzz with
+the tick's 236.7 Hz period; at N/2048 (E6, 7.4 shifts per tick) the output never leaves 0: the step is silent but
+for the clicks of the attenuator. **D (s41, DOSBox-X machine=pcjr, `POOL.CFG` lines 1 and 2 = T; PoR runs, the
+picture is garbled by the PCjr's video but the sound is PoR's Tandy mode):** turns and steps gave 2–4 ms clicks
+only; misses 104–106 ms with an FFT peak at 473 Hz (the buzz's second harmonic; the NCR machine plays white noise
+there, 105.8 ms); the missile tunes (tone channels) as on the NCR. This is the "237 Hz buzz" the s39 Client made
+by resetting the register on every write: what an early Tandy 1000 or a PCjr plays. Core: `Sn76489Synth(rate,
+TandyChip.Sn76496)` / `PcSoundPlayer(…, chip)` / `PorSound.Player(device, rate, chip)` (`TandyNoiseTests`: the
+SN76496 repeats every tick, correlation > 0.8; at E6 its output is constant). The default stays the NCR 8496 (what
+DOSBox-X's Tandy machine plays). `[?]` Whether the Client offers it as a sound device ("Tandy 1000 (early) /
+PCjr"): both are original hardware the game supported, so it is a choice of machine rather than a QoL change.
+
 - The auto-stop model: cue → start the tune, run (BIOS-chain count + 13) ticks, silence; in a resident bracket the
   tune runs until the bracket closes (`PcSoundPlayer`). Rendered, a step is one 27.4 ms pulse and a bump 104–108 ms,
   as in DOSBox-X (`SoundRenderTests`).
@@ -187,13 +244,17 @@ for far calls to CS:00DC, CS:01A5, CS:017B):
   the move, turns left/right, the area loop's check after the redraw), the bump (`IAreaUi.Bump`), ECL CALL $BA03 (the
   Client's host), the fight (`FightState.Sound`: impact per hit and on a helpless defender, miss, a creature's step,
   the body routine, a missile's flight, a spell's flight with its own cue for spells 47 and 51, Hold Person's further
-  targets, the second missile flight 0x1417E of a weapon of type 0x2F with its own bracket and cues, s26). Not hooked
-  `[?]`: the name animation (START 0x2B8B, cues 261A/261C; 10 callers in GAME.OVR: damage and effect messages), sounds
-  outside a fight in the body routine.
+  targets, the second missile flight 0x1417E of a weapon of type 0x2F with its own bracket and cues, s26).
+  The name animation (START 0x2B8B, 10 callers in GAME.OVR: damage and effect messages) is hooked in the Client's
+  fight display (s41, `CombatChooser.ShowHit`): in a fight it opens the resident bracket (0x2BB1), scrolls, cues 261A
+  (damage, tune 2) or 261C (effect, tune 3) just before the text (0x2C09 / 0x2C14), and closes the bracket after the
+  picture's frames (0x2D07), before the damage line's pause (`SoundSettingTests`). Out of a fight 0x2B8B plays nothing.
+  Still not hooked `[?]`: sounds outside a fight in the body routine.
 - **Client**: `--sound speaker|tandy|amiga|off` (settings `Sound`, default speaker), also selectable on the SOUND
   row in Controls. Ctrl-S mutes or restores the configured device for the session. With Amiga selected, the
   Client uses the module's sampled effects if available and falls back to the PC speaker otherwise. Output is
-  44.1 kHz mono. The logic thread waits out a DOS auto-stop sound while the UI thread services the stream.
+  44.1 kHz stereo (s41: the DOS devices on both sides, the Amiga's channels as on the machine, §5.6). The logic
+  thread waits out a DOS auto-stop sound while the UI thread services the stream.
   Under Xvfb/PulseAudio (s32), a step called both cues 114 ms apart and the dedicated null-sink recording
   contained both pulses. `[?]` A resident
   bracket's length is the program's animation. The missile, spell and Hold Person flights are drawn inside it (s25,
@@ -209,8 +270,16 @@ for far calls to CS:00DC, CS:01A5, CS:017B):
   capture, F12+W): the step tune 9 as one 27.46 ms pulse, then tune 10 (0x3ADE) 109.85 ms after the first rise
   (the step's auto-stop: 26 ticks, the count at 13): a 27.46 ms pulse, then 10.7 / 12.2 / 10.6 ms pulses with 11.9 /
   12.3 / 11.1 ms gaps, 96.3 ms first rise to last fall. The Client (`client_xvfb.sh audio` on its null sink, PC
-  speaker): the same pulses to 0.05 ms, the second tune 116.67 ms after the first rise, 6.8 ms later than DOSBox-X
-  `[?]` (about 1.6 driver ticks; the Client's start of the second cue after the first one's wait, not measured further).
+  speaker): the same pulses to 0.05 ms, the second tune 116.67 ms after the first rise, 6.8 ms later than DOSBox-X:
+  the logic thread saw the first cue end only when the 60 Hz buffer (735 samples) holding its stop was rendered, and
+  the second cue then started at the next buffer. **Fixed s41**: while the logic thread waits on an auto-stop cue,
+  `ClientAudio` renders only up to the sample where it ends (`PcSoundPlayer.Render(buffer, untilIdle)`) and holds the
+  output there for up to one buffer (16 ms) for the next sound call, which so starts on that sample, as the
+  program's busy-wait in the sound command does. Measured (the same two cues from a step's vector 0, `fight_save.py
+  … 09000801DE032D0203BA09000A01DE032D0203BA`, the Client on its null sink): step → tune 10 109.86 ms rise to rise, and
+  the step and area-check cues after it 109.84 ms apart (were 114 ms in s32). The very first pair after start-up came
+  128.5 ms apart (the logic thread late, start-up JIT): a call later than the hold starts at the next buffer as before.
+  Test `SoundTests.Rendering_until_idle_stops_where_the_auto_stop_ends_and_the_next_cue_starts_there`.
 
 ## 4. Module (`audio/`)
 
@@ -233,8 +302,9 @@ hunk 29. Neither is ever run together with the other (below).
 - **Install** (hunk 27 +0x6E78 → hunk 33 +0xD8, called once at start-up, hunk 10 +0x562): silence the effect
   channels (+0x546: their four volume bytes and AUD0–3VOL = 0), then +0x0: AllocMem an Interrupt node, copy the
   75-byte handler +0x82 into memory and **AddIntServer(INTB_VERTB = 5)**: a vertical-blank server, so both players
-  tick at the display rate: 50 Hz on a PAL machine, 60 Hz on NTSC `[?]` (which the program expects is not stated;
-  the Client uses 50 Hz).
+  tick at the display rate: on a PAL A500 a non-interlaced frame is 313 lines of 227 colour clocks, so
+  3,546,895 / 71,051 = **49.92 Hz** (D s41: FS-UAE's pitch-to-tempo ratio is this one, §5.6); NTSC would be 60 Hz
+  `[?]` (which machine the program expects is not stated; a Ubi Soft port, the Client uses PAL).
 - **Handler** (+0x82): when the long "music on" at +0xCC is non-zero it calls the music tick (hunk 27 +0x78B2); else,
   when INTREQR AND INTENAR has the vertical-blank bit, the effect tick (+0x172).
 - **Remove** (hunk 27 +0x6E88 → hunk 33 +0xEE, at exit, hunk 1 +0xA): with music on, PlaySong(0) first, else silence
@@ -316,10 +386,15 @@ as notes past the 46-entry table `[?]` (none in the data). In the data only spee
   each channel the **repeat part**: AUDxLEN := repeat length / 2, AUDxLC := sample + repeat offset for a looping
   instrument; for a one-shot one the program means the silence pointer (+0x18B8) but indexes it by voice × 4, so only
   voice 0 gets it: voices 1, 2 and 3 repeat from **chip addresses 0, 0 and 2** (the next longs, +0x18BC … +0x18C4),
-  a 2-byte loop of whatever low memory holds (a constant: no sound, only a DC level `[?]`).
-- **Paula** `[?]` (hardware, not program): a channel switched off and on within one tick restarts from AUDxLC/LEN;
-  the LC/LEN written just after the DMA write are latched for the next pass, so a sample plays once from its start
-  and then loops its repeat part. The Client assumes this and a PAL clock of 3,546,895 Hz.
+  a 2-byte loop of whatever low memory holds (zeros in FS-UAE: silence once the one-shot part has played, D s41).
+- **Paula** (hardware, not program; D s41 against FS-UAE, §5.6): a channel switched off and on within one tick
+  restarts from AUDxLC/LEN (the off comes 280–690 instructions before the on for a new note, far more than a sample
+  word; FS-UAE's state machine then idles the channel, the AUDx request bits being set); the LC/LEN written just after
+  the DMA write (38–104 instructions after it, in the order channel 3, 2, 1, 0) are latched for the next pass, so a
+  sample plays once from its start and then loops its repeat part: the notes of song 2 and of the icon's song 3,
+  checked one by one, start at their sample's start in FS-UAE (none took the repeat pointer, which a write before
+  the channel's first DMA fetch would give; songs 3 at the name and 5 only in band levels, §5.6). A channel switched off **holds its last sample** at its volume (a DC level until the next note; a
+  voice stopped by its duration with the volume still up leaves one). PAL clock 3,546,895 Hz.
 - Under emulation (E) the songs use only speed, instruments, envelopes (attack, sustain, release), vibrato and its
   delay; no arpeggio, portamento or slide is ever reached, so those paths (and two cross-voice slips in them: the
   envelope's flag bit 3 writes the portamento target of voice v + 3, and a byte read at +0x4E belongs to another voice) are transliterated but unchecked by data.
@@ -329,8 +404,8 @@ as notes past the 46-entry table `[?]` (none in the data). In the data only spee
 | Song | Played by | Length |
 |---|---|---|
 | 1 | start-up (hunk 10 +0x580) while disk A's `intro` runs, stopped after it (+0x59A); the **camp** menu (hunk 1 +0x4FBC, stopped on leaving, +0x513C) | loops |
-| 2 | **"A battle begins..."** (hunk 13 +0x24E2): the song number is the word at hunk 31 +0x18C0 (2), skipped when the byte at hunk 32 +0x2D1 is non-zero `[?]` (initially zero, and the battle check is its only direct relocated reference) | stops |
-| 3 | a new character's name accepted (hunk 10 +0x235C, after the name checks) and an icon accepted ("Is this icon ok?" Y, +0x433E) | stops |
+| 2 | **the battle-start line** (hunk 13 +0x24E2): the song number is the word at hunk 31 +0x18C0 (2), skipped when the byte at hunk 32 +0x2D1 is non-zero (P s41: nothing writes it: the battle check is its only relocated reference, no word or long write covers it, and no address taken below it reaches it (the nearest, +0x17E and +0x226, are 168-byte arrays cleared by size); it stays 0. D s41: the song plays at a fight's start in FS-UAE) | stops |
+| 3 | a new character's name accepted (hunk 10 +0x235C, after the name checks) and an icon accepted (the icon-ok question answered Y, +0x433E); both D s41 | stops |
 | 5 | the party is killed (hunk 16 +0x46C2; in a fight, hunk 19 +0x102E) | stops |
 | 4, 6 | no caller (4 stops, 6 loops) | |
 
@@ -372,9 +447,9 @@ is cut by the fight's first sound.
   interleaved as in the program, the patched immediates as fields). **E**: for songs 0–6 over 13,000 ticks (past song
   1's loop at tick 12,289) and a song started over another then stopped, it writes the same custom-chip registers
   with the same values in the same order as the program (`AmigaSoundProgramTests`). Songs 2, 3 and 5 last 385 ticks
-  (7.7 s at 50 Hz), song 4 769; songs 1 and 6 loop after 12,288 and 7,680 ticks.
-- `PaulaSynth` turns the writes into sound (the `[?]` hardware model above, mono); `AmigaMusic` ticks the player at
-  50 Hz. Client: with the module's Amiga data and sound not off, the Amiga intro (Best / Amiga) starts song 1 and
+  (7.71 s at 49.92 Hz), song 4 769; songs 1 and 6 loop after 12,288 and 7,680 ticks.
+- `PaulaSynth` turns the writes into sound (the hardware model above): channels 0 and 3 left, 1 and 2 right, then
+  the A500's output stage on each side (§5.6); `AmigaMusic` ticks the player at 49.92 Hz (s41; 50 Hz before). Client: with the module's Amiga data and sound not off, the Amiga intro (Best / Amiga) starts song 1 and
   stops it when it ends (`ClientAudio.PlaySong`), after the intro's closing 3 s (`intro` hunk 1 Delays 150 ticks
   before returning; the program reaches PlaySong(0) at hunk 10 +0x59A after Execute returns, s27). Departure: on the
   Amiga the song also plays through hunk 25 +0x12A8 (called between Execute and +0x59A; read s28: the Amiga's copy of
@@ -382,26 +457,65 @@ is cut by the fight's first sound.
   start-menu.md §1a "After the intro"; no sound call but the out-of-memory quit, hunk 1 +0x6E), so it stops after the disk time `[?]`; the Client, whose
   loads take no time, stops it at the end of the 3 s. The camp (1), battle (2), name and icon acceptance (3), and
   party defeat (5) use these same hooks under Best / Amiga presentation or when the selected sound device is
-  Amiga. Amiga effects interrupt a song until another song starts. The camp exit stops the camp song.
+  Amiga. Amiga effects interrupt a song until another song starts. Output in stereo with the A500's output stage
+  (s41, §5.6). The camp exit stops the camp song.
 
-### 5.6 FS-UAE check (s39)
+### 5.6 FS-UAE checks (s39, s41)
 
-The camp song (1) recorded from FS-UAE (A500, PAL, Kickstart 1.3; por-art-formats.md §4 "Amiga in FS-UAE") through its
-own null sink with `parec`, against the Client's camp under `--art amiga --sound amiga` (25 s each, from the camp's
-start in the Client, some seconds in on the Amiga). A semitone-band spectrogram cross-correlates best at tempo ratio
-1.00 (0.133 against 0.06–0.07 at 0.83, 0.9, 1.1, 1.2), lag 8.7 s: the Client's 50 Hz tick is the PAL machine's rate
-(**E**; which rate the program expects is still not stated, but a PAL A500 plays it as the Client does). Differences
-**[?] not built**: FS-UAE's output is stereo (Paula channels 0 / 3 left, 1 / 2 right: L/R rms 3241 / 4392), the Client's
-mono; above 3 kHz the Amiga is 10 dB lower, above 6 kHz 25–40 dB lower (the A500's output filter, which the Client's
-`PaulaSynth` lacks); FS-UAE has strong energy at 20–60 Hz (+17 dB, a 24–25 Hz peak) the Client does not, not
-explained. Not checked in the emulator: songs 2, 3, 5, an effect cutting a song, Paula's retrigger, the hunk 32 +0x2D1
-flag.
+**s39**: the camp song (1) recorded from FS-UAE (A500, PAL, Kickstart 1.3; por-art-formats.md §4 "Amiga in FS-UAE")
+through its own null sink with `parec`, against the Client's camp under `--art amiga --sound amiga`: tempo ratio 1.00
+on a semitone-band spectrogram; FS-UAE stereo, above 3 kHz 10 dB lower, above 6 kHz 25–40 dB lower, +17 dB at 20–60
+Hz. Settled in s41 (below).
+
+**s41**: FS-UAE 3.2.35 as in s39 with `floppy_drive_volume = 0` (the emulated drive noise was in the s39 capture, a
+wideband rumble while disks load), `uae_sound_stereo_separation = 10` (full; at FS-UAE's default the two sides were
+correlated 0.44, against 0.00 at full) and default filter settings, captured 48 kHz stereo from an own null sink.
+Songs brought in by patching the camp's PlaySong(1) (hunk 1 +0x4FB8, `pea 1.w`) to 2 or 5 on a disk copy (with the
+code-wheel patch), and by the game's own calls: the intro (1), the battle (2, kobolds in the slums), a new
+character's name and its icon (3). The Client's side rendered by `goldbox-tools amiga-sound PROGRAM OUT.wav --song N`
+(the same `AmigaMusic` the Client plays), aligned by envelope cross-correlation:
+- **Stereo**: channels 0 and 3 left, 1 and 2 right, no crosstalk (L/R correlation 0.00 in FS-UAE and the Client);
+  effects play on the left only (channel 0: the right side is exactly 0 in FS-UAE during a cast or a step).
+- **Tick rate**: a waveform cross-correlation holds sub-millisecond alignment over 6 s (song 2) and 40 s (song 1)
+  only when the Client's pitch is raised by 50 / 49.92 against its 50 Hz tick: FS-UAE emulates the PAL frame
+  (227 × 313 colour clocks, 49.92 Hz) and plays it out at 50.00 Hz, so its pitch and tempo are both 0.16 % high. The
+  machine's own ratio is the PAL frame's: the Client now ticks at 49.92 Hz with the PAL clock (§5.1); for comparisons
+  `amiga-sound --rate 47923` renders it as FS-UAE plays it. Median waveform correlation over song 2 in 20 ms windows:
+  0.60 at 50 Hz, 0.86 at the PAL ratio.
+- **Output stage**: band levels (relative to the overall level) within 1.5 dB from 20 Hz to 6 kHz for songs 1, 2, 3
+  and 5 and the effects with the A500 model in `PaulaSynth` (high-pass 5.2 Hz; first-order low-pass 4.42 kHz; LED
+  Sallen-Key low-pass 3.09 kHz, Q 0.66, on); FS-UAE is 1.5 dB higher at 6–12 kHz and 3–4 dB at 12–20 kHz (its
+  resampling against the Client's sample-and-hold, 40+ dB below the peak). Without the stage the Client was 8 dB high
+  at 3–6 kHz, 22 dB at 6–12 kHz, 39 dB at 12–20 kHz.
+- **The 20–60 Hz content**: the held level of a stopped channel (§5.2 "Paula"): with it, 20–60 Hz is within 1 dB of
+  FS-UAE; the DC means agree too with the output stage off (left −25 / −25, right −492 / −551 in 16-bit units over
+  song 1: FS-UAE has no output high-pass, the A500 does). The rest of s39's excess was the drive noise.
+- **Note starts**: every note of song 2 and of the icon's song 3 matches the Client's waveform (local correlation
+  ≥ 0.9 in 82 % / 88 % of 40 ms windows; the rest are note edges) once each note is shifted by up to ±1 ms: FS-UAE
+  starts a tick's notes when the 68000 reaches the output (+0x82BE), 350–890 instructions after the tick's start
+  depending on its work (the tick's notes all at once, so a voice's phase against a held note on the same side
+  differs), and the DMA fetch adds up to a scan line. Not modelled `[?]` (below 1.5 ms; heard only as the phase
+  between two voices on one side). Song 5 (camp, after the camp's disk load) slips by whole ticks against the
+  Client (missed vertical blanks while the disk loads, machine time) and matches in band levels only.
+- **Effects**: the Sleep cast in a fight plays effect 5 (cue +0x18A8), then 1.23 s later the name-with-effect cue
+  (+0x18AC, effect 8) for each sleeping target, each start replacing the running effect: the channel is off for one
+  tick (19–20 ms, holding its last sample at the new volume) and the new effect plays from its start; its decay in
+  0.2 s steps equals the Client's. The Client plays the name cues since s41 (§3 "Hooks"); before, only the cast.
+- **Not captured**: an effect cutting a running song (no fight started while a song played in the time given; the
+  program's effect tick switches channels 1–3 off with volume 0 on every tick, E, and the Client does the same).
+- **The Client itself** (s41, `client_xvfb.sh` on Xvfb, its null sink recorded in stereo): `--art amiga --sound
+  amiga`, the camp's song 1: left and right uncorrelated (0.00–0.09), band levels against FS-UAE's song 1 within
+  1.5 dB to 6 kHz; `--sound speaker`: both sides equal sample for sample, a turn one 27.5 ms pulse, a bump 105.6 ms
+  (as s19/s39).
+- Tools (s41): `goldbox-tools amiga-sound` (`--song`, `--effect CUE@SECONDS`, `--no-filter`, `--mute MASK`,
+  `--rate`). Captures and scripts: the session scratch (not kept).
 
 ## 6. Open `[?]`
 
-- Auto-stop onset in DOSBox-X (§2.4); the speaker's analogue filter; the early Tandy 1000's SN76496; a spell's cast
-  tune and Lightning Bolt / Fireball in DOSBox-X (not captured, s39); machine-time lengths (§2.4 s39) are not
-  modelled (user, s40).
-- Amiga (§5): PAL or NTSC rate; Paula's restart and latch timing; how the flag at hunk 32 +0x2D1 can change;
-  the screens of hunks 4, 16 and 19.
+- Auto-stop onset in DOSBox-X (§2.4; also why the cast tunes 1, 7, 10 never sound in the spell flight's short
+  bracket, s41); the speaker's analogue filter; whether the Client offers the SN76496 (§3); the Client's "lost a
+  spell" after the caster's own Fireball and one repeated audio chunk (§2.4 s41); machine-time lengths (§2.4 s39)
+  are not modelled (user, s40).
+- Amiga (§5): which machine (PAL or NTSC) the program expects (the Client is PAL); the note-start delay inside a
+  tick (§5.6, not modelled); an effect cutting a song not seen in FS-UAE; the screens of hunks 4, 16 and 19.
 - Which other SSI games share this driver and its tunes 12–20.

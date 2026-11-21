@@ -61,14 +61,16 @@ public sealed class PcSoundPlayer : ISoundPorts
     private int _chainsLeft; // auto-stop: BIOS clock ticks until the stop; 0 = none running
 
     /// <param name="cueWords">The cue table's command words (DS:2612, 16 words in v1.3).</param>
-    public PcSoundPlayer(PcSoundDriverImage image, IReadOnlyList<int> cueWords, PcSoundDevice device, int sampleRate = 44100)
+    /// <param name="chip">The Tandy chip model (Tandy device only; default the NCR 8496 DOSBox-X plays).</param>
+    public PcSoundPlayer(PcSoundDriverImage image, IReadOnlyList<int> cueWords, PcSoundDevice device, int sampleRate = 44100,
+        TandyChip chip = TandyChip.Ncr8496)
     {
         _driver = new PcSoundDriver(image, this);
         _cueWords = cueWords;
         Device = device;
         SampleRate = sampleRate;
         _speaker = new PcSpeakerSynth(sampleRate);
-        _tandy = new Sn76489Synth(sampleRate);
+        _tandy = new Sn76489Synth(sampleRate, chip);
         _samplesPerTick = sampleRate / image.TickHz;
     }
 
@@ -198,9 +200,18 @@ public sealed class PcSoundPlayer : ISoundPorts
     }
 
     /// <summary>Renders <paramref name="buffer"/>.Length samples of mono audio, advancing the driver in time.</summary>
-    public void Render(Span<float> buffer)
+    public void Render(Span<float> buffer) => Render(buffer, false);
+
+    /// <summary>
+    /// Renders up to <paramref name="buffer"/>.Length samples; with <paramref name="untilIdle"/> and a sound running,
+    /// stops at the sample where the last one ends (the auto-stop's uninstall, at a driver tick) and returns how many
+    /// samples were rendered. The program's next sound command follows that end with no gap (it busy-waits in the
+    /// command), so a caller that waits for it can start the next cue there.
+    /// </summary>
+    public int Render(Span<float> buffer, bool untilIdle)
     {
         buffer.Clear();
+        bool watch = untilIdle && Busy;
         int done = 0;
         while (done < buffer.Length)
         {
@@ -209,6 +220,8 @@ public sealed class PcSoundPlayer : ISoundPorts
                 Advance(1);
                 _sampleDebt += _samplesPerTick;
             }
+            if (watch && !Busy)
+                return done;
             int n = buffer.Length - done;
             if (_installed)
                 n = Math.Min(n, Math.Max(1, (int)Math.Ceiling(_sampleDebt)));
@@ -219,6 +232,7 @@ public sealed class PcSoundPlayer : ISoundPorts
             done += n;
             _sampleDebt = _installed ? _sampleDebt - n : 0;
         }
+        return done;
     }
 
     /// <summary>Runs up to <paramref name="ticks"/> driver ticks without rendering (tests); stops when the timer is

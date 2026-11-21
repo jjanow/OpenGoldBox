@@ -426,7 +426,7 @@ Checked against DOSBox-X (PoR v1.3, EGA, save A put on the overland with `goldbo
     stays blank, still after the text and two turns. Client (s39): row 24 blank after a NEWECL until the next menu or
     command line (`ClientPlayer.BottomRowClears`; the loading line itself is disk time, not shown), the box ring kept
     blank (`ClientPlayer.ViewBoxBlank`, ended by the screens that draw the whole layout: camp, shop, temple, fight,
-    hall, and EXIT's window redraw after a PROTECT). Frames: 54 of 85 (picture) and 67 of 85 (CLEARBOX) equal; the
+    hall, EXIT's window redraw after a PROTECT, and since s41 View's exit, Cast and a load's entry: every START 0x3379 caller, view3d.md "Text window"). Frames: 54 of 85 (picture) and 67 of 85 (CLEARBOX) equal; the
     rest are later than DOSBox-X's grab ended (the Client has no disk time, ~1.2 s ahead) and the help lines.
   - **Every redraw counts** (P + D, s39): the marker routine runs inside 0x2DCF4 whatever called it, so the
     encounter draw's redraws (0x7A3A with the sprite up, 0x7A67 turning the area map off; ecl-format.md "The
@@ -441,9 +441,14 @@ Checked against DOSBox-X (PoR v1.3, EGA, save A put on the overland with `goldbo
     SETUPMON 0, 2, 0; APPROACH: the view redrawn with the next frame under the sprite at APPROACH.
   - Engine: `EclMemory.MarkerCounter` and `Overland.Redrawn` on the loop's redraws, the switch, CALL $2C90,
     SPRITEOFF, PICTURE 255, the encounter draw and COMBAT's end (s39); `PorGame` loads take the session's counter
-    (`markerCounter`, the Client passes its game's) and add the first pass's draws. The Client's command line has no
-    View or Cast yet (the words are shown, the keys not taken), so their redraws have no place to go `[?]`; Trade
-    likewise.
+    (`markerCounter`, the Client passes its game's) and add the first pass's draws. The command line's View and Cast
+    (s41, `AreaLoop.MenuCommand`): neither ends the routine (0x1738A → 0x173D9 → 0x172E3), so the interface
+    (+2) is drawn once per routine entry whatever keys come first (`AreaLoop` keeps it drawn until 0x173E7), and
+    View's exit, Cast's end after a list and its target pick each draw START 0x3379 case 3 (+1). **D** (s41,
+    `save-overland` 26 at 8,19 N, 3000 cycles): V, Escape; C on Thrender (no spells: the message, nothing drawn);
+    End × 3, C, Bless and Cure Light Wounds with the target pick (the cast-on-whom prompt), S, Escape: every screen equal
+    to the Client's but its help lines and the pick's hints (one DOSBox-X frame drew the spell page before its menu
+    line: machine time). Trade (0x2276E / 0x23190, each with its own START 0x3379) is not built `[?]`.
   The draw (0x2DC18–0x2DC30) takes icon slot 9 + counter / 2, frame counter % 2; the interface load puts ICON 0, 1, 2
   into slots 9, 10, 11 (0x17285–0x172D5, each slot block b and b + 128). The camp's Alter Icon on the overland ends by
   loading ICON 0 into slot 11 (and 1 into slot 12; icon editor 0x1D84A, start-menu.md §3), so until the next interface

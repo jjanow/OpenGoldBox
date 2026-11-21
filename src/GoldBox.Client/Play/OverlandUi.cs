@@ -29,16 +29,18 @@ public static class OverlandUi
     public static string[] CommandLine(string[] threeD) => threeD.Length > 1 ? threeD[1..] : threeD;
 
     /// <summary>
-    /// On the overland, a picture (PIC, portrait), the blanked window (CLEARBOX) or the stand-in text are shown as in the
-    /// 3D view: the window (cells 1–15) black, the 3D view's box at cells 2–14 and the picture at pixel (24, 24)
-    /// (DOSBox-X, s19: ECL7 block 26's north edge of the city, CLEARBOX / CALL $0806 / PICTURE 40 / PRINTCLR / HMENU).
-    /// A sprite (SPRIT, an encounter's monsters) is drawn over the overland tiles with no box (DOSBox-X: giant snakes
-    /// at 0,0 of block 25; s39: SETUPMON and APPROACH at 10,20 of block 26). The stand-in text (<see cref="ClientPlayer.ViewOverlay"/>,
-    /// kept beside every encounter picture for missing art) boxes only with no picture. [?] Which of CLEARBOX, CALL
-    /// $0806 and PICTURE draws the box is not read.
+    /// On the overland, a picture (PIC, portrait) or the stand-in text are shown as in the 3D view: the window (cells
+    /// 1–15) black, the 3D view's box at cells 2–14 and the picture at pixel (24, 24) (DOSBox-X, s19: ECL7 block 26's
+    /// north edge of the city, CLEARBOX / CALL $0806 / PICTURE 40 / PRINTCLR / HMENU). PICTURE draws the box: with $49E6
+    /// = 0 and v ≠ 255 it draws the window (3, 3)–(13, 13) first (0x15B5–0x15E8, START 0x41F8); in the 3D view ($49E6 ≠
+    /// 0) it does not. CLEARBOX alone blanks cells 1–15 with no box (P + D s41: vector 1 = CLEARBOX after Look on the
+    /// overland). A sprite (SPRIT, an encounter's monsters) is drawn over the overland tiles with no box (DOSBox-X: giant
+    /// snakes at 0,0 of block 25; s39: SETUPMON and APPROACH at 10,20 of block 26). The stand-in text
+    /// (<see cref="ClientPlayer.ViewOverlay"/>, kept beside every encounter picture for missing art) boxes only with no
+    /// picture. [?] CALL $0806 is not read.
     /// </summary>
     public static bool Boxed(ClientPlayer player) =>
-        player.ViewBlanked || player.ViewPicture is { Kind: not ViewPictureKind.Sprite }
+        player.ViewPicture is { Kind: not ViewPictureKind.Sprite }
         || (player.ViewPicture is null && player.ViewOverlay is not null);
 
     /// <summary>Blanks the overland window (cells 1–15).</summary>

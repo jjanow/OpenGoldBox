@@ -172,6 +172,7 @@ public static class PorTextCatalog
         ["Msg.IdentifyDeal"] = 0x22F2A,
         ["Msg.IdentifyNoMoney"] = 0x22F39,
         ["Msg.NothingNew"] = 0x22F4A,
+        ["Msg.LooksLike"] = 0x22F70, // 0x23112 (Id after paying, s41)
         ["Msg.MoneyToPool"] = 0x24E64,
         ["Msg.Overloaded"] = 0x250CA,
         ["Msg.CoinGems"] = 0x257E3,

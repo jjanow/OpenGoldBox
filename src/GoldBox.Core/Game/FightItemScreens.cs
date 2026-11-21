@@ -6,8 +6,9 @@ namespace GoldBox.Core.Game;
 // side: which entries they show, what each one does to the records (docs/re/combat-menu.md "View / Use"). Drawing,
 // the item names and the list scrolling are the Client's.
 
-/// <summary>The View menu's entries (0x21AED).</summary>
-public enum ViewEntry { Items, Spells, Trade, Drop, Exit }
+/// <summary>The View menu's entries (0x21AED). Rename is the Amiga program's own (hunk 10 +0x542C, see
+/// <see cref="FightItemScreens.WithAmigaRename"/>); DOS has no such entry.</summary>
+public enum ViewEntry { Items, Spells, Trade, Drop, Rename, Exit }
 
 /// <summary>The Items menu's entries (0x21F32).</summary>
 public enum ItemsEntry { Ready, Use, Trade, Drop, Halve, Join, Sell, Id, Exit }
@@ -107,6 +108,22 @@ public sealed class FightItemScreens(IItemScreenChooser chooser, Action<EclChara
         if (HasMoney(c))
             e.Add(ViewEntry.Drop);
         e.Add(ViewEntry.Exit);
+        return e;
+    }
+
+    /// <summary>
+    /// The Amiga View menu (hunk 10 +0x5332–0x548C, the copy of 0x21AED): the DOS entries and, before Exit, Rename when
+    /// the character is not an NPC (Amiga record byte 0x85, DOS 0x84, below 0x80; hunk 10 +0x542C). Its other entries
+    /// test the same as DOS's.
+    /// </summary>
+    public static IReadOnlyList<ViewEntry> WithAmigaRename(IReadOnlyList<ViewEntry> entries, EclCharacter c)
+    {
+        if (c[Npc] >= 0x80 || entries.Contains(ViewEntry.Rename))
+            return entries;
+        var e = entries.Where(x => x != ViewEntry.Exit).ToList();
+        e.Add(ViewEntry.Rename);
+        if (entries.Contains(ViewEntry.Exit))
+            e.Add(ViewEntry.Exit);
         return e;
     }
 

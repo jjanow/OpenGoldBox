@@ -27,6 +27,13 @@ public sealed class ScriptedAreaUi : IAreaUi
         Calls.Add("Camp");
         return CampInterrupted;
     }
+    public Action? OnView { get; set; }
+    public void View()
+    {
+        Calls.Add("View");
+        OnView?.Invoke();
+    }
+    public void Cast() => Calls.Add("Cast");
 }
 
 /// <summary>

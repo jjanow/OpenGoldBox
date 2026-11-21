@@ -33,6 +33,11 @@ public sealed class CombatPage
     public int HintRow { get; init; } = 22;
     /// <summary>Lines drawn in yellow from row 21 (the drop warning, 0x22401).</summary>
     public List<string> Warning { get; } = [];
+    /// <summary>Texts in an Amiga colour (<see cref="GoldBox.Core.Explore.TextFont.DrawAmiga"/>; the Amiga View page's
+    /// hit points, <see cref="AmigaView"/>); empty otherwise.</summary>
+    public List<(int Col, int Row, string Text, int AmigaColour)> AmigaTexts { get; } = [];
+    /// <summary>The portrait window's head and body pictures (the Amiga View page, <see cref="AmigaView"/>), or null.</summary>
+    public (int Head, int Body)? Portrait { get; init; }
 }
 
 /// <summary>The Items page of 0x21F32 (a fight's Use and every View's Items: the party menu, hall, camp, shop, temple,
@@ -66,7 +71,9 @@ public static class ItemsPages
     public static CombatPage Build(CombatText text, EclCharacter c, IReadOnlyList<byte[]> items, Func<byte[], string> itemName,
         int selected, bool grey)
     {
-        var yn = text.Words(CombatMsg.YesNo);
+        // Under the Amiga pages the program's own case (AmigaView.Case: its font's lower case differs).
+        string T(CombatMsg m) => AmigaView.On ? text.Raw(m) : text[m];
+        var yn = T(CombatMsg.YesNo).Split(' ', StringSplitOptions.RemoveEmptyEntries);
         string yes = yn.ElementAtOrDefault(0) ?? "YES", no = yn.ElementAtOrDefault(1) ?? "NO";
         var rows = items.Select(i => " " + (i[CombatRules.ItemEquipped] != 0 ? yes : no).PadRight(5) + itemName(i)).ToList();
         var page = new CombatPage
@@ -79,10 +86,10 @@ public static class ItemsPages
             LastRow = 22,
             Selected = Math.Clamp(selected, 0, Math.Max(0, rows.Count - 1)),
         };
-        string name = c.Name.ToUpperInvariant();
-        page.Texts.Add((1, 1, name + "'S", CombatSheet.NameColour(c)));
-        page.Texts.Add((name.Length + 4, 1, text[CombatMsg.ItemsTitle].Trim(), 10));
-        page.Texts.Add((1, 3, text[CombatMsg.ItemsHeading].Trim(), 15));
+        string name = AmigaView.Case(c.Name);
+        page.Texts.Add((1, 1, name + AmigaView.Case("'s"), CombatSheet.NameColour(c)));
+        page.Texts.Add((name.Length + 4, 1, T(CombatMsg.ItemsTitle).Trim(), 10));
+        page.Texts.Add((1, 3, T(CombatMsg.ItemsHeading).Trim(), 15));
         return page;
     }
 }
@@ -283,7 +290,8 @@ public sealed partial class CombatChooser
     private CombatPage ViewPage(EclCharacter c)
     {
         // The sheet leaves rows 13–14, 16 and 19 empty: the Client's hint goes on 19.
-        var page = new CombatPage { FrameRows = [0, 23], HintRow = 19 };
+        // Under the Amiga art the Amiga's page (AmigaView: name row, hit points' colours, the portrait window).
+        var page = new CombatPage { FrameRows = [0, 23], HintRow = 19, Portrait = AmigaView.Portrait(c, PortraitsOn()) };
         byte[]? weapon = null, armour = null;
         if (View.Fight is { } fight)
         {
@@ -291,11 +299,12 @@ public sealed partial class CombatChooser
             weapon = eq[FightRules.SlotWeapon];
             armour = eq[FightRules.SlotBodyArmour];
         }
-        page.Texts.AddRange(CombatSheet.Build(Resources(), c, weapon, armour, ItemName));
+        page.Texts.AddRange(AmigaView.Sheet(CombatSheet.Build(Resources(), c, weapon, armour,
+            i => AmigaView.Case(ItemNames.Compose(i, Resources().ItemWord, Detect).Trim())), c, page.AmigaTexts));
         return page;
     }
 
-    private string ViewWord(ViewEntry e) => Text[e switch
+    private string ViewWord(ViewEntry e) => e == ViewEntry.Rename ? "RENAME" : Text[e switch
     {
         ViewEntry.Items => CombatMsg.ViewItems,
         ViewEntry.Spells => CombatMsg.ViewSpells,
@@ -303,6 +312,9 @@ public sealed partial class CombatChooser
         ViewEntry.Drop => CombatMsg.ViewDrop,
         _ => CombatMsg.ViewExit,
     }].Trim();
+
+    /// <summary>The portraits flag (DS:49F5 bit 0; the Amiga's hunk 32 +0xBC) for the Amiga View page's portrait.</summary>
+    public Func<bool> PortraitsOn { get; set; } = () => false;
 
     /// <summary>
     /// The View page drawn last and the choice made on it: after Drop the View loop does not draw the page again, it
@@ -317,7 +329,8 @@ public sealed partial class CombatChooser
     /// <summary>The View page after a choice that does not redraw it: the old texts, the money lines new.</summary>
     private CombatPage MoneyRedrawn(EclCharacter c, CombatPage old)
     {
-        var page = new CombatPage { FrameRows = old.FrameRows, HintRow = old.HintRow };
+        var page = new CombatPage { FrameRows = old.FrameRows, HintRow = old.HintRow, Portrait = old.Portrait };
+        page.AmigaTexts.AddRange(old.AmigaTexts);
         page.Texts.AddRange(old.Texts.Where(t => !InMoneyBox(t.Col, t.Row)));
         page.Texts.AddRange(ViewPage(c).Texts.Where(t => InMoneyBox(t.Col, t.Row)));
         return page;
@@ -333,10 +346,19 @@ public sealed partial class CombatChooser
             View.Page = redraw || _lastView is not { } prev ? ViewPage(c) : prev.Pick == ViewEntry.Drop ? MoneyRedrawn(c, prev.Page) : prev.Page;
             redraw = true;
             View.Mode = CombatMode.Page;
-            int exit = entries.Count - 1;
-            var a = Ask(new PageRequest([.. entries.Select(ViewWord)], Text[CombatMsg.ViewPrompt].Trim(), exit) { SharedHighlight = true }) as ListAnswer;
-            var pick = a is { Action: >= 0 } && a.Action < entries.Count ? entries[a.Action] : ViewEntry.Exit;
+            var shownEntries = AmigaView.Entries(entries, c);
+            int exit = shownEntries.Count - 1;
+            var a = Ask(new PageRequest([.. shownEntries.Select(ViewWord)], Text[CombatMsg.ViewPrompt].Trim(), exit) { SharedHighlight = true }) as ListAnswer;
+            var pick = a is { Action: >= 0 } && a.Action < shownEntries.Count ? shownEntries[a.Action] : ViewEntry.Exit;
             _lastView = pick == ViewEntry.Exit ? null : (c, View.Page!, pick);
+            if (pick == ViewEntry.Rename)
+            {
+                // The Amiga's Rename (AmigaView): the requester, then the same page (R draws nothing again).
+                if (Ask(new TextRequest(AmigaView.RenamePrompt(c), false, AmigaView.RenameLength)) is string name)
+                    c.Name = name;
+                redraw = false;
+                continue;
+            }
             if (pick != ViewEntry.Spells)
                 return pick;
             // Spells (0x239D6 in show mode): the memorised list; nothing changes, the View menu comes back. S is a

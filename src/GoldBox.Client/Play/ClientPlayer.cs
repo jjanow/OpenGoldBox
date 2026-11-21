@@ -75,8 +75,8 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
     /// After a CLEARBOX blank the view redraw 0x2DCF4 (a script switch's, 0x3FF5, or a command's) draws the 88 × 88 3D
     /// view alone: the rest of cells (1, 1)–(15, 15), the view's box among them, stays blank (DOSBox-X s39: CLEARBOX;
     /// NEWECL 20 from save A, still blank after the new script's text and two turns). The screens that draw the whole
-    /// layout again (camp, shop, temple, fight, hall: START 0x3379 → 0x272A) end it. [?] Other full redraws (View, a
-    /// load's entry) are not followed.
+    /// layout again end it: START 0x3379 (the camp, shop, temple, fight, hall, View, Cast, a load's entry: <see cref="InterfaceDrawn"/>)
+    /// and EXIT's window redraw after a PROTECT (the full list: view3d.md "Text window", P s41).
     /// </summary>
     public bool ViewBoxBlank { get; set; }
 
@@ -90,6 +90,7 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
         private set
         {
             _viewOverlay = value;
+            PictureUndrawn = false;
             if (value is null)
                 ViewPicture = null;
         }
@@ -107,8 +108,20 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
     public List<string> Log { get; } = [];
 
     private int Choose(string? prompt, IReadOnlyList<string> items, bool vertical = false, int? cancel = null,
-        bool animates = false) =>
-        runner.Ask(new ChoiceRequest(prompt, items, vertical, cancel) { Animates = animates }) is int i ? i : 0;
+        bool animates = false)
+    {
+        // The menu routine 0x2CC8C also animates while VM $4AFF is not 0, and clears it at its end (AreaLoop.MenuAnimateCell).
+        var mem = memory();
+        animates |= mem.MenuAnimates && ViewPicture is { Kind: ViewPictureKind.Picture };
+        try
+        {
+            return runner.Ask(new ChoiceRequest(prompt, items, vertical, cancel) { Animates = animates }) is int i ? i : 0;
+        }
+        finally
+        {
+            mem.MenuAnimates = false;
+        }
+    }
 
     /// <summary>
     /// DS:84E1, the picture animation's arm (<see cref="EclMemory.PictureArmed"/>; set by the step's pass 0x4223 and by
@@ -489,20 +502,88 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
             ProgramWord = () => ProgramWord,
         };
         Hall = hall;
+        var mem = memory();
+        mem.InterfaceState = 0; // 0x19AF9
         try
         {
             HallScreens.Run(context);
-            // Begin returns with DS:49F3 = 4 and the redraw START 0x3379 draws every window again, which blanks the
-            // text box; the cursor DS:5E24/5E25 stays (DOSBox-X s22: a PRINT after PROGRAM 0 runs on after the
-            // earlier text, on the empty row).
-            Text.ClearRect(TextWindow.Left, TextWindow.Top, TextWindow.Right, TextWindow.Bottom);
-            PositionLineErased = false;
+            // Begin sets DS:49F3 := 4 (0x19DCF); a Load of a save with another state leaves the menu with the save's
+            // value (0x1F87B, 0x19D91; PorGame.LoadInHall). PROGRAM 0 then calls START 0x3379 (0x3B95), which draws every
+            // window again (the text box blanked, the cursor DS:5E24/5E25 kept: DOSBox-X s22, a PRINT after PROGRAM 0
+            // runs on after the earlier text, on the empty row) and by the state the view (4, 3) or the camp's picture
+            // (2: a camp save, the usual kind; DOSBox-X s39/s41).
+            if (!hall.LeaveAfterLoad)
+                mem.InterfaceState = 4;
+            DrawInterface();
         }
         finally
         {
             Hall = null;
         }
     }
+
+    /// <summary>
+    /// START 0x3379 drew the screen for interface state <paramref name="state"/> while exploring (<see
+    /// cref="GoldBox.Core.Explore.AreaLoop.DrawInterface"/>: the hall's end, a load's entry, the command line's View and
+    /// Cast; P s41). 0x32CA draws every window again, each blanked inside: the text box (the cursor stays), the picture
+    /// window and, in cases 2 and 4, the 3D view's box (a CLEARBOX blank and its ring are gone, PROTECT's runes with
+    /// them); the party list (0x1307) and the position line (0x34AB). Case 2 shows the camp's picture (PIC 0x1D,
+    /// 0x2E170) until the next view redraw; cases 3 and 4 redraw the view next (0x2DCF4, the area loop's redraw).
+    /// </summary>
+    /// <summary>START 0x3379 by the game's DS:49F3 (<see cref="GoldBox.Core.Explore.AreaLoop.DrawInterface"/>, followed here).</summary>
+    public void DrawInterface()
+    {
+        if (Game() is not { } g)
+        {
+            InterfaceDrawn(memory().InterfaceState);
+            return;
+        }
+        FollowInterface(g);
+        g.Loop.DrawInterface();
+    }
+
+    private readonly HashSet<GoldBox.Data.Por.PorGame> _interfaceFollowed = [];
+
+    /// <summary>Follows the game's START 0x3379 draws (<see cref="InterfaceDrawn"/>), once per game.</summary>
+    public void FollowInterface(GoldBox.Data.Por.PorGame g)
+    {
+        if (_interfaceFollowed.Add(g))
+            g.Loop.InterfaceDrawn += InterfaceDrawn;
+    }
+
+    public void InterfaceDrawn(byte state)
+    {
+        if (state is not (2 or 3 or 4))
+            return;
+        ViewBlanked = false;
+        ViewBoxBlank = false;
+        TextBoxFramed = false; // the joints come back with the windows (D s41: a member message, then Cast's list and Escape)
+        ViewGlyphs = [];
+        _glyphsInWindow = false;
+        ScreenGlyphs = [.. ScreenGlyphs.Where(g => g.Row == 24)];
+        Text.ClearRect(TextWindow.Left, TextWindow.Top, TextWindow.Right, TextWindow.Bottom);
+        PositionLineErased = false;
+        ReleaseRosterNames();
+        if (state == 2)
+        {
+            ShowPicture(Screens.ExploreScreen.CampPicture, null);
+            PictureUndrawn = true;
+        }
+    }
+
+    /// <summary>
+    /// START 0x3379 case 2 loads the camp's PIC 0x1D into the frame table (0x2E170 with 0) without drawing it: the window
+    /// (in the 3D view's box) stays blank until a menu animates the frames (HMENU / ENCMENU with DS:84E0 and 84E1 set,
+    /// the camp's menus), which then stay drawn (DOSBox-X s41: after a hall Load of a camp save the HMENU drew the camp
+    /// picture; View's exit there left the box blank). Any other picture or view redraw ends it.
+    /// </summary>
+    public bool PictureUndrawn { get; set; }
+
+    /// <summary>
+    /// The position line ends in "CAMPING" (START 0x366D: DS:49F3 = 2): in the camp, and after a training hall's Load of
+    /// a camp save until DS:49F3 is written again (<see cref="GoldBox.Core.Ecl.EclMemory.InterfaceState"/>).
+    /// </summary>
+    public bool CampingLine => Camping || (Interface is null && Hall is null && memory().InterfaceState == 2);
 
     /// <summary>The word after START on the DOS command line (ParamStr(1); the hall's J), or null.</summary>
     public string? ProgramWord { get; set; }
@@ -643,6 +724,7 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
     {
         Resources = () => Resources,
         Typing = () => memory().TypesText,
+        PortraitsOn = () => CampSettings.Portraits(memory()),
     };
 
     /// <summary>
@@ -886,6 +968,7 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
             Halt = Halt,
             ViewPage = ViewPage,
             ItemsPage = ItemsPage,
+            TalkOverItemsPage = on => ItemsTalk?.Invoke(on ? Text : null),
             Coins = Coins,
             Memory = memory(),
         };
@@ -895,6 +978,9 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
     /// set with <see cref="ViewPage"/>.</summary>
     public Func<EclCharacter, IReadOnlyList<ItemsEntry>, int, Func<byte[], string>, ListAnswer>? ItemsPage { get; set; }
     public Func<EclCharacter, IReadOnlyList<int>, (int Kind, ushort Amount)?>? Coins { get; set; }
+
+    /// <summary>The text window Sell / Id talk in over <see cref="ItemsPage"/> (null when they are done), set with it.</summary>
+    public Action<TextWindow?>? ItemsTalk { get; set; }
 
     /// <summary>
     /// View's page and menu as the program draws them (0x21AED; the party menu's, <see cref="PartyMenuFlow.ViewPage"/>),
@@ -1006,6 +1092,7 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
         var shown = new OutsideEffectMessages(Text, runner.Ask, () => memory().GameSpeed, Resources.CombatTexts, () => false,
             cue => Sound.Cue(cue), revived: HoldRosterName, listDrawn: ReleaseRosterNames);
         g.OutsideEffects.Event += (c, e) => shown.Show(c, e, g.OutsideEffects);
+        FollowInterface(g); // START 0x3379 while exploring (a load's entry, View, Cast)
     }
 
     private readonly HashSet<EclCharacter> _rosterHeld = [];
@@ -1120,6 +1207,9 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
             return false;
         var before = Interface;
         Interface = Venue.Camp;
+        var mem = memory();
+        byte state = mem.InterfaceState;
+        mem.InterfaceState = 2; // 0x196AC; the old value back on the way out (0x197F2)
         try
         {
             PlaySong?.Invoke(1);
@@ -1129,11 +1219,36 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
         {
             PlaySong?.Invoke(0);
             Interface = before;
+            mem.InterfaceState = state;
         }
     }
 
+    /// <summary>
+    /// The command line's V (0x1710F / 0x17327 → 0x21AED): the View page and menu on the current member, as the camp's,
+    /// with DS:49F3 = 3 or 4 (Items offers Use, no Sell / Id); its exit (0x21D4F) draws START 0x3379 for the state.
+    /// </summary>
+    public void View()
+    {
+        if (Trade(Game()?.Encounter.State) is not { } t)
+            return;
+        CharacterView.Run(t, Venue.Explore);
+        DrawInterface();
+    }
+
+    /// <summary>
+    /// The command line's C (0x170F8 / 0x1731C → 0x17CD2): the camp Magic menu's Cast outside the camp (<see
+    /// cref="CampScreens.CastMenu"/>); its redraws (0x17D96 after a list, the target pick's 0x27AFA) are START 0x3379 for
+    /// the interface state (<see cref="GoldBox.Core.Explore.AreaLoop.DrawInterface"/>), not the camp's.
+    /// </summary>
+    public void Cast()
+    {
+        if (Trade(Game()?.Encounter.State) is not { } t)
+            return;
+        CampScreens.CastMenu(CampContextFor(t, DrawInterface));
+    }
+
     /// <summary>The camp's rules on this game: spell table, scroll test, the effect engine out of combat, the generator.</summary>
-    private CampContext CampContextFor(TradeContext t)
+    private CampContext CampContextFor(TradeContext t, Action? interfaceRedraw = null)
     {
         var mem = memory();
         var game = Game();
@@ -1159,6 +1274,7 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
             EditIcon = IconEditor is { } edit ? c => { edit(c); game?.Loop.IconEditorDone(); } : null,
             Effects = effects,
             Cue = cue => Sound.Cue(cue),
+            InterfaceRedraw = interfaceRedraw,
         };
     }
 
@@ -1184,6 +1300,7 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
                 mem.Write((ushort)(0x4AFA + k), (ushort)(_wallSets[k] is { } w ? w & 0xFFFF : 0xFFFF));
                 mem.Write((ushort)(0x4AFD + k), (ushort)(k + 1));
             }
+        mem.MenuAnimates = mem.Read(GoldBox.Core.Explore.AreaLoop.MenuAnimateCell) != 0; // the cells written (0x1FE70)
         try
         {
             var bytes = GoldBox.Data.Por.PorSaveGame.Build(mem, party.Members.Count, letter, interfaceState);

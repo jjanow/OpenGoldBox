@@ -128,7 +128,10 @@ has 136 of 136 frames equal (help lines and camp picture masked) since the party
 drawing (view3d.md "Where the party list is drawn"), and the Cure Light Wounds run (Magic, Cast, the spell, START's
 member pick End, End, S) 43 of 43 with the program's pick (camp.md "Cast's target"). In a fight START 0x2EEA prints
 through START 0x16EC from row 10 with the pause and draws no list (DS:49F3 = 5): Client `CombatChooser.HealedWords`
-for handlers 50 / 62 and Cure Light Wounds (not taken in DOSBox-X in a fight `[?]`).
+for handlers 50 / 62 and Cure Light Wounds. **D** (s41, Brother Sean's Cure Light Wounds on himself at full HP in a
+test fight, combat-menu.md "Cast"): his name at (23, 10), the fully-healed words typed from row 11, the game-speed
+pause, the rows cleared, the aim menu (Target lit) still on row 24; the Client's frames of the cast and the message
+all equal DOSBox-X's (with the begun spell's message moved before the aim, s41).
 
 **Terrain** (0x2B9D1, end of round after class 0x13, per creature in play): the terrain of its own square (0x313F3,
 direction 8) = 0x1E (stinking cloud) and none of 0x1E, 0x1F, 0x20, 0x6F, 0x7D: save vs. type 0 (no modifier); saved

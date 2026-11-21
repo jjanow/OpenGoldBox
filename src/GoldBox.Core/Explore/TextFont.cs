@@ -116,6 +116,18 @@ public sealed class TextFont
     }
 
     /// <summary>
+    /// Draws <paramref name="text"/> once in the palette index <paramref name="pen"/>, set bits only, with the face's
+    /// glyphs (an Intuition text drawn in one pass, e.g. a string gadget's); false without a face.
+    /// </summary>
+    public bool DrawPen(IndexedFrame f, int x, int y, string text, byte pen)
+    {
+        if (Face is not { } face)
+            return false;
+        Pass(face, f, x, y, text, pen);
+        return true;
+    }
+
+    /// <summary>
     /// The menu routine's prompt (hunk 19 +0x4EEE–0x4F6A): with the face, in the pass-2 pen at x + 3 first, then in the
     /// pen at x + 4 (set bits; the first pass's JAM2 background `[?]`); without it as <see cref="Draw"/>.
     /// </summary>

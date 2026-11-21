@@ -272,6 +272,7 @@ public sealed class EncounterHost : IEclHost
         State.SpriteShown = false;
         Memory.ClearEncounterDraw(); // 0x261F: DS:84C8–84C9
         Memory.PictureShown = false; // 0x2630
+        Memory.InterfaceState = (byte)(Memory.ViewMode == 1 ? 4 : 3); // 0x25F7–0x2605
         // 0x2635: START 0x3379 with DS:49F3 = 4 (3D) or 3 (0x25F7–0x2605): cases 3 and 4 redraw the view (0x2DCF4), on
         // the overland the marker too.
         Explore.Overland.Redrawn(Memory);

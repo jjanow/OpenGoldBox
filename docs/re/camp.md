@@ -74,6 +74,24 @@ loot picture's phase). Client: `TradeContext.ViewPage` (`ClientPlayer.ViewPage` 
 memory for the portrait rule), drawn by the explore screen's party-page overlay, which hands back after View
 (`SheetRequest.IsView`); our notices for commands not built go on the page's bottom line; one highlight cell for every
 screen with `--save` too (`Program.SharedHighlightFor`). Tests `VenueTests.Camp_shop_and_loot_view_use_the_programs_page`.
+**From the command line (P + D s41).** The exploring command line's V and C (3D and overland, view3d.md "Area
+loop") call the same 0x21AED and the camp Magic menu's Cast 0x17CD2 with DS:49F3 = 4 or 3: View's Items offer Use as
+in the camp; View's exit and Cast's redraws (0x17D96, the target pick's 0x27AFA) draw START 0x3379 for that state (the
+exploring screen, not the camp's). Client: `ClientPlayer.View` / `Cast`, `Venue.Explore`, `CampContext.InterfaceRedraw`.
+`[?]` Seen on the overland (s41): Down on Brother Sean's spell list (0x2D669 with the keypad flag) moved DOSBox-X's lit
+row to the next spell, the Client's not (the camp's list is the same).
+**Trade, read (P s41; not built `[?]`).** The Items page's Trade (0x2276E, on the lit item): the viewed member
+DS:471A is the pick's start; START 0x3379 redraws the screen for DS:49F3 (the exploring layout from the command line);
+START's member pick 0x37E8 with the prompt at unit offset 0x1718 (the ask-whom-to-trade-with prompt, keypad flag 1); nothing picked
+ends; else DS:471A := the pick, and 0x23795 (`ShopRules.CanCarry`: 0xC7 > 15, or weight 0x102 + item 0x37 × 0x39
+above START 0x1F4B + 1500, after START 0x1758 on the pick) refuses with the overloaded message (offset 0x1729) through START
+0x2233 (row 24, game-speed pause); else START 0x2197 adds the item to the pick, START 0x20A9 takes it from DS:5D92 and
+START 0x1758 recalculates the pick. View's money Trade (0x23190): the same redraw and pick with the trade-to prompt (offset
+0x211A); then the page of DS:471A (0x21084) and its money lines (0x21547), DS:471A := the pick, the coin list of DS:5D92
+(0x2D669, as Drop's), the amount (0x24F1D) and the transfer 0x250D5, until the list is left (0x2DAC2 frees it). Both
+draw START 0x3379 (so on the overland each advances the marker, geo-format.md). Open: the three texts are not in the
+module yet (importer keys), 0x250D5's limits, and whether the View page after a trade shows DS:471A (the pick) while
+its menu acts on DS:5D92 (to be seen in DOSBox-X).
 
 **Items and Drop from View** (P + D, s39). Items is 0x21F32 in every venue: its page (0x221DE–0x2229B: braid rows 0, 2,
 23; the name with "'S" and the title on row 1, the heading on row 3, the list window (1,5)–(38,22)) and the item list
@@ -94,9 +112,23 @@ E; Ready Trade Drop Halve Join Sell Id Exit) 7 of 10 (help lines twice, the same
 `TradeContext.ItemsPage` / `Coins` (`PartyMenuFlow.ItemsPage` / `Coins`, `CharacterPageRequest`, drawn by
 `PartyMenuScreen` with `PageChrome`, the fight's page code; `ItemsPages` builds the Items page for both); Sell and Id
 run as before, the other item commands are still our notice; keyboard Up / Down move the row (the Client's, as Left
-/ Right move the word; the program ignores both: a deliberate difference, user s40). `[?]` Where Sell's and Id's questions and messages go over the Items page is not seen:
-the Client shows them in the venue's text window. Tests `PartyMenuScreenTests.View_drop_goes_through_the_coin_list`,
-`View_is_the_camp_view_menu_on_the_program_page`.
+/ Right move the word; the program ignores both: a deliberate difference, user s40). Tests
+`PartyMenuScreenTests.View_drop_goes_through_the_coin_list`, `View_is_the_camp_view_menu_on_the_program_page`.
+**Sell and Id over the Items page** (P s41: 0x22472 → 0x21DAA, 0x22D28; 0x22F8C): every text goes through START 0x77F8
+in the box (1, 21)–(38, 22), colour 14, straight over the page (no frame), and each routine blanks the box at its
+end (03F1:0137). Sell: a readied item gets the unready message on row 24 (START 0x2233, the game-speed pause); a
+scroll with a spell to scribe its owner's name at (1, 21) (START 0x23B6), the warning from column name length + 2
+and the yes/no; then the offer (cleared first), the deal question (0x2D9A0: No lit); Yes: the sold message on row 24, the item
+removed and paid, and the overloaded message on row 24 when platinum went to the pool (0x24CDD). Id: the 200-gold offer, the
+yes/no; Yes: paid (character, else pool) or the no-money message on row 24; paid: the nothing-new words before
+the item when it was identified already, else it is identified and the looks-like words before its new name
+(string 0x22F70, `Msg.LooksLike`, importer 0.7.30), both in the box, then PauseOnly. While a text types or pauses
+row 24 keeps the page's menu with the chosen entry lit. **D** (s41, slot F's shop, Thrender: View, Items, Sell on the
+readied flail, Id, Yes with too little gold, Escape): the unready message, the offer typed over rows 21–22 under
+the page menu with Id lit, the deal question with No lit, the no-money message, the box blanked: 44 of 46
+Client frames equal (the misses the help line and one transition frame between the shop menu and View's page).
+Client: `CharacterView.SellOnPage` / `IdentifyOnPage` with `TradeContext.TalkOverItemsPage` (the party-menu
+overlay stays up and draws the box, `PartyMenuFlow.TextOverPage`); tests `ItemsPageTalkTests`.
 
 ## Rest (0x17FAB → 0x24A66) — P, D
 
@@ -232,10 +264,15 @@ one-member spell outside a fight (0x27AA9, target type 2) redraws the camp scree
 spell page goes, the party list is drawn), then runs START's member pick 0x37E8 (00BA:2C48) on DS:6DB5, the remembered
 target (the caster the first time, 0x27AB8): each pass draws the list with the pick lit (00BA:2CA1) and the menu "Cast
 Spell on whom" with Select / Exit (00BA:2C41 / 2C19; keypad flag in the camp); End the next member, Home the one
-before, both wrapping (00BA:2D29, 2D57); E or Escape (0) clears the pick (00BA:2DD6); the loop ends on Return, Escape,
-E or S (set 00BA:2C1F); DS:5D92 does not change. **D** (s39, Brother Sean's Cure Light Wounds, End, End, S on
-Phineas): as read. Client: `CampScreens.PickTarget` (Escape is Exit there; the program's Escape clears the pick and
-goes on).
+before, both wrapping (00BA:2D29, 2D57); E or Escape (0) clears the pick (00BA:2DD6); the loop ends on a key of the
+set 00BA:2C1F (0x0D, 0x1B, 'E', 'S'), which the menu's Escape (0) is not: **Escape clears the pick and the menu comes
+again** with nobody lit (Select then ends with no target, Cast does nothing). With no pick, Home walks from the first
+member to the one whose next pointer is nil (the last); End reads the next pointer of a nil record, 0000:0104 (the
+INT 41h vector): no member, nobody lit, and a Select would cast on that address `[?]` (not tried; the Client keeps no
+pick there). DS:5D92 does not change. **D** (s39, Brother Sean's Cure Light Wounds, End, End, S on Phineas): as read.
+**D** (s41, the same spell from save A's camp): Escape left the menu up with Brother Sean no longer lit; End then lit
+nobody; Escape, Home lit Phineas. Client: `CampScreens.PickTarget` (Escape: `CampScreens.Escaped`, the pick cleared
+and the menu again; test `CampEffectMessageTests.The_target_picks_escape_clears_the_pick_and_the_menu_goes_on`).
 **Read s30 (P):** after a pick Cast 0x17CD2 draws the text box's frame (03F1:0000 around (1, 17)–(38, 22), style 0:
 rows 16 and 23, columns 0 and 39) over the page, blanks its inside (03F1:0137 = START 0x4047), casts (0x27C38), then
 sets its position word to −1 (0x17D52), so the next 0x239D6 draws the window and title again and the list starts on
@@ -296,7 +333,10 @@ Menu DS:055A (Order, Drop, Speed, Icon, Pics, Exit), prompt 0x19441; extended ke
 - **Speed (0x192C8)**: the speed line (0x19261, the value, 0x1926F; row 18); the menu offers Faster while n > 0,
   Slower while n < 9, and Exit (0x19286–0x19296); Down / F speed up, Up / S slow down, until Exit or Escape. The game delay is DS:49E2
   (`EclMemory.GameSpeed`): new game 1, the save copies it into $49FC, Load takes it back. The Client's Alter Speed,
-  DELAY, the combat pauses and the Done menu's Speed all use `EclMemory.GameSpeed`.
+  DELAY, the combat pauses and the Done menu's Speed all use `EclMemory.GameSpeed`. The program never scales its fixed
+  delays (flights, hit pictures, the attack pose, picture loops) by it; the Client's ANIMATION setting (QoL, default
+  ORIGINAL = the program's timings; combat-menu.md "Animation speed") does, and game speed 0 plus INSTANT is the
+  fastest play.
 - **Icon** (0x1951F): the icon editor 0x1D1AC (far 0078:002F; character creation's routine, read s20, start-menu.md
   §3, Core `IconEditor`) on the current character (DS:5D92), then the screen redrawn for the interface state (START
   0x3379, 00BA:27D9). Client: `CampContext.EditIcon` runs the party menu's editor (`PartyMenuFlow.EditIcon`); the

@@ -93,6 +93,9 @@ public sealed record KeyRequest(string? Prompt = null) : PlayerRequest
     /// </summary>
     public int MenuEntries { get; init; }
 
+    /// <summary>A menu-style prompt's text in the program's own case (the Amiga draws it so: <see cref="AmigaView"/>).</summary>
+    public string? Original { get; init; }
+
     /// <summary>The prompt's colour when it is not 13 (START 0x7C85 takes it as an argument: DAMAGE's line is 15).</summary>
     public byte? Colour { get; init; }
 
@@ -222,6 +225,12 @@ public sealed record DelayRequest(TimeSpan Duration) : PlayerRequest
     /// as the end game's 0x206A3), so the screen's frame of delay in noticing each end does not add up.
     /// </summary>
     public bool Chained { get; init; }
+
+    /// <summary>
+    /// A fixed program delay (or the Client's one-frame display point) that the game speed does not scale: the QoL
+    /// <see cref="AnimationSpeed"/> scales it (<see cref="AnimationTiming.Apply"/>, in <see cref="ScriptRunner.Ask"/>).
+    /// </summary>
+    public bool Animation { get; init; }
 }
 
 /// <summary>Thrown inside the worker when the runner is shut down while it waits.</summary>
@@ -242,6 +251,18 @@ public sealed class ScriptRunner : IDisposable
 
     /// <summary>UI services that need to advance during a synchronous command. Must not read game state.</summary>
     internal Action? ServiceWhileWaiting { get; set; }
+
+    private volatile AnimationSpeed _animationSpeed = AnimationSpeed.Original;
+
+    /// <summary>
+    /// QoL animation speed (<see cref="ClientSettings.AnimationSpeed"/>; Original = the program's timings): applied here
+    /// to every <see cref="DelayRequest.Animation"/> pause the worker asks for. Set from the UI thread.
+    /// </summary>
+    public AnimationSpeed AnimationSpeed
+    {
+        get => _animationSpeed;
+        set => _animationSpeed = value;
+    }
 
     /// <summary>A command is in progress (running or parked on a request).</summary>
     public bool Busy { get; private set; }
@@ -318,6 +339,9 @@ public sealed class ScriptRunner : IDisposable
     {
         if (_cancel)
             throw new RunnerCancelledException();
+        if (AnimationTiming.Apply(request, AnimationSpeed) is not { } asked)
+            return null; // Instant: a skipped animation pause, answered as a pause is
+        request = asked;
         Pending = request;
         _toUi.Release();
         _toWorker.Wait();

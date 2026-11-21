@@ -36,13 +36,14 @@ public sealed record ViewPicture(ViewPictureKind Kind, int Id, int? Head, int Di
 /// Client uses the delay with the DOS rule. The sprite frame follows the view mode and encounter distance. Its place
 /// comes from the frame's block x, y in 8-pixel units inside the window. A
 /// portrait draws both parts from one variant (one palette): when the variant lacks either part, both are DOS. The
-/// Amiga HEAD is 56 px wide with no position; it is drawn at x = 16 [?] (outline matching, por-art-formats.md §3).
+/// Amiga HEAD is 56 px wide with no position; the program blits it two cells into the window (x = 16; hunk 19 +0x113C,
+/// por-art-formats.md §3).
 /// </summary>
 public sealed class ViewPictures
 {
     public const int Window = 88, HeadRows = 40;
 
-    /// <summary>Where the Amiga HEAD goes in the window [?] (por-art-formats.md §3: best outline match 15–17 px, 16 most often).</summary>
+    /// <summary>Where the Amiga HEAD goes in the window: column + 2 (hunk 19 +0x1158, read s41; outline matching gave 16 too).</summary>
     public const int AmigaHeadX = 16;
 
     private readonly IPorContent? _content;

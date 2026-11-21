@@ -7,8 +7,9 @@ namespace GoldBox.Client.Audio;
 
 /// <summary>
 /// The Client's sound (docs/re/sound.md): the program's sound calls (<see cref="ISoundSink"/>, from the game-logic
-/// thread) go to the DOS driver or Amiga effects on the device the setting picks, rendered at 44.1 kHz mono into a
-/// MonoGame <see cref="DynamicSoundEffectInstance"/> on the UI thread through its buffer callback.
+/// thread) go to the DOS driver or Amiga effects on the device the setting picks, rendered at 44.1 kHz stereo (the
+/// DOS devices on both sides, the Amiga's channels 0 and 3 left, 1 and 2 right) into a MonoGame
+/// <see cref="DynamicSoundEffectInstance"/> on the UI thread through its buffer callback.
 /// <list type="bullet">
 /// <item>Auto-stop cues (step, impact, miss, bump): game logic waits for the driver to finish while the UI thread
 /// continues to service the sound output.</item>
@@ -30,7 +31,8 @@ public sealed class ClientAudio : ISoundSink, IDisposable
     private ClientSoundDevice? _device;
     private readonly DynamicSoundEffectInstance _out;
     private readonly float[] _samples = new float[Chunk];
-    private readonly byte[] _bytes = new byte[Chunk * 2];
+    private readonly float[] _right = new float[Chunk];
+    private readonly byte[] _bytes = new byte[Chunk * 4];
     private readonly int _uiThread;
     private bool _resident, _closing;
     private TimeSpan _openedAt;
@@ -71,7 +73,7 @@ public sealed class ClientAudio : ISoundSink, IDisposable
         try
         {
             var music = amiga is null ? null : new AmigaMusic(amiga, SampleRate);
-            output = new DynamicSoundEffectInstance(SampleRate, AudioChannels.Mono);
+            output = new DynamicSoundEffectInstance(SampleRate, AudioChannels.Stereo);
             return new ClientAudio(sound, device, music, output, Environment.CurrentManagedThreadId);
         }
         catch (Exception e) when (e is NoAudioHardwareException or InvalidOperationException or TypeInitializationException
@@ -148,6 +150,21 @@ public sealed class ClientAudio : ISoundSink, IDisposable
             Console.Error.WriteLine($"sound {Clock.Elapsed.TotalSeconds:F3} {what}");
     }
 
+    private volatile bool _instant;
+
+    /// <summary>
+    /// QoL animation speed Instant (<see cref="Play.AnimationSpeed.Instant"/>): the logic does not wait out an auto-stop
+    /// sound (a step, hit, miss: the program's busy-wait, docs/re/sound.md §2), and a cue that comes while one still
+    /// sounds is skipped rather than queued, so the sounds never pile up behind the fight (also outside fights: the 3D
+    /// view's step and bump sounds no longer pace walking). Resident brackets (flights,
+    /// the body) are unchanged: their end cuts the tune. Off = the program's waits.
+    /// </summary>
+    public bool Instant
+    {
+        get => _instant;
+        set => _instant = value;
+    }
+
     public void Cue(SoundCue cue)
     {
         PcSoundPlayer player;
@@ -166,11 +183,18 @@ public sealed class ClientAudio : ISoundSink, IDisposable
             if (_player is not { } active)
                 return;
             player = active;
+            if (_instant && !_resident && player.Busy)
+            {
+                Log($"{cue} skipped (instant)");
+                return; // QoL Instant: an auto-stop sound still running is not queued behind (no pile-up)
+            }
             Log(cue.ToString());
             if (_resident && _closing)
                 CloseBracket();
+            _held = false; // a cue right after a waited one starts where that one ended (FillBuffers)
             player.Cue(cue);
-            wait = !_resident;
+            wait = !_resident && !_instant;
+            _awaited = wait;
         }
         // The program busy-waits in the sound command until an auto-stop sound is cut; the logic thread does too.
         if (wait && Environment.CurrentManagedThreadId != _uiThread)
@@ -191,6 +215,7 @@ public sealed class ClientAudio : ISoundSink, IDisposable
         Log("(");
         lock (_lock)
         {
+            _held = false;
             _closing = false;
             if (_player is null || _resident)
                 return; // a new bracket right after a deferred one: the timer stays
@@ -228,28 +253,58 @@ public sealed class ClientAudio : ISoundSink, IDisposable
         // The dispatcher removes played buffers and calls this handler. Both operations must stay on the UI thread.
         while (_out.PendingBufferCount < 3)
         {
+            int n = Chunk;
             lock (_lock)
             {
+                if (_held)
+                {
+                    // Only while buffers are still queued: the next BufferNeeded comes when one of them is played, so
+                    // an empty queue would never call back (a stalled UI thread drains it).
+                    if (Clock.Elapsed - _heldSince < HoldFor && _out.PendingBufferCount >= 2)
+                        return;
+                    _held = false;
+                }
                 if (_player is { } player)
                 {
-                    player.Render(_samples);
+                    // A cue the logic thread waits on: the buffer ends where it stops, and nothing more is rendered
+                    // until the next sound call (or HoldFor), so a cue that follows at once starts on that sample as
+                    // in the program (DOS: the second of two back-to-back cues 109.85 ms after the first's rise, the
+                    // step's 26 driver ticks; the Client was 116.67 ms, the 60 Hz buffer after the stop).
+                    n = player.Render(_samples, _awaited);
+                    if (n < Chunk)
+                    {
+                        Array.Clear(_samples, n, Chunk - n);
+                        _awaited = false;
+                        _held = true;
+                        _heldSince = Clock.Elapsed;
+                    }
                     if (_resident && _closing && !player.Driver.Busy(player.Device))
                         CloseBracket();
                 }
                 else
                     Array.Clear(_samples);
+                Array.Copy(_samples, _right, Chunk); // the DOS devices are mono: the same on both sides
                 if (_device is not null)
-                    _music?.Render(_samples);
+                    _music?.Render(_samples.AsSpan(0, n), _right.AsSpan(0, n));
             }
-            for (int i = 0; i < Chunk; i++)
+            for (int i = 0; i < n; i++)
             {
-                int v = (int)Math.Round(Math.Clamp(_samples[i], -1f, 1f) * 32767);
-                _bytes[2 * i] = (byte)v;
-                _bytes[2 * i + 1] = (byte)(v >> 8);
+                int l = (int)Math.Round(Math.Clamp(_samples[i], -1f, 1f) * 32767);
+                int r = (int)Math.Round(Math.Clamp(_right[i], -1f, 1f) * 32767);
+                _bytes[4 * i] = (byte)l;
+                _bytes[4 * i + 1] = (byte)(l >> 8);
+                _bytes[4 * i + 2] = (byte)r;
+                _bytes[4 * i + 3] = (byte)(r >> 8);
             }
-            _out.SubmitBuffer(_bytes);
+            if (n > 0)
+                _out.SubmitBuffer(_bytes, 0, 4 * n); // 16-bit stereo
         }
     }
+
+    /// <summary>The longest the output holds at a waited cue's end for the next call (one 60 Hz buffer).</summary>
+    private static readonly TimeSpan HoldFor = TimeSpan.FromMilliseconds(16);
+    private bool _awaited, _held;
+    private TimeSpan _heldSince;
 
     public void Dispose()
     {

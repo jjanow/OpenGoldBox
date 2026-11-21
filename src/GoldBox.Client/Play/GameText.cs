@@ -46,7 +46,7 @@ public enum Msg
     NpcTag, WeaponLabel, ArmorLabel, AcLabel, HpLabel, Thac0Label, DamageLabel,
     // Items (0x21D5A–0x22F70)
     MustBeUnreadied, ScribeWarning, OkayToLose, IllGiveYou, GoldPiecesForYour, IsItADeal, Sold, SoldOverloaded,
-    IdentifyOffer, IdentifyDeal, IdentifyNoMoney, NothingNew,
+    IdentifyOffer, IdentifyDeal, IdentifyNoMoney, NothingNew, LooksLike,
     // Money (0x24E64–0x25964)
     MoneyToPool, Overloaded, CoinGems, CoinGold, CoinPlatinum, CoinElectrum, CoinSilver, CoinCopper, CoinJewelry,
     SelectCoin, HowMuch, WillYouTake,
@@ -219,6 +219,7 @@ public sealed class GameText
         [Msg.IdentifyDeal] = "AGREED?",
         [Msg.IdentifyNoMoney] = "NOT ENOUGH MONEY.",
         [Msg.NothingNew] = "NOTHING MORE TO LEARN ABOUT",
+        [Msg.LooksLike] = "IDENTIFIED: ",
         [Msg.MoneyToPool] = "TOO HEAVY: THE REST GOES TO THE POOL.",
         [Msg.Overloaded] = "TOO HEAVY",
         [Msg.CoinGems] = "GEMS",
@@ -291,6 +292,9 @@ public sealed class GameText
 
     /// <summary>The text, upper case as the font draws it.</summary>
     public string this[Msg id] => (_texts.TryGetValue(id, out var s) ? s : Table[id]).ToUpperInvariant();
+
+    /// <summary>A text in the program's own case (the Amiga draws its bytes as they are; <see cref="AmigaView.Case"/>).</summary>
+    public string Raw(Msg id) => _texts.TryGetValue(id, out var s) ? s : Table[id];
 
     /// <summary>Two texts with one space between them (the program's strings often carry their own).</summary>
     public static string Cat(string a, object b)

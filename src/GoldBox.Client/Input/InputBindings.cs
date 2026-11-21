@@ -63,6 +63,10 @@ public enum GameAction
     FightAllQuick,
     /// <summary>Combat: the program's Alt-X debugging switch (0x1638E): works only with the start word (as the hall's J).</summary>
     FightAltX,
+    /// <summary>The command line's View (V, 0x21AED): the current member's page.</summary>
+    View,
+    /// <summary>The command line's Cast (C, 0x17CD2): the current member's memorised spells.</summary>
+    Cast,
 }
 
 /// <summary>The input device a binding or an input event belongs to.</summary>
@@ -128,6 +132,10 @@ public sealed class InputBindings
         b.Set(GameAction.FightQuickMagic, ["Alt+M"], ["LeftTrigger"]);
         b.Set(GameAction.FightAllQuick, ["Alt+Q"], ["RightTrigger"]);
         b.Set(GameAction.FightAltX, ["Alt+X"], ["LeftStick"]);
+        // The command line's V and C: Start and the right stick's click are not read on the explore line (R3 is the
+        // fight's space, which the fight reads only during the AI's turns).
+        b.Set(GameAction.View, ["V"], ["Start"]);
+        b.Set(GameAction.Cast, ["C"], ["RightStick"]);
         return b;
     }
 

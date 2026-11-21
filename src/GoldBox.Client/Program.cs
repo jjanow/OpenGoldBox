@@ -19,8 +19,10 @@ catch (Exception e) when (e is ArgumentException or FormatException)
 
 var settings = ClientSettings.Load();
 if (options.GameDirectory is not null || options.Stretch43 is not null || options.AmigaDirectory is not null
-    || options.Art is not null || options.Sound is not null || options.ProgramWord is not null)
+    || options.Art is not null || options.Sound is not null || options.ProgramWord is not null || options.AnimationSpeed is not null)
 {
+    if (options.AnimationSpeed is { } anim)
+        settings.AnimationSpeedChoice = anim;
     if (options.ProgramWord is not null)
         settings.ProgramWord = options.ProgramWord.Length > 0 ? options.ProgramWord : null;
     if (options.Sound is not null)
@@ -60,7 +62,7 @@ ClientArt? clientArt = null;
 
 // Load the player's files before the window opens; any problem is shown in the window title and on stderr.
 // The game logic runs on its own thread (ScriptRunner); the area entry (vector 4) already runs through it.
-var runner = new ScriptRunner();
+var runner = new ScriptRunner { AnimationSpeed = settings.AnimationSpeedChoice };
 PorGame? game = null;
 ClientPlayer? player = null;
 ClientAudio? audio = null;
@@ -116,10 +118,12 @@ else
         clientArt = new ClientArt(content, art, palette, settings.ArtChoice);
         Chrome.AmigaFrame = clientArt.Frame;
         Chrome.AmigaGadget = clientArt.Gadget;
+        AmigaView.On = clientArt.Frame is not null;
         clientArt.Changed = c =>
         {
             Chrome.AmigaFrame = clientArt.Frame;
             Chrome.AmigaGadget = clientArt.Gadget;
+            AmigaView.On = clientArt.Frame is not null;
             if (c == PorArtChoice.Dos && audio?.Device != ClientSoundDevice.Amiga)
                 audio?.PlaySong(0);
             settings.ArtChoice = c;
@@ -141,6 +145,7 @@ else
         if (audio is not null)
         {
             player.Sound = audio;
+            audio.Instant = settings.AnimationSpeedChoice == AnimationSpeed.Instant;
             runner.ServiceWhileWaiting = audio.Update;
         }
         player.SaveFolder = ClientSettings.SavesFolder;
@@ -265,6 +270,7 @@ else
             {
                 // Its Items page (0x21F32) and Drop's coin list (0x234E1), on the same overlay.
                 player.ItemsPage = (c, entries, row, name) => hf.ItemsPage(c, entries, row, name);
+                player.ItemsTalk = w => hf.TextOverPage = w;
                 player.Coins = (c, kinds) => hf.Coins(c, kinds);
             }
             loadSlot = (slot, started) =>
@@ -331,7 +337,16 @@ if (problem is not null)
 // The screens a game hands over to: the explore screen (with the hall's creation pages, a hall Load and the party menu
 // after a destroyed party), and the party menu (a new menu on an empty party, as after the program's game loop ends).
 // The controls screen's on/off settings (QoL, off = original), saved on each change.
-IReadOnlyList<SettingToggle> toggles = [SettingToggle.AfterDefeat(settings)];
+IReadOnlyList<SettingToggle> toggles =
+[
+    SettingToggle.AfterDefeat(settings),
+    SettingToggle.Animation(settings, s =>
+    {
+        runner.AnimationSpeed = s;
+        if (audio is not null)
+            audio.Instant = s == AnimationSpeed.Instant;
+    }),
+];
 IScreen MenuScreen(PartyMenuFlow flow, IScreenHost host) =>
     new PartyMenuScreen(flow, runner, host, menuContent!.Font, player!.Resources, clientArt!, g => ExploreFor(g, 'A', host))
     {

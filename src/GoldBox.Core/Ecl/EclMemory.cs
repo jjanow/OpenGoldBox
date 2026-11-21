@@ -77,6 +77,28 @@ public sealed class EclMemory
     public byte PreviousViewMode { get; set; } = 1;
 
     /// <summary>
+    /// DS:49F3, the interface state START 0x3379 draws the screen by (0 hall, 1 shop / temple, 2 camp, 3 overland, 4 3D,
+    /// 5 fight, 6 loot, 7 end game). The exploring writers (P s41, every byte write in START.EXE and GAME.OVR): the
+    /// game loop's first pass 4, or 3 for blocks 25–27 with $49E6 = 0 (0x405D / 0x408E); the script switch 0x3EFA the
+    /// same (0x3F3B–0x3F99); COMBAT's end 4 with DS:49FA = 1, else 3 (0x25FE / 0x2605: every fight, shop, temple and
+    /// after-combat step); the overland interface START 0x36FE 3 (0x3701); the camp 2 and back to the old value
+    /// (0x196AC / 0x197F2); the training hall 0 (0x19AF9) and 4 at Begin (0x19DCF), while its Load copies the save's
+    /// value (0x1F87B) and leaves the menu at once for a state ≠ 0 (so a camp save keeps 2: the camp screen and
+    /// "CAMPING" until one of these writers, training.md). Not modelled: 1, 5, 6, 7 (the venues and the fight set them
+    /// and COMBAT's end writes 3 / 4 after them). Saved at offset 12807 (PorSaveGame.InterfaceState).
+    /// </summary>
+    public byte InterfaceState { get; set; } = 4;
+
+    /// <summary>
+    /// VM $4AFF is not 0 as the menu routine 0x2CC8C reads it (<see cref="Explore.AreaLoop.MenuAnimateCell"/>): the next
+    /// menu animates the picture's frames, and every menu clears the cell at its end (0x2CFAD). Kept apart from the cell
+    /// itself, which the Client's save writes only for the wall-set slots it saw loaded (the program's save rewrites all
+    /// six from its cache, so the menus' zero never reaches a save file). Set by a Load from the save's cell and by a save
+    /// (it writes the cells first, 0x1FE70). Not saved.
+    /// </summary>
+    public bool MenuAnimates { get; set; }
+
+    /// <summary>
     /// DS:6DDC, the overland marker's animation counter (0–5, <see cref="Explore.Overland.MarkerFrame"/>). Its only
     /// writers are the start-up (0 at 0xE9D3) and the marker routine 0x2DB87 (+1 mod 6 at 0x2DC42): not saved, and a
     /// load does not touch it (<see cref="Explore.Overland.Redrawn"/>).

@@ -35,6 +35,8 @@ public sealed class CombatScreen
     private int _selected;
     /// <summary>The digits typed into a number request (drop money's amount).</summary>
     private string _typed = "";
+    /// <summary>A letters input (the Amiga View's Rename, <see cref="AmigaView"/>): keyboard, the pad's / mouse's grid.</summary>
+    private CharGrid? _letters;
     private TimeSpan _delayEnd;
     /// <summary>The pending request's screen has been drawn at least once (a zero wait still shows one frame).</summary>
     private bool _drawn;
@@ -58,6 +60,9 @@ public sealed class CombatScreen
 
     /// <summary>A fault of the logic, for the caller's report.</summary>
     public Action<Exception>? Report { get; init; }
+
+    /// <summary>The pictures (the Amiga View page's portrait, <see cref="AmigaView"/>), or null.</summary>
+    public ViewPictures? Pictures { get; init; }
 
     // ---------------------------------------------------------------------------------------------------------------
     // Geometry
@@ -135,6 +140,10 @@ public sealed class CombatScreen
             }
             case PageRequest pr:
                 return PageClick(pr, click);
+            case TextRequest { Numeric: false }:
+                if (_letters is { } lg && lg.Click(click) == true)
+                    Answer(lg.Typed);
+                return null;
             case TextRequest:
                 return NumberClick(click);
             case ChoiceRequest c:
@@ -215,9 +224,12 @@ public sealed class CombatScreen
         // (0x2D6B9). FollowHighlight keeps it on the menu's entry while the menu is up.
         _selected = 0;
         _typed = "";
+        _letters = request is TextRequest { Numeric: false } tr ? new CharGrid(CharGrid.Letters, LettersRow, tr.MaxLength) : null;
         // Another request that draws row 24 (or a page over the screen) replaces the menu kept there.
         if (request is not (null or DelayRequest or ChoiceRequest { Vertical: false }))
             _staleMenu = null;
+        if (request is not (null or DelayRequest))
+            _staleCursor = null;
         _hasClickAnswer = false;
         _drawn = false;
         switch (request)
@@ -238,6 +250,9 @@ public sealed class CombatScreen
                 break;
             case KeyRequest { AsMenu: true } km:
                 Highlight.Start(km.MenuEntries);
+                break;
+            case CombatCursorRequest cr:
+                _selected = Highlight.Start(CursorItems(cr).Count);
                 break;
             case ListRequest l:
                 _list.Sync(l);
@@ -347,6 +362,11 @@ public sealed class CombatScreen
                 return DecideCursor(cr, input, out answer);
             case PageRequest pr:
                 return DecidePage(pr, input, out answer);
+            case TextRequest { Numeric: false } when _letters is { } letters:
+                if (letters.Edit(input) is not { } done)
+                    return false;
+                answer = done ? letters.Typed : null;   // given up: no answer (Rename keeps the name)
+                return true;
             case TextRequest t:
                 return DecideNumber(t, input, out answer);
             case ChoiceRequest c:
@@ -432,6 +452,20 @@ public sealed class CombatScreen
             case PageRequest pr:
                 Highlight.Index = chosen && answer is ListAnswer { Action: var a } && a >= 0 && a < pr.Entries.Count ? a : _selected;
                 break;
+            case CombatCursorRequest cr when answered && answer is ManualInput { IsDirection: false } m:
+            {
+                // Manual's menu (0x2CC8C at 0x1596E) is the menu routine on the shared cell: a hotkey moves the cell to
+                // its entry and the row stays up with it lit until row 24 is written again (DOSBox-X s41: Darkstar's
+                // Sleep, Manual's line with Target lit through the flight and Rhiannon's
+                // panel). Escape leaves the cell; [?] Return (0x0D, Target whatever is lit) is taken as Target's entry.
+                var items = CursorItems(cr);
+                int entry = m == ManualInput.Target ? 0 : m == ManualInput.Center ? 1 : 2;
+                int at = items.FindIndex(e => e.Item == entry);
+                if (chosen && at >= 0)
+                    Highlight.Index = at;
+                _staleCursor = (cr, chosen && at >= 0 ? at : _selected, _view.Row24Writes);
+                break;
+            }
             case ListRequest l:
                 Highlight.Index = chosen && l.Paging is null && answer is ListAnswer { Action: var la } && la >= 0 && la < l.Actions.Count
                     ? la
@@ -605,6 +639,9 @@ public sealed class CombatScreen
     /// <summary>The row of the pad / mouse hint and the number buttons: the page's free row (the View sheet uses 22).</summary>
     private int HintRow => _view.Page?.HintRow ?? NumberButtonRow;
 
+    /// <summary>The letters grid's first row (as the party screen's, over the page's middle rows).</summary>
+    private const int LettersRow = 14;
+
     private static char? Digit(string name) => name switch
     {
         { Length: 2 } when name[0] == 'D' && char.IsAsciiDigit(name[1]) => name[1],
@@ -685,6 +722,7 @@ public sealed class CombatScreen
         // the list routine draws its rows again without the highlight when it returns (D s33: every row green under
         // handler 131's text; D s39: the coin rows while Drop's amount is asked)
         PageChrome.DrawBody(f, _font, p, showSelection: _view.ItemEffectText is null && _runner.Pending is not TextRequest);
+        AmigaView.DrawExtras(f, _font, p, Pictures);
 
         switch (_runner.Pending)
         {
@@ -709,6 +747,21 @@ public sealed class CombatScreen
                 break;
             case DelayRequest when _view.PageMessage is { } msg:
                 Text(f, 0, MenuRow, Fit(msg, 40), Chrome.Green);
+                break;
+            case TextRequest { Numeric: false } lt when _letters is { } letters:
+                // A letters input: the Amiga's requester (hunk 25 +0xEC6) under the Amiga art, else the bottom line;
+                // the grid for the pad and the mouse over the page's middle rows.
+                Chrome.Clear(f, 0, MenuRow, 40);
+                if (AmigaView.On && Chrome.AmigaGadget is { } gadget)
+                    gadget.Requester(f, _font, lt.Prompt.ToUpperInvariant(), letters.Typed, lt.MaxLength + 1);
+                else
+                    Text(f, 0, MenuRow, Fit(lt.Prompt.ToUpperInvariant() + " " + letters.Typed + "_", 40), Chrome.White);
+                if (input.LastDevice != InputDevice.Keyboard)
+                {
+                    for (int r = LettersRow - 1; r <= LettersRow + 4; r++)
+                        Chrome.Clear(f, 1, r, 38);
+                    letters.Draw(f, _font);
+                }
                 break;
             case TextRequest t:
             {
@@ -1015,6 +1068,9 @@ public sealed class CombatScreen
                 // panel until the AI's start clears the row).
                 DrawMenu(f, sm, sel);
                 break;
+            case DelayRequest when _view.MovePrompt is null && _staleCursor is var (sc, lit, cseq) && cseq == _view.Row24Writes:
+                DrawCursorMenu(f, sc, lit);
+                break;
             case CombatMoveRequest m:
                 // DOSBox-X: Move's prompt (0xA1BB) and the moves left in green on the menu row.
                 Text(f, 0, MenuRow, Fit(_text[CombatMsg.MoveLeft] + m.MovementLeft.ToString(CultureInfo.InvariantCulture), 40), Chrome.Green);
@@ -1022,21 +1078,9 @@ public sealed class CombatScreen
                     Text(f, 0, StatusRow, Fit(MoveHint(input), 40), Chrome.Grey);
                 break;
             case CombatCursorRequest cr:
-            {
                 // Row 23's "Range = n" is the chooser's status line (attack mode, the line got through).
-                string prompt = _text[CombatMsg.UseCursorKeys];
-                Chrome.MenuPrompt(f, _font, 0, MenuRow, prompt, PromptColour);
-                int col = prompt.Length;
-                foreach (var (word, _) in CursorItems(cr))
-                {
-                    if (col + word.Length > 40)
-                        break;
-                    Text(f, col, MenuRow, word[..1], Chrome.White);
-                    Text(f, col + 1, MenuRow, word[1..], Chrome.Green);
-                    col += word.Length + 1;
-                }
+                DrawCursorMenu(f, cr, _selected);
                 break;
-            }
             case ChoiceRequest { Vertical: false } c:
             {
                 DrawMenu(f, c, _selected);
@@ -1055,6 +1099,32 @@ public sealed class CombatScreen
 
     /// <summary>The last horizontal menu drawn, its highlight and <see cref="CombatView.Row24Writes"/> then (see DrawLines).</summary>
     private (ChoiceRequest Menu, int Selected, int Row24Writes)? _staleMenu;
+
+    /// <summary>Manual's menu as answered (Target, Center or Exit lit), kept on row 24 like <see cref="_staleMenu"/>.</summary>
+    private (CombatCursorRequest Request, int Selected, int Row24Writes)? _staleCursor;
+
+    /// <summary>
+    /// Manual's menu line (0x1596E, the menu routine on the shared cell): the prompt, then Target (when offered), Center
+    /// and Exit, the entry on the cell lit (DOSBox-X s41: Exit lit after Manual's M, the cell's third entry).
+    /// </summary>
+    private void DrawCursorMenu(IndexedFrame f, CombatCursorRequest cr, int selected)
+    {
+        string prompt = _text[CombatMsg.UseCursorKeys];
+        Chrome.MenuPrompt(f, _font, 0, MenuRow, prompt, PromptColour);
+        int col = prompt.Length;
+        var items = CursorItems(cr);
+        for (int i = 0; i < items.Count; i++)
+        {
+            var word = items[i].Word;
+            if (col + word.Length > 40)
+                break;
+            Text(f, col, MenuRow, word[..1], Chrome.White);
+            Text(f, col + 1, MenuRow, word[1..], i == selected && Chrome.AmigaGadget is null ? Chrome.White : Chrome.Green);
+            if (i == selected)
+                Chrome.AmigaGadget?.Entry(f, col, MenuRow, word);
+            col += word.Length + 1;
+        }
+    }
 
     /// <summary>A horizontal menu on row 24: the prompt, then each entry with a white hotkey, the highlighted one white.</summary>
     private void DrawMenu(IndexedFrame f, ChoiceRequest c, int selected)

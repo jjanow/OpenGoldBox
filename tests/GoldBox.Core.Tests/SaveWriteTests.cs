@@ -220,6 +220,8 @@ public class SaveWriteTests
             Assert.Equal(vectors, g.Vm.Vectors);
             Assert.Equal(block, g.Vm.CurrentScript);
             Assert.True(g.Vm.LoadingSave);
+            Assert.Equal(2, g.Memory.InterfaceState);   // DS:49F3 read back (0x1F87B): the camp screen and "CAMPING" (D s41)
+            Assert.True(g.Memory.MenuAnimates); // save A's $4AFF (3): the next menu animates
         }
         finally
         {

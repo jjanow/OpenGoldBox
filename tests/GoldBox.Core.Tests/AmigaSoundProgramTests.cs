@@ -191,18 +191,40 @@ public class AmigaSoundProgramTests
     {
         var music = new AmigaMusic(Image.Value, 44_100);
         music.Play(1);
-        var buf = new float[44_100 * 4];
-        music.Render(buf);
-        float peak = buf.Max(Math.Abs);
-        double rms = Math.Sqrt(buf.Average(x => (double)x * x));
-        Assert.InRange(peak, 0.05f, 1.5f);
-        Assert.True(rms > 0.01, $"rms {rms}");
+        var left = new float[44_100 * 4];
+        var right = new float[left.Length];
+        music.Render(left, right);
+        foreach (var buf in new[] { left, right })
+        {
+            float peak = buf.Max(Math.Abs);
+            double rms = Math.Sqrt(buf.Average(x => (double)x * x));
+            Assert.InRange(peak, 0.05f, 1.5f);
+            Assert.True(rms > 0.01, $"rms {rms}");
+        }
         music.Play(0);
-        var after = new float[4410];
-        music.Render(after);
-        music.Render(after.AsSpan()); // the stop is taken at the next tick
-        Array.Clear(after);
-        music.Render(after);
-        Assert.All(after, x => Assert.Equal(0f, x));
+        var l = new float[44_100];
+        var r = new float[l.Length];
+        music.Render(l, r); // the stop is taken at the next tick; the output filter rings out
+        Array.Clear(l);
+        Array.Clear(r);
+        music.Render(l, r);
+        Assert.All(l, x => Assert.True(Math.Abs(x) < 1e-4f));
+        Assert.All(r, x => Assert.True(Math.Abs(x) < 1e-4f));
+        music.Filter = false;
+        Array.Clear(l);
+        music.Render(l, r);
+        Assert.All(l, x => Assert.Equal(0f, x));
+    }
+
+    [AmigaOracleFact]
+    public void Effects_play_on_the_left_channel_only()
+    {
+        var music = new AmigaMusic(Image.Value, 44_100);
+        music.PlayEffect(SoundCue.Impact);
+        var left = new float[22_050];
+        var right = new float[left.Length];
+        music.Render(left, right);
+        Assert.True(left.Max(Math.Abs) > 0.01f);
+        Assert.All(right, x => Assert.Equal(0f, x));
     }
 }

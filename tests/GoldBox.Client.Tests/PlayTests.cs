@@ -454,4 +454,99 @@ public class ExploreScreenTests
         _ = new Point(0, 0);
         r.Runner.Dispose();
     }
+
+    /// <summary>
+    /// V and C on the command line (0x17054 → 0x21AED / 0x17CD2, P + D s41) by key, pad and mouse: no time passes and no
+    /// vector runs; View's exit and a Cast that showed a list draw START 0x3379 (the CLEARBOX box ring back, the text
+    /// box blank); a Cast with nothing memorised (Thrender, a fighter) draws nothing, so the ring stays blank.
+    /// </summary>
+    [Fact]
+    public void View_and_cast_on_the_command_line_by_key_pad_and_mouse()
+    {
+        if (Dir() is null)
+            return;
+        var r = Start();
+        Settle(r);
+        var party = r.Game.Memory.Party!;
+        party.CurrentIndex = 0;
+        long t0 = GameClock.TotalMinutes(r.Game.Memory);
+        ushort pc = r.Game.Vm.Pc;
+        r.Player.ViewBoxBlank = true;                       // CLEARBOX, then a step's redraw (the view alone)
+        Key(r, Keys.V);
+        var page = Assert.IsType<ListRequest>(r.Runner.Pending);
+        Assert.Equal(party.Members[0].Name.ToUpperInvariant(), page.Lines[0].Text);
+        Press(r, GameAction.Cancel);
+        Assert.Null(r.Runner.Pending);
+        Assert.False(r.Player.ViewBoxBlank);                // 0x21D4F → START 0x3379 case 4
+        Assert.Equal(t0, GameClock.TotalMinutes(r.Game.Memory));
+        Assert.Equal(pc, r.Game.Vm.Pc);
+        Assert.Equal(2, r.Screen.MenuHighlight);             // the cell moved to VIEW (3rd word)
+
+        r.Player.ViewBoxBlank = true;
+        r.Game.Memory.GameSpeed = 0;                       // no pause after the message (speed 0 waits 0 ms)
+        Key(r, Keys.C);                                    // a fighter: the no-spells message only
+        Settle(r);
+        Assert.True(r.Player.ViewBoxBlank);
+        Assert.Equal(1, r.Screen.MenuHighlight);
+
+        Pad(r, Buttons.Start);                             // the pad's View
+        Assert.IsType<ListRequest>(r.Runner.Pending);
+        Pad(r, Buttons.B);
+        Assert.Null(r.Runner.Pending);
+
+        party.CurrentIndex = 3;                            // Brother Sean has spells memorised
+        r.Player.ViewBoxBlank = true;
+        Pad(r, Buttons.RightStick);                        // the pad's Cast: the spell list
+        Assert.IsType<ListRequest>(r.Runner.Pending);
+        Pad(r, Buttons.B);
+        Settle(r);
+        Assert.False(r.Player.ViewBoxBlank);               // 0x17D96 → START 0x3379
+
+        // The mouse: VIEW is columns 10–13 of row 24 on the 3D line (AREA CAST VIEW …).
+        Assert.Equal(GameAction.View, r.Screen.MapClick(new ScreenClick(11 * 8, 24 * 8 + 3, false)));
+        Assert.Equal(GameAction.Cast, r.Screen.MapClick(new ScreenClick(6 * 8, 24 * 8 + 3, false)));
+        Assert.Equal(t0, GameClock.TotalMinutes(r.Game.Memory));
+        r.Runner.Dispose();
+    }
+
+    /// <summary>
+    /// START 0x3379 with DS:49F3 = 2 (a training hall's Load of a camp save, D s39 / s41): the camp picture loaded but
+    /// the window blank until a menu animates it; the first menu after the Load animates it ($4AFF from the save) and
+    /// clears the cell; "CAMPING" stays on the position line until DS:49F3 is written again (View's exit draws case 2
+    /// again, the window blank).
+    /// </summary>
+    [Fact]
+    public void A_camp_state_left_by_a_hall_load_draws_the_camp_screen()
+    {
+        if (Dir() is null)
+            return;
+        var r = Start();
+        Settle(r);
+        var m = r.Game.Memory;
+        m.InterfaceState = 2;
+        m.MenuAnimates = true;                              // the save's $4AFF (3 in save A)
+        m.PictureShown = true;
+        m.PictureArmed = false;                             // as after a start-up Load (D s24 / s41)
+        r.Runner.Start(() =>
+        {
+            r.Player.DrawInterface();
+            r.Player.HorizontalMenu(["WAIT"]);
+        });
+        Assert.True(r.Player.PictureUndrawn);
+        Assert.Equal(ExploreScreen.CampPicture, r.Player.ViewPicture!.Id);
+        Assert.True(r.Player.CampingLine);
+        var menu = Assert.IsType<ChoiceRequest>(r.Runner.Pending);
+        Assert.True(menu.Animates);                         // $4AFF ≠ 0 although DS:84E1 is 0 after the start-up load
+        r.Screen.Update(r.Input);
+        Assert.False(r.Player.PictureUndrawn);
+        Press(r, GameAction.Confirm);
+        Assert.False(m.MenuAnimates);
+        Key(r, Keys.V);
+        Press(r, GameAction.Cancel);
+        Assert.True(r.Player.PictureUndrawn);               // case 2 again: the window blank, no menu animates it
+        Assert.Contains(" CAMPING", ExploreScreen.StatusLine(r.Game, r.Player.CampingLine));
+        Press(r, GameAction.TurnLeft);
+        Assert.True(r.Player.CampingLine);                  // a turn writes no DS:49F3
+        r.Runner.Dispose();
+    }
 }

@@ -317,6 +317,9 @@ public sealed class CombatText
     public string this[CombatMsg id] =>
         (_texts.TryGetValue(id, out var s) ? s : Table.TryGetValue(id, out var t) ? t : StartTable[id]).ToUpperInvariant();
 
+    /// <summary>A text in the program's own case (the Amiga draws its bytes as they are; <see cref="AmigaView.Case"/>).</summary>
+    public string Raw(CombatMsg id) => _texts.TryGetValue(id, out var s) ? s : Table.TryGetValue(id, out var t) ? t : StartTable[id];
+
     /// <summary>A spell routine's own text and whether it goes through START 0x2B8B with effect frames.</summary>
     internal static (CombatMsg Text, bool Animated)? SpellMessage(EffectEvent e) => e switch
     {

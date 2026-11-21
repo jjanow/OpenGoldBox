@@ -1,6 +1,7 @@
 using GoldBox.Client.Audio;
 using GoldBox.Client.Play;
 using GoldBox.Core.Ecl;
+using GoldBox.Core.Game;
 using GoldBox.Core.Sound;
 using GoldBox.Client.Input;
 using Microsoft.Xna.Framework;
@@ -109,5 +110,28 @@ public class SoundSettingTests
         player.Call(0xBA03);
         player.Call(0x2C90);
         Assert.Equal(["Impact", "Step", "Fireball"], log.Calls);
+    }
+
+    private sealed class Idle : IFightController
+    {
+        public void Act(Fight fight, EclCharacter creature, bool auto) { }
+    }
+
+    [Fact]
+    public void A_damage_or_effect_message_in_a_fight_plays_its_cue_inside_a_resident_bracket()
+    {
+        // START 0x2B8B in a fight (docs/re/sound.md §2.4; DOSBox-X s41: tune 2 with every spell damage line): set
+        // auto-stop(0), the cue 261A (damage) / 261C (effect) before the text, set auto-stop(10) after the frames.
+        var view = new CombatView { Speed = 1 };
+        var chooser = new CombatChooser(_ => null, view) { Text = new CombatText() };
+        view.Fight = new Fight(new EclMemory(), new EncounterState(),
+            new BaseItemTable(new byte[BaseItemTable.EntrySize * BaseItemTable.Count]), _ => 0, new Idle(), new GridGeometry());
+        var log = new SoundLog();
+        view.Fight.State.Sound = log;
+        var orc = new EclCharacter { Name = "Orc", [FightRules.Hp] = 20, [FightRules.HpMax] = 20, [FightRules.Size] = 1 };
+        view.Fight.State.PendingDamage = 7;
+        chooser.EffectMessage(orc, EffectEvent.NonWeaponDamage);
+        chooser.EffectTextMessage(orc, EffectTexts.Asleep);
+        Assert.Equal(["(", "Damage", ")", "(", "Effect", ")"], log.Calls);
     }
 }

@@ -26,6 +26,11 @@ public sealed class CampContext
     public EffectHandlers? Effects { get; init; }
     /// <summary>The sound cues (CreatureDowned's body cue outside a fight), or null for none.</summary>
     public Action<GoldBox.Core.Sound.SoundCue>? Cue { get; init; }
+    /// <summary>
+    /// START 0x3379 for the interface state when Cast runs outside the camp (the command line's C, DS:49F3 = 3 or 4):
+    /// its redraws (0x17D96, the target pick's 0x27AFA) draw the exploring screen, not the camp's. Null in the camp.
+    /// </summary>
+    public Action? InterfaceRedraw { get; init; }
 
     /// <summary>The handler messages outside a fight on the camp's text window; <paramref name="resting"/> is DS:6DDA.</summary>
     public OutsideEffectMessages OutsideMessages(bool resting) =>
@@ -120,6 +125,9 @@ public static class SpellLists
 /// </summary>
 public static class CampScreens
 {
+    /// <summary>The target pick's answer to Escape (<see cref="PickTarget"/>; the program's menu answers 0).</summary>
+    internal const int Escaped = -10;
+
     // ---- Menu lines ----------------------------------------------------------------------------------------------
 
     /// <summary>
@@ -625,13 +633,19 @@ public static class CampScreens
     /// remembered target (the caster the first time, 0x27AB8). Each pass draws the party list with the pick lit
     /// (00BA:2CA1) and runs the menu "Cast Spell on whom" with Select / Exit (00BA:2C41, 2C19; keypad flag in the camp):
     /// End the next member, Home the one before (both wrap, 00BA:2D29 / 2D57), E (or Escape: 0) clears the pick
-    /// (00BA:2DD6); Return, Escape, E and S end the loop (set 00BA:2C1F). DS:5D92 (the caster) is not changed. D s39:
-    /// Brother Sean's Cure Light Wounds, End twice from himself to Phineas, S. Client: Escape is Exit (the program's
-    /// Escape clears the pick and goes on, so only Select after it ends the same way).
+    /// (00BA:2DD6); Return, E and S end the loop (set 00BA:2C1F holds 0x0D, 0x1B, 'E', 'S'; the menu answers Escape with
+    /// 0, not 0x1B, so Escape clears the pick and the loop goes on with nobody lit). DS:5D92 (the caster) is not changed.
+    /// With no pick, Home walks to the member whose next pointer is nil, the last (00BA:2CBE); End reads the next
+    /// pointer of a nil record (0000:0104, the INT 41h vector): no member, so nobody is lit, and a Select then would cast
+    /// on that address `[?]` (the Client keeps no pick, so Select ends there like Exit). D s39: Brother Sean's Cure Light
+    /// Wounds, End twice from himself to Phineas, S. D s41: Escape clears the lit name and stays in the menu; End after it
+    /// lights nobody; Escape, Home lights Phineas (the last).
     /// </summary>
-    private static EclCharacter? PickTarget(CampContext c, EclCharacter? remembered)
+    internal static EclCharacter? PickTarget(CampContext c, EclCharacter? remembered)
     {
         c.Trade.ShowPageUnder(null);
+        if (c.InterfaceRedraw is { } redraw)
+            redraw(); // 0x27AFA outside the camp: START 0x3379 for DS:49F3 = 3 / 4
         c.Trade.FrameTextBox(false);
         var party = c.Party;
         var (items, keys) = ParseMenu(c.Resources.TargetMenu ?? "Select Exit");
@@ -640,15 +654,17 @@ public static class CampScreens
             while (true)
             {
                 c.Trade.RosterDrawnLit(pick);
-                int a = c.Dialog.Ask(new ChoiceRequest(null, items, false, items.Count - 1)
+                int a = c.Dialog.Ask(new ChoiceRequest(null, items, false, Escaped)
                 {
                     MenuPrompt = c.Text[Msg.CastOnWhom].TrimEnd(),
                     PartySelect = true,
                     Hotkeys = keys,
                 }) is int x ? x : items.Count - 1;
                 int n = party.Members.Count;
-                if (a == ChoiceRequest.NextMember)
-                    pick = n == 0 ? null : party.Members[pick is null ? 0 : (party.Members.IndexOf(pick) + 1) % n];
+                if (a == Escaped)
+                    pick = null; // 00BA:2DD6, and the loop goes on
+                else if (a == ChoiceRequest.NextMember)
+                    pick = n == 0 || pick is null ? null : party.Members[(party.Members.IndexOf(pick) + 1) % n];
                 else if (a == ChoiceRequest.PreviousMember)
                     pick = n == 0 ? null : party.Members[pick is null ? n - 1 : (party.Members.IndexOf(pick) + n - 1) % n];
                 else if (a <= TradeContext.MemberPick && TradeContext.MemberPick - a < n)
@@ -879,6 +895,11 @@ public static class CampScreens
     /// </summary>
     private static void Redrawn(CampContext c)
     {
+        if (c.InterfaceRedraw is { } redraw)
+        {
+            redraw(); // outside the camp: START 0x3379 for DS:49F3 = 3 / 4
+            return;
+        }
         c.Dialog.Text.Clear();
         c.Trade.FrameTextBox(false);
         c.Trade.RosterDrawn(); // START 0x27D9's case 2 draws the party list (00BA:286A)

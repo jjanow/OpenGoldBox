@@ -47,9 +47,10 @@ public sealed class PictureAnimation
 
     /// <summary>
     /// One pass of the waiting menu at <paramref name="now"/> over frames with these delays (units of 100 ms): the
-    /// frame moves on when the DOS clock has advanced by its delay × 10 centiseconds.
+    /// frame moves on when the DOS clock has advanced by its delay × 10 centiseconds (scaled by the QoL
+    /// <paramref name="speed"/>, <see cref="AnimationTiming.LoopHold"/>; Original = the program's hold).
     /// </summary>
-    public void Tick(TimeSpan now, IReadOnlyList<uint> delays)
+    public void Tick(TimeSpan now, IReadOnlyList<uint> delays, AnimationSpeed speed = AnimationSpeed.Original)
     {
         if (delays.Count < 2)
         {
@@ -59,7 +60,7 @@ public sealed class PictureAnimation
         if (Frame >= delays.Count)
             Frame = 0;
         long cs = Centiseconds(now);
-        if (cs - _since >= 10L * delays[Frame])
+        if (cs - _since >= AnimationTiming.LoopHold(10L * delays[Frame], speed))
         {
             Frame = (Frame + 1) % delays.Count;
             _since = cs;

@@ -31,9 +31,10 @@ public static class PageChrome
         int top = p.FrameRows.Min(), bottom = p.FrameRows.Max();
         if (Chrome.AmigaFrame is not null)
         {
-            // The Amiga stacks whole windows where DOS draws dividers (its window calls, e.g. hunk 10 +0x6C6E (1, 1)–(38, 1)
-            // and +0x58C8 (1, 3)–(38, 22)): one window between each pair of frame rows, top to bottom `[?]` (the
-            // combat pages' own calls not read).
+            // The Amiga stacks whole windows where DOS draws dividers: the Items page (hunk 10 +0x5660) blits the frame
+            // of (1, 1)–(38, 22) (+0x5878), then the window (1, 3)–(38, 22) (+0x58C8, blank and frame over row 2); View
+            // (+0x48E0) the frame alone. One window between each pair of frame rows, top to bottom, gives the same
+            // pixels (FS-UAE s41: frame cells and row 2 equal).
             var rows = p.FrameRows.Distinct().Order().ToList();
             for (int k = 0; k + 1 < rows.Count; k++)
                 Chrome.Box(f, 0, rows[k], 39, rows[k + 1]);

@@ -34,5 +34,6 @@ public sealed record PorSound(PcSoundDriverImage Driver, IReadOnlyList<int> CueW
     }
 
     /// <summary>A player for this sound on <paramref name="device"/>.</summary>
-    public PcSoundPlayer Player(PcSoundDevice device, int sampleRate = 44100) => new(Driver, CueWords, device, sampleRate);
+    public PcSoundPlayer Player(PcSoundDevice device, int sampleRate = 44100,
+        TandyChip chip = TandyChip.Ncr8496) => new(Driver, CueWords, device, sampleRate, chip);
 }

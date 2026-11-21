@@ -155,17 +155,26 @@ of returns during that one line each frame. The poll loop is 42 cycles (`move.w 
   +0x280, $8380, and the program's audio ones), so it takes one slot after every three blitter cycles (A → D has no
   idle cycle): the blitter gets 25,128, or 23,016 with sprites. Panels: the 16- to 110-row ones (≤ 17,600 cycles)
   take two frames; the 146-row AD&D logo page (page 5, 23,360 cycles) takes two without sprite DMA and three with it
-  `[?]`. The **title** (200 rows, 16,000 words, 32,000 cycles) misses either way, and would fit only with BLTPRI on
-  and no sprite DMA: its fade starts **three frames** after its gap (Core `AmigaIntroSequence.TitleSetupTime`; `[?]`
-  derived from the HRM's DMA rules, not measured). Page 1 has two clears (hunk 4 +0xE, +0x14, 64,000 cycles from
-  line 128): they end before the next frame's line 240 only if the intro's frames fetch no sprites and the blitter's
-  idle cycles need no free slot, so page 1 takes two or three frames `[?]`. The Client gives every panel two (pages 1
-  and 5 off by at most one frame, 20 ms). Not measured (DOSBox-X has no Amiga; a cycle-exact Amiga emulator would
-  settle sprite DMA and the idle cycles).
+  `[?]` (derivation). The **title** (200 rows, 16,000 words, 32,000 cycles) misses either way, and would fit only
+  with BLTPRI on and no sprite DMA: its fade starts **three frames** after its gap (Core
+  `AmigaIntroSequence.TitleSetupTime`). Page 1 has two clears (hunk 4 +0xE, +0x14, 64,000 cycles from line 128).
+  **Measured s41** (FS-UAE 3.2.35, A500, Kickstart 1.3, cycle-exact with sound emulated to a null sink; console
+  debugger breakpoints on intro hunk 4 +0xB14 (wait), +0xB30 (its end), +0x8D6 (the fade's first pass), +0xAE4 /
+  +0xB00 (hold), each stop reading CIA-A's TOD, the vertical-blank count): **PAL: two frames on every panel, pages 1
+  and 5 included; the title three.** Sprite DMA is on throughout (DMACON 0x3FD / 0x3FF / 0x3F7, SPREN set), so the
+  slot count above was too pessimistic for the 146-row page. Per page (TOD): wait 21 (81 passes), set-up 2 (title 3),
+  fade first pass to the hold's entry 31, hold 251 (1001 passes), fade out to the next wait 32. The Client's
+  `SetupTime` (2) and `TitleSetupTime` (3) are exact. **NTSC** (`ntsc_mode = 1`, same disks): set-up **3** frames on
+  pages 1, 5, 6, 7 and 8 (48 rows + two clears, 146, 92, 110, 100 rows), 2 on pages 2–4 (16, 56, 19 rows), 3 on the
+  title; wait 21 and fade 31 as PAL, hold **253**. Page 6 (the game's logo) fades with its own routine (+0x994, no breakpoint
+  there), so its set-up is read from the wait's end to the hold's entry: 33 TOD (PAL) and 34 (NTSC) against 33 on the
+  other panels, i.e. 2 and 3 frames. The Client stays PAL (as its Amiga music), so NTSC is
+  documentation only. Hunk 4 sat at 0x40E58 (PAL) / 0x3EB58 (NTSC) in chip memory on these boots.
 - PAL: frame 313 × 227 colour clocks at 3,546,895 Hz = 20.03 ms; a panel page ≈ 20.25 + 2 + 32 + 250.25 + 32
-  frames (the title 20.25 + 3 + 32 + 250.25) ≈ 6.7 s, all nine ≈ 60 s plus the 3 s close. NTSC (7.16 MHz, 455-cycle lines) gives the same frame counts
-  at 16.72 ms (hold ≈ 4.2 s), except the set-ups: a 263-line frame leaves 151 lines from line 240 to the next line
-  128, so more pages would take a third frame `[?]`; the Client uses PAL, as its Amiga music does. The 3 s close is real time on both.
+  frames (the title 20.25 + 3 + 32 + 250.25) ≈ 6.7 s, all nine ≈ 60 s plus the 3 s close. NTSC (7.16 MHz, 455-cycle lines, 16.72 ms
+  frames), measured s41 (above): set-ups of 3 frames on pages 1 and 5–9, 2 on pages 2–4 (a 263-line frame leaves 151
+  lines from line 240 to the next line 128), a hold of 253 frames (≈ 4.2 s); the Client uses PAL, as its Amiga music
+  does. The 3 s close is real time on both.
 - `[?]` A faster CPU (68020+, accelerator) gives more passes a frame and so shorter gaps and holds (a fade step stays
   two frames only while 5–8 passes fit a line); an interrupt landing on line 128 (keyboard, CIA timers; the music is
   a vertical-blank server, at the frame's top) would remove passes. The intro's own copper list only sets pointers

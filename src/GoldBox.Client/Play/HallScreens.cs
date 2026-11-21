@@ -389,7 +389,7 @@ public static class HallScreens
                                 scene.Layers[0] = layer;
                             else
                                 scene.Layers.Add(layer);
-                            ask(new DelayRequest(EndGame.AmigaFrameTime));
+                            ask(new DelayRequest(EndGame.AmigaFrameTime) { Animation = true });
                         }
                         break;
                 }

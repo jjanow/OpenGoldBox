@@ -39,7 +39,7 @@ public static class CharacterView
             // The menu has only the entries 0x21AED offers (FightItemScreens.ViewEntries): DOSBox-X s24, a fighter with
             // no memorised spells gets Items, Trade, Drop, Exit, so its Exit (4th) leaves the shared highlight on the
             // shop menu's 4th entry (Appraise).
-            var entries = FightItemScreens.ViewEntries(c, venue == Venue.Shop ? FightItemScreens.InShop : (byte)0);
+            var entries = AmigaView.Entries(FightItemScreens.ViewEntries(c, venue == Venue.Shop ? FightItemScreens.InShop : (byte)0), c);
             var onPage = shown ?? c;
             shown = null;
             int action = page is not null
@@ -60,11 +60,17 @@ public static class CharacterView
                 case ViewEntry.Drop when page is not null && t.Coins is { } coins:
                     shown = DropMoney(t, c, venue, coins, onPage);
                     break;
+                case ViewEntry.Rename:
+                    shown = Rename(t, c, onPage);
+                    break;
                 case ViewEntry.Spells or ViewEntry.Trade or ViewEntry.Drop:
                     // Over the program's page there is no text window: the notice goes on its bottom line.
                     NotBuilt(t, Word(entry), page is not null);
                     break;
                 default:
+                    // View's end draws the party list (0x21D4F; view3d.md "Where the party list is drawn"; the Amiga's
+                    // too: FS-UAE s41, a renamed member shows the new name in the camp's list after Exit).
+                    t.RosterDrawn();
                     return;
             }
         }
@@ -72,12 +78,13 @@ public static class CharacterView
 
     private static string Word(ViewEntry e) => e.ToString().ToUpperInvariant();
 
-    /// <summary>DS:49F3 for a venue: 0 party menu / hall, 1 shop and temple, 2 camp, 6 loot.</summary>
+    /// <summary>DS:49F3 for a venue: 0 party menu / hall, 1 shop and temple, 2 camp, 4 (or 3) exploring, 6 loot.</summary>
     public static byte Context(Venue venue) => venue switch
     {
         Venue.Shop => FightItemScreens.InShop,
         Venue.Camp => 2,
         Venue.Loot => 6,
+        Venue.Explore => 4, // 3 on the overland: the same entries (Use at 2, 3 and 4)
         _ => 0,
     };
 
@@ -107,6 +114,20 @@ public static class CharacterView
             FightItemScreens.DropCoins(c, pick.Kind, amount, Context(venue), t.Pool);
         }
         Money();
+        return shown;
+    }
+
+    /// <summary>
+    /// The Amiga's Rename (hunk 10 +0x5500–0x5536, <see cref="AmigaView"/>): "NEW NAME FOR " and the name in the input
+    /// requester, its answer (an empty one too) becomes the name. The loop does not draw the page again after R, so it
+    /// keeps showing <paramref name="shownBefore"/> (the old name; FS-UAE s41).
+    /// </summary>
+    private static EclCharacter Rename(TradeContext t, EclCharacter c, EclCharacter shownBefore)
+    {
+        var shown = new EclCharacter(shownBefore.Record);
+        shown.Items.AddRange(shownBefore.Items);
+        if (t.Dialog.Ask(new TextRequest(AmigaView.RenamePrompt(c), false, AmigaView.RenameLength)) is string name)
+            c.Name = name;
         return shown;
     }
 
@@ -246,16 +267,126 @@ public static class CharacterView
             switch (entries[a.Action])
             {
                 case ItemsEntry.Sell:
-                    Sell(t, c, item);
+                    t.TalkOverItemsPage(true);
+                    try
+                    {
+                        SellOnPage(t, c, item);
+                    }
+                    finally
+                    {
+                        t.TalkOverItemsPage(false);
+                    }
                     break;
                 case ItemsEntry.Id:
-                    Identify(t, c, item);
+                    t.TalkOverItemsPage(true);
+                    try
+                    {
+                        IdentifyOnPage(t, c, item);
+                    }
+                    finally
+                    {
+                        t.TalkOverItemsPage(false);
+                    }
                     break;
                 case var e:
                     NotBuilt(t, e.ToString().ToUpperInvariant(), bottomLine: true);
                     break;
             }
         }
+    }
+
+    // The Items page's text box (START 0x77F8 with (1, 21)–(38, 22), colour 14: 0x21E53, 0x22DF7, 0x22FE2, 0x230CC,
+    // 0x23126), blanked at each command's end (03F1:0137 at 0x21E8F, 0x22EF7, 0x23149).
+    private const int BoxLeft = 1, BoxTop = 21, BoxRight = 38, BoxBottom = 22;
+    private const byte BoxColour = 14;
+
+    private static void BoxText(TradeContext t, string text, bool clear = true) =>
+        t.Dialog.Text.PrintIn(BoxLeft, BoxTop, BoxRight, BoxBottom, text, clear, BoxColour);
+
+    private static void BoxBlank(TradeContext t) => t.Dialog.Text.ClearRect(BoxLeft, BoxTop, BoxRight, BoxBottom);
+
+    /// <summary>START 0x2233 (0x1693): the text on row 24 in green, the game-speed pause (PauseOnly), row 24 cleared.</summary>
+    private static void RowMessage(TradeContext t, string text)
+    {
+        int s = t.Memory?.GameSpeed ?? 0;
+        if (s is > 0 and <= 9)
+            t.Dialog.Ask(new DelayRequest(TimeSpan.FromMilliseconds(225 * s)) { BottomLine = (text, TextWindow.ScriptColour) });
+    }
+
+    /// <summary>PauseOnly (START 0x7E4E): DS:49E2 × 225 ms, no key.</summary>
+    private static void PauseOnly(TradeContext t)
+    {
+        int s = t.Memory?.GameSpeed ?? 0;
+        if (s is > 0 and <= 9)
+            t.Dialog.Ask(new DelayRequest(TimeSpan.FromMilliseconds(225 * s)));
+    }
+
+    /// <summary>
+    /// Sell on the program's Items page (0x22472 → 0x21DAA, 0x22D28; read s41): a readied item gets the unready message
+    /// on row 24; a scroll with spells its owner's name at (1, 21), the warning after it (column name length + 2) in the
+    /// box and the yes/no; then the offer in the box (cleared first), the deal question (0x2D9A0); Yes: the sold message on row 24,
+    /// the item goes and the money with the overloaded message on row 24 when it went to the pool (0x24CDD). The box is
+    /// blanked at the end of each routine.
+    /// </summary>
+    private static void SellOnPage(TradeContext t, EclCharacter c, byte[] item)
+    {
+        var d = t.Dialog;
+        switch (ShopRules.SellCheck(item, t.IsScroll(item[0x2E])))
+        {
+            case null:
+                RowMessage(t, t.Text[Msg.MustBeUnreadied]);
+                BoxBlank(t);
+                return;
+            case true:
+                var name = c.Name.ToUpperInvariant();
+                d.Text.ClearRect(BoxLeft, BoxTop, BoxRight, BoxBottom);
+                d.Text.Put(BoxTop, BoxLeft, name, CombatChooser.NameColour(c)); // START 0x23B6 at (1, 21)
+                d.Text.MoveTo(BoxLeft + name.Length + 1, BoxTop);               // DS:5E24 = name length + 2
+                BoxText(t, t.Text[Msg.ScribeWarning], clear: false);
+                bool lose = d.YesNo(t.Text[Msg.OkayToLose]);
+                BoxBlank(t);
+                if (!lose)
+                    return;
+                break;
+        }
+        ushort price = ShopRules.SellPrice(item);
+        BoxText(t, GameText.Cat(GameText.Cat(t.Text[Msg.IllGiveYou], price) + t.Text[Msg.GoldPiecesForYour], t.ItemName(item)));
+        if (d.YesNo(t.Text[Msg.IsItADeal]))
+        {
+            RowMessage(t, t.Text[Msg.Sold]);
+            if (ShopRules.Sell(c, t.Pool, item, Carrying.StrengthAllowance(c)))
+                RowMessage(t, t.Text[Msg.SoldOverloaded]);
+        }
+        BoxBlank(t);
+    }
+
+    /// <summary>
+    /// Id on the program's Items page (0x22F8C, read s41): the 200-gold offer in the box, the yes/no; Yes: paid from the
+    /// character or else the pool (<see cref="ShopRules.Identify"/>), the no-money message on row 24 when neither can;
+    /// paid: the nothing-new words and the item when it was identified already, else the item identified (0x35 := 0) and
+    /// the looks-like words and its new name, both in the box, then PauseOnly. The box is blanked at the end.
+    /// </summary>
+    private static void IdentifyOnPage(TradeContext t, EclCharacter c, byte[] item)
+    {
+        BoxText(t, GameText.Cat(t.Text[Msg.IdentifyOffer], t.ItemName(item)));
+        if (t.Dialog.YesNo(t.Text[Msg.IdentifyDeal]))
+        {
+            switch (ShopRules.Identify(c, t.Pool, item))
+            {
+                case ShopRules.IdentifyResult.NotEnoughMoney:
+                    RowMessage(t, t.Text[Msg.IdentifyNoMoney]);
+                    break;
+                case ShopRules.IdentifyResult.AlreadyIdentified:
+                    BoxText(t, GameText.Cat(t.Text[Msg.NothingNew], t.ItemName(item)));
+                    PauseOnly(t);
+                    break;
+                default:
+                    BoxText(t, GameText.Cat(t.Text[Msg.LooksLike], t.ItemName(item)));
+                    PauseOnly(t);
+                    break;
+            }
+        }
+        BoxBlank(t);
     }
 
     /// <summary>Sell (0x22472): the readied check, the scroll question, the offer, then <see cref="ShopRules.Sell"/>.</summary>

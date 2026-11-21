@@ -172,7 +172,7 @@ public sealed class PartyMenuFlow(Func<PlayerRequest, object?> ask, PartyMenuTex
     /// 0x19AE7); a Load leaves the save's disk byte and flags (DOSBox-X s25: a state-0 save of disk 2, or with portraits
     /// off, shows Modify's page with no portrait and no box); the hall sets the disk to 3.
     /// </summary>
-    public bool PortraitShown => (GameMemory ?? _loaded?.Memory) is not { } m || (CampSettings.Portraits(m) && m.Disk == 3);
+    public bool PortraitShown => (GameMemory ?? _loaded?.Memory) is not { } m || (CampSettings.Portraits(m) && (m.Disk == 3 || AmigaView.On));
 
     /// <summary>A save the hall's Load could not read (not in the original: its saves always fit).</summary>
     public void CouldNotLoad(char slot) => _notice = texts.CouldNotLoad(slot);
@@ -496,6 +496,12 @@ public sealed class PartyMenuFlow(Func<PlayerRequest, object?> ask, PartyMenuTex
         return ask(new CharacterPageRequest(page, [.. entries.Select(e => ItemsPages.Word(text, e))], null, exit))
             as ListAnswer ?? new ListAnswer(exit, row);
     }
+
+    /// <summary>
+    /// The venue's text window while an Items command (Sell, Id) talks over the Items page: its box (1, 21)–(38, 22) is
+    /// drawn over the page, and the overlay stays up for the command's yes/no and row-24 messages. Null otherwise.
+    /// </summary>
+    public TextWindow? TextOverPage { get; set; }
 
     /// <summary>
     /// Drop money's coin pick and amount (0x234E1): the coin list over View's page (the money lines are its rows, the

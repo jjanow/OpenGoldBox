@@ -209,6 +209,7 @@ public sealed class PorGame
         if (g.ReadLoadedParty(save, originalFile) is { } party)
             g.Memory.Party = party;
         sg.ApplyTo(g.Memory);
+        g.Memory.MenuAnimates = g.Memory.Read(AreaLoop.MenuAnimateCell) != 0; // the save's $4AFF (AreaLoop.MenuAnimateCell)
         g.LoadedInterfaceState = sg.InterfaceState;
         g.Vm.SetCurrentScript(sg.CurrentBlock, sg.Disk); // DS:84DC := $49F2 (0x4070)
         g.ReloadSavedMap();
@@ -293,11 +294,13 @@ public sealed class PorGame
             Vm.Diagnostics.Add(problem);
         var members = ReadLoadedParty(doc)?.Members ?? [];
         sg.ApplyTo(Memory);
+        Memory.MenuAnimates = Memory.Read(AreaLoop.MenuAnimateCell) != 0; // the save's $4AFF (AreaLoop.MenuAnimateCell)
         party.Members.Clear();
         party.Members.AddRange(members);
         party.CurrentIndex = party.Members.Count > 0 ? 0 : -1;
         Memory.Party = party;
         LoadedInterfaceState = sg.InterfaceState;
+        Memory.InterfaceState = sg.InterfaceState; // Load reads DS:49F3 back (0x1F87B); a camp save keeps 2 after the hall
         if (sg.InterfaceState != 0)
             Vm.LoadingSave = true; // DS:49F8 := 1 (0x19D91)
         ReloadSavedMap();
@@ -319,12 +322,16 @@ public sealed class PorGame
         Memory.MarkerCounter = ((markerCounter % 6) + 6) % 6;
         int block = Memory.Read(AreaLoop.PreviousScript) & 0xFF;
         bool outdoors = block is >= 25 and <= 27 && Memory.Read(AreaLoop.View3DCell) == 0; // DS:49F3 := 3 (0x408E)
+        Memory.InterfaceState = (byte)(outdoors ? 3 : 4); // 0x405D / 0x408E, before vector 4
         // A NEWECL in this vector 4 is followed only after the next command's vector (DS:442F stays set).
         EntryRun = Vm.RunLoadedGame();
-        // Its view redraw is 0x40C8's; at DS:49F3 = 3 neither 0x3379 nor 0x40C8 runs (the window keeps what vector 4 drew).
-        FinishEntry(follow: false, redraw: !outdoors);
+        // At DS:49F3 = 4, START 0x3379 case 4 (0x1B1A inside the LOADFILES / LOADPIECES pair, or 0x40BE after the vector)
+        // draws every window and the view, then 0x40C8 redraws the view: a CLEARBOX blank of the old game is gone, the
+        // view's box with it. At 3 neither runs (the window keeps what vector 4 drew). [?] Drawn here after vector 4:
+        // a CLEARBOX in vector 4 after its LOADFILES pair would leave the box ring blank in the program.
         if (!outdoors)
-            Overland.Redrawn(Memory); // START 0x3379 case 4 (0x1B1A or 0x40BE → 0x341F)
+            Loop.DrawInterface();
+        FinishEntry(follow: false, redraw: !outdoors);
     }
 
     /// <summary>Enters area script <paramref name="script"/> with fresh VM memory at a square: script init, then vector 4.</summary>
@@ -432,6 +439,7 @@ public sealed class PorGame
             Memory.Write(EclPartyRules.PartySizeCell, (ushort)party.Members.Count);
         }
         Vm.LoadScript(Memory.Read(AreaLoop.PreviousScript) & 0xFF, Memory.Disk);
+        Memory.InterfaceState = 4; // 0x405D (the new game's block 0 is a 3D area)
         EntryRun = Vm.RunVector(EclLayout.VectorInit);
         Vm.CommandRead();
         FinishEntry(follow: true);

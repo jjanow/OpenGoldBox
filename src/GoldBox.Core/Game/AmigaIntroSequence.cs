@@ -68,7 +68,9 @@ public sealed class AmigaIntroSequence
     /// (the fade's first colour step takes some 25 lines before its first pass on line 128), which every panel up to
     /// 110 rows does, so the fade's first pass comes two frames after the wait's last. The screen stays black
     /// throughout (the colours are still those of the last fade out, or the copper list's black at the start).
-    /// [?] Page 1 (two clears, +0xE and +0x14) and page 5 (146 rows) take a third frame if sprite DMA runs; two here.
+    /// Measured s41 in FS-UAE (A500, cycle-exact, PAL; CIA-A TOD at the wait's end and at the fade's first pass): two
+    /// frames on every panel, pages 1 (two clears) and 5 (146 rows) too, with sprite DMA on (DMACON 0x3Fx). NTSC
+    /// (not used by the Client) takes three on pages 1, 5, 6, 7 and 8 (docs/re/start-menu.md §1a).
     /// </summary>
     public static readonly TimeSpan SetupTime = Frame * 2;
 
@@ -77,7 +79,7 @@ public sealed class AmigaIntroSequence
     /// most 33,504 slots are free of refresh, audio (song 1) and bitplane fetches (30,688 with sprite DMA), and the CPU
     /// polls BBUSY from chip memory (hunk 4 is MEMF_CHIP) with BLTPRI off (the system default; nothing found setting
     /// it), so the blitter gets three slots in four (25,128): the fade starts a frame later than a panel's. It would
-    /// fit only with BLTPRI on and no sprite DMA. [?] From the HRM's DMA rules, not measured.
+    /// fit only with BLTPRI on and no sprite DMA. Measured s41 in FS-UAE: three frames, PAL and NTSC.
     /// </summary>
     public static readonly TimeSpan TitleSetupTime = Frame * 3;
 
