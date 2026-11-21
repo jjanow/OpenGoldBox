@@ -67,6 +67,20 @@ public sealed class CombatView
     /// </summary>
     public TextWindow Panel { get; } = new(PanelLeft, 1, PanelRight, PanelBottom);
     public const int PanelLeft = 23, PanelRight = 38, PanelBottom = 21, MessageTop = 10;
+    /// <summary>
+    /// The panel's name colour and HP as START 0x1583 last drew them for <see cref="Shown"/>: the program does not redraw
+    /// those lines when the creature takes damage or leaves play (DOSBox-X s37: a vampire killed by Magic Missile kept
+    /// its yellow name and HP 1 through "takes … damage" and the death text). Null, or another creature, = drawn live.
+    /// </summary>
+    public (EclCharacter Creature, byte NameColour, int Hp)? ShownLines { get; set; }
+
+    /// <summary>The panel shows <paramref name="c"/> (START 0x1583): its lines as they are now.</summary>
+    public void ShowLines(EclCharacter c)
+    {
+        Shown = c;
+        ShownLines = (c, CombatChooser.NameColour(c), c[FightRules.Hp]);
+    }
+
     /// <summary>While the status panel's weapon name types: the cells shown so far (null = all).</summary>
     public int? WeaponTyped { get; set; }
     /// <summary>Row 23 (under the map frame): "RANGE = n", "MOVE … = n" and the like.</summary>
@@ -340,7 +354,7 @@ public sealed partial class CombatChooser(Func<PlayerRequest, object?> ask, Comb
     /// </summary>
     private void ShowPanel(EclCharacter c, bool type = true)
     {
-        View.Shown = c;
+        View.ShowLines(c);
         View.Panel.Clear();
         View.WeaponTyped = null;
         // The weapon's name goes through 0x77F8, so it types while DS:4A00 is set (Delay(DS:49E2 × 10) after each
@@ -939,6 +953,7 @@ public sealed partial class CombatChooser(Func<PlayerRequest, object?> ask, Comb
     private int Choose(CombatMode mode, string? prompt, IReadOnlyList<string> items, int? cancel = null, int selected = 0)
     {
         View.Mode = mode;
+        View.MovePrompt = null; // the menu is written over row 24
         var r = ask(new ChoiceRequest(null, items, false, cancel) { MenuPrompt = prompt, Selected = selected });
         return r is int i ? i : cancel ?? 0;
     }
@@ -1050,12 +1065,21 @@ public sealed partial class CombatChooser(Func<PlayerRequest, object?> ask, Comb
         return cmd;
     }
 
+    /// <summary>
+    /// Move's key loop (0xA1E6): only row 24's prompt changes between keys. DOSBox-X s37 (Phineas walking east, seeded):
+    /// no panel redraw or typing and no cursor box at each step; the menu's box stays under the creature until the first
+    /// step redraws that cell (<see cref="Stepped"/>).
+    /// </summary>
     public MoveInput ChooseMove(FightMenu menu, int movementLeft)
     {
-        ShowCurrent(menu);
+        View.Current = menu.Creature;
+        View.StatusLine = null;
+        View.MovePrompt = null;
         View.Mode = CombatMode.Move;
-        View.Cursor = null; // DOSBox-X: no box while moving
         var r = ask(new CombatMoveRequest(movementLeft));
+        // The prompt stays on row 24 until something else writes there (DOSBox-X s37: through the menu's panel typing
+        // after the last step, until the menu draws over it).
+        View.MovePrompt = Text[CombatMsg.MoveLeft] + movementLeft.ToString(CultureInfo.InvariantCulture);
         View.HitMarker = null;
         return r is MoveInput m ? m : MoveInput.Escape;
     }
@@ -1151,7 +1175,10 @@ public sealed partial class CombatChooser(Func<PlayerRequest, object?> ask, Comb
         View.Mode = CombatMode.Manual;
         View.Page = null;
         View.Current = menu.Creature;
-        View.Shown = view.Creature;
+        if (view.Creature is { } shown)
+            View.ShowLines(shown);
+        else
+            View.Shown = null;
         View.Panel.Clear();
         // 0x1566C: ScrollView(cursor square, 3, its direction) with the cursor flag on and size 1; Core has already
         // moved the square, so the band test runs on it.
@@ -1204,7 +1231,7 @@ public sealed partial class CombatChooser(Func<PlayerRequest, object?> ask, Comb
 
     public bool ConfirmAttackAlly(FightMenu menu, EclCharacter ally)
     {
-        View.Shown = ally;
+        View.ShowLines(ally);
         return YesNo(Text[CombatMsg.AttackAlly]);
     }
 

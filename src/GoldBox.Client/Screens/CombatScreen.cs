@@ -940,13 +940,14 @@ public sealed class CombatScreen
     {
         if (PanelCreature() is { } c)
         {
-            Text(f, PanelCol, 1, Fit(c.Name.ToUpperInvariant(), 16), CombatChooser.NameColour(c));
+            var lines = _view.ShownLines is { } sl && ReferenceEquals(sl.Creature, c) ? sl : (c, CombatChooser.NameColour(c), (int)c[FightRules.Hp]);
+            Text(f, PanelCol, 1, Fit(c.Name.ToUpperInvariant(), 16), lines.Item2);
             // The HP number as the party list (START 0x1513): yellow below the maximum 0x32 (DOSBox-X s29: 185 of 200).
             string hpLabel = _text[CombatMsg.PanelHitpoints].Trim() + " ";
             Text(f, PanelCol, 3, Fit(hpLabel, 16), Chrome.Green);
             if (hpLabel.Length < 16)
-                Text(f, PanelCol + hpLabel.Length, 3, Fit(c[FightRules.Hp].ToString(CultureInfo.InvariantCulture), 16 - hpLabel.Length),
-                    c[FightRules.Hp] < c[0x32] ? Chrome.Yellow : Chrome.Green);
+                Text(f, PanelCol + hpLabel.Length, 3, Fit(lines.Item3.ToString(CultureInfo.InvariantCulture), 16 - hpLabel.Length),
+                    lines.Item3 < c[0x32] ? Chrome.Yellow : Chrome.Green);
             // [?] AC as 60 − record byte 0x111, as the party list (ExploreScreen); DOSBox-X: Darkstar 7, Thrender 1.
             Text(f, PanelCol, 5, Fit(_text[CombatMsg.PanelAc].Trim() + " " + (60 - c[FightRules.Ac]).ToString(CultureInfo.InvariantCulture), 16), Chrome.Green);
             // START 0x1675: the weapon's name (ending in a space, as composed) word-wrapped into (23, 7)–(38, 9) through

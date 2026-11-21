@@ -115,6 +115,44 @@ public class CombatPanelTypingTests
     }
 
     [Fact]
+    public void Moving_neither_retypes_the_panel_nor_redraws_the_box()
+    {
+        // DOSBox-X s37 (seeded flee run): after M the menu's box stays under the creature; each step changes the map
+        // and row 24 only (no panel typing, no box at the new square).
+        var r = new Rig(typing: true);
+        r.Map.SetSlotCreature(1, r.Me);
+        r.Map.SetSlotPosition(1, 10, 10);
+        r.Map.SetSlotSize(1, 1);
+        r.View.Cursor = (10, 10);
+        var menu = new FightMenu(r.Fight, r.Me, r.Chooser);
+        r.Chooser.ChooseMove(menu, 12);
+        Assert.Empty(r.Delays);
+        Assert.Equal((10, 10), r.View.Cursor!.Value);
+        Assert.Equal(CombatMode.Move, r.View.Mode);
+        // The prompt stays on row 24 (through the menu's panel typing) until a menu or question is written there.
+        Assert.EndsWith("12", r.View.MovePrompt);
+        r.Chooser.ConfirmFlee(menu);
+        Assert.Null(r.View.MovePrompt);
+    }
+
+    [Fact]
+    public void The_panel_keeps_the_name_colour_and_hp_it_was_drawn_with()
+    {
+        // DOSBox-X s37: a vampire at HP 1 killed by Magic Missile kept its yellow name and "1" on the panel through the
+        // damage and death texts; only the next START 0x1583 draws the lines again.
+        var r = new Rig(typing: false);
+        r.Me[FightRules.Hostile] = 1;
+        r.Me[FightRules.Hp] = 1;
+        r.Me[CombatRules.AutoCombat] = 1;
+        r.Chooser.TurnStarted(r.Me);
+        r.Me[FightRules.Hp] = 0;
+        r.Me[FightRules.InPlay] = 0;
+        Assert.Equal((r.Me, (byte)14, 1), r.View.ShownLines!.Value);
+        r.Chooser.TurnStarted(r.Me);
+        Assert.Equal((r.Me, (byte)12, 0), r.View.ShownLines!.Value);
+    }
+
+    [Fact]
     public void The_turns_end_takes_the_cursor_box_off_the_creatures_square()
     {
         // 0x99FD redraws the cell at the creature's square after its turn (0x9AD9–0x9AF1): DOSBox-X s30, no box under

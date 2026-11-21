@@ -127,6 +127,10 @@ the movement left (+6 shr 1):
   - Else a step (0x130AD), then 0x12F0D; after each, a creature out of play ends its actions; then the terrain
     effects (0x2B9D1), and a helpless creature (START 0x1713) ends its actions. The AI's move (0xB29A–0xB6E2) makes
     the same calls.
+- **Screen** (**D** s37, seeded, Phineas walking east): only row 24's prompt changes between keys; no panel redraw
+  or typing and no cursor box at the new square. The menu's box stays under the creature until the first step redraws
+  that cell. When the move ends, the menu loop's panel types under the last prompt (row 24 not cleared) and the
+  menu is then written over it. Client `CombatChooser.ChooseMove` (until s37 it redrew the panel and box each step).
 - **Escape undoes the whole move**: +6 back to the saved value, the creature is put back on its starting square
   (0x317E1; done = not put back), facing restored. **D** (`m05_after_escape`: back on its square with +6 and facing
   as before).

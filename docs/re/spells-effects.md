@@ -455,20 +455,27 @@ itself first, 0x11534, whatever follows; Core `EffectEvent.EscapeView` then `Esc
 only from trigger 0x0D, which every drop path (0xECB3, 0x2C44A, the attack's drop) calls after in play is 0: so
 0x2BDF0 returns at 0x2BE0C, the vampire stays down (dead or dying) and only the view moves; the escape text can show
 only for a creature still in play (none on the program's paths, as read) — `HandlerMessageTests.A_vampire_downed_…`;
-`[?]` not seen in DOSBox-X; the flee 0x134EC (status 3, CS:0C4F
+**D** (s37: the vampire at HP 1 killed by a level-12 Darkstar's Magic Missile, seed 12345): the death text, the downed
+picture, then the next member's turn; no escape text, no view change seen; the Client equal frame for frame (121 of
+122, the other its help lines) once the panel keeps the lines START 0x1583 drew (below); the flee 0x134EC (status 3, CS:0C4F
 = 0x1344A, "away"); the flee's other branch (0x134F3) shows CS:0C58 = 0x13453 through START 0x1693 (row 24), then both
 end the actions (0x1350D). Core `FightState.FleeMessage` (raised before the status change), Client
 `CombatChooser.FleeMessage`. The revive's fight text **D** (s33, the wild boar): equal frame for frame
-(combat-menu.md "s33"). **D** (s36, the not-away branch): one orc (MON2 4, movement 9) against Thrender (movement 6) walked east to the
-combat map's edge in a corridor; Yes at the flee question: row 24 shows CS:0C58 in green at column 0 0.27 s after the
-key, for 0.676 s (the game-speed pause), row 24 cleared, the panel kept, then the next member's turn (no
-creature-side text, no status change). Same as the Client's `PageSay` path (layout checked; no frame-for-frame
-compare: the DOSBox-X run was not seeded). **D** (s36, away): the same fight with the orc's movement base (0x72) patched to 4: 0.28 s after Yes the panel
-below the weapon line is cleared and the name (cyan) goes on row 10, the CS:0C4F words (green) typed on row 11 over
-~0.09 s; held ~0.93 s; the text cleared, then the icon leaves the map (one frame), the map redrawn 0.22 s later, the
-panel cleared and the next member's turn. Row 24 keeps the flee question through it with neither word lit. The
-Client's `StatusChangeScroll` + `Say` path is meant to match; not compared frame for frame (unseeded run) `[?]`, nor
-the unlit row 24. `[?]` The handler-103 escape not seen in DOSBox-X.
+(combat-menu.md "s33"). **D** (s36, s37, the not-away branch): Phineas walking east to the combat map's edge (seed 12345,
+`fight_save.py BASE OUT 1C0B00040001000224 --hp 200 --monpatch 4:0x72=30`, the orc fast and in sight); Yes at the flee
+question: row 24 shows CS:0C58 in green at column 0 0.27 s after the key, for 0.68 s (the game-speed pause), row 24
+cleared, the panel kept, then the next member's turn (no creature-side text, no status change). **D** (s36, s37, away;
+the orc's movement base 0x72 = 4, or no enemy in sight): 0.28 s after Yes the panel below the weapon line is cleared and
+the name (cyan) goes on row 10, the CS:0C4F words (green) typed on row 11 over ~0.09 s; held ~0.93 s; the text cleared,
+then the icon leaves the map, the map redrawn and the next member's panel. Row 24 keeps the flee question with **YES
+lit** (Y, E, S colour 15; N 15, O 10) until the next menu; s36's "neither lit" was the frame tool's reading. **P + emulation (s37):** the question is 0x2D9A0 (GAME.OVR 0xA431, Y → 0x13465 at 0xA440); its hotkey path 0x2CF48 → 0x2CAA9 redraws the row with YES lit, and nothing after it (0x13465, 0x2BDF0 with every draw trapped under unicorn) writes row 24; text goes to both EGA pages directly (0709:01DF), so no page copy brings back an older row. Client
+(s37, seeded, same keys): every frame equal to one of DOSBox-X's but the help lines (away 138 of 139, not away 227 of
+228). Timing left: DOSBox-X waits ~0.21 s between the text's clear and the icon leaving the map (away), and ~0.23 s
+between row 24's clear and the next panel (not away); the Client does both at once `[?]` (machine time at 3000 cycles,
+or a wait not read).
+The panel's creature lines (s37): START 0x1583 draws the name colour and HP once; damage and leaving play do not redraw
+them (the vampire above kept its yellow name and HP 1 through the damage and death texts). Client
+`CombatView.ShownLines`, taken at each 0x1583 (`ShowPanel`, Manual's panel, the attack-ally question).
 
 Where to see each (for the DOSBox-X check; monsters from the MON*SPC sets, s27's way of loading another disk's
 monsters: dosbox-trace-method.md "Monsters of another disk"):
