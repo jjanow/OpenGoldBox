@@ -459,7 +459,16 @@ only for a creature still in play (none on the program's paths, as read) — `Ha
 = 0x1344A, "away"); the flee's other branch (0x134F3) shows CS:0C58 = 0x13453 through START 0x1693 (row 24), then both
 end the actions (0x1350D). Core `FightState.FleeMessage` (raised before the status change), Client
 `CombatChooser.FleeMessage`. The revive's fight text **D** (s33, the wild boar): equal frame for frame
-(combat-menu.md "s33"). `[?]` The flee texts and the handler-103 escape not seen in DOSBox-X (no capture in s33).
+(combat-menu.md "s33"). **D** (s36, the not-away branch): one orc (MON2 4, movement 9) against Thrender (movement 6) walked east to the
+combat map's edge in a corridor; Yes at the flee question: row 24 shows CS:0C58 in green at column 0 0.27 s after the
+key, for 0.676 s (the game-speed pause), row 24 cleared, the panel kept, then the next member's turn (no
+creature-side text, no status change). Same as the Client's `PageSay` path (layout checked; no frame-for-frame
+compare: the DOSBox-X run was not seeded). **D** (s36, away): the same fight with the orc's movement base (0x72) patched to 4: 0.28 s after Yes the panel
+below the weapon line is cleared and the name (cyan) goes on row 10, the CS:0C4F words (green) typed on row 11 over
+~0.09 s; held ~0.93 s; the text cleared, then the icon leaves the map (one frame), the map redrawn 0.22 s later, the
+panel cleared and the next member's turn. Row 24 keeps the flee question through it with neither word lit. The
+Client's `StatusChangeScroll` + `Say` path is meant to match; not compared frame for frame (unseeded run) `[?]`, nor
+the unlit row 24. `[?]` The handler-103 escape not seen in DOSBox-X.
 
 Where to see each (for the DOSBox-X check; monsters from the MON*SPC sets, s27's way of loading another disk's
 monsters: dosbox-trace-method.md "Monsters of another disk"):
