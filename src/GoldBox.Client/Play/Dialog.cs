@@ -32,10 +32,11 @@ public sealed class Dialog(Func<PlayerRequest, object?> ask, TextWindow text)
     /// The program's yes/no menu (0x2D9A0: "~Yes ~No" with the question as its prompt): true on Yes. Cancel = No. It
     /// sets the shared highlight to No before its menu (<see cref="ChoiceRequest.Selected"/> = 1).
     /// </summary>
-    public bool YesNo(string? prompt = null) =>
+    public bool YesNo(string? prompt = null, byte? promptColour = null) =>
         ask(new ChoiceRequest(null, ["YES", "NO"], false, 1)
         {
             MenuPrompt = prompt?.TrimEnd(),
+            MenuPromptColour = promptColour,
             Selected = 1,
         }) is int i ? i == 0 : false;
 

@@ -775,6 +775,15 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
     /// </summary>
     public ListRequest? PageUnder { get; set; }
 
+    /// <summary>With <see cref="PageUnder"/>: the text box is drawn over the page (false: the page alone, <see cref="TradeContext.ShowPageAlone"/>).</summary>
+    public bool PageUnderBox { get; set; } = true;
+
+    /// <summary>The text box's frame was drawn again over the screen's (<see cref="TradeContext.FrameTextBox"/>).</summary>
+    public bool TextBoxFramed { get; set; }
+
+    /// <summary>The position line is held as last drawn (<see cref="TradeContext.HoldPositionLine"/>).</summary>
+    public bool PositionLineHeld { get; set; }
+
     /// <summary>
     /// The window came up over the combat screen (the party-destroyed page): row 24 shows nothing while its text types
     /// (DOSBox-X s29), unlike the DAMAGE wipe's window over the area screen, whose command line stays.
@@ -806,7 +815,10 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
                 WindowAfterFight = true;
                 TypesInto(box);
             },
-            ShowPageUnder = p => PageUnder = p,
+            ShowPageUnder = p => (PageUnder, PageUnderBox) = (p, true),
+            ShowPageAlone = p => (PageUnder, PageUnderBox) = (p, false),
+            FrameTextBox = on => TextBoxFramed = on,
+            HoldPositionLine = on => PositionLineHeld = on,
             Text = Resources.Texts,
             Party = party,
             Pool = state?.Money ?? new uint[7],

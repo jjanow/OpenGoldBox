@@ -17,7 +17,7 @@ namespace GoldBox.Client.Play;
 /// 0x1693 (handlers 40, 135) is the row-24 message in green with the pause.
 /// </summary>
 public sealed class OutsideEffectMessages(TextWindow window, Func<PlayerRequest, object?> ask, Func<int> speed,
-    CombatText texts, Func<bool> resting, Action<SoundCue>? cue = null)
+    CombatText texts, Func<bool> resting, Action<SoundCue>? cue = null, Action? framed = null)
 {
     /// <summary>
     /// Shows the event's message as the program does outside a fight; false for an event this class does not draw (the
@@ -77,6 +77,8 @@ public sealed class OutsideEffectMessages(TextWindow window, Func<PlayerRequest,
     public void Message(EclCharacter c, string text, bool pause)
     {
         int r = resting() ? TextWindow.Top + 1 : TextWindow.Top;
+        if (r == TextWindow.Top)
+            framed?.Invoke(); // the box's frame drawn again (03F1:0000)
         window.ClearRect(TextWindow.Left, r, TextWindow.Right, TextWindow.Bottom);
         window.Put(r + 1, TextWindow.Left, c.Name.ToUpperInvariant(), CombatChooser.NameColour(c));
         window.PrintIn(TextWindow.Left, r + 2, TextWindow.Right, TextWindow.Bottom, text, true, TextWindow.ScriptColour);

@@ -568,9 +568,12 @@ public sealed class CombatScreen
             return true;
         }
         int n = page.Rows.Count, m = pr.Entries.Count;
-        if (n > 0 && (input.Pressed(GameAction.MenuUp) || input.Pressed(GameAction.PreviousMember)))
+        // The list routine 0x2D669 moves its highlight with Home / End and the keypad's 7 / 1, which come as the step
+        // bindings' NumPad7 / NumPad1 (D s33: keypad 1 on the Items page moved it in DOSBox-X).
+        bool keys = input.LastDevice == InputDevice.Keyboard;
+        if (n > 0 && (input.Pressed(GameAction.MenuUp) || input.Pressed(GameAction.PreviousMember) || (keys && input.Pressed(GameAction.StepUpLeft))))
             page.Selected = (page.Selected + n - 1) % n;
-        if (n > 0 && (input.Pressed(GameAction.MenuDown) || input.Pressed(GameAction.NextMember)))
+        if (n > 0 && (input.Pressed(GameAction.MenuDown) || input.Pressed(GameAction.NextMember) || (keys && input.Pressed(GameAction.StepDownLeft))))
             page.Selected = (page.Selected + 1) % n;
         if (m > 0 && input.Pressed(GameAction.MenuLeft)) _selected = (_selected + m - 1) % m;
         if (m > 0 && input.Pressed(GameAction.MenuRight)) _selected = (_selected + 1) % m;
@@ -588,6 +591,7 @@ public sealed class CombatScreen
             for (int i = 0; i < m; i++)
                 if (pr.Entries[i].Length > 0 && pr.Entries[i][0] == key[0])
                 {
+                    _pageEntry = i; // a hotkey lights its entry (0x2CF48)
                     answer = new ListAnswer(i, page.Selected);
                     return true;
                 }
@@ -672,6 +676,10 @@ public sealed class CombatScreen
         return null;
     }
 
+    /// <summary>The last page menu drawn and its lit entry (the chosen one once answered).</summary>
+    private PageRequest? _pageMenu;
+    private int _pageEntry;
+
     private void DrawPage(IndexedFrame f, CombatPage p, ActionInput input)
     {
         f.Clear(0);
@@ -691,7 +699,9 @@ public sealed class CombatScreen
         for (int k = 0; p.FirstRow + k <= p.LastRow && first + k < p.Rows.Count; k++)
         {
             int i = first + k;
-            bool sel = i == p.Selected && p.ShowSelection;
+            // the list routine draws its rows again without the highlight when it returns (D s33: every row green
+            // under handler 131's text)
+            bool sel = i == p.Selected && p.ShowSelection && _view.ItemEffectText is null;
             Text(f, p.RowCol, p.FirstRow + k, Fit(p.Rows[i], 39 - p.RowCol), sel ? Chrome.White : Chrome.Green);
         }
         for (int k = 0; k < p.Warning.Count; k++)
@@ -703,8 +713,15 @@ public sealed class CombatScreen
                 if (pr.Prompt is { Length: > 0 } prompt)
                     Text(f, 0, MenuRow, prompt, PromptColour);
                 DrawEntries(f, pr.Entries, pr.Prompt?.Length ?? 0, _selected);
+                (_pageMenu, _pageEntry) = (pr, _selected);
                 if (input.LastDevice != InputDevice.Keyboard)
                     Text(f, 1, HintRow, Fit(PageHint(input, p.Rows.Count > 0), 38), Chrome.Grey);
+                break;
+            case DelayRequest when _view.ItemEffectText is not null && _pageMenu is { } kept:
+                // Handler 131's text over the Items page (D s33): the menu row stays as the pick left it.
+                if (kept.Prompt is { Length: > 0 } keptPrompt)
+                    Text(f, 0, MenuRow, keptPrompt, PromptColour);
+                DrawEntries(f, kept.Entries, kept.Prompt?.Length ?? 0, _pageEntry);
                 break;
             case ChoiceRequest { Vertical: false } c:
                 if (c.MenuPrompt is { Length: > 0 } mp)
@@ -764,6 +781,8 @@ public sealed class CombatScreen
         if (_runner.Pending is ListRequest page)
         {
             _list.Draw(f, _font, page, input);
+            if (page.Grey)
+                SwapGrey(f);
             return;
         }
         if (_view.Page is { } cp)

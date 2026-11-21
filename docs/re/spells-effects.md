@@ -362,7 +362,10 @@ on row 19 during the pause, on a framed text window over the Items page that cle
 s32). Item handlers in a fight: Ready / unready (0x2250A, the menu's Items page and the AI's) now runs
 the item's handler 0x3E through 0x2AEEA (`FightKit` wires `FightItemScreens` and `MonsterAi.ItemHandler`, s30; before,
 nothing ran). Outside a fight the Client has no Ready yet (`CharacterView` TODO), so 131 / 135 there are `[?]`.
-Handler 131's overlay has yet to be captured in DOSBox-X `[?]`.
+**D** (s33, Darkstar Str 12 readying the gauntlets of ogre power from View's Items, seed 12345): the frame is drawn
+again around rows 17–22 over the Items page, the name on row 18 and the text typed on row 19, the pause (~0.95 s),
+then the page again with the item readied; while the text shows the page's rows are unlit and row 24 keeps the Items
+menu with Ready lit. Fixed both (`CombatScreen`); 28 of 29 frames equal (the help lines before the step).
 
 0xECB3 shows its text for every caller (row 10, no pause flag), before its dead / stone / gone test; every caller's
 text is mapped (s29, "Status changes"). Code: Core `EffectEvent.Gazes`, `GazeReflected`, `Stoned`,
@@ -422,7 +425,15 @@ PauseOnly (0xED44), START 0x17E3 (rows 18–22) and START 0x0767 (DS:5D92: the p
 drain words pass the pause flag. Client (s30): `OutsideEffectMessages` on the camp's text window during the rest (DS:6DDA
 = 1: rows 18–22, the rest-time line on row 17 kept) and Cast, and on the area's text window for the exploring clock
 (`ClientPlayer.ShowOutsideEffects`, hooked on `PorGame.OutsideEffects`); the party list is drawn from memory every frame,
-so it shows the new status before 0x0767 would `[?]` (one pause early). `[?]` Not seen in DOSBox-X.
+so it shows the new status before 0x0767 would. **D** (s33, camp Rest of 15 minutes with an unconscious Darkstar,
+3 HP, carrying 0x4E for 1 minute with the removal call): on the first tick the revive text (handler 78 → 0x2C753)
+the party-side revive text: the name on row 19, the text typed from row 20, the pause, rows 18–22 cleared; the rest-time line kept
+as drawn (15 minutes, the minutes still lit) and the position line at the old time until the rest ends; the
+rest-time menu row stays through the message. Fixed: the rest-time menu keeps the program's spacing ("Rest   daYs
+Hours Mins   Inc Dec   Exit"), its field stays lit, the position line holds through the rest, the menu row stays
+under the pause. Still differing `[?]`: the party list keeps Darkstar's light red name through the rest and the camp
+menu after it (nothing calls 0x0767; the Client draws the list from memory), and while Rest is lit row 24 also lights
+the D of daYs (a menu routine quirk, not read).
 `[?]` A creature dropped twice in one call chain (0xECB3's end inside 0x2BEF4 of an attack): 0x3154B's early exit
 (0x31571–0x315A3 compares the body entry DS:70C7 × 7 + DS:66D6 eight times) not settled; the Client shows the downed
 picture again.
@@ -447,7 +458,8 @@ only for a creature still in play (none on the program's paths, as read) — `Ha
 `[?]` not seen in DOSBox-X; the flee 0x134EC (status 3, CS:0C4F
 = 0x1344A, "away"); the flee's other branch (0x134F3) shows CS:0C58 = 0x13453 through START 0x1693 (row 24), then both
 end the actions (0x1350D). Core `FightState.FleeMessage` (raised before the status change), Client
-`CombatChooser.FleeMessage`. `[?]` None seen in DOSBox-X.
+`CombatChooser.FleeMessage`. The revive's fight text **D** (s33, the wild boar): equal frame for frame
+(combat-menu.md "s33"). `[?]` The flee texts and the handler-103 escape not seen in DOSBox-X (no capture in s33).
 
 Where to see each (for the DOSBox-X check; monsters from the MON*SPC sets, s27's way of loading another disk's
 monsters: dosbox-trace-method.md "Monsters of another disk"):

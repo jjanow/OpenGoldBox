@@ -20,9 +20,20 @@ public sealed class ListPage
     private const byte LabelColour = 13;
 
     /// <summary>Where each action word goes: the bottom line, or (when they do not fit in 40 columns) two lines, 23 and 24.</summary>
-    private static List<(int Col, int Row)> ActionCells(IReadOnlyList<string> actions)
+    private static List<(int Col, int Row)> ActionCells(IReadOnlyList<string> actions, int start = 0)
     {
         var cells = new List<(int, int)>();
+        if (start > 0)
+        {
+            // the spell list's menu line: one row after its prompt (0x2CC8C draws it as one string)
+            int c = start;
+            foreach (var a in actions)
+            {
+                cells.Add((c, ActionRow));
+                c += a.Length + 1;
+            }
+            return cells;
+        }
         bool two = actions.Sum(a => a.Length + 1) - 1 > 40;
         int row = two ? ActionRow - 1 : ActionRow, col = 0;
         foreach (var a in actions)
@@ -38,7 +49,7 @@ public sealed class ListPage
         return cells;
     }
 
-    private static bool TwoLines(ListRequest r) => ActionCells(Menu(r, r.Top).Words) is var c && c.Count > 0 && c[0].Row != ActionRow;
+    private static bool TwoLines(ListRequest r) => r.Spell is null && ActionCells(Menu(r, r.Top).Words) is var c && c.Count > 0 && c[0].Row != ActionRow;
     private static int HintRow(ListRequest r) => TwoLines(r) ? ActionRow - 2 : ActionRow - 1;
     private static int LastListRow(ListRequest r) => HintRow(r) - 1;
 
@@ -295,8 +306,11 @@ public sealed class ListPage
         int n = r.Rows.Count, m = _words.Count;
         if (r.Paging is not null)
         {
-            if (input.Pressed(GameAction.MenuUp) && n > 0) Step(r, down: false);
-            if (input.Pressed(GameAction.MenuDown) && n > 0) Step(r, down: true);
+            // 0x2D669: Home / End (keypad 7 / 1) move the highlight; the Client's Up / Down do the same. On the keyboard
+            // only (the pad's right stick turned to those diagonals pages, PageKeys); a list that picks a member keeps them.
+            bool keys = input.LastDevice == InputDevice.Keyboard && !r.PartySelect;
+            if ((input.Pressed(GameAction.MenuUp) || (keys && input.Pressed(GameAction.StepUpLeft))) && n > 0) Step(r, down: false);
+            if ((input.Pressed(GameAction.MenuDown) || (keys && input.Pressed(GameAction.StepDownLeft))) && n > 0) Step(r, down: true);
         }
         else
         {
@@ -384,16 +398,24 @@ public sealed class ListPage
 
     private int? ActionAt(int col, int row)
     {
-        var cells = ActionCells(_words);
+        var cells = ActionCells(_words, _shown?.Spell?.MenuStart ?? 0);
         for (int i = 0; i < cells.Count; i++)
             if (cells[i].Row == row && col >= cells[i].Col && col < cells[i].Col + _words[i].Length)
                 return i;
         return null;
     }
 
-    public void Draw(IndexedFrame f, TextFont font, ListRequest r, ActionInput input)
+    /// <param name="highlight">False for a page left under something else: the list routine 0x2D669 draws its rows
+    /// again without the highlight when it returns (D s33: every row green under Memorize's slot message, the keep
+    /// question, the Items page's handler text).</param>
+    public void Draw(IndexedFrame f, TextFont font, ListRequest r, ActionInput input, bool highlight = true)
     {
         Sync(r);
+        if (r.Spell is { } spell && r.Paging is { } paging)
+        {
+            DrawSpellPage(f, font, r, spell, paging, input, highlight);
+            return;
+        }
         f.Clear(0);
         int linesEnd = r.Paging is not null ? FirstRow(r) - 1 : LastListRow(r);
         for (int i = 0; i < r.Lines.Count && i <= linesEnd; i++)
@@ -410,7 +432,7 @@ public sealed class ListPage
                 Chrome.Text(f, font, 1, first + k, Fit(r.Rows[i], 38), LabelColour);
                 continue;
             }
-            bool sel = i == _row;
+            bool sel = i == _row && highlight;
             Chrome.Text(f, font, 1, first + k, Fit(r.Rows[i], 38), sel ? Chrome.White : Chrome.Green);
             if (sel)
                 Chrome.Text(f, font, 0, first + k, ">", Chrome.Yellow);
@@ -433,6 +455,54 @@ public sealed class ListPage
             Chrome.Text(f, font, col + 1, row, w[1..], rest);
         }
         Chrome.Text(f, font, 0, HintRow(r), Fit(Hint(r, input), 40), Chrome.Grey);
+    }
+
+    /// <summary>
+    /// The spell list's screen (<see cref="SpellPageLayout"/>; P + D, s33): the title window (1, 1)–(38, 1), the list
+    /// window (1, 3)–(38, last row), Memorize's text box (1, 17)–(38, 22), each framed one cell outside as START 03F1:02E8
+    /// and 03F1:0000 draw them, in the program's order; the rows (labels 13, the highlight white, the rest green, no
+    /// cursor); row 24 the prompt (13) and the words from <see cref="SpellPageLayout.MenuStart"/>. The Client's device
+    /// hint goes on row 23 for the pad and the mouse only, as on the fight's pages.
+    /// </summary>
+    private void DrawSpellPage(IndexedFrame f, TextFont font, ListRequest r, SpellPageLayout s, ListPaging p, ActionInput input,
+        bool highlight)
+    {
+        f.Clear(0);
+        int first = FirstRow(r), last = first + p.Rows - 1;
+        Chrome.Box(f, 0, 0, 39, 2);
+        Chrome.Box(f, 0, 2, 39, last + 1);
+        Chrome.Text(f, font, 1, 1, Fit(s.Name + "'S", 38), s.NameColour);
+        int titleCol = 1 + s.Name.Length + 3;
+        if (titleCol < 39)
+            Chrome.Text(f, font, titleCol, 1, Fit(s.Title, 39 - titleCol), Chrome.Green);
+        if (s.Box is { } box)
+        {
+            Chrome.Box(f, 0, 16, 39, 23);
+            foreach (var l in box)
+                Chrome.Text(f, font, l.Column, l.Row, Fit(l.Text, Math.Max(0, 39 - l.Column)), l.Colour);
+        }
+        for (int k = 0; k < p.Rows && _top + k < r.Rows.Count; k++)
+        {
+            int i = _top + k;
+            byte colour = r.Labels.Contains(i) ? LabelColour : i == _row && highlight ? Chrome.White : Chrome.Green;
+            Chrome.Text(f, font, 1, first + k, Fit(r.Rows[i], 38), colour);
+        }
+        if (s.Prompt is { Length: > 0 } prompt)
+            Chrome.Text(f, font, 0, ActionRow, Fit(prompt, 40), LabelColour);
+        var cells = ActionCells(_words, s.MenuStart);
+        for (int i = 0; i < _words.Count; i++)
+        {
+            var w = _words[i];
+            var (col, row) = cells[i];
+            if (w.Length == 0 || col + w.Length > 40)
+                continue;
+            bool usable = UsableWord(r, i);
+            byte rest = !usable ? Chrome.Grey : i == _action ? Chrome.White : Chrome.Green;
+            Chrome.Text(f, font, col, row, w[..1], usable ? Chrome.White : Chrome.Grey);
+            Chrome.Text(f, font, col + 1, row, w[1..], rest);
+        }
+        if (input.LastDevice != InputDevice.Keyboard)
+            Chrome.Text(f, font, 0, ActionRow - 1, Fit(Hint(r, input), 40), Chrome.Grey);
     }
 
     /// <summary>The prompt line in the device used last.</summary>

@@ -74,6 +74,8 @@ public sealed class MonsterAi : IFightController
     public Action<EclCharacter, AiMessage>? Message { get; set; }
     /// <summary>0x2AEEA for items with byte 0x3E &gt; 0x7F when the AI readies (false) or unreadies (true) them [?].</summary>
     public Action<EclCharacter, byte[], bool>? ItemHandler { get; set; }
+    /// <summary>0xABCF's start, also when the menu's Quick hands the turn over (row 24 and the message area cleared on screen).</summary>
+    public Action<EclCharacter>? Starting { get; set; }
 
     public bool ContinueBattle() => Menu?.ContinueBattle() ?? false;
 
@@ -103,6 +105,7 @@ public sealed class MonsterAi : IFightController
     {
         var rec = f.Record(c);
         f.State.Current = c;
+        Starting?.Invoke(c);
         bool done = CheckKeystroke(f, c);
         if (c[FightRules.InPlay] == 0)
         {

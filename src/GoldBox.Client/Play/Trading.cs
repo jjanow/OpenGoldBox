@@ -41,6 +41,21 @@ public sealed class TradeContext
     /// frame over the spell list and blanks its inside; row 24 keeps the list's menu line). Null takes it away.
     /// </summary>
     public Action<ListRequest?> ShowPageUnder { get; init; } = _ => { };
+
+    /// <summary>A list page stays on the screen with nothing over it but row 24 (a keep question after a spell list). Null takes it away.</summary>
+    public Action<ListRequest?> ShowPageAlone { get; init; } = _ => { };
+
+    /// <summary>
+    /// START 0x16EC's camp branch drew the text box's frame again (03F1:0000 around (1, 17)–(38, 22)): its top row runs
+    /// through the joint at (16, 16) until the screen is redrawn (START 0x27D9). False: the redraw.
+    /// </summary>
+    public Action<bool> FrameTextBox { get; init; } = _ => { };
+
+    /// <summary>
+    /// The position line keeps what it showed (true) until released (false): the rest loop 0x24A66 never draws it, the
+    /// camp's Rest draws it after (0x1804A; D s33: 10:50 under a handler message on the first tick, the clock at 10:55).
+    /// </summary>
+    public Action<bool> HoldPositionLine { get; init; } = _ => { };
     public required GameText Text { get; init; }
     public required EclParty Party { get; init; }
     /// <summary>The pool: seven dwords (copper … jewellery).</summary>

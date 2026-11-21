@@ -19,6 +19,17 @@ public sealed record ChoiceRequest(string? Prompt, IReadOnlyList<string> Items, 
     /// </summary>
     public string? MenuPrompt { get; init; }
 
+    /// <summary>The prompt's colour when the caller passes another than 13 (the yes/no routine 0x3C5:0x39 takes it as an
+    /// argument: 13 or 14, e.g. 14 for the camp's keep questions 0x1818B / 0x182BA and the quit question 0x19791).</summary>
+    public byte? MenuPromptColour { get; init; }
+
+    /// <summary>
+    /// Each item's column from the menu's start, when the program's menu line has more than one space between items:
+    /// the menu routine draws the line as it is (D s33: the rest-time menu "Rest   daYs Hours Mins   Inc Dec   Exit").
+    /// Null: one space between items.
+    /// </summary>
+    public IReadOnlyList<int>? Columns { get; init; }
+
     /// <summary>
     /// The menu also takes the party selection keys (the original's Home / End, and G / O in the shop, temple and
     /// loot menus): answered <see cref="PreviousMember"/> / <see cref="NextMember"/>.
@@ -121,6 +132,37 @@ public sealed record ListRequest(IReadOnlyList<ListLine> Lines, IReadOnlyList<st
 
     /// <summary>With <see cref="Paging"/>: the window's first row on entry (DS:6B29, kept by a caller that keeps its row).</summary>
     public int Top { get; init; }
+
+    /// <summary>With <see cref="Paging"/>: the spell list's own screen (0x239D6 / 0x270A2), drawn instead of <see cref="Lines"/>.</summary>
+    public SpellPageLayout? Spell { get; init; }
+
+    /// <summary>
+    /// In a fight: the combat palette stays on (EGA 0 and 8 swapped, <see cref="CombatPage.Grey"/>), as for the menu's
+    /// Cast list (0x14C0F → 0x239D6; D s33: the list on dark grey); View's pages restore the normal palette.
+    /// </summary>
+    public bool Grey { get; init; }
+}
+
+/// <summary>
+/// The spell list's screen (P + D, s33; combat-menu.md "Spell lists' Next / Prev"). 0x239D6, when its position word is
+/// below 0, draws the window (1, 1)–(38, 1) (START 03F1:02E8: inside cleared, frame one cell outside), the name with
+/// "'s" at (1, 1) in the name colour (START 0x1816 with its flag: CS:1813) and "Spells " + the list's words at
+/// (name length + 4, 1) in green; 0x270A2 draws the window (1, 3)–(38, y1) (y1 22, Memorize's 15). The list routine's
+/// rows: labels in colour 13, the others green, the highlighted one white, no cursor. Row 24: <see cref="Prompt"/> in
+/// colour 13 (the choose-spell words, actions 1–4), then the words; with no prompt the menu line starts with the space
+/// of " Next" / " Exit" (column 1). <see cref="Box"/>: Memorize's slot lines (0x17DD5) in the text box (1, 17)–(38, 22),
+/// whose frame START 0x16EC's camp branch draws again.
+/// </summary>
+public sealed record SpellPageLayout(string Name, byte NameColour, string Title)
+{
+    /// <summary>The prompt before the menu words on row 24 (its trailing space included), or null.</summary>
+    public string? Prompt { get; init; }
+
+    /// <summary>Memorize's text box lines (rows 18–22), or null for no text box.</summary>
+    public IReadOnlyList<WindowLine>? Box { get; init; }
+
+    /// <summary>The column the menu words start at on row 24.</summary>
+    public int MenuStart => Prompt is { Length: > 0 } p ? p.Length : 1;
 }
 
 /// <summary>

@@ -29,7 +29,7 @@ public sealed class CampContext
 
     /// <summary>The handler messages outside a fight on the camp's text window; <paramref name="resting"/> is DS:6DDA.</summary>
     public OutsideEffectMessages OutsideMessages(bool resting) =>
-        new(Dialog.Text, Dialog.Ask, () => Memory.GameSpeed, Resources.CombatTexts, () => resting, Cue);
+        new(Dialog.Text, Dialog.Ask, () => Memory.GameSpeed, Resources.CombatTexts, () => resting, Cue, () => Trade.FrameTextBox(true));
 
     public Dialog Dialog => Trade.Dialog;
     public GameText Text => Trade.Text;
@@ -62,6 +62,50 @@ public static class SpellLists
         var w = text.Words(CombatMsg.AimNextPrevManual);
         return new ListPaging(w.ElementAtOrDefault(0) ?? "NEXT", w.ElementAtOrDefault(1) ?? "PREV", memorize ? 11 : 18, wordsAt);
     }
+
+    /// <summary>
+    /// The list's screen for <paramref name="who"/> (<see cref="SpellPageLayout"/>): the name in its colour (START
+    /// 0x23B6), "Spells " + <paramref name="list"/>'s words (0x239CE + 0x23973–0x239BF) as the title, the choose-spell
+    /// prompt (0x27053) when <paramref name="prompt"/> (actions 1–4), Memorize's slot lines in <paramref name="box"/>.
+    /// </summary>
+    public static SpellPageLayout Layout(EclCharacter who, GameText text, Msg list, bool prompt, IReadOnlyList<WindowLine>? box = null) =>
+        new(who.Name.ToUpperInvariant(), CombatChooser.NameColour(who), (text[Msg.SpellsWord] + text[list]).ToUpperInvariant())
+        {
+            Prompt = prompt ? text[Msg.ChooseSpell].TrimEnd().ToUpperInvariant() + " " : null,
+            Box = box,
+        };
+
+    /// <summary>
+    /// Memorize's slot lines (0x17DD5, read s33; D s33): per class (cleric, magic-user) and level 1–3 the free slots
+    /// (0x17A8D, a byte) through Str, at most two characters, blank where the slot byte is 0; a class with any slot byte
+    /// counts. With one, START 0x16EC(member, "can memorize:", 10, 0) in the camp's text box: the box's frame drawn
+    /// again, rows 17–22 cleared, the name on row 18, the words from row 19 (green); then each counting class on its own
+    /// row from 20 (CS:057E / CS:0591 at column 1, green) with its numbers at columns 20, 23, 26.
+    /// </summary>
+    public static IReadOnlyList<WindowLine> SlotBox(EclCharacter who, GameText text, Func<int, int, int> slotsLeft)
+    {
+        var lines = new List<WindowLine>
+        {
+            new(1, 18, who.Name.ToUpperInvariant(), CombatChooser.NameColour(who)),
+            new(1, 19, text[Msg.CanMemorise].Trim().ToUpperInvariant()),
+        };
+        int row = 20;
+        for (int cls = 0; cls <= 1; cls++)
+        {
+            if (!Enumerable.Range(1, 3).Any(l => CampSpells.SlotsFor(who, cls, l) != 0))
+                continue;
+            lines.Add(new(1, row, text[cls == 0 ? Msg.ClericSpells : Msg.MageSpells].TrimEnd().ToUpperInvariant().PadLeft(18)));
+            for (int l = 1; l <= 3; l++)
+            {
+                if (CampSpells.SlotsFor(who, cls, l) == 0)
+                    continue;
+                string n = ((byte)slotsLeft(l, cls)).ToString(CultureInfo.InvariantCulture);
+                lines.Add(new(20 + 3 * (l - 1), row, n.Length > 2 ? n[..2] : n));
+            }
+            row++;
+        }
+        return lines;
+    }
 }
 
 /// <summary>
@@ -81,6 +125,33 @@ public static class CampScreens
     /// A menu line as the program's menu routine (0x2CC8C) reads it: every capital letter or digit starts an item and
     /// is its hotkey; words with none belong to the item before. Items upper case.
     /// </summary>
+    /// <summary>
+    /// Each item's column in <paramref name="line"/> as <see cref="ParseMenu"/> splits it (the menu routine draws the line
+    /// with its own spaces), or null when every item is one space after the one before.
+    /// </summary>
+    public static IReadOnlyList<int>? MenuColumns(string line)
+    {
+        var cols = new List<int>();
+        bool spaced = false;
+        int at = 0, end = -1;
+        foreach (var w in line.Split(' '))
+        {
+            if (w.Length > 0)
+            {
+                bool starts = w.IndexOfAny("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789".ToCharArray()) >= 0 || cols.Count == 0;
+                if (starts)
+                {
+                    if (cols.Count > 0 && at - end > 1)
+                        spaced = true;
+                    cols.Add(at);
+                }
+                end = at + w.Length;
+            }
+            at += w.Length + 1;
+        }
+        return spaced ? cols : null;
+    }
+
     public static (List<string> Items, string Hotkeys) ParseMenu(string line)
     {
         var items = new List<string>();
@@ -152,6 +223,7 @@ public static class CampScreens
         Array.Clear(c.State.RestTime);
         c.State.Camping = true;
         c.Dialog.Text.Clear();
+        c.Trade.FrameTextBox(false); // START 0x27D9 on entry (0x196C7)
         c.Dialog.Text.Put(18, 1, c.Text[Msg.MakesCamp], 10);   // column 1, row 18 (0x196A0)
         c.Spells.ResetParty(c.Party.Members);
         bool interrupted = false;
@@ -167,7 +239,7 @@ public static class CampScreens
                 {
                     case 'S':
                         Save(c);
-                        if (c.Dialog.YesNo(c.Text[Msg.QuitToDos]))
+                        if (c.Dialog.YesNo(c.Text[Msg.QuitToDos], 14)) // 0x19791: prompt colour 14
                             c.Quit?.Invoke();
                         break;
                     case 'V':
@@ -195,6 +267,7 @@ public static class CampScreens
                 cast.Remembered = null;
             c.State.Camping = false;
             c.Dialog.Text.Clear();
+            c.Trade.FrameTextBox(false);
         }
     }
 
@@ -229,6 +302,7 @@ public static class CampScreens
         void OnEffect(EclCharacter t, EffectEvent e) => shown.Show(t, e, c.Effects);
         if (c.Effects is { } fx)
             fx.Event += OnEffect;
+        c.Trade.HoldPositionLine(true);
         try
         {
             bool interrupted = c.Rest.RestForPreparation(new RestUi(c));
@@ -237,6 +311,7 @@ public static class CampScreens
         }
         finally
         {
+            c.Trade.HoldPositionLine(false); // 0x1804A: the position line drawn again after the rest
             if (c.Effects is { } fx2)
                 fx2.Event -= OnEffect;
         }
@@ -277,6 +352,7 @@ public static class CampScreens
         {
             c.Dialog.Text.Clear();
             var (items, keys) = ParseMenu(c.Text.Original(Msg.RestMenu));
+            var columns = MenuColumns(c.Text.Original(Msg.RestMenu));
             int inc = keys.IndexOf('I'), dec = keys.IndexOf('D');
             while (true)
             {
@@ -286,6 +362,7 @@ public static class CampScreens
                     Hotkeys = keys,
                     UpAnswer = inc >= 0 ? inc : null,
                     DownAnswer = dec >= 0 ? dec : null,
+                    Columns = columns,
                 }) is int a ? a : items.Count - 1;
                 char k = i >= 0 && i < keys.Length ? keys[i] : 'E';
                 RestTimeMenu.Key key = k switch
@@ -300,7 +377,9 @@ public static class CampScreens
                 };
                 if (menu.Press(key) is { } rest)
                 {
-                    Draw(0);
+                    // The line stays as the menu left it, its field lit, until the rest shows it again every 5th tick
+                    // (D s33: the minutes still white under a handler message on the first tick).
+                    Draw(menu.Selected);
                     return rest;
                 }
             }
@@ -429,7 +508,7 @@ public static class CampScreens
     /// before each list (0x17CDC, 0x17D52), so its list starts afresh.
     /// </summary>
     private static (int Spell, bool NotEmpty) SpellPage(CampContext c, CampSpells.ListKind kind, Msg? action,
-        IReadOnlyList<ListLine>? extra = null, ListPlace? place = null)
+        IReadOnlyList<ListLine>? extra = null, ListPlace? place = null, IReadOnlyList<WindowLine>? box = null)
     {
         c.LastPage = null;
         if (c.Party.Current is not { } who)
@@ -472,6 +551,7 @@ public static class CampScreens
             Paging = SpellLists.Paging(c.Resources.CombatTexts, memorize: action == Msg.MemoriseAction, wordsAt: actions.Length - 1),
             Selected = place?.Row ?? 0,
             Top = place?.Top ?? 0,
+            Spell = SpellLists.Layout(who, c.Text, suffix, action is not null, box),
         };
         c.LastPage = request;
         var a = c.Dialog.Page(request);
@@ -492,13 +572,17 @@ public static class CampScreens
             cc.Remembered = null;
         if (!Allowed(c, CampActivity.Cast))
             return;
+        bool drawn = false; // [bp−4]: a list was drawn or a spell cast → START 0x27D9 at the end (0x17D90)
         while (c.Party.Current is { } who)
         {
             var (spell, notEmpty) = SpellPage(c, CampSpells.ListKind.InMemory, Msg.CastAction);
+            drawn |= notEmpty;
             if (spell == 0)
             {
                 if (!notEmpty)
                     Say(c, who, c.Text[Msg.NoSpellsMemorised]);
+                if (drawn)
+                    Redrawn(c);
                 return;
             }
             // 0x17D15–0x17D52 (P, s30): the text box's frame (03F1:0000 around (1, 17)–(38, 22)) is drawn over the
@@ -627,6 +711,7 @@ public static class CampScreens
 
     internal static void EffectMessage(CampContext c, EclCharacter who, string text)
     {
+        c.Trade.FrameTextBox(true);
         var w = c.Dialog.Text;
         w.ClearRect(TextWindow.Left, TextWindow.Top, TextWindow.Right, TextWindow.Bottom);
         w.Put(TextWindow.Top + 1, TextWindow.Left, who.Name.ToUpperInvariant(), CombatChooser.NameColour(who));
@@ -649,9 +734,10 @@ public static class CampScreens
             return;
         bool done = false;
         var (_, pending) = SpellPage(c, CampSpells.ListKind.ToMemorise, null);
+        bool drawn = pending; // [bp−3] (0x18170 / 0x181AF / 0x18212): a list page was drawn
         if (pending)
         {
-            if (!c.Dialog.YesNo(c.Text[Msg.MemoriseThese]))
+            if (!PageQuestion(c, c.Text[Msg.MemoriseThese]))
                 CampSpells.ResetMemorise(who);
             else
                 done = true;
@@ -665,14 +751,77 @@ public static class CampScreens
                 Say(c, who, c.Text[Msg.CannotMemorise]);
                 break;
             }
-            shown = true;
-            var (spell, _) = SpellPage(c, CampSpells.ListKind.SpellBook, Msg.MemoriseAction, SlotLines(c, who), place);
+            var box = SpellLists.SlotBox(who, c.Text, (l, cls) => c.Spells.SlotsLeft(who, l, cls));
+            SlotMessage(c, box, shown ? c.LastPage : null);
+            shown = drawn = true;
+            var (spell, _) = SpellPage(c, CampSpells.ListKind.SpellBook, Msg.MemoriseAction, SlotLines(c, who), place, box);
             if (spell == 0)
                 break;
             c.Spells.MarkMemorise(who, spell);
         }
-        if (shown && SpellPage(c, CampSpells.ListKind.ToMemorise, null).NotEmpty && !c.Dialog.YesNo(c.Text[Msg.MemoriseTheseAgain]))
+        if (shown && SpellPage(c, CampSpells.ListKind.ToMemorise, null).NotEmpty && !PageQuestion(c, c.Text[Msg.MemoriseTheseAgain]))
             CampSpells.ResetMemorise(who);
+        if (drawn)
+            Redrawn(c);
+    }
+
+    /// <summary>
+    /// 0x17DD5's message before each pass of the book (D s33): START 0x16EC's camp branch clears rows 17–22, puts the
+    /// name on row 18 and types "can memorize:" from row 19 (while DS:4A00 is set), then the class lines go on at once
+    /// (0x709:0x626). The first time over the camp screen (row 24 keeps the Magic menu); later over the book page, whose
+    /// text box frame the routine draws again (<see cref="TradeContext.ShowPageUnder"/>).
+    /// </summary>
+    private static void SlotMessage(CampContext c, IReadOnlyList<WindowLine> box, ListRequest? page)
+    {
+        var w = c.Dialog.Text;
+        if (page is not null)
+            c.Trade.ShowPageUnder(page);
+        c.Trade.FrameTextBox(true);
+        try
+        {
+            w.ClearRect(TextWindow.Left, TextWindow.Top, TextWindow.Right, TextWindow.Bottom);
+            for (int i = 0; i < box.Count; i++)
+            {
+                var l = box[i];
+                if (i == 1) // the words through 0x77F8 (word-wrapped, typed)
+                    w.PrintIn(TextWindow.Left, l.Row, TextWindow.Right, TextWindow.Bottom, l.Text, true, l.Colour);
+                else
+                    w.Put(l.Row, l.Column, l.Text, l.Colour);
+            }
+        }
+        finally
+        {
+            if (page is not null)
+                c.Trade.ShowPageUnder(null);
+        }
+    }
+
+    /// <summary>
+    /// A keep question asked over the list page it follows (0x3C5:0x39 after 0x239D6; D s33: the page stays, the
+    /// question on row 24).
+    /// </summary>
+    private static bool PageQuestion(CampContext c, string question)
+    {
+        c.Trade.ShowPageAlone(c.LastPage);
+        try
+        {
+            return c.Dialog.YesNo(question, 14); // 0x3C5:0x39 with 14, 10, 15 (0x18189, 0x182B8, Scribe's alike)
+        }
+        finally
+        {
+            c.Trade.ShowPageAlone(null);
+        }
+    }
+
+    /// <summary>
+    /// START 0x27D9 (the redraw for the interface state, here the camp's 2) at the end of Cast, Memorize and Scribe when
+    /// a list page was drawn (0x17D96, 0x182E1, Scribe's end; D s33): the frames, the party list and the position
+    /// line again, the text window empty (the picture comes back with the menu's animation).
+    /// </summary>
+    private static void Redrawn(CampContext c)
+    {
+        c.Dialog.Text.Clear();
+        c.Trade.FrameTextBox(false);
     }
 
     /// <summary>0x17DD5: its heading and, per class with slots, its free slots of levels 1–3 (blank without a slot).</summary>
@@ -706,9 +855,10 @@ public static class CampScreens
             return;
         bool done = false;
         var (_, pending) = SpellPage(c, CampSpells.ListKind.ToScribe, null);
+        bool drawn = pending;
         if (pending)
         {
-            if (!c.Dialog.YesNo(c.Text[Msg.ScribeThese]))
+            if (!PageQuestion(c, c.Text[Msg.ScribeThese]))
                 c.Spells.ResetScribe(who);
             else
                 done = true;
@@ -718,6 +868,7 @@ public static class CampScreens
         while (!done)
         {
             var (spell, notEmpty) = SpellPage(c, CampSpells.ListKind.OnScrolls, Msg.ScribeAction, place: place);
+            drawn |= notEmpty;
             if (spell == 0)
             {
                 if (!notEmpty)
@@ -740,8 +891,10 @@ public static class CampScreens
                     break;
             }
         }
-        if (shown && SpellPage(c, CampSpells.ListKind.ToScribe, null).NotEmpty && !c.Dialog.YesNo(c.Text[Msg.ScribeTheseAgain]))
+        if (shown && SpellPage(c, CampSpells.ListKind.ToScribe, null).NotEmpty && !PageQuestion(c, c.Text[Msg.ScribeTheseAgain]))
             c.Spells.ResetScribe(who);
+        if (drawn)
+            Redrawn(c);
     }
 
     /// <summary>
@@ -871,12 +1024,12 @@ public static class CampScreens
             return;
         if (c.Party.Members.Count == 1)
         {
-            if (c.Dialog.YesNo(c.Text[Msg.QuitToDosDrop]))
+            if (c.Dialog.YesNo(c.Text[Msg.QuitToDosDrop], 14))
                 c.Quit?.Invoke();
             return;
         }
         Say(c, who, c.Text[Msg.WillBeGone], pause: false);
-        if (c.Dialog.YesNo(c.Text[Msg.DropFromParty]))
+        if (c.Dialog.YesNo(c.Text[Msg.DropFromParty], 14)) // 0x1914E / 0x191A9: 14
         {
             Say(c, who, c.Text[CampParty.LeavesWillingly(who) ? Msg.BidsFarewell : Msg.DumpedInDitch]);
             CampParty.Drop(c.Party, c.Memory);

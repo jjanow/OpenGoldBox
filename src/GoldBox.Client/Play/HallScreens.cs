@@ -325,6 +325,12 @@ public static class HallScreens
                 Paging = SpellLists.Paging(h.Resources.CombatTexts, memorize: false, wordsAt: 1),
                 Selected = row,
                 Top = top,
+                // the list's screen: "Spells " + the list's words for kind 4 (0x239A0), the choose-spell prompt (action 4)
+                Spell = new SpellPageLayout(who.Name.ToUpperInvariant(), CombatChooser.NameColour(who),
+                    (h.Resources.Texts[Msg.SpellsWord] + h.Text["Hall.ToChooseFrom"]).ToUpperInvariant())
+                {
+                    Prompt = h.Resources.Texts[Msg.ChooseSpell].TrimEnd().ToUpperInvariant() + " ",
+                },
             }) as ListAnswer ?? new ListAnswer(-1, 0);
             (row, top) = (Math.Max(0, a.Row), a.Top);
             if (a.Action == 0 && a.Row >= 0 && a.Row < ids.Count && ids[a.Row] != 0)
@@ -458,7 +464,7 @@ public sealed class HallContext
         Random = Random,
         Halt = Camp.Trade.Halt,
         ProgramWord = ProgramWord,
-        YesNo = Camp.Dialog.YesNo,
+        YesNo = q => Camp.Dialog.YesNo(q),
     };
 }
 

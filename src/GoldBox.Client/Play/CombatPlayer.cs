@@ -229,7 +229,15 @@ public sealed partial class CombatChooser(Func<PlayerRequest, object?> ask, Comb
             spells.Effects.Event += EffectMessage;
         }
         if (fight.Controller is MenuController { Ai: MonsterAi ai })
+        {
             ai.Message = AiSays;
+            // 0xABCF clears row 24 (0x2CFCA) at its start, also after the menu's Quick (D s33: the menu row goes)
+            ai.Starting = _ =>
+            {
+                View.MovePrompt = null;
+                View.Row24Written();
+            };
+        }
         // Nothing in a fight writes DS:4A00 (the only writers are the start-up 0xE974, PRINT 0x1763 / 0x17DC, ENCMENU
         // 0x2C4F / 0x32E0 and the after-combat end 0x6BAF): the panel's texts through START 0x77F8 type out when the
         // fight starts with it set (after the start-up or a fight, no PRINT or ENCMENU since), else they show at once.
@@ -1204,7 +1212,8 @@ public sealed partial class CombatChooser(Func<PlayerRequest, object?> ask, Comb
     {
         // 0x14C0F → 0x239D6 (kind 0, action 1 Cast; P, s30): the memorised list, every memorised spell with level
         // headings (a camp-only one is refused after the pick, FightMenu.Cast), in the list routine's window (rows 5–22)
-        // with Next / Prev before Exit. An empty list returns at once (0x2D69C). [?] The title layout is the Client's.
+        // with Next / Prev before Exit. An empty list returns at once (0x2D69C). The screen is the list's own
+        // (SpellPageLayout: title, frames, the choose-spell prompt on row 24; D s33).
         var (rows, ids, labels) = MemorisedList(menu.Creature, menu.Fight);
         if (ids.All(s => s == 0))
             return null;
@@ -1216,6 +1225,8 @@ public sealed partial class CombatChooser(Func<PlayerRequest, object?> ask, Comb
             RowActions = new HashSet<int> { 0 },
             Labels = labels,
             Paging = SpellPaging(2),
+            Spell = SpellLists.Layout(menu.Creature, Resources().Texts, Msg.InMemory, prompt: true),
+            Grey = true, // the menu's Cast keeps the combat palette (D s33), unlike View's Spells
         };
         var a = ask(req) as ListAnswer;
         View.Mode = CombatMode.Menu;

@@ -432,7 +432,10 @@ public sealed class ExploreScreen : IScreen
     private int? ItemAt(ChoiceRequest c, int col, int row)
     {
         if (!c.Vertical)
-            return row == MenuRow ? WordAt(c.Items, col - MenuStart(c)) : null;
+            return row != MenuRow ? null : c.Columns is { } cols
+                ? Enumerable.Range(0, Math.Min(cols.Count, c.Items.Count)).Cast<int?>()
+                    .FirstOrDefault(i => col - MenuStart(c) >= cols[i!.Value] && col - MenuStart(c) < cols[i.Value] + c.Items[i.Value].Length)
+                : WordAt(c.Items, col - MenuStart(c));
         int top = ListTop(c);
         int i = top + row - ListFirstRow;
         return row >= ListFirstRow && row < ListFirstRow + ListRows && i < c.Items.Count && col >= 1 ? i : null;
@@ -704,7 +707,11 @@ public sealed class ExploreScreen : IScreen
                 if (input.NewInput is (InputDevice.Keyboard, { Length: 1 } key))
                     for (int i = 0; i < n; i++)
                         if (c.HotkeyOf(i) == key[0])
+                        {
+                            if (!c.Vertical)
+                                _keptSelected = i; // the hotkey lights its entry (0x2CF48) and the row stays so
                             return new Reply(i);
+                        }
                 return null;
             }
 
@@ -762,10 +769,22 @@ public sealed class ExploreScreen : IScreen
 
     private bool _commandLineDrawn;
 
+    /// <summary>
+    /// The last menu line drawn on row 24 and its highlighted entry (the chosen one once answered: a hotkey moves the
+    /// highlight, 0x2CF48), and whether the last frame showed it. The menu routine leaves its row as it is; text typed
+    /// after a pick (START 0x77F8's delays) does not touch row 24, so the line stays until something writes there (D s33:
+    /// the camp's Magic menu stays while Memorize types its slot message).
+    /// </summary>
+    private ChoiceRequest? _keptMenu;
+    private int _keptSelected;
+    private bool _keptMenuDrawn;
+
     public void Draw(IndexedFrame f, ActionInput input)
     {
         bool commandLineWasDrawn = _commandLineDrawn;
         _commandLineDrawn = false;
+        bool keptMenuWasDrawn = _keptMenuDrawn;
+        _keptMenuDrawn = false;
         if (_combat.Active)
         {
             _combat.Draw(f, input);
@@ -813,6 +832,8 @@ public sealed class ExploreScreen : IScreen
             Chrome.Box(f, 2, 2, 14, 14); // the 3D view's own box; the overland view fills cells 1–15
         foreach (var (c, r) in new[] { (16, 0), (0, 16), (16, 16), (39, 16) })
             Chrome.BraidCell(f, c, r, true);
+        if (_player.TextBoxFramed)
+            Chrome.Box(f, 0, 16, 39, 23); // START 0x16EC's camp branch drew the box's frame again (D s33: the joint goes)
 
         DrawView(f, font);
         DrawRoster(f, font);
@@ -852,8 +873,18 @@ public sealed class ExploreScreen : IScreen
         {
             int start = MenuStart(h);
             if (h.MenuPrompt is { Length: > 0 } mp)
-                Chrome.Text(f, font, 0, MenuRow, mp, MenuPromptColour);
-            DrawLine(f, font, h.Items, _selected, start, h.HotkeyOf);
+                Chrome.Text(f, font, 0, MenuRow, mp, h.MenuPromptColour ?? MenuPromptColour);
+            DrawLine(f, font, h.Items, _selected, start, h.HotkeyOf, h.Columns);
+            (_keptMenu, _keptSelected, _keptMenuDrawn) = (h, _selected, true);
+        }
+        else if (pending is DelayRequest { BottomLine: null } keptDelay && (keptDelay.KeepCommandLine || _player.Camping)
+            && keptMenuWasDrawn && _keptMenu is { } kept)
+            // typing keeps the row; in the camp a message's pause does too (D s33: the rest-time menu under the revive text)
+        {
+            if (kept.MenuPrompt is { Length: > 0 } kp)
+                Chrome.Text(f, font, 0, MenuRow, kp, kept.MenuPromptColour ?? MenuPromptColour);
+            DrawLine(f, font, kept.Items, _keptSelected, MenuStart(kept), kept.HotkeyOf, kept.Columns);
+            _keptMenuDrawn = true;
         }
         else if (pending is null || pending is DelayRequest { BottomLine: null } delay
             && (_player.Scene is not null || (delay.KeepCommandLine && commandLineWasDrawn)))
@@ -888,26 +919,29 @@ public sealed class ExploreScreen : IScreen
     /// </summary>
     private void DrawOverPage(IndexedFrame f, TextFont font, ListRequest under, PlayerRequest? pending, ActionInput input)
     {
-        _list.Draw(f, font, under, input);
-        for (int r = TextWindow.Top; r <= TextWindow.Bottom; r++)
-            Chrome.Clear(f, TextWindow.Left, r, TextWindow.Right - TextWindow.Left + 1);
-        Chrome.Box(f, TextWindow.Left - 1, TextWindow.Top - 1, TextWindow.Right + 1, TextWindow.Bottom + 1);
-        switch (pending)
+        _list.Draw(f, font, under, input, highlight: false);
+        if (_player.PageUnderBox)
         {
-            case ChoiceRequest { Vertical: true } v:
-                DrawVertical(f, font, v);
-                break;
-            default:
-                DrawTextWindow(f, font);
-                break;
+            for (int r = TextWindow.Top; r <= TextWindow.Bottom; r++)
+                Chrome.Clear(f, TextWindow.Left, r, TextWindow.Right - TextWindow.Left + 1);
+            Chrome.Box(f, TextWindow.Left - 1, TextWindow.Top - 1, TextWindow.Right + 1, TextWindow.Bottom + 1);
+            switch (pending)
+            {
+                case ChoiceRequest { Vertical: true } v:
+                    DrawVertical(f, font, v);
+                    break;
+                default:
+                    DrawTextWindow(f, font);
+                    break;
+            }
         }
         if (pending is ChoiceRequest { Vertical: false } h)
         {
             Chrome.Clear(f, 0, MenuRow, 40);
             int start = MenuStart(h);
             if (h.MenuPrompt is { Length: > 0 } mp)
-                Chrome.Text(f, font, 0, MenuRow, mp, MenuPromptColour);
-            DrawLine(f, font, h.Items, _selected, start, h.HotkeyOf);
+                Chrome.Text(f, font, 0, MenuRow, mp, h.MenuPromptColour ?? MenuPromptColour);
+            DrawLine(f, font, h.Items, _selected, start, h.HotkeyOf, h.Columns);
         }
         else if (pending is KeyRequest k)
         {
@@ -1008,8 +1042,17 @@ public sealed class ExploreScreen : IScreen
         }
         if (_staleLine is null && _lineAtCommand is not null && _game.Vm.CurrentScript != _scriptAtCommand)
             _staleLine = _lineAtCommand;
-        return _staleLine ?? StatusLine(_game, _player.Camping);
+        var line = _staleLine ?? StatusLine(_game, _player.Camping);
+        if (!_player.PositionLineHeld)
+        {
+            _heldLine = null;
+            return line;
+        }
+        return _heldLine ??= line;
     }
+
+    /// <summary>The line shown when <see cref="ClientPlayer.PositionLineHeld"/> began.</summary>
+    private string? _heldLine;
 
     /// <summary>
     /// The position line (START.EXE 0x34AB, program read s11): "x,y " only where the area map is allowed ($49FB = 0),
@@ -1114,12 +1157,14 @@ public sealed class ExploreScreen : IScreen
 
     /// <summary>A line of words on the bottom row as the original draws its menus: the highlighted item all white, the others with a white hotkey letter.</summary>
     private static void DrawLine(IndexedFrame f, TextFont font, IReadOnlyList<string> items, int selected, int start,
-        Func<int, char>? hotkey = null)
+        Func<int, char>? hotkey = null, IReadOnlyList<int>? columns = null)
     {
         int col = start;
         for (int i = 0; i < items.Count; i++)
         {
             var w = items[i];
+            if (columns is not null && i < columns.Count)
+                col = start + columns[i];
             if (col + w.Length > 40)
                 break;
             int k = hotkey is null ? 0 : Math.Max(0, w.IndexOf(hotkey(i)));

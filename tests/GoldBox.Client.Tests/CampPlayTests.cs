@@ -145,6 +145,35 @@ public class CampPlayTests
     }
 
     [Fact]
+    public void A_menu_line_keeps_the_programs_spacing()
+    {
+        // The menu routine draws its line as it is (D s33: the rest-time menu); one space everywhere gives no columns.
+        Assert.Equal([0, 7, 12, 18, 25, 29, 35], CampScreens.MenuColumns("Rest   daYs Hours Mins   Inc Dec   Exit"));
+        Assert.Null(CampScreens.MenuColumns("Save View Magic Rest Alter Exit"));
+        Assert.Null(CampScreens.MenuColumns("Save Game View")); // a word with no capital joins the item before it
+    }
+
+    [Fact]
+    public void Resting_holds_the_position_line_and_the_minutes_stay_lit()
+    {
+        // D s33: the rest loop never draws the position line (the camp's Rest draws it after, 0x1804A); the rest-time
+        // line keeps the field the menu left lit until the 5th tick shows it again.
+        if (Dir() is null)
+            return;
+        var r = Start();
+        Press(r, GameAction.Encamp);
+        Key(r, Keys.R);                                        // Rest: the rest-time menu
+        Key(r, Keys.M);                                        // Mins
+        Key(r, Keys.I);                                        // Inc: 5 minutes
+        Assert.Equal((byte)15, r.Player.Text.Cell(17, 18).Colour);
+        Key(r, Keys.R);                                        // Rest
+        Assert.True(r.Player.PositionLineHeld || r.Runner.Pending is ChoiceRequest);
+        Idle(r);
+        Assert.False(r.Player.PositionLineHeld);               // released after the rest
+        r.Runner.Dispose();
+    }
+
+    [Fact]
     public void Camp_by_mouse_rest_stop_and_place_order()
     {
         if (Dir() is null)
@@ -157,7 +186,7 @@ public class CampPlayTests
         Click(r, 22, 24);                                          // REST ("CAMP: " then SAVE VIEW MAGIC REST)
         Assert.Equal(7, Assert.IsType<ChoiceRequest>(r.Runner.Pending).Items.Count);
         for (int i = 0; i < 6; i++)
-            Click(r, 22, 24);                                      // INC ×6: 30 minutes (REST DAYS HOURS MINS INC)
+            Click(r, 26, 24);                                      // INC ×6: 30 minutes (the line as the program spaces it: INC at 25–27)
         Click(r, 1, 24);                                           // REST
         Assert.IsType<DelayRequest>(r.Runner.Pending);             // the first key poll, after 4 ticks
         Click(r, 10, 20);                                          // a click anywhere: stop resting?
@@ -260,6 +289,47 @@ public class CampPlayTests
     {
         r.Input.Update(default, default, default, TimeSpan.Zero, _ => null);
         r.Screen.Update(r.Input);
+    }
+
+    [Fact]
+    public void Memorize_types_its_slot_lines_first_asks_over_the_page_and_redraws_at_the_end()
+    {
+        // D s33 (DOSBox-X, camp Memorize): 0x17DD5's message (name row 18, "can memorize:" from row 19, the class lines)
+        // over the camp screen with the box's frame drawn again, then the book page with those lines in its text box; the
+        // keep question over the pending list (prompt colour 14); START 0x27D9 at the end empties the text window.
+        if (Dir() is null)
+            return;
+        var r = Start();
+        var bakshi = r.Game.Memory.Party!.Members[1];
+        for (int i = 0; i < 21; i++)
+            bakshi[0x17 + i] = 0; // every slot free
+        Press(r, GameAction.Encamp);
+        Key(r, Keys.M);                                        // Magic
+        Press(r, GameAction.NextMember);                       // Bakshi
+        Assert.Same(bakshi, r.Game.Memory.Party.Current);
+        Key(r, Keys.M);                                        // Memorize
+        var book = Assert.IsType<ListRequest>(r.Runner.Pending);
+        Assert.NotNull(book.Spell?.Box);
+        Assert.Equal(11, book.Paging!.Rows);
+        Assert.Equal('B', r.Player.Text.Cell(18, 1).Char);   // the slot message stays in the text box under the page
+        Assert.True(r.Player.TextBoxFramed);
+        Key(r, Keys.Enter);                                    // the highlighted spell goes pending
+        Assert.IsType<ListRequest>(r.Runner.Pending);          // the book again (the position kept)
+        Press(r, GameAction.Cancel);                           // nothing chosen: the pending list
+        var pending = Assert.IsType<ListRequest>(r.Runner.Pending);
+        Assert.NotSame(book, pending);
+        Assert.Null(pending.Spell!.Box);
+        Key(r, Keys.Enter);                                    // its Exit
+        var question = Assert.IsType<ChoiceRequest>(r.Runner.Pending);
+        Assert.Equal((byte)14, question.MenuPromptColour);
+        Assert.Same(pending, r.Player.PageUnder);              // asked over the page, no text box
+        Assert.False(r.Player.PageUnderBox);
+        Key(r, Keys.Y);
+        Assert.IsType<ChoiceRequest>(r.Runner.Pending);        // the Magic menu
+        Assert.Null(r.Player.PageUnder);
+        Assert.True(r.Player.Text.IsEmpty);                    // the redraw
+        Assert.False(r.Player.TextBoxFramed);
+        r.Runner.Dispose();
     }
 
     [Fact]

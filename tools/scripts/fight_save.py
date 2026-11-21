@@ -15,6 +15,8 @@ CODEHEX: the vector-0 code (hex bytes) at $9920; EXIT (00) appended. Options:
   --data ADDR:HEX  extra bytes in the script area at $ADDR (>= $9920 + code)
   --char I:OFF=VAL member record byte
   --vm ADDR=VAL    a word of the save's $6B00 area (e.g. 6DC6=0, the morale threshold)
+  --item I:FILE:BLOCK:REC[:OFF=VAL,...]  append record REC of block BLOCK of FILE (ITEM<d>.DAX, MON<d>ITM.DAX) to
+                   member I's .ITM (item count 0xC7 + 1), with bytes changed (e.g. 0x34=0 not readied, 0x35=0 identified)
 """
 import shutil
 import struct
@@ -106,6 +108,22 @@ def main(a):
                 o, _, val = kv.partition('=')
                 r[int(o, 0)] = int(val, 0)
             p.write_bytes(r)
+        elif k == '--item':
+            parts = v.split(':')
+            m, src, block, rec = parts[0], parts[1], int(parts[2]), int(parts[3])
+            f = dax.DaxFile(str(out / src))
+            raw = next(f.block(e) for e in f.entries if e.id == block)
+            item = bytearray(raw[rec * 63:rec * 63 + 63])
+            assert len(item) == 63, 'no record %d in block %d' % (rec, block)
+            for kv in (parts[4].split(',') if len(parts) > 4 and parts[4] else []):
+                o, _, val = kv.partition('=')
+                item[int(o, 0)] = int(val, 0)
+            p = out / ('CHRDATA%s.ITM' % m)
+            p.write_bytes((p.read_bytes() if p.exists() else b'') + bytes(item))
+            c = out / ('CHRDATA%s.SAV' % m)
+            r = bytearray(c.read_bytes())
+            r[0xC7] += 1
+            c.write_bytes(r)
         elif k == '--monpatch':
             mid, _, rest = v.partition(':')
             for kv in rest.split(','):

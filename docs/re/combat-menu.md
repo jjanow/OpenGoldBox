@@ -479,9 +479,36 @@ and Speed menus, an AI attack at game speed 9). Code: `src/GoldBox.Client/Screen
   as Home / End), `SpellLists` (rows, words from `CombatMsg.AimNextPrevManual`; no importer change); used by the
   combat Cast and View's Spells (now the memorised list with level headings, camp-only spells included: Core refuses
   those after the pick), the camp's lists (Memorize / Scribe keep the row and top, `ListPlace`) and the hall's Learn;
-  tests `SpellListPagingTests`. Enter (decided, user, s30: as the program): the program's Enter always returns 13, which picks the row and ends the list (13 is in CS:004A; View's Spells, with no action, just ends), so a keyboard or pad Confirm with Next / Prev lit runs the first action word on the highlighted row (a click on the word still pages); PgDn / PgUp page while their word shows, and the pad pages with its shoulders / triggers (no original; no paging list picks a member). `[?]` The page's title and
-  slot-line layout stay the Client's; the scroll list (kind 2, three spells at most) never pages and keeps its own
-  layout; not seen in DOSBox-X.
+  tests `SpellListPagingTests`. Enter (decided, user, s30: as the program): the program's Enter always returns 13, which picks the row and ends the list (13 is in CS:004A; View's Spells, with no action, just ends), so a keyboard or pad Confirm with Next / Prev lit runs the first action word on the highlighted row (a click on the word still pages); PgDn / PgUp page while their word shows, and the pad pages with its shoulders / triggers (no original; no paging list picks a member). **The screen** (P + D, s33): 0x239D6
+  (position below 0) draws the window (1, 1)–(38, 1) with START 03F1:02E8 (inside cleared, frame one cell outside),
+  the name through START 0x1816 with its flag (the name, then CS:1813 "'s", in the name colour of START 0x23B6) at
+  (1, 1), and "Spells " + the list's words at (name length + 4, 1) in green; 0x270A2 draws the window (1, 3)–(38, y1)
+  (y1 22, Memorize's 15) and passes the choose-spell prompt and colours 13 / 10 / 15 to 0x2D669: labels 13, rows 10, the
+  highlight 15, no cursor glyph; row 24 the prompt (13) then the words, or with no prompt " Next" / " Exit" from column
+  1. Memorize's slot lines (0x17DD5, read s33): per class with any slot byte, START 0x16EC(member, "can memorize:",
+  10, 0) in the camp's text box (the frame drawn again, the name on row 18, the words typed from row 19 while DS:4A00 is
+  set), then each class line (CS:057E / CS:0591) at (1, 20 + i) and its free slots through Str at columns 20, 23, 26
+  (blank where the slot byte is 0), each pass before the book (the first over the camp screen, row 24 keeping the Magic
+  menu). The keep questions (0x3C5:0x39 with prompt colour 14, as every camp-unit yes/no) come over the pending list.
+  When 0x2D669 returns it draws its rows again unlit. Cast, Memorize and Scribe end with START 0x27D9 when a list was
+  drawn (0x17D96, 0x182E1): the text window comes back empty. The fight's Cast list keeps the combat palette (0 and 8
+  swapped: dark grey); View's Spells is black. **D** (s33, DOSBox-X 3000 cycles against the Client, every distinct
+  frame): Memorize (Rhiannon, a 34-row book in 11 rows, paging both ways, two picks, the keep question, then Bakshi's
+  cleric and magic-user slot lines) 39 of 89 equal; the misses are the Client's help lines (42: the camp menus, the fire animating under them) and the
+  camp picture's animation phase while the slot message types (8). Combat Cast and View's Spells (Darkstar, 21
+  spells, 2 pages each; seed 12345) 38 of 39 (the help lines before the step). Camp Cast and Display: the Cast list
+  frames equal; the rest are the help lines and Display's window (0x187ED: centred white title on row 1, the list
+  from row 5, " Exit" at column 1; the Client keeps its own page `[?]`). Scribe (a scroll of 3 spells, two picks, the
+  question) every frame equal but the help lines. Client: `SpellPageLayout` (`ListPage`), `SpellLists.Layout` /
+  `SlotBox`, tests `SpellPageLayoutTests`, `CampPlayTests.Memorize_types_its_slot_lines_first_…`. The scroll list
+  (kind 2) keeps the Client's layout and the hall's Learn uses the same screen; neither seen in DOSBox-X `[?]`.
+- **s33 DOSBox-X checks** (`fight_frames.py`, now with `sleep:S` entries in key lists and `--ignore` boxes for the
+  camp fire; `fight_save.py --item`): the spell screens above; handler 131 (spells-effects.md); the wild boar's
+  revive (all-Quick party, MON6 block 120 with 1 HP, seed 12345): 406 of 538 frames equal, every revive frame among
+  them (the monster-side revive text typed from row 10, the pause, the clear). Fixed: the AI's start 0xABCF clears row 24
+  after the menu's Quick too (the menu row stayed in the Client). Left `[?]`: after Quick, the attacker's pose while
+  darts fly (Darkstar, Phineas: the icon differs in ~30 frames per throw) and the AI panel's draw-clear-draw (machine
+  time, s30). Keypad 7 / 1 move list highlights (they come as the step bindings' NumPad7 / NumPad1).
 - **View scrolling** (read s19, 0x30F0E / 0x310D0): ScrollView(x, y, delta, dir) aims at (x, y) + one step in dir;
   the view's centre is (view x + 3, view y + 3); a point within delta of it on both axes leaves the view (delta 255:
   always rebuilt, band 0); else on each axis where the point is outside the band the centre steps to the point, x kept

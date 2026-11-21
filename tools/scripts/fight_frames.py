@@ -21,7 +21,7 @@ seconds (default 0.4) and the state (panel row 1 + row 24 text with the highligh
 through a different state since the last press, so a menu row that a pause leaves on screen never gets a second
 key. The state string is ``NAME|ROW24``; ``--step RE=KEYS`` entries are used once each, in order, when the next one
 matches; ``--rule RE=KEYS`` apply whenever no step does. KEYS: xdotool-style names separated by commas (``q``,
-``Return``, ``KP_Home``…). The grab ends after --presses presses plus --tail seconds, or after --seconds.
+``Return``, ``KP_Home``…); a ``sleep:S`` entry waits S seconds, the frames still grabbed meanwhile. The grab ends after --presses presses plus --tail seconds, or after --seconds.
 
 No game data is stored in this file: the font is read from the game's own 8X8D1.DAX at run time.
 """
@@ -209,11 +209,22 @@ def cmd_grab(args):
     p.add_argument('--tail', type=float, default=3.0)
     p.add_argument('--seconds', type=float, default=600)
     p.add_argument('--still', type=float, default=0.4)
+    p.add_argument('--ignore', action='append', help='X0,Y0,X1,Y1: a box (320 x 200 pixels, inclusive) whose changes '
+                   'do not count against stillness (the camp fire\'s animation)')
     p.add_argument('--log', action='store_true')
     a = p.parse_args(args)
     font = Font(a.font)
     rules, steps = parse_rules(a.rule), parse_rules(a.step)
     win = Window(a.display, a.side)
+    boxes = [tuple(int(v) for v in b.split(',')) for b in a.ignore or []]
+
+    def ignored_only(old, new):
+        if not boxes:
+            return False
+        d = old != new
+        for x0, y0, x1, y1 in boxes:
+            d[y0:y1 + 1, x0:x1 + 1] = False
+        return not d.any()
     frames, times, presses = [], [], []
     t0 = time.monotonic()
     last = None
@@ -222,17 +233,26 @@ def cmd_grab(args):
     seen_other = True
     n_press = 0
     end_at = t0 + a.seconds
+    queue, queue_at = [], 0.0  # the rest of a key list with sleep:S entries, pressed one by one between grabs
     try:
         while time.monotonic() < end_at:
             f = win.grab()
             now = time.monotonic()
+            if queue and now >= queue_at:
+                k = queue.pop(0)
+                if k.startswith('sleep:'):
+                    queue_at = now + float(k[6:])
+                else:
+                    win.press([k])
+                continue
             if last is None or (f is not last and not np.array_equal(f, last)):
                 frames.append(f)
                 times.append(now - t0)
+                if last is None or not ignored_only(last, f):
+                    last_change = now
                 last = f
-                last_change = now
                 continue
-            if now - last_change < a.still:
+            if queue or now - last_change < a.still:
                 continue
             state = '%s|%s' % (font.row(f, 1, 23, 39), font.row(f, 24))
             if state != pressed_state:
@@ -252,7 +272,10 @@ def cmd_grab(args):
             if a.log:
                 print('%8.2f press %s at %s' % (now - t0, ','.join(keys), state), flush=True)
             presses.append((now - t0, ','.join(keys), state))
-            win.press(keys)
+            if any(k.startswith('sleep:') for k in keys):
+                queue, queue_at = list(keys), now
+            else:
+                win.press(keys)
             n_press += 1
             pressed_state, seen_other = state, False
             if a.presses and n_press >= a.presses:

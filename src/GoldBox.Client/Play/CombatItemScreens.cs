@@ -291,7 +291,8 @@ public sealed partial class CombatChooser
 
     /// <summary>
     /// The memorised spells (0x239D6 kind 0, action 0: no prompt, no action word) as a list page: the memorised list
-    /// in the list routine's window with Next / Prev and Exit (P, s30). [?] The page's title layout is the Client's.
+    /// in the list routine's window with Next / Prev and Exit (P, s30), on the list's own screen (no prompt: the menu
+    /// line starts with " Next" / " Exit" at column 1; D s33).
     /// </summary>
     private void ShowMemorised(EclCharacter c)
     {
@@ -302,6 +303,7 @@ public sealed partial class CombatChooser
         {
             Labels = labels,
             Paging = SpellPaging(1),
+            Spell = SpellLists.Layout(c, Resources().Texts, Msg.InMemory, prompt: false),
         });
     }
 
