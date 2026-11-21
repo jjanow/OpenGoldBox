@@ -292,6 +292,33 @@ public class CampPlayTests
     }
 
     [Fact]
+    public void Display_is_the_programs_list_an_empty_entry_then_names_as_labels()
+    {
+        // P s34 (0x187ED): one full-screen window with the title centred, 0x2D669's window (1, 4)-(38, 22) with colours
+        // 11 / 10 / 15 and Exit alone; the list opens with an empty entry, each member's name a label, an empty entry after.
+        if (Dir() is null)
+            return;
+        var r = Start();
+        Press(r, GameAction.Encamp);
+        Key(r, Keys.M);                                        // Magic
+        Key(r, Keys.D);                                        // Display
+        var page = Assert.IsType<ListRequest>(r.Runner.Pending);
+        Assert.True(page.Spell!.CentredTitle);
+        Assert.Equal((byte)11, page.Spell.LabelColour);
+        Assert.Equal(4, page.FirstRow);
+        Assert.Equal(19, page.Paging!.Rows);
+        Assert.Equal("", page.Rows[0]);
+        Assert.DoesNotContain(0, page.Labels);
+        Assert.Contains(1, page.Labels);
+        Assert.Equal(r.Game.Memory.Party!.Members[0].Name.ToUpperInvariant(), page.Rows[1]);
+        Assert.Equal("", page.Rows[^1]);
+        Assert.Equal(["EXIT"], page.Actions);
+        Key(r, Keys.Enter);                                    // any key that ends the list leaves
+        Assert.IsType<ChoiceRequest>(r.Runner.Pending);        // the Magic menu
+        r.Runner.Dispose();
+    }
+
+    [Fact]
     public void Memorize_types_its_slot_lines_first_asks_over_the_page_and_redraws_at_the_end()
     {
         // D s33 (DOSBox-X, camp Memorize): 0x17DD5's message (name row 18, "can memorize:" from row 19, the class lines)

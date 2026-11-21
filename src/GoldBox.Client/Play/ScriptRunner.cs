@@ -161,6 +161,15 @@ public sealed record SpellPageLayout(string Name, byte NameColour, string Title)
     /// <summary>Memorize's text box lines (rows 18–22), or null for no text box.</summary>
     public IReadOnlyList<WindowLine>? Box { get; init; }
 
+    /// <summary>
+    /// Camp Display (0x187ED, P s34): one full-screen window (START 03F1:02E8 with 1, 1, 38, 22, colour 15) with
+    /// <see cref="Title"/> centred on row 1 in white and no name; the list window is the request's rows.
+    /// </summary>
+    public bool CentredTitle { get; init; }
+
+    /// <summary>The list routine's label colour (0x2D669's first colour: 13 for the spell lists, 11 for Display).</summary>
+    public byte LabelColour { get; init; } = 13;
+
     /// <summary>The column the menu words start at on row 24.</summary>
     public int MenuStart => Prompt is { Length: > 0 } p ? p.Length : 1;
 }

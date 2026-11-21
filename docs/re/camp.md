@@ -204,7 +204,13 @@ pending spell's level is above 2; record 0x2C := base; minutes = base × 60 + 15
 ids 1, 2, 5, 8–14, 16, 17, 19–25, 28, 29, 32–34, 36–39, 41, 42, 45, 46, 49, 51–53 by the first spell 1..56 whose table
 effect byte (+10) is the id (the text 0x186F1 and the id when none); ids 4, 7, 27, 31, 35, 44, 50, 54, 55, 59, 61, 71, 72, 89
 by their own texts (0x186F9–0x187C6, in that order); every other effect is left out. The text 0x187D0 when none,
-a blank line after each member.
+a blank line after each member. The screen (P s34): the list opens with an empty entry (flag 0); each name is a label (flag 1),
+the effect rows and the none text are plain entries with no indent of their own, and the blank line after each member
+is a plain (pickable) entry. One window START 03F1:02E8 (1, 1, 38, 22, colour 15, the title centred on row 1), then
+0x2D669 (overlay stub 03C5:0034) with empty prompt and word, colours 11 / 10 / 15, keypad flag 1, the window
+(1, 4)–(38, 22) (19 rows: the empty entry on row 4, the first name on row 5) and the Exit flag; START 03C5:0043 frees
+the list and START 0x27D9 empties the text window. Client: `CampScreens.Display` (`SpellPageLayout.CentredTitle`),
+test `CampPlayTests.Display_is_the_programs_list_…`.
 
 ## Alter (0x1948A) — P
 

@@ -898,12 +898,15 @@ public static class CampScreens
     }
 
     /// <summary>
-    /// Display (0x187ED): a page with each member's name (a label) and its effects (<see cref="CampSpells.Display"/>),
-    /// the none text when none, a blank line after each member.
+    /// Display (0x187ED, P s34): the list starts with an empty entry, then per member the name (a label), its effects
+    /// (<see cref="CampSpells.Display"/>, no indent) or the none text, and an empty entry. One full-screen window
+    /// (START 03F1:02E8 with 1, 1, 38, 22, its title centred in white), then 0x2D669 with the window (1, 4)–(38, 22),
+    /// colours 11 / 10 / 15, no prompt, no action word and Exit: the empty entry on row 4, the first name on row 5,
+    /// " Exit" from column 1 (D: s33). Display only: any key that ends the list leaves.
     /// </summary>
     public static void Display(CampContext c)
     {
-        var rows = new List<string>();
+        var rows = new List<string> { "" };
         var labels = new HashSet<int>();
         foreach (var m in c.Party.Members)
         {
@@ -911,16 +914,24 @@ public static class CampScreens
             rows.Add(m.Name.ToUpperInvariant());
             var lines = c.Spells.Display(m);
             foreach (var l in lines)
-                rows.Add(" " + (l.Spell > 0 ? SpellName(c, l.Spell)
+                rows.Add((l.Spell > 0 ? SpellName(c, l.Spell)
                     : l.Funky ? c.Text[Msg.Funky] + l.EffectId.ToString(CultureInfo.InvariantCulture)
-                    : c.Text.EffectLabel(l.EffectId) ?? $"EFFECT {l.EffectId.ToString(CultureInfo.InvariantCulture)}"));
+                    : c.Text.EffectLabel(l.EffectId) ?? $"EFFECT {l.EffectId.ToString(CultureInfo.InvariantCulture)}").ToUpperInvariant());
             if (lines.Count == 0)
-                rows.Add(c.Text[Msg.NoSpellEffects]);
-            labels.Add(rows.Count);
+                rows.Add(c.Text[Msg.NoSpellEffects].ToUpperInvariant());
             rows.Add("");
         }
-        c.Dialog.Page(new ListRequest([new(c.Text[Msg.DisplayTitle], 15, 1)], rows, ["EXIT"], 0, FirstRow: 2) { Labels = labels });
+        var paging = SpellLists.Paging(c.Resources.CombatTexts, memorize: false, wordsAt: 0) with { Rows = DisplayRows };
+        c.Dialog.Page(new ListRequest([], rows, ["EXIT"], 0, FirstRow: DisplayFirstRow)
+        {
+            Labels = labels,
+            Paging = paging,
+            Spell = new SpellPageLayout("", 15, c.Text[Msg.DisplayTitle].ToUpperInvariant()) { CentredTitle = true, LabelColour = 11 },
+        });
     }
+
+    /// <summary>Display's list window (1, 4)–(38, 22): its first row and its rows.</summary>
+    public const int DisplayFirstRow = 4, DisplayRows = 19;
 
     // ---- Alter (0x1948A) -----------------------------------------------------------------------------------------
 

@@ -469,12 +469,21 @@ public sealed class ListPage
     {
         f.Clear(0);
         int first = FirstRow(r), last = first + p.Rows - 1;
-        Chrome.Box(f, 0, 0, 39, 2);
-        Chrome.Box(f, 0, 2, 39, last + 1);
-        Chrome.Text(f, font, 1, 1, Fit(s.Name + "'S", 38), s.NameColour);
-        int titleCol = 1 + s.Name.Length + 3;
-        if (titleCol < 39)
-            Chrome.Text(f, font, titleCol, 1, Fit(s.Title, 39 - titleCol), Chrome.Green);
+        if (s.CentredTitle)
+        {
+            Chrome.Box(f, 0, 0, 39, 23);
+            string t = Fit(s.Title, 38);
+            Chrome.Text(f, font, Math.Max(1, (1 + 38 - t.Length) / 2), 1, t, Chrome.White);
+        }
+        else
+        {
+            Chrome.Box(f, 0, 0, 39, 2);
+            Chrome.Box(f, 0, 2, 39, last + 1);
+            Chrome.Text(f, font, 1, 1, Fit(s.Name + "'S", 38), s.NameColour);
+            int titleCol = 1 + s.Name.Length + 3;
+            if (titleCol < 39)
+                Chrome.Text(f, font, titleCol, 1, Fit(s.Title, 39 - titleCol), Chrome.Green);
+        }
         if (s.Box is { } box)
         {
             Chrome.Box(f, 0, 16, 39, 23);
@@ -484,7 +493,7 @@ public sealed class ListPage
         for (int k = 0; k < p.Rows && _top + k < r.Rows.Count; k++)
         {
             int i = _top + k;
-            byte colour = r.Labels.Contains(i) ? LabelColour : i == _row && highlight ? Chrome.White : Chrome.Green;
+            byte colour = r.Labels.Contains(i) ? s.LabelColour : i == _row && highlight ? Chrome.White : Chrome.Green;
             Chrome.Text(f, font, 1, first + k, Fit(r.Rows[i], 38), colour);
         }
         if (s.Prompt is { Length: > 0 } prompt)

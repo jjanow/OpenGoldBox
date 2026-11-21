@@ -498,7 +498,7 @@ and Speed menus, an AI attack at game speed 9). Code: `src/GoldBox.Client/Screen
   camp picture's animation phase while the slot message types (8). Combat Cast and View's Spells (Darkstar, 21
   spells, 2 pages each; seed 12345) 38 of 39 (the help lines before the step). Camp Cast and Display: the Cast list
   frames equal; the rest are the help lines and Display's window (0x187ED: centred white title on row 1, the list
-  from row 5, " Exit" at column 1; the Client keeps its own page `[?]`). Scribe (a scroll of 3 spells, two picks, the
+  from row 5, " Exit" at column 1; s34: the Client draws it from the program, camp.md "Display"; its frames not yet compared). Scribe (a scroll of 3 spells, two picks, the
   question) every frame equal but the help lines. Client: `SpellPageLayout` (`ListPage`), `SpellLists.Layout` /
   `SlotBox`, tests `SpellPageLayoutTests`, `CampPlayTests.Memorize_types_its_slot_lines_first_…`. The scroll list
   (kind 2) keeps the Client's layout and the hall's Learn uses the same screen; neither seen in DOSBox-X `[?]`.
