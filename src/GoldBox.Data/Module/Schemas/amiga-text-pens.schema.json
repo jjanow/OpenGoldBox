@@ -27,6 +27,24 @@
         "type": "integer"
       }
     },
+    "callPens": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": {
+        "type": "integer"
+      }
+    },
+    "strings": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
     "source": {
       "type": [
         "object",

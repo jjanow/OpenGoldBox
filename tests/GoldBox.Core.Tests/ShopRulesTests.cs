@@ -61,21 +61,32 @@ public class ShopRulesTests
         Assert.Equal(Money.Payer.None, Money.Pay(c, pool, 51, false));
     }
 
+    /// <summary>START 0x1758 as far as these tests need it: weight and item count.</summary>
+    private static void Recalc(EclCharacter c)
+    {
+        Carrying.RecalculateWeight(c);
+        c[ShopRules.ItemCount] = (byte)c.Items.Count;
+    }
+
     [Fact]
     public void Buy_copies_then_pays_and_the_stock_stays()
     {
-        var c = Char(pp: 20);
+        var c = Char(pp: 20, weight: 999); // a stale weight word: the copy step recalculates it
         var pool = new uint[7];
         var stock = Item(60);
-        Assert.Equal(ShopRules.BuyResult.Bought, ShopRules.Buy(c, pool, stock, Allowance));
+        Assert.Equal(ShopRules.BuyResult.Bought, ShopRules.Buy(c, pool, stock, Allowance, Recalc));
         Assert.Single(c.Items);
         Assert.NotSame(stock, c.Items[0]);
         Assert.Equal(8, c.Word(Money.Platinum));
         Assert.Equal(0, c.Word(Money.Gold));
-        Assert.Equal(ShopRules.BuyResult.NotEnoughMoney, ShopRules.Buy(c, pool, Item(41), Allowance));
-        var heavy = Char(pp: 20, weight: 1495);
-        Assert.Equal(ShopRules.BuyResult.CannotCarry, ShopRules.Buy(heavy, pool, Item(10, weight: 6), Allowance));
+        Assert.Equal(1, c[ShopRules.ItemCount]);
+        Assert.Equal(30, c.Word(Money.Weight)); // 20 pp + the item's 10, recalculated before the payment (no recalculation after it)
+        Assert.Equal(ShopRules.BuyResult.NotEnoughMoney, ShopRules.Buy(c, pool, Item(41), Allowance, Recalc));
+        var heavy = Char(pp: 20);
+        heavy.SetWord(Money.Coins, 1475); // 1495 coins' weight once recalculated
+        Assert.Equal(ShopRules.BuyResult.CannotCarry, ShopRules.Buy(heavy, pool, Item(10, weight: 6), Allowance, Recalc));
         Assert.Equal(20, heavy.Word(Money.Platinum));
+        Assert.Equal(1495, heavy.Word(Money.Weight));
     }
 
     [Theory]

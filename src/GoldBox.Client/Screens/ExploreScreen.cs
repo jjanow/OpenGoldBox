@@ -453,7 +453,16 @@ public sealed class ExploreScreen : IScreen
 
     private const int ListFirstRow = TextRow + 1, ListRows = TextRows - 1;
 
-    private int ListTop(ChoiceRequest c) => Math.Clamp(_selected - ListRows + 1, 0, Math.Max(0, c.Items.Count - ListRows));
+    /// <summary>A vertical list's first row and row count: VMENU's window (<see cref="ChoiceRequest.ListRow"/> to row 22)
+    /// or the Client's own under the prompt.</summary>
+    private static (int First, int Rows) ListWindow(ChoiceRequest c) =>
+        c.ListRow is { } r ? (r, Math.Max(1, TextWindow.Bottom - r + 1)) : (ListFirstRow, ListRows);
+
+    private int ListTop(ChoiceRequest c)
+    {
+        int rows = ListWindow(c).Rows;
+        return Math.Clamp(_selected - rows + 1, 0, Math.Max(0, c.Items.Count - rows));
+    }
 
     /// <summary>The party-list member under a cell (rows 4–11, columns 17–38).</summary>
     private int? RosterAt(int col, int row)
@@ -474,8 +483,9 @@ public sealed class ExploreScreen : IScreen
                     .FirstOrDefault(i => col - MenuStart(c) >= cols[i!.Value] && col - MenuStart(c) < cols[i.Value] + c.Items[i.Value].Length)
                 : WordAt(c.Items, col - MenuStart(c));
         int top = ListTop(c);
-        int i = top + row - ListFirstRow;
-        return row >= ListFirstRow && row < ListFirstRow + ListRows && i < c.Items.Count && col >= 1 ? i : null;
+        var (first, rows) = ListWindow(c);
+        int i = top + row - first;
+        return row >= first && row < first + rows && i < c.Items.Count && col >= 1 ? i : null;
     }
 
     // ---------------------------------------------------------------------------------------------------------------
@@ -530,10 +540,11 @@ public sealed class ExploreScreen : IScreen
         Sync();
         var shown = ShownPicture;
         _anim.Show(shown);
-        if (_runner.Pending is ChoiceRequest { Animates: true } menu && shown is not null)
+        bool everyPass = _runner.Pending is ChoiceRequest { EveryPass: true } or HallMenuRequest { EveryPass: true };
+        if ((everyPass || _runner.Pending is ChoiceRequest { Animates: true }) && shown is not null)
         {
             var delays = _art.Pictures.Delays(shown);
-            if (menu.EveryPass) // $4AFF ≠ 0: a frame on every pass (0x2CDD6), one Client update each (ScriptRunner.EveryPass)
+            if (everyPass) // $4AFF ≠ 0: a frame on every pass (0x2CDD6), one Client update each (ScriptRunner.EveryPass)
                 delays = new uint[delays.Count];
             _anim.Tick(_clock.Elapsed, delays, _runner.AnimationSpeed);
             _player.PictureUndrawn = false; // the menu draws the frames (a camp picture loaded by START 0x3379 case 2 too)
@@ -882,6 +893,11 @@ public sealed class ExploreScreen : IScreen
         {
             _player.ReleaseRosterNames();
             _hall.Draw(f, font, hall, _game.Memory.Party, pending, _selected, input);
+            // The frames a hall menu drew over the page while $4AFF was set, left until the loop draws the page again
+            // (HallState.PictureOver; DOSBox-X s43).
+            if (hall.PictureOver != HallPicture.None && hall.Page is null && ShownPicture is { } picture
+                && _art.Pictures.Draw(f, ViewX, ViewY, picture, _anim.Frame) && hall.PictureOver == HallPicture.UnderList)
+                HallView.DrawListOver(f, font, _game.Memory.Party);
             return;
         }
         if (_player.PartyMenuUnder && PartyMenuPage is { } menuPage && menuPage.Length <= f.Pixels.Length)
@@ -898,7 +914,7 @@ public sealed class ExploreScreen : IScreen
             foreach (var line in window)
                 Chrome.Text(f, font, line.Column, line.Row, Fit(line.Text, 39 - line.Column), line.Colour);
             if (pending is KeyRequest wk)
-                Chrome.Text(f, font, AmigaView.KeyColumn(wk), MenuRow, Fit(KeyPrompt(wk, input), 40 - AmigaView.KeyColumn(wk)), KeyColour(wk));
+                DrawKeyLine(f, font, wk, input);
             else if (pending is DelayRequest { BottomLine: not null } windowDelay)
                 DrawBottomLine(f, font, windowDelay);
             else if (_player.KeepsCombatRow24 && _combatRow24 is { } row24 && row24.Length == f.Width * 8)
@@ -911,8 +927,11 @@ public sealed class ExploreScreen : IScreen
         _combatRow24 = null;
         // Frame cells as on the original screen: outer box, the divider under the view and party list, the divider
         // between view and party list, the view's own box, the box over the command line.
-        bool overlandBoxed = OverlandUi.Shown(_game) && OverlandUi.Boxed(_player);
-        bool viewBox = !OverlandUi.Shown(_game) || overlandBoxed;
+        bool overlandBoxed = OverlandUi.Shown(_game) && OverlandBoxed;
+        // The overland's layouts have no inner box (0x2E03F; START 0x3379 case 3), also when the redraw draws the 3D
+        // view there ($49E6 != 0; PICTURE then draws no box either, 0x15B5).
+        bool viewBox = !OverlandUi.Commands(_game) || overlandBoxed;
+        bool overlandLayout = OverlandUi.Commands(_game) && (_game.Loop.OverlandInterfacePending || _game.Loop.OverlandLayout);
         if (Chrome.AmigaFrame is not null)
         {
             // The Amiga frames the screen as whole windows, later ones over earlier ones' shared cells. Seen in FS-UAE
@@ -934,7 +953,8 @@ public sealed class ExploreScreen : IScreen
             if (viewBox)
                 Chrome.Box(f, 2, 2, 14, 14); // the 3D view's own box; the overland view fills cells 1–15
             foreach (var (c, r) in new[] { (16, 0), (0, 16), (16, 16), (39, 16) })
-                Chrome.BraidCell(f, c, r, true);
+                if (!(overlandLayout && (c, r) == (16, 16))) // the overland interface's text box frame runs through it (AreaLoop.OverlandLayout)
+                    Chrome.BraidCell(f, c, r, true);
         }
         if (_player.TextBoxFramed && Chrome.AmigaFrame is null) // [?] the Amiga camp keeps the view window's (16, 16) corner (FS-UAE s39)
             Chrome.Box(f, 0, 16, 39, 23); // START 0x16EC's camp branch drew the box's frame again (D s33: the joint goes)
@@ -978,7 +998,7 @@ public sealed class ExploreScreen : IScreen
             int start = MenuStart(h);
             if (h.MenuPrompt is { Length: > 0 } mp)
                 Chrome.MenuPrompt(f, font, 0, MenuRow, mp, h.MenuPromptColour ?? MenuPromptColour);
-            DrawLine(f, font, h.Items, _selected, start, h.HotkeyOf, h.Columns);
+            DrawLine(f, font, h.Items, _selected, start, h.HotkeyOf, h.Columns, h.ScriptText, Pens(h));
             (_keptMenu, _keptSelected, _keptMenuDrawn) = (h, _selected, true);
         }
         else if (pending is DelayRequest { BottomLine: null } keptDelay && (keptDelay.KeepCommandLine || _player.Camping)
@@ -987,7 +1007,7 @@ public sealed class ExploreScreen : IScreen
         {
             if (kept.MenuPrompt is { Length: > 0 } kp)
                 Chrome.MenuPrompt(f, font, 0, MenuRow, kp, kept.MenuPromptColour ?? MenuPromptColour);
-            DrawLine(f, font, kept.Items, _keptSelected, MenuStart(kept), kept.HotkeyOf, kept.Columns);
+            DrawLine(f, font, kept.Items, _keptSelected, MenuStart(kept), kept.HotkeyOf, kept.Columns, kept.ScriptText, Pens(kept));
             _keptMenuDrawn = true;
         }
         else if (pending is null || pending is DelayRequest { BottomLine: null } delay
@@ -998,9 +1018,16 @@ public sealed class ExploreScreen : IScreen
             _commandLineDrawn = true;
         }
         else if (pending is TextRequest tr)
-            Chrome.Text(f, font, 0, MenuRow, Fit(tr.Prompt + (tr.Prompt.Length > 0 ? " " : "") + _typed + "_", 40), Chrome.White);
+        {
+            // Under the Amiga every line input is its input requester (hunk 25 +0xEC6: the area script's INPUTSTR at
+            // hunk 16 +0x2486 and INPUTNUM through +0x1092 with an empty prompt, the amounts with theirs; s43).
+            if (AmigaView.On && Chrome.AmigaGadget is { } gadget)
+                gadget.Requester(f, font, AmigaView.Case(tr.Prompt), _typed, tr.MaxLength + 1);
+            else
+                DrawTypedLine(f, font, tr);
+        }
         else if (pending is KeyRequest k)
-            Chrome.Text(f, font, AmigaView.KeyColumn(k), MenuRow, Fit(KeyPrompt(k, input), 40 - AmigaView.KeyColumn(k)), KeyColour(k));
+            DrawKeyLine(f, font, k, input);
         else if (pending is DelayRequest { BottomLine: not null } bottomDelay)
             DrawBottomLine(f, font, bottomDelay);
 
@@ -1035,13 +1062,23 @@ public sealed class ExploreScreen : IScreen
             case ChoiceRequest { Vertical: false } h:
                 if (h.MenuPrompt is { Length: > 0 } mp)
                     Chrome.MenuPrompt(f, font, 0, MenuRow, mp, h.MenuPromptColour ?? MenuPromptColour);
-                DrawLine(f, font, h.Items, _selected, MenuStart(h), h.HotkeyOf, h.Columns);
+                DrawLine(f, font, h.Items, _selected, MenuStart(h), h.HotkeyOf, h.Columns, h.ScriptText, Pens(h));
                 break;
             case KeyRequest k:
-                Chrome.Text(f, font, AmigaView.KeyColumn(k), MenuRow, Fit(KeyPrompt(k, input), 40 - AmigaView.KeyColumn(k)), KeyColour(k));
+                DrawKeyLine(f, font, k, input);
                 break;
             case DelayRequest { BottomLine: not null } d:
                 DrawBottomLine(f, font, d);
+                break;
+            case ChoiceRequest { Vertical: true } v: // VMENU over the page (DOSBox-X s43: its rows in the text box)
+                DrawVertical(f, font, v);
+                break;
+            case TextRequest t:
+                DrawTextEntry(f, font, t);
+                if (AmigaView.On && Chrome.AmigaGadget is { } gadget)
+                    gadget.Requester(f, font, AmigaView.Case(t.Prompt), _typed, t.MaxLength + 1);
+                else
+                    DrawTypedLine(f, font, t);
                 break;
         }
     }
@@ -1076,12 +1113,12 @@ public sealed class ExploreScreen : IScreen
             int start = MenuStart(h);
             if (h.MenuPrompt is { Length: > 0 } mp)
                 Chrome.MenuPrompt(f, font, 0, MenuRow, mp, h.MenuPromptColour ?? MenuPromptColour);
-            DrawLine(f, font, h.Items, _selected, start, h.HotkeyOf, h.Columns);
+            DrawLine(f, font, h.Items, _selected, start, h.HotkeyOf, h.Columns, h.ScriptText, Pens(h));
         }
         else if (pending is KeyRequest k)
         {
             Chrome.Clear(f, 0, MenuRow, 40);
-            Chrome.Text(f, font, AmigaView.KeyColumn(k), MenuRow, Fit(KeyPrompt(k, input), 40 - AmigaView.KeyColumn(k)), KeyColour(k));
+            DrawKeyLine(f, font, k, input);
         }
         else if (pending is DelayRequest { BottomLine: not null } delay)
         {
@@ -1096,6 +1133,17 @@ public sealed class ExploreScreen : IScreen
             return;
         Chrome.Text(f, font, 0, MenuRow, Fit(line.Text, 40), line.Colour);
         _bottomLineDrawn = delay;
+    }
+
+    /// <summary>A key wait's line on row 24: at its column (<see cref="AmigaView.KeyColumn"/>), in the Amiga caller's own
+    /// pen when it has one (<see cref="AmigaView.KeyPen"/>), else in the key colour.</summary>
+    private void DrawKeyLine(IndexedFrame f, TextFont font, KeyRequest k, ActionInput input)
+    {
+        int col = AmigaView.KeyColumn(k);
+        string text = Fit(KeyPrompt(k, input), 40 - col);
+        if (AmigaView.KeyPen(k) is int pen && font.DrawAmiga(f, col * 8, MenuRow * 8, text, pen))
+            return;
+        Chrome.Text(f, font, col, MenuRow, text, KeyColour(k));
     }
 
     private static byte KeyColour(KeyRequest k) => AmigaView.KeyColour(k) ?? k.Colour ?? (k.AsMenu ? Chrome.White : MenuPromptColour);
@@ -1215,6 +1263,32 @@ public sealed class ExploreScreen : IScreen
     /// <summary>View redraws so far (AreaLoop.Redrawn, on the logic thread).</summary>
     private int _viewRedraws;
 
+    /// <summary>
+    /// The overland interface's lone marker over a 3D view (<see cref="AreaLoop.InterfaceMarker"/>), or the one it will
+    /// draw before the first command (<see cref="AreaLoop.OverlandInterfacePending"/>: frame c at the party's square).
+    /// </summary>
+    private (OverlandMarkerDraw Draw, bool Covered)? OverlandMarkerOverView()
+    {
+        var loop = _game.Loop;
+        if (loop.OverlandInterfacePending)
+            return (new OverlandMarkerDraw(Overland.Position(_game.Memory), loop.MarkerCounter,
+                _game.Memory.Position.Facing), false);
+        return loop.InterfaceMarker is { } m ? (m, loop.InterfaceMarkerCovered) : null;
+    }
+
+    private void DrawOverlandMarker(IndexedFrame f, OverlandMarkerDraw m)
+    {
+        if (OverlandUi.Column(_game) is { } column)
+            _art.Overland.Art.DrawMarker(f, OverlandUi.ViewX, OverlandUi.ViewY, Overland.MarkerCell(column, m.Square.X, m.Square.Y),
+                m.Frame, m.Facing);
+    }
+
+    /// <summary>
+    /// The overland window blanked with the 3D view's box in it (<see cref="OverlandUi.Boxed"/>), and in the camp: its
+    /// picture goes in the box over a blank window there too (DOSBox-X s43, Encamp on the overland at 10,20 of block 26).
+    /// </summary>
+    private bool OverlandBoxed => OverlandUi.Boxed(_player) || _player.Interface == Venue.Camp;
+
     private void DrawView(IndexedFrame f, TextFont font)
     {
         if (_player.Scene is { } scene)
@@ -1226,7 +1300,7 @@ public sealed class ExploreScreen : IScreen
         {
             // The overland view (OverlandUi); encounter pictures and the like go over it as over the 3D view
             // (DOSBox-X: a monster sprite at the 3D view's place over the tiles).
-            if (OverlandUi.Boxed(_player))
+            if (OverlandBoxed)
             {
                 OverlandUi.Blank(f); // a picture in the 3D view's box over a blank window (below)
                 Chrome.Box(f, 2, 2, 14, 14);
@@ -1238,10 +1312,20 @@ public sealed class ExploreScreen : IScreen
         }
         else if (!_game.Loop.InView3D)
         {
-            // No map in memory, or a mode the redraw 0x2DCF4 draws nothing for (DS:49FA 0 or 5+ with $49E6 = 0). [?] With
-            // no map the program draws its map buffer as it is (a save whose Load reads no map: location type 2–4).
+            // A mode the redraw 0x2DCF4 draws nothing for (DS:49FA 0 or 5+ with $49E6 = 0), or no map in memory (a game
+            // the Client entered without one; a load always has the map buffer, PorGame.Loaded).
             Chrome.Text(f, font, 3, 7, "NO VIEW", Chrome.Cyan);
             return;
+        }
+        else if (OverlandUi.Commands(_game) && OverlandMarkerOverView() is { } marker)
+        {
+            // The overland interface with $49E6 != 0: the 3D view from the map buffer and the interface's lone marker
+            // over it; a later 3D redraw covers the marker's inner part (AreaLoop.InterfaceMarker, DOSBox-X s43).
+            if (marker.Covered)
+                DrawOverlandMarker(f, marker.Draw);
+            _game.DrawView(f, ViewX, ViewY, _game.Loop.ShowAreaMap);
+            if (!marker.Covered)
+                DrawOverlandMarker(f, marker.Draw);
         }
         else
             _game.DrawView(f, ViewX, ViewY, _game.Loop.ShowAreaMap);
@@ -1321,13 +1405,19 @@ public sealed class ExploreScreen : IScreen
 
     /// <summary>A line of words on the bottom row as the original draws its menus: the highlighted item all white, the others with a white hotkey letter.</summary>
     internal static void DrawLine(IndexedFrame f, TextFont font, IReadOnlyList<string> items, int selected, int start,
-        Func<int, char>? hotkey = null, IReadOnlyList<int>? columns = null)
+        Func<int, char>? hotkey = null, IReadOnlyList<int>? columns = null, bool scriptText = false, AmigaMenuPens? amigaPens = null)
     {
         // Under Amiga the current entry is not lit: it is drawn as the others, then its gadget box complemented.
         var gadget = Chrome.AmigaGadget;
         int lit = selected;
         if (gadget is not null)
             selected = -1;
+        // The Amiga menu routine draws the program's words as they are, each capital or digit in the hotkey pen and every
+        // other character in the words' pen (hunk 19 +0x4FF6–0x5048). Script menus (upper case on both machines) keep
+        // the DOS look [?] (not seen in FS-UAE).
+        bool amiga = AmigaView.On && !scriptText;
+        if (amiga)
+            items = AmigaView.MenuCase(items);
         int col = start;
         for (int i = 0; i < items.Count; i++)
         {
@@ -1336,6 +1426,15 @@ public sealed class ExploreScreen : IScreen
                 col = start + columns[i];
             if (col + w.Length > 40)
                 break;
+            if (amiga)
+            {
+                for (int j = 0; j < w.Length; j++)
+                    AmigaMenuCharacter(f, font, col + j, w[j], amigaPens);
+                if (i == lit)
+                    gadget?.Entry(f, col, MenuRow, w);
+                col += w.Length + 1;
+                continue;
+            }
             int k = hotkey is null ? 0 : Math.Max(0, w.IndexOf(hotkey(i)));
             Chrome.Text(f, font, col, MenuRow, w, i == selected ? Chrome.White : Chrome.Green);
             // The menu routine's entry runs from its capital (or digit) to two cells before the next one (0x2C99A, drawn
@@ -1355,8 +1454,40 @@ public sealed class ExploreScreen : IScreen
         }
     }
 
+    /// <summary>
+    /// The three pens of an Amiga menu call when they are not the usual ones (words 28, capitals 16: DOS colours 10 / 15
+    /// through the text pens): creation's portrait menu passes 16 and 28 (hunk 10 +0x3778–0x3790).
+    /// </summary>
+    internal sealed record AmigaMenuPens(int Words, int Capitals);
+
+    private static AmigaMenuPens? Pens(ChoiceRequest c) => c.AmigaPens is var (w, k) ? new AmigaMenuPens(w, k) : null;
+
+    /// <summary>One character of an Amiga menu line (<see cref="AmigaView.IsHotkeyCharacter"/>).</summary>
+    private static void AmigaMenuCharacter(IndexedFrame f, TextFont font, int col, char ch, AmigaMenuPens? pens)
+    {
+        bool hot = AmigaView.IsHotkeyCharacter(ch);
+        if (pens is not null && font.DrawAmiga(f, col * 8, MenuRow * 8, ch.ToString(), hot ? pens.Capitals : pens.Words))
+            return;
+        Chrome.Text(f, font, col, MenuRow, ch.ToString(), hot ? Chrome.White : Chrome.Green);
+    }
+
     private void DrawVertical(IndexedFrame f, TextFont font, ChoiceRequest c)
     {
+        if (c.ListRow is not null)
+        {
+            // VMENU: the prompt in the text window, the list routine 0x2D669's rows under it (ClientPlayer.VerticalMenu).
+            DrawTextWindow(f, font);
+            var (first, rows) = ListWindow(c);
+            int from = ListTop(c);
+            for (int r = 0; r < rows && from + r < c.Items.Count; r++)
+            {
+                int i = from + r;
+                Chrome.Clear(f, TextWindow.Left, first + r, TextWindow.Right - TextWindow.Left + 1);
+                Chrome.Text(f, font, TextWindow.Left, first + r, Fit(c.Items[i], TextWindow.Right - TextWindow.Left + 1),
+                    i == _selected ? Chrome.White : Chrome.Green);
+            }
+            return;
+        }
         if (c.Prompt is { Length: > 0 } p)
             Chrome.Text(f, font, 1, TextRow, Fit(p, 38), Chrome.White);
         int top = ListTop(c);
@@ -1368,6 +1499,14 @@ public sealed class ExploreScreen : IScreen
                 Chrome.Text(f, font, 1, ListFirstRow + r, ">", Chrome.Yellow);
         }
     }
+
+    /// <summary>
+    /// The line input START 0x7A73 on row 24: the prompt at column 0, each typed character at the next column from the
+    /// prompt's length + 1 (0x7B0E), so with INPUTSTR's and INPUTNUM's empty prompt from column 1 (DOSBox-X s43). The
+    /// "_" after it is the Client's.
+    /// </summary>
+    private void DrawTypedLine(IndexedFrame f, TextFont font, TextRequest t) =>
+        Chrome.Text(f, font, 0, MenuRow, Fit(t.Prompt + " " + _typed + "_", 40), Chrome.White);
 
     private void DrawTextEntry(IndexedFrame f, TextFont font, TextRequest t)
     {

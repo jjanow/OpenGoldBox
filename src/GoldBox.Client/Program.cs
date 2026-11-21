@@ -136,10 +136,15 @@ else
             Game = () => game,
             PlaySong = PlayAmigaSong,
         };
+        // The Amiga pages' wordings and pens (s43): the program's menu spelling, its own strings and call-site pens.
+        AmigaView.LearnMenuLines(player.Resources.MenuLines);
+        AmigaView.CallPens = content.AmigaCallPens() ?? new Dictionary<string, int>();
+        AmigaView.Strings = content.AmigaStrings() ?? new Dictionary<string, string>();
         var endArt = clientArt;
         player.EndArt = (disk, block) => endArt.Pictures.Find("FINAL", block, disk, anyDisk: true);
         player.InstallPaging();
         runner.Answered = player.MenuEnded; // every program menu clears VM $4AFF at its end (0x2CFAD)
+        runner.Asking = player.MenuAsked;   // and draws the loaded picture on every pass while it is set (0x2CDD6)
         // Sound (docs/re/sound.md): the program's driver data from the content, on the device the setting names.
         audio = ClientAudio.Open(content.Sound(), ClientAudio.Parse(settings.Sound), content.AmigaSound());
         Console.Error.WriteLine($"sound: {audio?.Device?.ToString().ToLowerInvariant() ?? "off"}");
@@ -201,7 +206,7 @@ else
                                 // vector 4 draws over the party menu's page until START 0x3379 runs (DOSBox-X s42)
                                 player.PartyMenuUnder = g.LoadedInterfaceState != 0;
                                 started(g);
-                            }));
+                            }, game?.Loop.Map)); // the map buffer keeps the session's map when the save reads none
                     }
                     finally
                     {
@@ -300,7 +305,7 @@ else
                         g.Memory.TypesText = typing;
                         game = WithSound(g);
                         started(g);
-                    }));
+                    }, game?.Loop.Map));
             };
         }
         if (startAtMenu)

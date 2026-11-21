@@ -81,6 +81,12 @@ public sealed class HallView
                     Chrome.MenuPrompt(f, font, 0, BottomRow, mp, PromptColour);
                     col = mp.Length + 1;
                 }
+                if (AmigaView.On)
+                {
+                    // The Amiga menu routine (ExploreScreen.DrawLine): the program's words, capitals in the hotkey pen.
+                    ExploreScreen.DrawLine(f, font, c.Items, choiceSelected, col, c.HotkeyOf, scriptText: c.ScriptText);
+                    break;
+                }
                 for (int i = 0; i < c.Items.Count; i++)
                 {
                     var w = c.Items[i];
@@ -109,6 +115,19 @@ public sealed class HallView
     {
         if (party is { Members.Count: > 0 })
             Chrome.PartyList(f, font, party, 1);
+    }
+
+    /// <summary>
+    /// A member pick's party list (START 0x1307 from 0x19CAB) over a picture the menu left on the page: the heading,
+    /// then each member's row blanked from column 1 to 38 and drawn, and the row after the last blanked too (0x1473);
+    /// the rest of the picture stays (DOSBox-X s43: rows 3 and 11–13 of PICTURE 2 kept with six members).
+    /// </summary>
+    public static void DrawListOver(IndexedFrame f, TextFont font, EclParty? party)
+    {
+        int n = party?.Members.Count ?? 0;
+        for (int row = 4; row <= 4 + Math.Min(n, 8); row++)
+            Chrome.Clear(f, 1, row, 38);
+        DrawRoster(f, font, party);
     }
 
     /// <summary>The menu's answer this frame: a hotkey letter, Confirm on the highlighted entry, a member switch.</summary>

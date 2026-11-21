@@ -287,7 +287,8 @@ public class VenueTests
         var c = Member("ANNA", str: 18);
         c.SetWord(Money.Gems, 1);
         Carrying.RecalculateWeight(c);
-        var (t, s) = Context(new Script(0, answer, null), Party(c));   // GEMS, keep/sell, then the "no gems" key
+        // GEMS, keep/sell; with none left after an appraisal the routine just ends (0x26698: no "no gems" key wait).
+        var (t, s) = Context(new Script(0, answer), Party(c));
         MoneyScreens.Appraise(t);                                       // Random(n) = n - 1: 1d100 = 100, 5000
         Assert.Equal(0, c.Word(Money.Gems));
         if (kept)

@@ -103,9 +103,10 @@ public class CarryingTests
     {
         var c = new EclCharacter();
         var item = new byte[EclCharacter.ItemRecordSize];
+        void Recalc(EclCharacter x) => x[ShopRules.ItemCount] = (byte)x.Items.Count; // 0xC7 from START 0x1758
         for (int i = 0; i < 16; i++)
-            Assert.True(ShopRules.GiveCopy(c, item, 0));
-        Assert.False(ShopRules.GiveCopy(c, item, 0));
+            Assert.True(ShopRules.GiveCopy(c, item, 0, Recalc));
+        Assert.False(ShopRules.GiveCopy(c, item, 0, Recalc));
         Assert.Equal(16, c.Items.Count);
     }
 

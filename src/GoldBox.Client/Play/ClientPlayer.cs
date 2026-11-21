@@ -130,8 +130,44 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
             g.Memory.MenuAnimates = false;
     }
 
+    /// <summary>
+    /// The menu routine 0x2CC8C draws the frame table at cell (3, 3) on every pass while VM $4AFF ≠ 0 and a picture is
+    /// loaded (DS:6ABF > 0; 0x2CD5D–0x2CD9B), without waiting for the frames' delays (0x2CDD6), over whatever page is
+    /// up. DOSBox-X (s43, a step's PICTURE 2 then PROGRAM 0): after a hall Save the hall's next menu drew the frames
+    /// over its page; after a camp Save the quit question's yes/no ran the camp picture's frames on every pass (the camp
+    /// menu after it held them 0.22 s again). A horizontal menu gets <see cref="ChoiceRequest.EveryPass"/> (and animates);
+    /// the hall's menu leaves the picture on its page (<see cref="HallState.PictureOver"/>). `[?]` The other page menus
+    /// (lists, View, the party menu) are not seen with $4AFF set: a Save or a Load is followed by the hall's, camp's or
+    /// a script's menu.
+    /// </summary>
+    public PlayerRequest MenuAsked(PlayerRequest request)
+    {
+        if (!IsProgramMenu(request) || Game() is not { } g || !g.Memory.MenuAnimates || !FramesLoaded)
+            return request;
+        switch (request)
+        {
+            case ChoiceRequest { EveryPass: false } c:
+                return c with { Animates = true, EveryPass = true };
+            case HallMenuRequest m:
+                if (Hall is { } hall)
+                    hall.PictureOver = HallPicture.Whole;
+                return m with { EveryPass = true };
+            default:
+                return request;
+        }
+    }
+
+    /// <summary>
+    /// A picture is in the frame table DS:6ABE (loaded by 0x2E170: PICTURE, START 0x3379's camp and loot pictures) as
+    /// far as the Client follows it: the camp's or loot's picture, or a script picture until the view is drawn again
+    /// (the program frees the table at the command line's end, 0x17746). A block missing from the current disk leaves
+    /// the program's table empty (0x2E24B; DOSBox-X s43: PICTURE 2 after the hall had set disk 3, nothing drawn); the
+    /// Client keeps the picture and finds nothing to draw, the same screen.
+    /// </summary>
+    private bool FramesLoaded => Camping || Interface == Venue.Loot || ViewPicture is { Kind: ViewPictureKind.Picture };
+
     private int Choose(string? prompt, IReadOnlyList<string> items, bool vertical = false, int? cancel = null,
-        bool animates = false)
+        bool animates = false, int? listRow = null, bool scriptText = false, (int Words, int Capitals)? amigaPens = null)
     {
         // The menu routine 0x2CC8C also animates while VM $4AFF is not 0, and clears it at its end (AreaLoop.MenuAnimateCell).
         var mem = memory();
@@ -139,7 +175,8 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
         animates |= everyPass;
         try
         {
-            return runner.Ask(new ChoiceRequest(prompt, items, vertical, cancel) { Animates = animates, EveryPass = everyPass })
+            return runner.Ask(new ChoiceRequest(prompt, items, vertical, cancel)
+                { Animates = animates, EveryPass = everyPass, ListRow = listRow, ScriptText = scriptText, AmigaPens = amigaPens })
                 is int i ? i : 0;
         }
         finally
@@ -196,7 +233,7 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
     public void InstallPaging() => Text.Pause = () =>
     {
         _pagePrompted = true;
-        runner.Ask(new KeyRequest());
+        runner.Ask(new KeyRequest { PagePrompt = true });
     };
 
     /// <summary>Something else was drawn on the bottom row since the last page prompt.</summary>
@@ -340,9 +377,27 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
     }
 
     // ---- Menus and input -----------------------------------------------------------------------------------------
-    public ushort VerticalMenu(string prompt, IReadOnlyList<string> choices) => (ushort)Choose(prompt, Upper(choices), vertical: true);
+    /// <summary>
+    /// VMENU (GAME.OVR 0x1C4E, read s43): the cursor to (1, 17) (0x1CCE), the prompt through START 0x77F8 into the box
+    /// (1, 17)–(38, 22) with clear, colour 10 (0x1CD8–0x1CF0; typed only while DS:4A00 stands, as every 0x77F8 text),
+    /// then the list routine 0x2D669 (through 0x8C5B, 0x1D99) with the window from row DS:5E25 + 1 to row 22, columns
+    /// 1–38, colours 13 / 10 / 15, keypad flag 1, an empty prompt and word and no Exit, the position 0 (0x1D51). After
+    /// the pick the box is blanked (START 0x7E63 through 0709:0DD3, 0x1DC2) and the cursor stays after the prompt
+    /// (DOSBox-X s43: a PRINT after the menu went on at the prompt's end). [?] A list longer than its window (no v1.3
+    /// VMENU has one: at most 5 rows with the prompt) pages in the program with Next / Prev; the Client scrolls it.
+    /// </summary>
+    public ushort VerticalMenu(string prompt, IReadOnlyList<string> choices)
+    {
+        Text.Home();
+        Text.Print(prompt, clear: true);
+        int first = Math.Min(Text.Row + 1, TextWindow.Bottom);
+        int pick = Choose(null, Upper(choices), vertical: true, listRow: first, scriptText: true);
+        Text.ClearRect(TextWindow.Left, TextWindow.Top, TextWindow.Right, TextWindow.Bottom);
+        return (ushort)pick;
+    }
     public ushort HorizontalMenu(IReadOnlyList<string> choices) =>
-        (ushort)Choose(null, Upper(OneWordSwap(choices)), animates: CloseUpAnimates);
+        (ushort)Choose(null, [.. Upper(OneWordSwap(choices)).Select(AmigaView.HmenuCase)], animates: CloseUpAnimates,
+            amigaPens: AmigaView.HmenuPens);
 
     /// <summary>
     /// HMENU (GAME.OVR 0x1E17, read s21): a menu of one word that equals the code string at 0x1DCB (exact compare,
@@ -361,11 +416,14 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
 
     public int InputNumber()
     {
-        var s = runner.Ask(new TextRequest("NUMBER:", true, 6)) as string ?? "";
+        // INPUTNUM (0x1697): the line input with an empty prompt (0x16B9) and 6 characters (START 0x7C1F); the Amiga's
+        // requester takes 5 digits (hunk 16 +0x1092).
+        var s = runner.Ask(new TextRequest("", true, AmigaView.On ? AmigaView.InputNumberLength : 6)) as string ?? "";
         return int.TryParse(s, NumberStyles.None, CultureInfo.InvariantCulture, out var n) ? n : 0;
     }
 
-    public string InputString() => runner.Ask(new TextRequest("", false, 40)) as string ?? "";
+    public string InputString() =>
+        runner.Ask(new TextRequest("", false, AmigaView.On ? AmigaView.InputStringLength : 40)) as string ?? "";
 
     /// <summary>WHO: [?] Lee only (the player picks a character, who becomes current).</summary>
     public void Who(string prompt)
@@ -555,6 +613,13 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
     /// them); the party list (0x1307) and the position line (0x34AB). Case 2 shows the camp's picture (PIC 0x1D,
     /// 0x2E170) until the next view redraw; cases 3 and 4 redraw the view next (0x2DCF4, the area loop's redraw).
     /// </summary>
+    /// <summary>
+    /// A screen that draws its own windows (the camp, a shop or temple, the loot menu, a fight) replaces the overland
+    /// interface's layout (<see cref="GoldBox.Core.Explore.AreaLoop.OverlandLayout"/>). [?] Only the camp is checked
+    /// (DOSBox-X s43); after the others the Client draws the 3D layout's joint as it did before s43.
+    /// </summary>
+    private void OtherLayout() => Game()?.Loop.OtherLayoutDrawn();
+
     /// <summary>START 0x3379 by the game's DS:49F3 (<see cref="GoldBox.Core.Explore.AreaLoop.DrawInterface"/>, followed here).</summary>
     public void DrawInterface()
     {
@@ -615,9 +680,12 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
 
     /// <summary>
     /// The position line ends in "CAMPING" (START 0x366D: DS:49F3 = 2): in the camp, and after a training hall's Load of
-    /// a camp save until DS:49F3 is written again (<see cref="GoldBox.Core.Ecl.EclMemory.InterfaceState"/>).
+    /// a camp save until DS:49F3 is written again (<see cref="GoldBox.Core.Ecl.EclMemory.InterfaceState"/>). The
+    /// overland interface due at the next command routine (START 0x3701 sets 3, then draws the line) has written it
+    /// already as far as the screen goes (DOSBox-X s43: a hall Load of a location-type-2 camp save, no CAMPING).
     /// </summary>
-    public bool CampingLine => Camping || (Interface is null && Hall is null && memory().InterfaceState == 2);
+    public bool CampingLine => Camping || (Interface is null && Hall is null && memory().InterfaceState == 2
+        && Game()?.Loop.OverlandInterfacePending != true);
 
     /// <summary>The word after START on the DOS command line (ParamStr(1); the hall's J), or null.</summary>
     public string? ProgramWord { get; set; }
@@ -768,6 +836,7 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
     /// </summary>
     public void Fight(EncounterState state, GoldBox.Core.Game.Fight fight)
     {
+        OtherLayout();
         int speed = memory().GameSpeed;
         FightView.Speed = (byte)(speed <= 9 ? speed : 0);
         FightView.Dungeon = memory().ViewMode == 1; // DUNGCOM only when DS:49FA = 1, else WILDCOM (0xD81B; combat-menu.md "Ground")
@@ -793,6 +862,7 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
     {
         if (Trade(state) is not { } t)
             return;
+        OtherLayout();
         Interface = Venue.Loot;
         try
         {
@@ -827,7 +897,7 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
         {
             box.PrintIn(2, 5, 37, 22, t[Msg.MonstersRejoice], clear: true, colour: 10);
             Window = box.WindowLines();
-            runner.Ask(new KeyRequest(t[Msg.PressAnyKey]));
+            runner.Ask(new KeyRequest(t[Msg.PressAnyKey]) { Original = t.Raw(Msg.PressAnyKey) });
         }
         finally
         {
@@ -858,7 +928,12 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
         {
             Text.MoveTo(Text.Column, TextWindow.Top);
             clear = true;
-            runner.Ask(new KeyRequest(t[Msg.DamageHitContinue]) { Colour = 15 });
+            runner.Ask(new KeyRequest(t[Msg.DamageHitContinue])
+            {
+                Colour = 15,
+                Original = t.Raw(Msg.DamageHitContinue),
+                AmigaPen = GoldBox.Data.Module.Por.PorAmigaText.KeyDamagePen,   // hunk 4 +0x2364–0x236E: pen 28
+            });
         }
         Text.MoveTo(TextWindow.Right, Text.Row);
         Text.Print(line, clear, colour: 15);
@@ -890,7 +965,12 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
         }
         try
         {
-            runner.Ask(new KeyRequest(t[Msg.DamageContinue]) { Colour = 15 });
+            runner.Ask(new KeyRequest(t[Msg.DamageContinue])
+            {
+                Colour = 15,
+                Original = t.Raw(Msg.DamageContinue),
+                AmigaPen = GoldBox.Data.Module.Por.PorAmigaText.KeyDamagePen,   // hunk 16 +0x46D2–0x46DC: pen 28
+            });
         }
         finally
         {
@@ -907,6 +987,7 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
     {
         if (Trade(state) is not { } t)
             return;
+        OtherLayout();
         Interface = Venue.Shop;
         try
         {
@@ -998,6 +1079,7 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
             Random = n => game is null ? 0 : game.Rng.Next((ushort)n),
             Word = Resources.ItemWord,
             IsScroll = Resources.IsScroll,
+            ItemTypes = Resources.ItemTypes,
             TempleNames = Resources.TempleNames,
             Halt = Halt,
             ViewPage = ViewPage,
@@ -1255,6 +1337,7 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
         if (Trade(Game()?.Encounter.State) is not { } t)
             return false;
         var before = Interface;
+        OtherLayout(); // D s43: the camp on the overland shows the joint at (16, 16), and so does the screen after its Exit
         Interface = Venue.Camp;
         var mem = memory();
         byte state = mem.InterfaceState;

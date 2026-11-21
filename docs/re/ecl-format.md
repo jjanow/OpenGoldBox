@@ -274,6 +274,25 @@ area loop 0x403E (checks at 0x4118–0x423B), which clears it on exit (0x4245); 
   PRINTCLR 12345 then PRINT [x] with x = 5 showed `123455`, and slot 1 still held the digits' tail afterwards.
   How the text box shows a text: `view3d.md` "Text window" (program read s12: START 0x77F8).
 - **INPUTNUM / INPUTSTR** (0x1697 / 0x16DA): the length operand is loaded but never fetched.
+- **The ECL line inputs** (P + D s43). INPUTSTR calls START 0x7A73 (0709:09E3) with an empty prompt (the local string
+  at 0x16E9), colour 10 and 40 characters; INPUTNUM calls START 0x7BF6 (0709:0B66) with an empty prompt and colour 10,
+  which runs the same 0x7A73 with 6 characters (0x7C1F) and converts the line with Val. 0x7A73 blanks row 24 (0x767B),
+  draws the prompt at (0, 24) in the colour, then for each key 0x20–0x7A while below the limit draws it in colour 15
+  at the next column, the first at the prompt's length + 1 (0x7B0E); Backspace blanks the last; Return or Escape end
+  it and blank row 24. No cursor glyph. So both ECL inputs type from column 1 (DOSBox-X: scratch saves, "ABC" and
+  "12" from column 1, the text box left as it was). Client: `ClientPlayer.InputNumber` / `InputString` (empty
+  prompts), `ExploreScreen.DrawTypedLine` (the typed text at the prompt's length + 1; the "_" after it and the
+  character grid in the box are the Client's).
+- **VMENU's screen** (P + D s43; handler 0x1C4E). The cursor to (1, 17) (0x1CCE), the prompt through START 0x77F8 in
+  (1, 17)–(38, 22) with clear, colour 10 (0x1CD8–0x1CF0: wrapped as every text there, typed only while DS:4A00
+  stands), the choices copied into a list, then 0x8C5B (002B:0066) → the list routine 0x2D669 with the window from row
+  DS:5E25 + 1 to row 22, columns 1–38, colours 13 / 10 / 15, keypad flag 1, empty prompt and word, no Exit, position 0
+  (0x1D51); after the pick the box is blanked (0709:0DD3 = START 0x7E63, 0x1DC2) and the cursor stays after the
+  prompt. DOSBox-X (scratch saves D and F): the prompt in green at (1, 17), the rows from (1, 18), the first white and
+  the others green, nothing on row 24; a PRINT after the menu went on at column 12 of row 17, after an 11-character
+  prompt. The longest v1.3 VMENU needs 5 rows with its prompt, so the list's Next / Prev paging is never reached
+  `[?]` (the Client scrolls instead). Client: `ClientPlayer.VerticalMenu` (`ChoiceRequest.ListRow`),
+  `ExploreScreen.DrawVertical` (WHO's pick keeps the Client's own list, not read).
 
 ### Encounters (program read 2026-11-17)
 

@@ -24,8 +24,14 @@ public class TradeTests
         public readonly Queue<(int Kind, ushort Amount)?> CoinAnswers = new();
         public readonly List<CoinTexts?> CoinWords = [];
         public readonly List<EclCharacter> ViewPages = [];
+        /// <summary>Each View page's encumbrance and damage dice as they were when it was drawn.</summary>
+        public readonly List<(ushort Weight, byte Dice, byte Sides)> ViewShown = [];
 
-        public Rig(params EclCharacter[] members)
+        public Rig(params EclCharacter[] members) : this(null, members)
+        {
+        }
+
+        public Rig(BaseItemTable? items, params EclCharacter[] members)
         {
             Party.Members.AddRange(members);
             Party.CurrentIndex = 0;
@@ -51,12 +57,14 @@ public class TradeTests
                 Pool = new uint[7],
                 Treasure = [],
                 Random = _ => 0,
+                ItemTypes = items,
                 Memory = new EclMemory { GameSpeed = 2 },
                 InterfaceRedraw = () => Redraws++,
                 RosterDrawnLit = who => Lit.Add(who),
                 ViewPage = (c, entries) =>
                 {
                     ViewPages.Add(c);
+                    ViewShown.Add((c.Word(Money.Weight), c[0x115], c[0x117]));
                     return ViewAnswers.Count > 0 ? entries.ToList().IndexOf((ViewEntry)ViewAnswers.Dequeue()) : entries.Count - 1;
                 },
                 ItemsPage = (_, entries, row, _) => ItemsAnswers.Count > 0
@@ -128,6 +136,76 @@ public class TradeTests
         Assert.Same(b, rig.T.TradeTarget);                   // set before the carry test
         Assert.Equal(b, rig.Lit[2]);                         // the second Trade's pick starts on the last one
         Assert.Equal(2, rig.Redraws);
+    }
+
+    /// <summary>An ITEMS table with type 5 a one-handed weapon (base slot 0) of 1d8.</summary>
+    private static BaseItemTable Weapons()
+    {
+        var t = new BaseItemTable(new byte[BaseItemTable.EntrySize * BaseItemTable.Count]);
+        for (int k = 0; k < BaseItemTable.Count; k++)
+            t.Set(k, BaseItemTable.Slot, 14); // nothing readied counts as a weapon
+        t.Set(5, BaseItemTable.Slot, FightRules.SlotWeapon);
+        t.Set(5, 1, 1);
+        t.Set(5, 9, 1);
+        t.Set(5, 10, 8);
+        return t;
+    }
+
+    private static EclCharacter Fighter(string name)
+    {
+        var c = Member(name);
+        c[0xA3] = 1; // natural attack 1d2
+        c[0xA5] = 2;
+        // a weapon's 1d8 left from before it was unreadied (the derived bytes keep it until START 0x1758)
+        c[0x115] = 1;
+        c[0x117] = 8;
+        return c;
+    }
+
+    [Fact]
+    public void After_an_item_trade_giver_and_pick_are_recalculated_in_full()
+    {
+        // 0x2276E recalculates the pick (0x237A1 in the carry test, 0x2280B after the move) and the Items loop the giver
+        // (0x224AF, DS:5D92) after every command: START 0x1758, so the traded weapon's dice leave both damage lines.
+        var (a, b) = (Fighter("ANNA"), Fighter("BRAN"));
+        var sword = Item(1);
+        sword[0x2E] = 5;
+        a.Items.Add(sword);
+        var rig = new Rig(Weapons(), a, b);
+        rig.ItemsAnswers.Enqueue(ItemsEntry.Trade);
+        rig.Answers.Enqueue(ChoiceRequest.NextMember);
+        rig.Answers.Enqueue(0);
+        rig.T.TradeTarget = a;
+        CharacterView.Items(rig.T, Venue.Camp);
+        Assert.Empty(a.Items);
+        Assert.Single(b.Items);
+        Assert.Equal((1, 2), (a[0x115], a[0x117]));     // bare hands
+        Assert.Equal((1, 2), (b[0x115], b[0x117]));     // the sword is not readied
+        Assert.Equal(0, a[StatRecalc.ItemCount]);
+        Assert.Equal(1, b[StatRecalc.ItemCount]);
+        Assert.Equal(0, a.Word(Money.Weight));
+        Assert.Equal(10, b.Word(Money.Weight));
+    }
+
+    [Fact]
+    public void Views_page_recalculates_each_full_draw_but_not_after_drop()
+    {
+        // 0x21084 → 0x21642 → START 0x1758 on every draw of the page (entry, and after I, S, T); Drop redraws only the
+        // money lines (0x21547). An edited save's weight word (DOSBox-X s42: 1058 on the page for a stored 538).
+        var a = Fighter("ANNA");
+        a.SetWord(Money.Gold, 100);
+        a.SetWord(Money.Weight, 538);
+        a.Items.Add(Item(1)); // 10 coins' weight, so Items is offered
+        var rig = new Rig(Weapons(), a);
+        rig.ViewAnswers.Enqueue((int)ViewEntry.Drop);
+        rig.CoinAnswers.Enqueue(((Money.Gold - Money.Coins) / 2, 40)); // 40 gold
+        rig.CoinAnswers.Enqueue(null);
+        rig.ViewAnswers.Enqueue((int)ViewEntry.Items);
+        CharacterView.Run(rig.T, Venue.Camp);
+        Assert.Equal((110, (byte)1, (byte)2), rig.ViewShown[0]);  // entry: weight and dice fresh
+        Assert.Equal(110, rig.ViewShown[1].Weight);               // after Drop: the page keeps its encumbrance
+        Assert.Equal(70, rig.ViewShown[2].Weight);                // after Items: drawn (and recalculated) again
+        Assert.Equal(3, rig.ViewShown.Count);
     }
 
     [Fact]

@@ -310,6 +310,54 @@ public class MovingIconCallerTests
         Assert.Equal(2, r.Log.Events.Count(e => e == "begin"));
     }
 
+    // ---- A cast's flight bracket (0x27E05–0x27E56; DOSBox-X s43) -------------------------------------------------------
+
+    private sealed class EmptyLog : ISoundSink
+    {
+        public List<string> Events { get; } = [];
+        public void Cue(SoundCue cue) => Events.Add("cue " + cue);
+        public void BeginResident() => Events.Add("begin");
+        public void EndResident() => Events.Add("end");
+        public void EmptyResident(SoundCue cue) => Events.Add("empty " + cue);
+    }
+
+    private static List<string> Cast(bool atSelf, out Rig rig)
+    {
+        var s = new Script();
+        var r = Setup(s, (10, 10), (13, 10));
+        Assert.True(r.Fx.InCombat);
+        var sound = new EmptyLog();
+        r.Fight.State.Sound = sound;
+        var spells = new FightSpells(Spells, r.Fx, s.Next) { Aim = atSelf ? (10, 10) : (13, 10) };
+        spells.CastNow(r.Fight, r.C[0], 47, () => true);
+        rig = r;
+        return sound.Events;
+    }
+
+    [PorFact]
+    public void A_cast_aimed_at_its_own_square_has_an_empty_bracket_and_flies_nothing()
+    {
+        // The moving icon draws nothing for a path under two entries (START 0x2688), so the timer is uninstalled
+        // before its first tick: DOSBox-X plays no cast tune for a Fireball aimed at the caster (s41's silent casts).
+        var events = Cast(true, out var r);
+        Assert.Equal("empty Fireball", events[0]);
+        Assert.DoesNotContain("begin", events.Take(1));
+        Assert.Empty(r.Log.Flights);
+        // A sink without its own EmptyResident gets the program's three calls.
+        var log = new SoundLog();
+        ((ISoundSink)log).EmptyResident(SoundCue.Fireball);
+        Assert.Equal(["(", "Fireball", ")"], log.Calls);
+    }
+
+    [PorFact]
+    public void A_cast_aimed_elsewhere_plays_its_cue_through_the_flight()
+    {
+        var events = Cast(false, out var r);
+        Assert.Equal(["begin", "cue Fireball", "end"], events.Take(3));
+        Assert.Single(r.Log.Flights);
+        Assert.Equal((10, 10, 13, 10), (r.Log.Flights[0].FromX, r.Log.Flights[0].FromY, r.Log.Flights[0].ToX, r.Log.Flights[0].ToY));
+    }
+
     [PorFact]
     public void Another_weapon_in_melee_flies_nothing()
     {

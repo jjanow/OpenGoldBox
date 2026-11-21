@@ -372,6 +372,124 @@ public class HallPlayTests
         }
     }
 
+    /// <summary>Pixels of cells (3, 3)–(13, 13) (the picture's 88 × 88) on text rows fromRow to toRow that differ.</summary>
+    private static int PictureDiff(IndexedFrame a, IndexedFrame b, int fromRow = 3, int toRow = 13)
+    {
+        int n = 0;
+        for (int y = fromRow * 8; y < toRow * 8 + 8; y++)
+            for (int x = 24; x < 112; x++)
+                if (a[x, y] != b[x, y])
+                    n++;
+        return n;
+    }
+
+    private static IndexedFrame Shot(Rig r)
+    {
+        var f = new IndexedFrame(320, 200);
+        r.Screen.Draw(f, r.Input);
+        return f;
+    }
+
+    /// <summary>
+    /// The menu routine draws the loaded frame table at cell (3, 3) on every pass while $4AFF ≠ 0, whatever page is up
+    /// (0x2CD5D–0x2CDD6). DOSBox-X (s43, a step's PICTURE 2; PROGRAM 0 from a start-up Load of save A): after Save E the
+    /// hall's next menu drew PICTURE 2's frames over the hall page; the slot question after it kept the last frame;
+    /// Escape, and the loop drew its page again (no picture: the menu had cleared $4AFF). A second Save in the same run
+    /// after another PICTURE 2 drew nothing only because the hall's disk 3 has no PIC 2 (PICTURE 29 showed both times).
+    /// </summary>
+    [Fact]
+    public void A_hall_menu_after_a_save_draws_the_loaded_picture_over_the_page()
+    {
+        if (Dir() is null)
+            return;
+        var r = Start();
+        r.Runner.Answered = r.Player.MenuEnded; // as Program.cs
+        r.Runner.Asking = r.Player.MenuAsked;
+        var folder = Directory.CreateTempSubdirectory("hall-save-");
+        try
+        {
+            r.Player.SaveFolder = folder.FullName;
+            r.Game.Memory.MenuAnimates = false;           // the command line ran since the Load
+            r.Runner.Start(() =>
+            {
+                r.Player.ShowPicture(2, null);
+                r.Player.TrainingHall();
+            });
+            Settle(r);
+            var first = Assert.IsType<HallMenuRequest>(r.Runner.Pending);
+            Assert.False(first.EveryPass);
+            var page = Shot(r);
+            Key(r, Keys.S);
+            Settle(r);
+            var slots = Assert.IsType<ChoiceRequest>(r.Runner.Pending);
+            r.Runner.Answer(Enumerable.Range(0, slots.Items.Count).First(k => slots.HotkeyOf(k) == 'E'));
+            Settle(r);
+            var after = Assert.IsType<HallMenuRequest>(r.Runner.Pending);
+            Assert.True(after.EveryPass);                 // the save set $4AFF
+            Assert.Equal(HallPicture.Whole, r.Player.Hall!.PictureOver);
+            Frame(r);
+            var a = Shot(r);
+            Frame(r);
+            var b = Shot(r);
+            Assert.True(PictureDiff(page, a) > 2000);     // the picture over the list and the entries
+            Assert.True(PictureDiff(a, b) > 0);           // a frame on every pass (PIC 2 has two)
+            Assert.Equal(0, PictureDiff(page, b, 14, 22) + PictureDiff(page, b, 0, 2)); // nothing else changed
+            Key(r, Keys.S);                               // the slot question: the menu cleared $4AFF, the frame stays
+            Settle(r);
+            var again = Assert.IsType<ChoiceRequest>(r.Runner.Pending);
+            Assert.False(again.EveryPass);
+            Assert.True(PictureDiff(page, Shot(r)) > 2000);
+            Press(r, GameAction.Cancel);
+            Settle(r);
+            var redrawn = Assert.IsType<HallMenuRequest>(r.Runner.Pending);
+            Assert.False(redrawn.EveryPass);
+            Assert.Equal(HallPicture.None, r.Player.Hall!.PictureOver);
+            Assert.Equal(0, PictureDiff(page, Shot(r)));  // the loop drew its page again
+            r.Runner.Dispose();
+        }
+        finally
+        {
+            folder.Delete(recursive: true);
+        }
+    }
+
+    /// <summary>
+    /// A member pick (Home / End: 0x19C9E then the party list START 0x1307, 0x19CAB) does not draw the hall's page again
+    /// (0x19E69 skips the redraw flag): the list's rows 4 to 4 + n are blanked from column 1 to 38 and drawn over the
+    /// picture, the rest of it stays (DOSBox-X s43: End after a Save left rows 3 and 11–13 of PICTURE 2).
+    /// </summary>
+    [Fact]
+    public void A_member_pick_draws_the_party_list_over_the_picture_left_on_the_hall_page()
+    {
+        if (Dir() is null)
+            return;
+        var r = Start();
+        r.Runner.Answered = r.Player.MenuEnded;
+        r.Runner.Asking = r.Player.MenuAsked;
+        r.Game.Memory.MenuAnimates = true;                // as after a Save or a Load
+        r.Runner.Start(() =>
+        {
+            r.Player.ShowPicture(2, null);
+            r.Player.TrainingHall();
+        });
+        Settle(r);
+        Assert.True(Assert.IsType<HallMenuRequest>(r.Runner.Pending).EveryPass);
+        Press(r, GameAction.NextMember);
+        Settle(r);
+        var menu = Assert.IsType<HallMenuRequest>(r.Runner.Pending);
+        Assert.False(menu.EveryPass);
+        var hall = r.Player.Hall!;
+        Assert.Equal(HallPicture.UnderList, hall.PictureOver);
+        var over = Shot(r);
+        hall.PictureOver = HallPicture.None;
+        var page = Shot(r);
+        int members = r.Game.Memory.Party!.Members.Count;
+        Assert.Equal(0, PictureDiff(page, over, 4, 4 + members)); // the list's rows as on the page
+        Assert.True(PictureDiff(page, over, 3, 3) > 0);            // the picture's top row stays
+        Assert.True(PictureDiff(page, over, 5 + members, 13) > 0); // and its rows under the list
+        r.Runner.Dispose();
+    }
+
     /// <summary>
     /// The key buffer (GetKey START 0x89E9 keeps the last waiting key): keys pressed during the refusal message's pause
     /// do not act then; the last one is read by the menu afterwards (B: Begin leaves the hall).

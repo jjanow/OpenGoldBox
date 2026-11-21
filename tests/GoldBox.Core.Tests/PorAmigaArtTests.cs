@@ -548,6 +548,34 @@ public class PorAmigaArtTests(ITestOutputHelper output)
         Assert.Null(PorAmigaText.Read(new byte[64]));
     }
 
+    /// <summary>
+    /// s43: the call sites whose pens or texts differ from DOS (FS-UAE s43: the portrait menu's grey words and green
+    /// capitals, the party menu's last entry), read from the program; a moved site gives nothing.
+    /// </summary>
+    [PorAmigaFact]
+    public void The_programs_own_call_pens_and_strings_are_read()
+    {
+        var program = File.ReadAllBytes(PorAmigaArt.Locate(PorAmigaData.Dir!).Program);
+        var c = PorAmigaText.ReadCalls(program)!;
+        Assert.NotNull(c);
+        Assert.Equal(18, c.Pens[PorAmigaText.KeyPagePen]);
+        Assert.Equal(28, c.Pens[PorAmigaText.KeyDamagePen]);
+        Assert.Equal(28, c.Pens[PorAmigaText.HmenuPen]);
+        Assert.Equal((4, 16, 28), (c.Pens[PorAmigaText.PortraitPromptPen], c.Pens[PorAmigaText.PortraitWordsPen],
+            c.Pens[PorAmigaText.PortraitCapitalsPen]));
+        Assert.Equal(13, c.Strings[PorAmigaText.PagePromptKey].Length);
+        Assert.Equal(PorAmigaText.PartyMenuEntries, c.Strings.Keys.Count(k => k.StartsWith(PorAmigaText.PartyMenuKey, StringComparison.Ordinal)));
+        Assert.True(c.Strings.ContainsKey(PorAmigaText.ViewRenameKey));
+        var hunks = AmigaHunks.Parse(program);
+        var disagree = (byte[])program.Clone();
+        disagree[hunks[4].DataOffset!.Value + 0x236D] = 0x1A;   // the two DAMAGE key waits no longer agree
+        Assert.Null(PorAmigaText.ReadCalls(disagree));
+        var moved = (byte[])program.Clone();
+        moved[hunks[10].DataOffset!.Value + 0x67F] = 0;          // the party menu table's size
+        Assert.Null(PorAmigaText.ReadCalls(moved));
+        Assert.Null(PorAmigaText.ReadCalls(new byte[64]));
+    }
+
     [PorAmigaTextFontFact]                                        // skipped, naming the files, without disk A's fonts
     public void The_text_font_and_its_pens_reach_the_module()
     {

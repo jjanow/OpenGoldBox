@@ -26,6 +26,17 @@ public sealed record PickRequest(IReadOnlyList<string> Rows, IReadOnlyList<strin
     public string? Prompt { get; init; }
     /// <summary>Column of the rows (the creation lists put two spaces before each name: column 3; Add's names: column 1).</summary>
     public int Column { get; init; } = 1;
+
+    /// <summary>
+    /// The list's label row ("Pick Race" …: creation's lists start with a flagged entry, +0x29 = 1, Amiga hunk 10
+    /// +0xB00–0xB14 as DOS GAME.OVR 0x19FC4), drawn at (1, 2) in the list routine's flagged-row colour, the rows from
+    /// row 3: FS-UAE s43. Set under the Amiga pages only; DOS keeps the rows from row 2 `[?]` (the same label is in
+    /// its code, not checked in DOSBox-X).
+    /// </summary>
+    public string? Title { get; init; }
+
+    /// <summary>The first row's screen row.</summary>
+    public int FirstRow => Title is null ? 2 : 3;
 }
 
 /// <summary>
@@ -45,6 +56,9 @@ public sealed record SheetRequest(EclCharacter Character, IReadOnlyList<string> 
     /// the camp, shop, temple and loot open it over their own screens, and it ends when the page does.
     /// </summary>
     public bool IsView { get; init; }
+
+    /// <summary>Creation's portrait menu (0x1CD66): the Amiga passes its own pens (<see cref="AmigaView.PortraitMenuPens"/>).</summary>
+    public bool IsPortraitMenu { get; init; }
 }
 
 /// <summary>
@@ -316,9 +330,9 @@ public sealed class PartyMenuFlow(Func<PlayerRequest, object?> ask, PartyMenuTex
     // ---- Create ---------------------------------------------------------------------------------------------------
 
     /// <summary>A vertical pick (0x2D669 with Exit): the list position, or null on Exit.</summary>
-    private int? Pick(IReadOnlyList<string> rows)
+    private int? Pick(IReadOnlyList<string> rows, string titleKey)
     {
-        var a = ask(new PickRequest(rows, [texts.Exit], 0) { Column = 3 }) as ListAnswer;
+        var a = ask(new PickRequest(rows, [texts.Exit], 0) { Column = 3, Title = AmigaView.On ? texts.Text(titleKey) : null }) as ListAnswer;
         return a is { Action: PickRequest.RowChosen } ? a.Row : null;
     }
 
@@ -329,18 +343,18 @@ public sealed class PartyMenuFlow(Func<PlayerRequest, object?> ask, PartyMenuTex
     public void Create()
     {
         var cc = new CharacterCreation(tables, Random.Next);
-        if (Pick([.. CharacterCreation.RaceCodes.Select(texts.Race)]) is not { } race)
+        if (Pick([.. CharacterCreation.RaceCodes.Select(texts.Race)], "PickRace") is not { } race)
             return;
         cc.PickRace(CharacterCreation.RaceCodes[race]);
-        if (Pick([texts.Gender(0), texts.Gender(1)]) is not { } gender)
+        if (Pick([texts.Gender(0), texts.Gender(1)], "PickGender") is not { } gender)
             return;
         cc.PickGender(gender);
         var classes = cc.ClassChoices();
-        if (Pick([.. classes.Select(texts.ClassName)]) is not { } cls)
+        if (Pick([.. classes.Select(texts.ClassName)], "PickClass") is not { } cls)
             return;
         cc.PickClass(classes[cls]);
         var aligns = cc.AlignmentChoices();
-        if (Pick([.. aligns.Select(texts.Alignment)]) is not { } al)
+        if (Pick([.. aligns.Select(texts.Alignment)], "PickAlignment") is not { } al)
             return;
         cc.PickAlignment(aligns[al]);
         var c = cc.Character;
@@ -367,7 +381,7 @@ public sealed class PartyMenuFlow(Func<PlayerRequest, object?> ask, PartyMenuTex
     {
         while (true)
         {
-            var a = ask(new SheetRequest(c, texts.PortraitMenu));
+            var a = ask(new SheetRequest(c, texts.PortraitMenu) { IsPortraitMenu = true });
             switch (a)
             {
                 case 0:
@@ -469,6 +483,7 @@ public sealed class PartyMenuFlow(Func<PlayerRequest, object?> ask, PartyMenuTex
             Random = n => Random.Next((ushort)n),
             Word =Resources?.ItemWord ?? (_ => null),
             IsScroll = Resources?.IsScroll ?? (_ => false),
+            ItemTypes = items,
             Halt = Halt,
             MessagesOnBottomLine = true,
             ItemsPage = (c, entries, row, name) => ItemsPage(c, entries, row, name),
@@ -493,7 +508,7 @@ public sealed class PartyMenuFlow(Func<PlayerRequest, object?> ask, PartyMenuTex
     private CombatText CombatTexts => Resources?.CombatTexts ?? new CombatText();
 
     private string ItemName(byte[] item) =>
-        ItemNames.Compose(item, Resources?.ItemWord ?? (_ => null), Party.Members.Any(m => m.HasEffect(5))).Trim().ToUpperInvariant();
+        AmigaView.Case(ItemNames.Compose(item, Resources?.ItemWord ?? (_ => null), Party.Members.Any(m => m.HasEffect(5))).Trim());
 
     /// <summary>
     /// View's Items (0x21F32): its page (<see cref="ItemsPages"/>, black outside a fight) with the list routine 0x2D669,
@@ -716,9 +731,13 @@ public sealed class PartyMenuTexts(PorProgramData? program, ClientResources reso
 {
     private string? T(string key) => program?.Text("PartyMsg." + key);
 
+    /// <summary>A PartyMsg text in the program's case, or null.</summary>
+    public string? Text(string key) => T(key);
+
     /// <summary>DS:0619 + 42·i: the menu entries (v1.3).</summary>
     public string MenuItem(int i) =>
-        program?.PascalString(0x619 + 42 * i, 40) is { Length: > 0 } s ? s : ((PartyMenuItem)i).ToString();
+        AmigaView.On && AmigaView.Strings.TryGetValue(GoldBox.Data.Module.Por.PorAmigaText.PartyMenuKey + i, out var amiga) ? amiga
+        : program?.PascalString(0x619 + 42 * i, 40) is { Length: > 0 } s ? s : ((PartyMenuItem)i).ToString();
 
     public string ChooseFunction => T("ChooseFunction") ?? "PARTY: ";
     public string QuitToDos => T("QuitToDos") ?? "QUIT? ";
@@ -763,14 +782,14 @@ public sealed class PartyMenuTexts(PorProgramData? program, ClientResources reso
         return CampScreens.ParseMenu(line);
     }
     /// <summary>The lists' Exit word: the first word of the menu's Exit entry.</summary>
-    public string Exit => MenuItem((int)PartyMenuItem.Exit).Split(' ')[0].ToUpperInvariant();
+    public string Exit => AmigaView.Case(MenuItem((int)PartyMenuItem.Exit).Split(' ')[0]);
 
     /// <summary>View's prompt (0x21AC7, "View:": the words follow at once, as in the fight's View).</summary>
-    public string ViewPrompt => (program?.Text("CombatMsg.ViewPrompt") ?? "VIEW:").ToUpperInvariant();
+    public string ViewPrompt => AmigaView.Case(program?.Text("CombatMsg.ViewPrompt") ?? "VIEW:");
 
     /// <summary>View's words (0x21AA6–0x21AC2, the program's, each with its trailing space trimmed).</summary>
     public string ViewWord(ViewEntry e) =>
-        (program?.Text("CombatMsg.View" + e) ?? e.ToString()).Trim().ToUpperInvariant();
+        AmigaView.Case((e == ViewEntry.Rename ? AmigaView.RenameWord : null) ?? (program?.Text("CombatMsg.View" + e) ?? e.ToString()).Trim());
 
     public string DropForever(string name) => (T("Drop") ?? "DROP ") + name + (T("Forever") ?? "? ");
     public string DumpOutBack(string name) => (T("YouDump") ?? "") + name + (T("OutBack") ?? " IS GONE.");
@@ -788,5 +807,5 @@ public sealed class PartyMenuTexts(PorProgramData? program, ClientResources reso
     public string Alignment(int a) => resources.Alignment(a) ?? $"ALIGNMENT {a}";
 
     private static IReadOnlyList<string> Words(string? line, string[] fallback) =>
-        line is { Length: > 0 } ? line.Split(' ', StringSplitOptions.RemoveEmptyEntries).Select(w => w.ToUpperInvariant()).ToList() : fallback;
+        line is { Length: > 0 } ? line.Split(' ', StringSplitOptions.RemoveEmptyEntries).Select(AmigaView.Case).ToList() : fallback;
 }

@@ -44,6 +44,16 @@ public sealed record AmigaTextPensDocument
     /// 12-bit colour, register, colour, … Null in a module from before importer 0.7.29.
     /// </summary>
     public int[]? Row24 { get; init; }
+
+    /// <summary>
+    /// Pens single Amiga callers pass where DOS passes another colour (<see cref="Por.PorAmigaText.Calls"/>, s43): the text
+    /// window's page prompt, DAMAGE's press-enter lines, the portrait menu's three pens. Null in an older module.
+    /// </summary>
+    public Dictionary<string, int>? CallPens { get; init; }
+
+    /// <summary>Texts the Amiga words otherwise than DOS (its page prompt, its party menu entries), read from the
+    /// player's <c>program</c>; null in an older module.</summary>
+    public Dictionary<string, string>? Strings { get; init; }
     public SourceRef? Source { get; init; }
 }
 

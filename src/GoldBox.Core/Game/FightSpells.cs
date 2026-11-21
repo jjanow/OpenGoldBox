@@ -324,12 +324,20 @@ public sealed partial class FightSpells : IFightSpells
                 fight.State.Posed?.Invoke(caster); // 0x27E00: frame 1, so the cell is redrawn in the action pose
                 // 0x27E05–0x27E56: the cast's flight to the aim, resident; Fireball (47) and Lightning Bolt (51) have
                 // their own cue (docs/re/sound.md §2.4).
-                fight.State.Sound.BeginResident();
-                fight.State.Sound.Cue(spell switch { 47 => Sound.SoundCue.Fireball, 51 => Sound.SoundCue.LightningBolt, _ => Sound.SoundCue.Cast });
+                var cue = spell switch { 47 => Sound.SoundCue.Fireball, 51 => Sound.SoundCue.LightningBolt, _ => Sound.SoundCue.Cast };
                 // 0x27E37–0x27E4D: the moving icon (cell 0x12 = COMSPR 5, built by 0x257E at 0x27DA9) from the caster's
-                // square to the aimed one, 4 frames, 30 ms.
-                fight.State.Flight?.Invoke(FlightAnimation.Spell(cx, cy, ax, ay));
-                fight.State.Sound.EndResident();
+                // square to the aimed one, 4 frames, 30 ms. Aimed at its own square the icon draws nothing and the
+                // bracket closes before the driver's first tick: no cast tune (DOSBox-X s43).
+                var flight = FlightAnimation.Spell(cx, cy, ax, ay);
+                if (flight.DrawsNothing)
+                    fight.State.Sound.EmptyResident(cue);
+                else
+                {
+                    fight.State.Sound.BeginResident();
+                    fight.State.Sound.Cue(cue);
+                    fight.State.Flight?.Invoke(flight);
+                    fight.State.Sound.EndResident();
+                }
             }
             Effects.RemoveInvisibility(caster);
             if (!UsingItem)

@@ -99,9 +99,9 @@ public sealed class AreaLoop
     /// game's vector 4 runs before any menu (PICTURE 2 + HMENU there animates, DOSBox-X s41). The engine keeps the
     /// program's zero apart from the cell (<see cref="EclMemory.MenuAnimates"/>). Every menu of the routine clears it, the
     /// camp's, hall's and venues' too (the Client's front end after each answered menu, s42). While it is set the routine
-    /// moves to the next frame on every pass without waiting for the frame's delay (0x2CDD6) [?] (the Client keeps the
-    /// delays), and it draws the loaded frame table over whatever page is up (DOSBox-X s42: PICTURE 2 over the hall's page
-    /// after a hall Save, once) [?] (not drawn by the Client).
+    /// moves to the next frame on every pass without waiting for the frame's delay (0x2CDD6; the Client one update per
+    /// frame, user s42), and it draws the loaded frame table over whatever page is up: DOSBox-X s43, PICTURE 2 over the
+    /// hall's page after each hall Save while the picture is in the table (the Client's <c>ClientPlayer.MenuAsked</c>).
     /// </summary>
     public const ushort MenuAnimateCell = 0x4AFF;
 
@@ -180,8 +180,8 @@ public sealed class AreaLoop
     public static bool Draws3D(EclMemory m) => m.ViewMode == 1 || m.Read(View3DCell) != 0;
 
     /// <summary>
-    /// The 3D view is up (<see cref="Draws3D"/>) and a map is loaded. [?] With no map the program draws whatever its map
-    /// buffer holds; the Client draws nothing there.
+    /// The 3D view is up (<see cref="Draws3D"/>) and a map is in memory. A loaded game always has one: a Load that reads
+    /// no map leaves the program's buffer as it was (PorGame.Loaded, view3d.md "No map loaded: the map buffer").
     /// </summary>
     public bool InView3D => Map is not null && Draws3D(Memory);
 
@@ -248,6 +248,8 @@ public sealed class AreaLoop
         }
         if (Map is null || !Draws3D(Memory))
             return;
+        if (InterfaceMarker is not null)
+            InterfaceMarkerCovered = true;
         Memory.Position.EventByte = EventHere();
         if (Memory.Read(NoAreaMap) != 0)
             ShowAreaMap = false;
@@ -285,15 +287,52 @@ public sealed class AreaLoop
     {
         if (!OverlandInterfacePending)
             return;
-        MarkerCounter = (MarkerCounter + 2) % 6;
+        // START 0x370B redraws (0x2DCF4; the tiles and a marker, 0x2DB87, only when it draws the overland), then 0x3710
+        // draws the marker alone; each 0x2DB87 advances DS:6DDC. With $49E6 != 0 the redraw draws the 3D view, so the
+        // lone marker is frame c and the counter goes on by one (DOSBox-X s43: DS:6DDC 1 after a start-up Load).
+        bool tiles = Overland.Shown(Memory);
+        int c = MarkerCounter;
+        MarkerCounter = (c + (tiles ? 2 : 1)) % 6;
         Memory.MarkerFacing = Memory.Position.Facing; // drawn before the command's key sets a new facing
-        Memory.MarkerDrawnTwice = true; // frame c + 1 over frame c, until the next redraw
+        Memory.MarkerDrawnTwice = tiles; // frame c + 1 over frame c, until the next redraw
         MarkerSlots[0] = 0; // 0x17285–0x172D5: ICON 0, 1, 2 into the animation slots 9, 10, 11
         MarkerSlots[1] = 1;
         MarkerSlots[2] = 2;
         Memory.InterfaceState = 3; // START 0x3701
         _interfaceDrawn = true;
+        OverlandLayout = true;
+        // With $49E6 != 0 the interface's redraw draws the 3D view (from the map buffer) and its lone marker goes over it.
+        InterfaceMarker = tiles ? null : new OverlandMarkerDraw(Overland.Position(Memory), c, Memory.Position.Facing);
+        InterfaceMarkerCovered = false;
     }
+
+    /// <summary>
+    /// The overland interface (START 0x36FE) drew its window layout (GAME.OVR 0x2E03F: windows (1, 1)–(15, 15),
+    /// (17, 1)–(38, 15), (1, 17)–(38, 22) in that order, so the text box's top edge runs through cell (16, 16) with no
+    /// joint and there is no inner box; DOSBox-X s43: no joint at (16, 16) on the overland). Cleared when START 0x3379
+    /// draws the 3D layout (<see cref="DrawInterface"/>: 0x32CA ends with the (1, 1)–(15, 15) window, joint at (16, 16)).
+    /// </summary>
+    public bool OverlandLayout { get; private set; }
+
+    /// <summary>
+    /// The interface's lone marker (0x2DB87 after the redraw, START 0x371C) when the redraw drew the 3D view instead of
+    /// the tiles (DS:49FA 2–4 with $49E6 != 0, e.g. a save of location type 2 with $49E6 = 1: DOSBox-X s43 showed the 3D
+    /// view of the map buffer with the horseman over its top-left corner). It stays on the screen: a later 3D redraw
+    /// draws the 88 × 88 view over the part inside it (<see cref="InterfaceMarkerCovered"/>; DOSBox-X: after a step the
+    /// part outside the view was still there). Null when the tiles were drawn, or after START 0x3379.
+    /// </summary>
+    public OverlandMarkerDraw? InterfaceMarker { get; private set; }
+
+    /// <summary>A screen with its own windows (the camp, a venue, a fight) was drawn: the overland interface's layout and
+    /// its lone marker are gone.</summary>
+    public void OtherLayoutDrawn()
+    {
+        OverlandLayout = false;
+        InterfaceMarker = null;
+    }
+
+    /// <summary>A 3D redraw since <see cref="InterfaceMarker"/> was drawn (the view is over its inner part).</summary>
+    public bool InterfaceMarkerCovered { get; private set; }
 
     /// <summary>0x173E7: the command routine ends with DS:49F9 := DS:49FA (the next entry draws no overland interface).</summary>
     private void LeaveCommandRoutine()
@@ -310,6 +349,8 @@ public sealed class AreaLoop
     /// </summary>
     public void DrawInterface()
     {
+        OverlandLayout = false;
+        InterfaceMarker = null;
         byte state = Memory.InterfaceState;
         InterfaceDrawn?.Invoke(state);
         if (state is 3 or 4)
@@ -623,3 +664,6 @@ public sealed class AreaLoop
             AdvanceClock(GameClock.Minutes, 1);
     }
 }
+
+/// <summary>A marker the overland interface drew alone: the overland square, the frame (counter 0–5) and the facing.</summary>
+public sealed record OverlandMarkerDraw((int X, int Y) Square, int Frame, byte Facing);

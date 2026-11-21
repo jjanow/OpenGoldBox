@@ -103,11 +103,13 @@ public sealed class PorGame
     /// <param name="started">Called with the game once the save is set up, before its entry (vector 4) runs: a front
     /// end whose hosts read the game (its memory, its generator) hands it over here, since the entry may open screens
     /// (the training hall, PROGRAM 0) that read it before this returns.</param>
+    /// <param name="mapBuffer">The session's map buffer (the running game's map): what a Load that reads no map leaves in
+    /// memory (<see cref="Loaded"/>); null at the start-up.</param>
     public static PorGame FromSave(IPorContent content, PorViewArt art, string savePath, PorPlayer player, uint seed,
-        int markerCounter = 0, Action<PorGame>? started = null)
+        int markerCounter = 0, Action<PorGame>? started = null, AreaMap? mapBuffer = null)
     {
         var (doc, problem) = ReadSave(content, savePath);
-        var g = FromSave(content, art, doc, player, seed, markerCounter, started);
+        var g = StartLoaded(content, art, doc, player, seed, markerCounter, started, originalFile: false, mapBuffer);
         if (problem is not null)
             g.Vm.Diagnostics.Insert(0, problem);
         return g;
@@ -119,10 +121,10 @@ public sealed class PorGame
     /// diagnostic, as before).
     /// </summary>
     public static PorGame FromSave(IPorContent content, PorViewArt art, byte[] save, string saveDir, PorPlayer player, uint seed,
-        string? fileName = null, int markerCounter = 0, Action<PorGame>? started = null)
+        string? fileName = null, int markerCounter = 0, Action<PorGame>? started = null, AreaMap? mapBuffer = null)
     {
         var (doc, problem) = ConvertOriginal(content, save, saveDir, fileName);
-        var g = StartLoaded(content, art, doc, player, seed, markerCounter, started, originalFile: true);
+        var g = StartLoaded(content, art, doc, player, seed, markerCounter, started, originalFile: true, mapBuffer);
         if (problem is not null)
             g.Vm.Diagnostics.Insert(0, problem);
         return g;
@@ -162,9 +164,9 @@ public sealed class PorGame
         => StartLoaded(content, art, save, player, seed, markerCounter, started, originalFile: false);
 
     private static PorGame StartLoaded(IPorContent content, PorViewArt art, Module.EngineSaveDocument save, PorPlayer player,
-        uint seed, int markerCounter, Action<PorGame>? started, bool originalFile)
+        uint seed, int markerCounter, Action<PorGame>? started, bool originalFile, AreaMap? mapBuffer = null)
     {
-        var g = Loaded(content, art, save, player, seed, originalFile);
+        var g = Loaded(content, art, save, player, seed, originalFile, mapBuffer);
         started?.Invoke(g);
         g.RunLoadedEntry(markerCounter);
         return g;
@@ -184,10 +186,10 @@ public sealed class PorGame
     /// </summary>
     /// <param name="started">Called with the loaded game (<see cref="LoadedInterfaceState"/> set) before its entry runs.</param>
     public static PorGame LoadAtPartyMenu(IPorContent content, PorViewArt art, string savePath, PorPlayer player, uint seed,
-        int markerCounter = 0, Action<PorGame>? started = null)
+        int markerCounter = 0, Action<PorGame>? started = null, AreaMap? mapBuffer = null)
     {
         var (doc, problem) = ReadSave(content, savePath);
-        var g = Loaded(content, art, doc, player, seed);
+        var g = Loaded(content, art, doc, player, seed, mapBuffer: mapBuffer);
         if (problem is not null)
             g.Vm.Diagnostics.Insert(0, problem);
         started?.Invoke(g);
@@ -198,9 +200,14 @@ public sealed class PorGame
         return g;
     }
 
-    /// <summary>The save's memory, party and script set up (Load 0x1F5E8 up to its return), nothing run.</summary>
+    /// <summary>
+    /// The save's memory, party and script set up (Load 0x1F5E8 up to its return), nothing run. A save of location type
+    /// 2–4 reads no map (0x1FBB3), so the program's map buffer DS:6A5C keeps what it held: the session's last map
+    /// (<paramref name="mapBuffer"/>), or before any map was read the buffer as the start-up left it
+    /// (<see cref="AreaMap.Unread"/>). The redraw draws the 3D view from it whenever $49E6 != 0 (P + D s43).
+    /// </summary>
     private static PorGame Loaded(IPorContent content, PorViewArt art, Module.EngineSaveDocument save, PorPlayer player,
-        uint seed, bool originalFile = false)
+        uint seed, bool originalFile = false, AreaMap? mapBuffer = null)
     {
         var notes = Module.Por.PorEngineSave.Check(save, content.VmProfile, Module.Por.PorEngineSave.Identity(content));
         var sg = Module.Por.PorEngineSave.ToSaveGame(save);
@@ -213,6 +220,8 @@ public sealed class PorGame
         g.LoadedInterfaceState = sg.InterfaceState;
         g.Vm.SetCurrentScript(sg.CurrentBlock, sg.Disk); // DS:84DC := $49F2 (0x4070)
         g.ReloadSavedMap();
+        if (g.Loop.Map is null)
+            g.Loop.SetMap(g._loadBuffer = mapBuffer ?? AreaMap.Unread());
         return g;
     }
 
@@ -472,11 +481,15 @@ public sealed class PorGame
         return g;
     }
 
+    /// <summary>The map buffer a Load that read no map left in memory (<see cref="Loaded"/>), until a map is read.</summary>
+    private AreaMap? _loadBuffer;
+
     private void FinishEntry(bool follow, bool redraw = true)
     {
         if (follow && Vm.ScriptChanged)
             EntryRun = Vm.FollowScriptChanges();
-        if (Loop.Map is { } m)
+        // The saved wall-ahead byte DS:6AB0 stays on the overland: only the 3D view reads it again from the buffer.
+        if (Loop.Map is { } m && (!ReferenceEquals(m, _loadBuffer) || AreaLoop.Draws3D(Memory)))
         {
             m.Bounded = Content.NoWrapOffMap(Vm.CurrentScript);
             var p = Memory.Position;

@@ -10,7 +10,13 @@ Cases (fixed seed, so the output is the same every run):
 - items: the item Trade 0x2276E on an item of DS:5D92, with START 0x3379 (the screen redraw) trapped to do nothing and
   START's member pick 0x37E8 scripted to answer a member (one in ten the giver, one in ten nobody); the carry test
   0x23795, the stat recalculation START 0x1758, the add START 0x2197 and the removal START 0x20A9 run as they are
-  (GetMem / FreeMem from the emulator's arena).
+  (GetMem / FreeMem from the emulator's arena). Then START 0x1758 on the giver, as the Items loop does after every
+  command (0x224AF on DS:5D92): 'giverAfterLoop'. Every other giver starts with stale derived bytes (attack bytes
+  0x115-0x11A and movement 0x11C := 0xEE, as a weapon's dice left after it was unreadied), so the recalculation's
+  output is seen whole.
+- copies: the copy step 0x6F0D that the shop's Buy (0x7035) and the loot's Take (0x6184) call, on DS:5D92 and an
+  item: the carry test 0x23795 (with its START 0x1758), the copy appended, START 0x1758 again (0x7018). Every other
+  character starts with stale derived bytes (0xEE) and a wrong item count.
 The records are the game's own CHRDATA1-6.SAV with strength, money, weight and items made up here; the output goes in
 tests/fixtures-private all the same.
 """
@@ -24,7 +30,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from por_emu import Emu  # noqa: E402
 from unicorn.x86_const import UC_X86_REG_DX  # noqa: E402
 
-TRANSFER, ITEM_TRADE = 0x250D5, 0x2276E
+TRANSFER, ITEM_TRADE, COPY = 0x250D5, 0x2276E, 0x6F0D
+RECALC = (0xBA, 0xBB8)  # START 0x1758
 REDRAW, PICK, ROW_MESSAGE = (0xBA, 0x27D9), (0xBA, 0x2C48), (0xBA, 0x1693)
 GETMEM, FREEMEM = (0xAF8, 0x23F), (0xAF8, 0x254)
 REC, ITEM = 0x11D, 0x3F
@@ -158,6 +165,9 @@ class TradeOracle:
         for _ in range(n):
             e.reset_heap()
             g = self.record(rnd)
+            if len(out) % 2 == 0:
+                g[0x115:0x11B] = b'\xee' * 6  # attack dice, sides, bonus (0x11B is the HP)
+                g[0x11C] = 0xEE  # movement
             gi = [self.item(rnd) for _ in range(rnd.randint(1, 5))]
             r = rnd.random()
             who = 'self' if r < 0.1 else 'none' if r < 0.2 else 'other'
@@ -178,15 +188,45 @@ class TradeOracle:
             which = rnd.randrange(len(gi))
             e.call(ITEM_TRADE, [*gptrs[which]])
             target = e.dsptr(0x471A)
+            after = e.rb(self.lin(gp), REC)
+            e.call(RECALC, [gp[0], gp[1]])
             out.append({'giver': g.hex(), 'giverItems': [bytes(x).hex() for x in gi], 'pick': pk.hex(),
                         'pickItems': [bytes(x).hex() for x in pi], 'item': which, 'who': who,
                         'startIsGiver': start == gp, 'pickStartedOnStart': self.pick_start == start,
                         'messages': self.messages,
                         'target': 'giver' if target == gp else 'pick' if target == pp else 'other',
-                        'giverAfter': e.rb(self.lin(gp), REC).hex(),
+                        'giverAfter': after.hex(),
+                        'giverAfterLoop': e.rb(self.lin(gp), REC).hex(),
                         'giverItemsAfter': [x.hex() for x in self.items_of(gp)],
                         'pickAfter': e.rb(self.lin(pp), REC).hex(),
                         'pickItemsAfter': [x.hex() for x in self.items_of(pp)]})
+        return out
+
+    def copies(self, rnd, n):
+        e = self.e
+        out = []
+        for _ in range(n):
+            e.reset_heap()
+            c = self.record(rnd)
+            if rnd.random() < 0.7:
+                for k in range(7):
+                    struct.pack_into('<H', c, 0x88 + 2 * k, rnd.choice([0, 0, 10, 300]))
+            if len(out) % 2 == 0:
+                c[0x115:0x11B] = b'\xee' * 6
+                c[0x11C] = 0xEE
+                c[0xC7] = rnd.choice([0, 3, 20])
+            ci = [self.item(rnd) for _ in range(rnd.choice([0, 1, 3, 15, 16, 17]))]
+            item = self.item(rnd)
+            cp, _ = self.place(c, ci)
+            ip = e.alloc(ITEM)
+            e.wb(self.lin(ip), bytes(item))
+            res = e.alloc(2)
+            e.set_dsptr(0x5D92, cp)
+            self.messages = 0
+            e.call(COPY, [ip[0], ip[1], res[0], res[1]])
+            out.append({'record': c.hex(), 'items': [bytes(x).hex() for x in ci], 'item': bytes(item).hex(),
+                        'refused': e.rb(self.lin(res), 1)[0], 'messages': self.messages,
+                        'after': e.rb(self.lin(cp), REC).hex(), 'itemsAfter': [x.hex() for x in self.items_of(cp)]})
         return out
 
 
@@ -197,6 +237,7 @@ def main(argv):
     o = TradeOracle(argv[1])
     rnd = random.Random(4242)
     data = {'items_5582': o.base_items.hex(), 'coins': o.coins(rnd, 300), 'items': o.items(rnd, 300)}
+    data['copies'] = o.copies(rnd, 300)
     with open(argv[2], 'w') as f:
         json.dump(data, f, indent=0)
     return 0

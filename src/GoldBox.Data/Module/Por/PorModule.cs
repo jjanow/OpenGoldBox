@@ -255,6 +255,22 @@ public sealed class PorModule : IPorContent
     }
 
     private int[]? _textPens, _textHighlight, _row24;
+    private Dictionary<string, int>? _callPens;
+    private Dictionary<string, string>? _amigaStrings;
+
+    /// <summary><c>art/amiga/text-pens.json</c>'s call-site pens, or null.</summary>
+    public IReadOnlyDictionary<string, int>? AmigaCallPens()
+    {
+        AmigaTextPens();
+        return _callPens;
+    }
+
+    /// <summary><c>art/amiga/text-pens.json</c>'s Amiga wordings, or null.</summary>
+    public IReadOnlyDictionary<string, string>? AmigaStrings()
+    {
+        AmigaTextPens();
+        return _amigaStrings;
+    }
 
     /// <summary><c>art/amiga/text-pens.json</c>'s row-24 colours (register, 12-bit colour pairs), or null.</summary>
     public int[]? AmigaRow24()
@@ -286,6 +302,10 @@ public sealed class PorModule : IPorContent
                 if (doc.Row24 is { Length: > 0 } r && r.Length % 2 == 0
                     && r.Select((v, i) => i % 2 == 0 ? v is >= 0 and < 32 : v is >= 0 and <= 0xFFF).All(b => b))
                     _row24 = r;
+                if (doc.CallPens is { Count: > 0 } cp && cp.Values.All(v => v is >= 0 and <= 30))
+                    _callPens = cp;
+                if (doc.Strings is { Count: > 0 } st)
+                    _amigaStrings = st;
             }
         }
         return _textPens;

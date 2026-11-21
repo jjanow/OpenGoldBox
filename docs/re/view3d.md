@@ -243,9 +243,38 @@ Code: `GoldBox.Core.Explore.AreaLoop` (one command at a time), `GameClock`, `Are
   $49E6 ≠ 0; mode 1 draws the 3D view from the map in memory, modes 2–4 the overland, any other nothing. So location
   type 1 with $49E6 = 0 is the 3D view (`AreaLoop.Draws3D`; before s42 the Client showed "NO VIEW" there, e.g. a
   `save-overland` save with its location type set back to 1: the program stops on that one with its cannot-load-the-wall-set error,
-  and a save A with $49E6 = 0 gets it back from vector 4, DOSBox-X s42). `[?]` With no map loaded (a location type
-  2–4 save with $49E6 ≠ 0: Load reads no map) the program draws its map buffer as it is; the Client draws "NO VIEW"
-  (`save-overland … 49E6=1` came back to the overland through block 26's vector 4 on both sides).
+  and a save A with $49E6 = 0 gets it back from vector 4, DOSBox-X s42).
+- **No map loaded: the map buffer** (P + D s43). The GEO map lives in one 0x400-byte buffer, GetMem'd at the start-up
+  (GAME.OVR 0xE667–0xE673, far pointer DS:6A5C) and never cleared; only the GEO loader (0x2FA66–0x2FAC8) and the
+  door edits (0x166E3–0x168F0) write it, the accessors (0x2ECCA–0x2EED1) read it. Load reads map $49C5 only for
+  location type < 2 (0x1FBB3), so a save of location type 2–4 leaves the buffer as it was, and with $49E6 ≠ 0 the
+  redraw draws the 3D view from it. DOSBox-X: scratch save H (save A, location type 2, $49E6 1, every vector EXIT)
+  loaded at the start-up: the buffer (state dump) all zeros, the 3D view of an empty map (sky and ground only);
+  scratch save G (slums) loaded, its step's hall, Remove × 6, Load of H: the buffer equal to GEO2 block 20 byte for
+  byte and the view the slums' corridor at 15,4 W. That screen is the overland interface's (START 0x36FE, DS:49FA 2):
+  its layout 0x2E03F draws the windows (1, 1)–(15, 15), (17, 1)–(38, 15) and (1, 17)–(38, 22) in that order, so no
+  inner box and no joint at (16, 16) (the text box's top edge runs through it; also on the real overland, save
+  `save-overland 26 10,20,N`; after View's exit START 0x3379 draws the 3D layout and the joint is back); the redraw
+  0x370B draws the 3D view (its 3D branch draws no marker), then 0x3710 the marker alone (0x2DB87, frame DS:6DDC,
+  which goes on by one: DS:6DDC 1 after the start-up Load) over the view's top-left corner at the marker's overland
+  cell; the position line has the overland x,y and no CAMPING (0x3701 sets DS:49F3 = 3 first); the overland command
+  line. A step (12 hours) redraws only the 3D view, which goes over the marker's inner part; the rest stays.
+  `[?]` On a machine whose memory was not zero the start-up buffer would hold whatever DOS left there. Client:
+  `PorGame.Loaded` puts the session's map (`Program.cs` hands the running game's to the party menu's Load and to a
+  hall Load of another area) or `AreaMap.Unread` (zeros) in memory when the Load reads none; `AreaLoop.OverlandLayout`
+  / `InterfaceMarker` / `InterfaceMarkerCovered`, `ExploreScreen` (no box, no joint, the marker under or over the
+  view), `ClientPlayer.CampingLine` (no CAMPING while the interface is due). Both DOSBox-X screens (H at the start-up,
+  before and after a step east; the hall Load) equal the Client's but the help lines. Tests
+  `EntryScreenTests.A_load_that_reads_no_map_draws_the_map_buffer_with_the_interfaces_marker`,
+  `A_load_that_reads_no_map_keeps_the_sessions_map_in_the_buffer`.
+- **The overland's (16, 16) and its camp** (D s43, `save-overland 26 10,20,N`, a start-up Load): the overland screen
+  has no joint at (16, 16) (the layout above; before s43 the Client drew one there, the only difference on that
+  screen). Encamp: the joint is back, the window (cells 1–15) is blank with the 3D view's box and the camp picture in
+  it (the Client kept the tiles around the box before s43); after Exit the overland again with the joint (the camp
+  drew its windows, and the interface is not drawn again). A load of an overland save keeps the saved wall-ahead byte
+  (the buffer is not read there). Client: `AreaLoop.OtherLayoutDrawn` from the camp, the venues and a fight
+  (`ClientPlayer.OtherLayout`; `[?]` only the camp checked), `ExploreScreen.OverlandBoxed`, `PorGame.FinishEntry`. Test
+  `EntryScreenTests.An_overland_load_keeps_its_wall_ahead_byte_and_the_camp_brings_the_joint_back`.
 - **Camp menu 0x196A0** (s12): DS:49F3 = 2 (saved and restored), a camp message in the text box, then the menu
   routine with a "Camp:" prompt and the DS menu line (v1.3 DS:0508; six words: save, view, magic, rest, alter,
   exit) until E (or key 0). S saves (0x1FD3E) and asks whether to quit, V views (0x21AED), M magic (0x18C22), R rest

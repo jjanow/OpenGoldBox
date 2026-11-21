@@ -82,6 +82,24 @@ public sealed class TradeContext
     public Func<int, string?> Word { get; init; } = _ => null;
     /// <summary>Whether an item type is a scroll (base slot 11..13; GAME.OVR 0x2A255), from the ITEMS table.</summary>
     public Func<byte, bool> IsScroll { get; init; } = _ => false;
+
+    /// <summary>The ITEMS table for the stat recalculation START 0x1758 (<see cref="Recalculate"/>), or null.</summary>
+    public BaseItemTable? ItemTypes { get; init; }
+
+    /// <summary>
+    /// The stat recalculation START 0x1758 on a member (<see cref="StatRecalc.Recalculate"/>: item count, hands,
+    /// weight, AC, THAC0, attack dice, movement…). Without the ITEMS table only the weight and item count.
+    /// </summary>
+    public void Recalculate(EclCharacter c)
+    {
+        if (ItemTypes is { } items)
+        {
+            StatRecalc.Recalculate(c, items);
+            return;
+        }
+        Carrying.RecalculateWeight(c);
+        c[StatRecalc.ItemCount] = (byte)Math.Min(c.Items.Count, 255);
+    }
     /// <summary>The temple's heal list names (program table), or null.</summary>
     public IReadOnlyList<string>? TempleNames { get; init; }
     /// <summary>
@@ -139,7 +157,7 @@ public sealed class TradeContext
     /// <summary>Detect magic (effect 5) on any party member: the naming routine marks magical items with "*".</summary>
     public bool Detect => Party.Members.Any(m => m.HasEffect(5));
 
-    public string ItemName(byte[] item) => ItemNames.Compose(item, Word, Detect).TrimEnd().ToUpperInvariant();
+    public string ItemName(byte[] item) => AmigaView.Case(ItemNames.Compose(item, Word, Detect).TrimEnd());
 
     /// <summary>The pool holds money (0x25C07, first answer).</summary>
     public bool PoolHasMoney => Pool.Any(v => v != 0);
@@ -224,19 +242,22 @@ public static class MoneyScreens
     /// <summary>
     /// Appraise (0x2663B): needs gems or jewellery on the current character; Gems / Jewelry / Exit until Exit or
     /// nothing is left; each appraisal rolls a value, then Sell, or Sell / Keep when the character can carry one more
-    /// item (<see cref="ShopRules.Appraise"/>).
+    /// item (<see cref="ShopRules.Appraise"/>). Each pass of the menu, Exit included, ends with START 0x1758 on the
+    /// character (0x26EC2); with none left at the start the message and no recalculation (0x26661), with none left
+    /// after an appraisal the routine just ends (0x26698 → 0x26ECF).
     /// </summary>
     public static void Appraise(TradeContext t)
     {
         if (t.Current is not { } c)
             return;
         var d = t.Dialog;
-        while (true)
+        for (bool first = true; ; first = false)
         {
             int gems = c.Word(Money.Gems), jewels = c.Word(Money.Jewellery);
             if (gems == 0 && jewels == 0)
             {
-                d.Say(t.Text[Msg.NoGems]);
+                if (first)
+                    d.Say(t.Text[Msg.NoGems]);
                 return;
             }
             d.Show(t.Text[Msg.FineCollection]);
@@ -256,7 +277,10 @@ public static class MoneyScreens
             items.Add("EXIT");
             int pick = d.Menu(items, t.Text[Msg.AppraisePrompt], cancel: items.Count - 1);
             if (pick < 0 || pick >= items.Count - 1)
+            {
+                t.Recalculate(c); // Exit (E or 0) also passes 0x26EC2
                 return;
+            }
             bool jewellery = gems == 0 || pick == 1;
             ShopRules.Appraise(c, t.Pool, jewellery, t.Random, (value, canKeep) =>
             {
@@ -265,7 +289,7 @@ public static class MoneyScreens
                 // K only when offered; any other key sells (0x2663B), so backing out sells too.
                 return d.Menu(choices, t.Text[Msg.YouCan], cancel: 0) == 1;
             }, Carrying.StrengthAllowance(c));
-            Carrying.RecalculateWeight(c); // START 0x1758 after each appraisal
+            t.Recalculate(c); // START 0x1758 after each appraisal (0x26EC2)
         }
     }
 

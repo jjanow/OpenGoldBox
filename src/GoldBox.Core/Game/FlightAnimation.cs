@@ -32,6 +32,13 @@ public sealed record FlightAnimation(int FromX, int FromY, int ToX, int ToY, IRe
     /// aim's 0x2432(0x19, 0, 0, 0) at 0x15D66).</summary>
     public const int SpellBlock = 5, BoltBlock = 6, AcidBlock = 10, CursorBlock = 25;
 
+    /// <summary>
+    /// The path (thirds of a square from the start square to the end one) has under two entries, so the moving icon
+    /// draws nothing and returns at once (START 0x2688: the entry count below 2 jumps to the end, 0x2B85): the same
+    /// square at both ends.
+    /// </summary>
+    public bool DrawsNothing => FromX == ToX && FromY == ToY;
+
     /// <summary>The cast's flight to the aimed square (0x27E37–0x27E4D) and Hold Person's to a further target (0x28745).</summary>
     public static FlightAnimation Spell(int fromX, int fromY, int toX, int toY) =>
         new(fromX, fromY, toX, toY, Burst(SpellBlock), 30);

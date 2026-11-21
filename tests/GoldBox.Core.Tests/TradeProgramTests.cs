@@ -69,12 +69,12 @@ public class TradeProgramTests
     }
 
     [OracleFact]
-    public void Item_trade_matches_0x2276E_under_emulation()
+    public void Item_trade_and_the_givers_recalculation_match_the_program_under_emulation()
     {
         using var doc = JsonDocument.Parse(File.ReadAllText(File_!));
         var table = new BaseItemTable(Convert.FromHexString(doc.RootElement.GetProperty("items_5582").GetString()!));
         var fails = new List<string>();
-        int n = 0, moved = 0;
+        int n = 0, moved = 0, stale = 0;
         foreach (var k in doc.RootElement.GetProperty("items").EnumerateArray())
         {
             var giver = Char(k.GetProperty("giver").GetString()!, k.GetProperty("giverItems").EnumerateArray().Select(x => x.GetString()!));
@@ -112,9 +112,47 @@ public class TradeProgramTests
             Items("pick", other, "pickItemsAfter");
             Same(fails, $"case {n} giver", giver, k.GetProperty("giverAfter").GetString()!);
             Same(fails, $"case {n} pick", other, k.GetProperty("pickAfter").GetString()!);
+            // The Items loop's START 0x1758 on DS:5D92 after the command (0x224AF): the giver in full, its stale attack
+            // and movement bytes (0xEE in every other case) rebuilt.
+            StatRecalc.Recalculate(giver, table);
+            Same(fails, $"case {n} giver after the loop", giver, k.GetProperty("giverAfterLoop").GetString()!);
+            stale += giver[0x115] != 0xEE && Convert.FromHexString(k.GetProperty("giver").GetString()!)[0x115] == 0xEE ? 1 : 0;
             n++;
         }
-        Assert.True(n >= 200 && moved > 30, $"{n} cases, {moved} moved");
+        Assert.True(n >= 200 && moved > 30 && stale > 100, $"{n} cases, {moved} moved, {stale} stale givers rebuilt");
+        Assert.True(fails.Count == 0, string.Join("\n", fails.Take(30)));
+    }
+
+    [OracleFact]
+    public void Copy_step_of_buy_and_loot_take_matches_0x6F0D_under_emulation()
+    {
+        using var doc = JsonDocument.Parse(File.ReadAllText(File_!));
+        var table = new BaseItemTable(Convert.FromHexString(doc.RootElement.GetProperty("items_5582").GetString()!));
+        var fails = new List<string>();
+        int n = 0, refused = 0, stale = 0;
+        foreach (var k in doc.RootElement.GetProperty("copies").EnumerateArray())
+        {
+            var c = Char(k.GetProperty("record").GetString()!, k.GetProperty("items").EnumerateArray().Select(x => x.GetString()!));
+            var item = Convert.FromHexString(k.GetProperty("item").GetString()!);
+            bool ok = ShopRules.GiveCopy(c, item, Carrying.StrengthAllowance(c), x => StatRecalc.Recalculate(x, table));
+            bool wantRefused = k.GetProperty("refused").GetInt32() != 0;
+            if (ok == wantRefused || (k.GetProperty("messages").GetInt32() != 0) != wantRefused)
+                fails.Add($"case {n}: gave {ok}, program refused {wantRefused}");
+            var want = k.GetProperty("itemsAfter").EnumerateArray().Select(x => x.GetString()!).ToList();
+            var have = c.Items.Select(i =>
+            {
+                var b = (byte[])i.Clone();
+                Array.Clear(b, 0x2A, 4);
+                return Convert.ToHexString(b).ToLowerInvariant();
+            }).ToList();
+            if (!want.SequenceEqual(have))
+                fails.Add($"case {n} items: {have.Count} vs {want.Count}");
+            Same(fails, $"case {n}", c, k.GetProperty("after").GetString()!);
+            refused += wantRefused ? 1 : 0;
+            stale += Convert.FromHexString(k.GetProperty("record").GetString()!)[0x115] == 0xEE ? 1 : 0;
+            n++;
+        }
+        Assert.True(n >= 200 && refused > 20 && n - refused > 30 && stale > 100, $"{n} cases, {refused} refused, {stale} stale");
         Assert.True(fails.Count == 0, string.Join("\n", fails.Take(30)));
     }
 }

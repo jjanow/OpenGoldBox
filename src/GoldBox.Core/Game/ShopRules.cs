@@ -48,20 +48,22 @@ public static class ShopRules
     }
 
     /// <summary>
-    /// The copy step (0x6F0D) that Buy and the loot's item Take (0x6184) share: refused (false, an "overloaded"
-    /// message) when <see cref="CanCarry"/> says no; else a copy with <c>next</c> cleared goes to the end of the
-    /// character's items. The loot then unlinks and frees the original from the treasure list; the shop keeps it.
-    /// The program recalculates the character (START 0x1758) inside the copy: the caller does (weight at least,
-    /// <see cref="Carrying.RecalculateWeight"/>).
+    /// The copy step (0x6F0D, on DS:5D92) that Buy (0x7035) and the loot's item Take (0x6184, through the stub 0028:002A)
+    /// share: the carry test 0x23795 first runs the stat recalculation START 0x1758 on the character
+    /// (<paramref name="recalculate"/>, 0x237A1), then refuses (false, the overloaded message START 0x1693) when
+    /// <see cref="CanCarry"/> says no; else a copy with <c>next</c> cleared goes to the end of the character's items and
+    /// START 0x1758 runs again (0x7018), which sets the item count 0xC7 and the weight. The loot then unlinks and frees
+    /// the original from the treasure list; the shop keeps it.
     /// </summary>
-    public static bool GiveCopy(EclCharacter c, byte[] item, int strengthAllowance)
+    public static bool GiveCopy(EclCharacter c, byte[] item, int strengthAllowance, Action<EclCharacter> recalculate)
     {
+        recalculate(c);
         if (!CanCarry(c, item, strengthAllowance))
             return false;
         var copy = (byte[])item.Clone();
         Array.Clear(copy, 0x2A, 4); // next = nil
         c.Items.Add(copy);
-        c[ItemCount] = (byte)c.Items.Count;
+        recalculate(c);
         return true;
     }
 
@@ -69,22 +71,19 @@ public static class ShopRules
 
     /// <summary>
     /// Buy (0x7035): price = the item's value word. If the character's gold covers it, or else the pool's, a copy
-    /// goes to the end of the character's items (0x6F0D; the stock keeps its item) and only then is the price paid
-    /// (<see cref="Money.Pay"/>). A copy refused by <see cref="CanCarry"/> costs nothing.
-    /// The caller recalculates the character afterwards (START 0x1758 runs inside the copy, before payment).
+    /// goes to the end of the character's items (<see cref="GiveCopy"/>, 0x6F0D, with its two recalculations; the stock
+    /// keeps its item) and only then is the price paid (<see cref="Money.Pay"/>), with no recalculation after it: the
+    /// weight word keeps the coins paid until the next one. A copy refused by <see cref="CanCarry"/> costs nothing.
     /// </summary>
-    public static BuyResult Buy(EclCharacter c, uint[] pool, byte[] stockItem, int strengthAllowance)
+    public static BuyResult Buy(EclCharacter c, uint[] pool, byte[] stockItem, int strengthAllowance,
+        Action<EclCharacter> recalculate)
     {
         ushort price = Word(stockItem, ItemValue);
         bool charPays = (ushort)Money.CharacterGold(c) >= price;
         if (!charPays && Money.PoolGoldTotal(pool) < price)
             return BuyResult.NotEnoughMoney;
-        if (!CanCarry(c, stockItem, strengthAllowance))
+        if (!GiveCopy(c, stockItem, strengthAllowance, recalculate))
             return BuyResult.CannotCarry;
-        var copy = (byte[])stockItem.Clone();
-        Array.Clear(copy, 0x2A, 4); // next = nil
-        c.Items.Add(copy);
-        c[ItemCount] = (byte)c.Items.Count;
         Money.Pay(c, pool, price, wideCharacterTotal: false);
         return BuyResult.Bought;
     }
@@ -123,8 +122,7 @@ public static class ShopRules
     public static bool Sell(EclCharacter c, uint[] pool, byte[] item, int strengthAllowance)
     {
         ushort price = SellPrice(item);
-        c.Items.Remove(item);
-        c[ItemCount] = (byte)c.Items.Count;
+        c.Items.Remove(item); // START 0x1509: the item count 0xC7 is left to the Items loop's recalculation (0x224AF)
         ushort pp = (ushort)(price / 5), gp = (ushort)(price % 5);
         bool toPool = false;
         if (Money.Overloaded(c, (ushort)(pp + gp), strengthAllowance, out var room))
@@ -197,7 +195,9 @@ public static class ShopRules
     /// the value is rolled. Keep (offered only when the character is not overloaded by 1 coin of weight and has
     /// fewer than 16 items) adds an identified item of type 70, weight 1, that value and word 0x65 (gem) or 0xD6
     /// (jewellery) at the end of the inventory; anything else sells it for value div 5 platinum
-    /// (<see cref="Money.AddPlatinum"/>). Returns the value, or null when the character has none of that kind.
+    /// (<see cref="Money.AddPlatinum"/>). Returns the value, or null when the character has none of that kind. The
+    /// Keep test reads the stored weight and item count; the caller recalculates (START 0x1758, 0x26EC2) after each
+    /// pass of the menu, Exit included.
     /// </summary>
     public static ushort? Appraise(EclCharacter c, uint[] pool, bool jewellery, Func<int, int> random,
         Func<ushort, bool, bool> keep, int strengthAllowance)
@@ -216,8 +216,7 @@ public static class ShopRules
             it[ItemValue] = (byte)value;
             it[ItemValue + 1] = (byte)(value >> 8);
             it[ItemWeight] = 1;
-            c.Items.Add(it);
-            c[ItemCount] = (byte)c.Items.Count;
+            c.Items.Add(it); // 0xC7 is left to the recalculation that ends each pass (0x26EC2)
         }
         else
             Money.AddPlatinum(c, pool, (ushort)(value / 5), strengthAllowance);

@@ -78,9 +78,9 @@ public static class VenueScreens
                 return;
             selected = a.Row;
             var item = t.Treasure[a.Row];
-            Carrying.RecalculateWeight(c);           // START 0x1758 before the carry test (0x23795)
-            ushort withItem = unchecked((ushort)(c.Word(Money.Weight) + ItemWeight(item)));
-            switch (ShopRules.Buy(c, t.Pool, item, Carrying.StrengthAllowance(c)))
+            // The copy step 0x6F0D runs START 0x1758 before the carry test and after the copy, then the price is paid
+            // with no recalculation: the weight keeps the old coins (DOSBox s11: until the items screen is drawn again).
+            switch (ShopRules.Buy(c, t.Pool, item, Carrying.StrengthAllowance(c), t.Recalculate))
             {
                 case ShopRules.BuyResult.NotEnoughMoney:
                     t.Dialog.Say(t.Text[Msg.ShopNoMoney]);
@@ -88,16 +88,9 @@ public static class VenueScreens
                 case ShopRules.BuyResult.CannotCarry:
                     t.Dialog.Say(t.Text[Msg.ShopOverloaded]);
                     break;
-                default:
-                    // The recalculation ran inside the copy, before the payment: the weight keeps the old coins
-                    // (DOSBox s11: stale until the items screen is drawn again).
-                    c.SetWord(Money.Weight, withItem);
-                    break;
             }
         }
     }
-
-    private static int ItemWeight(byte[] it) => (it[0x37] | it[0x38] << 8) * Math.Max(1, (int)it[0x39]);
 
     /// <summary>A name with the value right-aligned in a 30-character field (0x6D04).</summary>
     public static string PriceRow(string name, byte[] item)
@@ -356,13 +349,12 @@ public static class VenueScreens
                 return;
             selected = a.Row;
             var item = t.Treasure[a.Row];
-            Carrying.RecalculateWeight(c);
-            if (!ShopRules.GiveCopy(c, item, Carrying.StrengthAllowance(c)))
+            // 0x6184 → the copy step 0x6F0D: START 0x1758 before the carry test and after the copy.
+            if (!ShopRules.GiveCopy(c, item, Carrying.StrengthAllowance(c), t.Recalculate))
             {
                 t.Dialog.Say(t.Text[Msg.ShopOverloaded]);
                 continue;
             }
-            Carrying.RecalculateWeight(c);
             t.Treasure.RemoveAt(a.Row);
         }
     }

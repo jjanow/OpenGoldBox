@@ -532,8 +532,8 @@ public sealed class PartyMenuScreen(PartyMenuFlow flow, ScriptRunner runner, ISc
             case PartyMenuRequest m when row >= ItemsRow && row < ItemsRow + m.Items.Count:
                 _selected = row - ItemsRow;
                 break;
-            case PickRequest p when row >= 2 && row - 2 < p.Rows.Count && row < 23:
-                _selected = row - 2;
+            case PickRequest p when row >= p.FirstRow && row - p.FirstRow < p.Rows.Count && row < 23:
+                _selected = row - p.FirstRow;
                 break;
             case PickRequest p when row == MenuRow && WordAt(p.Actions, col, WordsStart(p.Prompt, true)) is { } w:
                 _word = w;
@@ -588,8 +588,8 @@ public sealed class PartyMenuScreen(PartyMenuFlow flow, ScriptRunner runner, ISc
             case PickRequest p:
                 if (click.Right)
                     return GameAction.Cancel;
-                if (row >= 2 && row - 2 < p.Rows.Count && row < 23)
-                    Give(new ListAnswer(PickRequest.RowChosen, row - 2));
+                if (row >= p.FirstRow && row - p.FirstRow < p.Rows.Count && row < 23)
+                    Give(new ListAnswer(PickRequest.RowChosen, row - p.FirstRow));
                 else if (row == MenuRow && WordAt(p.Actions, col, WordsStart(p.Prompt, true)) is { } w)
                     Give(new ListAnswer(w, _selected));
                 return null;
@@ -752,7 +752,7 @@ public sealed class PartyMenuScreen(PartyMenuFlow flow, ScriptRunner runner, ISc
                 Line(f, p.Prompt, PromptColour, p.Actions, _word, WordsStart(p.Prompt, true));
                 break;
             case SheetRequest s:
-                Line(f, s.Prompt, PromptColour, s.Actions, _word);
+                Line(f, s.Prompt, PromptColour, s.Actions, _word, amigaPens: s.IsPortraitMenu ? AmigaView.PortraitMenuPens : null);
                 break;
             case CharacterPageRequest cp:
                 Line(f, cp.Prompt, PromptColour, cp.Entries, _word);
@@ -822,7 +822,7 @@ public sealed class PartyMenuScreen(PartyMenuFlow flow, ScriptRunner runner, ISc
     /// (<see cref="ExploreScreen.DrawLine"/>: the hotkey is the first letter, or the word's character in
     /// <paramref name="hotkeys"/>; the lit entry runs from its hotkey to two cells before the next one).</summary>
     private void Line(IndexedFrame f, string? prompt, byte promptColour, IReadOnlyList<string> words, int selected,
-        int? start = null, string? hotkeys = null)
+        int? start = null, string? hotkeys = null, ExploreScreen.AmigaMenuPens? amigaPens = null)
     {
         Chrome.Clear(f, 0, MenuRow, 40);
         if (prompt is { Length: > 0 })
@@ -830,7 +830,7 @@ public sealed class PartyMenuScreen(PartyMenuFlow flow, ScriptRunner runner, ISc
         // D s39: the icon editor's "Parts color-1 color-2 Size Exit" (hotkeys P 1 2 S E): Parts lit shows PARTS COLOR
         // white, the '-' green and the 1 white; color-1 lit shows its 1 and the next word's COLOR white.
         ExploreScreen.DrawLine(f, font, words, selected, start ?? WordsStart(prompt),
-            hotkeys is null ? null : i => i < hotkeys.Length ? hotkeys[i] : words[i].Length > 0 ? words[i][0] : '\0');
+            hotkeys is null ? null : i => i < hotkeys.Length ? hotkeys[i] : words[i].Length > 0 ? words[i][0] : '\0', amigaPens: amigaPens);
     }
 
     private void DrawMenu(IndexedFrame f, PartyMenuRequest m, ActionInput input, bool active)
@@ -841,7 +841,7 @@ public sealed class PartyMenuScreen(PartyMenuFlow flow, ScriptRunner runner, ISc
             Chrome.PartyList(f, font, party, 1);
         for (int i = 0; i < m.Items.Count; i++)
         {
-            string s = m.Items[i].Name.ToUpperInvariant();
+            string s = AmigaView.Case(m.Items[i].Name);   // the Amiga keeps the entries' case (FS-UAE s43)
             Chrome.Text(f, font, 2, ItemsRow + i, s[..1], Chrome.White);
             Chrome.Text(f, font, 3, ItemsRow + i, s[1..], Chrome.Green);
         }
@@ -853,9 +853,18 @@ public sealed class PartyMenuScreen(PartyMenuFlow flow, ScriptRunner runner, ISc
     private void DrawPick(IndexedFrame f, PickRequest p, ActionInput input)
     {
         Chrome.Box(f, 0, 0, 39, 23);
-        for (int i = 0; i < p.Rows.Count && 2 + i < 23; i++)
-            Chrome.Text(f, font, p.Column, 2 + i, Fit(p.Rows[i].ToUpperInvariant(), 38 - p.Column),
-                i == _selected ? Chrome.White : Chrome.Green);
+        // Under the Amiga the rows keep the program's case (FS-UAE s43: the race, gender, class and alignment lists) and the lit row
+        // is the list routine's bar (Chrome.Lit).
+        if (p.Title is { } title)
+            Chrome.Text(f, font, 1, 2, Fit(AmigaView.Case(title), 38), PromptColour);
+        for (int i = 0; i < p.Rows.Count && p.FirstRow + i < 23; i++)
+        {
+            string row = Fit(AmigaView.Case(p.Rows[i]), 38 - p.Column);
+            if (i == _selected)
+                Chrome.Lit(f, font, p.Column, p.FirstRow + i, row, Chrome.White, listRow: true);
+            else
+                Chrome.Text(f, font, p.Column, p.FirstRow + i, row, Chrome.Green);
+        }
     }
 
     /// <summary>
@@ -964,7 +973,7 @@ public sealed class PartyMenuScreen(PartyMenuFlow flow, ScriptRunner runner, ISc
 
     private void DrawTextEntry(IndexedFrame f, TextRequest t, ActionInput input)
     {
-        string prompt = t.Prompt.ToUpperInvariant();
+        string prompt = AmigaView.Case(t.Prompt);   // the requester draws its prompt as it is (FS-UAE s43: creation's name prompt)
         Chrome.Clear(f, 0, MenuRow, 40);
         if (AmigaView.On && Chrome.AmigaGadget is { } g)
             g.Requester(f, font, prompt, _typed, t.MaxLength + 1);   // the Amiga's input requester (hunk 25 +0xEC6)

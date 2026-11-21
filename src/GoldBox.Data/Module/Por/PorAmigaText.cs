@@ -236,6 +236,156 @@ public static class PorAmigaText
         }
     }
 
+    /// <summary>
+    /// The Amiga-only call-site facts read s43 (docs/re/por-art-formats.md §4 "Text font"): pens a few callers pass
+    /// where DOS passes another colour, and strings the Amiga words otherwise than DOS.
+    /// </summary>
+    /// <param name="Pens">By name: <see cref="KeyPagePen"/>, <see cref="KeyDamagePen"/>, <see cref="PortraitPromptPen"/>,
+    /// <see cref="PortraitWordsPen"/>, <see cref="PortraitCapitalsPen"/>.</param>
+    /// <param name="Strings">By name: <see cref="PagePromptKey"/>, <see cref="ViewRenameKey"/>, <see cref="PartyMenuKey"/> + 0–10.</param>
+    public sealed record Calls(IReadOnlyDictionary<string, int> Pens, IReadOnlyDictionary<string, string> Strings);
+
+    /// <summary>The text window's page prompt (hunk 25 +0x1200–0x120A: its own upper-case string, hunk 26 +0x176, through
+    /// row 24's key wait +0xE78 in pen 18; DOS START 0x77F8 → 0x7C85 with its own longer string in colour 13).</summary>
+    public const string KeyPagePen = "keyPage", PagePromptKey = "PagePrompt";
+
+    /// <summary>DAMAGE's press-enter key waits (hunk 16 +0x46D2–0x46DC after the party-killed window, hunk 4
+    /// +0x2364–0x236E before a hit line when the box is full: pen 28; DOS 0x34BB / 0x959F: colour 15).</summary>
+    public const string KeyDamagePen = "keyDamage";
+
+    /// <summary>Creation's portrait menu (hunk 10 +0x3778–0x3790, the menu routine hunk 19 +0x4DD6):
+    /// prompt pen 4 (the prompt is empty), other letters 16, capitals 28: the reverse of every other menu (28 / 16).</summary>
+    public const string PortraitPromptPen = "portraitPrompt", PortraitWordsPen = "portraitWords", PortraitCapitalsPen = "portraitCapitals";
+
+    /// <summary>The area script's HMENU (hunk 16 +0x2D2E–0x2DD6: the choices joined as a '~' line, then the '~' menu
+    /// helper hunk 4 +0x1910, which lowers the capitals and raises the letter after each '~', hunk 4 +0x17A0–0x1830):
+    /// one pen, 28, for prompt, words and capitals, so the line is all green (DOS 0x1E17: its usual colours, 15 / 15
+    /// for one choice).</summary>
+    public const string HmenuPen = "hmenu";
+
+    /// <summary>The party menu's entries (hunk 10 +0x672: 11 × 42 bytes copied from hunk 11 +0xD2; DOS DS:061A, the
+    /// same stride): "PartyMenu.0" … "PartyMenu.10". The last is the Amiga's own exit entry.</summary>
+    public const string PartyMenuKey = "PartyMenu.";
+
+    /// <summary>The View menu's Amiga-only entry (hunk 10 +0x5440–0x544E, hunk 11 +0x840), appended to the line.</summary>
+    public const string ViewRenameKey = "View.Rename";
+    public const int PartyMenuEntries = 11, PartyMenuStride = 42;
+
+    // (hunk, offset, bytes): the code the call-site reads rely on.
+    private static readonly (int Hunk, int At, string Hex)[] CallChecks =
+    [
+        (25, 0x1200, "4879"),              // page prompt: pea string.l, …
+        (25, 0x1206, "4878"),              // … pea pen.w, …
+        (25, 0x120A, "6100fc6c"),          // … bsr row 24's key wait (+0xE78)
+        (16, 0x46D2, "4879"),              // DAMAGE's end: pea the press-enter line, …
+        (16, 0x46D8, "4878"),              // … pea pen.w, …
+        (16, 0x46DC, "4eba0f5c"),          // … jsr the stub at +0x563A …
+        (16, 0x563A, "4ef9"),              // … jmp hunk 25 +0xE78
+        (4, 0x2364, "4879"),               // DAMAGE's hit line, box full: pea the press-enter line, …
+        (4, 0x236A, "4878"),               // … pea pen.w, …
+        (4, 0x236E, "4eba3774"),           // … jsr the stub at +0x5AE4 …
+        (4, 0x5AE4, "4ef9"),               // … jmp hunk 25 +0xE78
+        (10, 0x3778, "4878"),              // portrait menu: pea capitals.w, …
+        (10, 0x377C, "4878"),              // … pea others.w, …
+        (10, 0x3780, "4878"),              // … pea prompt.w, …
+        (10, 0x3784, "4879"),              // … pea words.l, …
+        (10, 0x378A, "4879"),              // … pea prompt.l, …
+        (10, 0x3790, "4eba3758"),          // … jsr the stub at +0x6EEA …
+        (10, 0x6EEA, "4ef9"),              // … jmp the menu routine (hunk 19 +0x4DD6)
+        (10, 0x672, "41f9"),               // party menu: lea table.l, a0; …
+        (10, 0x678, "43edfe09303c01cd"),   // … 0x1CE + 1 bytes (11 × 42) to the frame
+        (16, 0x2DC6, "741c2f022f022f02"),   // HMENU: moveq #pen, d2; the same pen for prompt, words and capitals, …
+        (16, 0x2DD6, "4eba28da"),          // … jsr the stub at +0x56B2 …
+        (16, 0x56B2, "4ef9"),              // … jmp the '~' menu helper (hunk 4 +0x1910)
+        (10, 0x5434, "10280085"),          // View menu: Rename when record byte 0x85 < 0x80 (hunk 10 +0x542C–0x543E), …
+        (10, 0x5444, "4879"),              // … pea the Rename word.l (appended to the line)
+    ];
+
+    // (hunk, offset, target hunk, value): RELOC32 longs of the call-site reads.
+    private static readonly (int Hunk, int At, int Target, uint Value)[] CallRelocs =
+    [
+        (16, 0x563C, 25, 0xE78),
+        (4, 0x5AE6, 25, 0xE78),
+        (10, 0x6EEC, 19, 0x4DD6),
+        (16, 0x56B4, 4, 0x1910),
+    ];
+
+    /// <summary>The call-site facts from the player's <c>program</c>, or null when its code is not laid out so.</summary>
+    public static Calls? ReadCalls(byte[] program)
+    {
+        try
+        {
+            var hunks = AmigaHunks.Parse(program);
+            var relocs = AmigaHunks.Relocations(program).ToHashSet();
+            int? Base(int h) => h < hunks.Count && hunks[h].DataOffset is { } at ? at : null;
+            bool In(int h, int at, int length) => Base(h) is not null && at >= 0 && at + length <= hunks[h].Size;
+            foreach (var (h, at, hex) in CallChecks)
+            {
+                var want = Convert.FromHexString(hex);
+                if (!In(h, at, want.Length) || !program.AsSpan(Base(h)!.Value + at, want.Length).SequenceEqual(want))
+                    return null;
+            }
+            foreach (var (h, at, target, value) in CallRelocs)
+                if (!In(h, at, 4) || !relocs.Contains(new AmigaReloc(h, target, at))
+                    || BinaryPrimitives.ReadUInt32BigEndian(program.AsSpan(Base(h)!.Value + at)) != value)
+                    return null;
+            int Word(int h, int at) => BinaryPrimitives.ReadUInt16BigEndian(program.AsSpan(Base(h)!.Value + at));
+            // The target of the relocated long at (h, at), or null.
+            (int Hunk, int At)? Pointer(int h, int at)
+            {
+                foreach (var r in relocs)
+                    if (r.Hunk == h && r.Offset == at)
+                    {
+                        int to = (int)BinaryPrimitives.ReadUInt32BigEndian(program.AsSpan(Base(h)!.Value + at));
+                        return In(r.Target, to, 1) ? (r.Target, to) : null;
+                    }
+                return null;
+            }
+            string? CString((int Hunk, int At)? p, int max)
+            {
+                if (p is not var (h, at))
+                    return null;
+                var s = program.AsSpan(Base(h)!.Value + at, Math.Min(max, hunks[h].Size - at));
+                int z = s.IndexOf((byte)0);
+                if (z < 0 || s[..z].IndexOfAnyExceptInRange((byte)0x20, (byte)0x7E) >= 0)
+                    return null;
+                return Encoding.Latin1.GetString(s[..z]);
+            }
+            var pens = new Dictionary<string, int>
+            {
+                [KeyPagePen] = Word(25, 0x1208),
+                [KeyDamagePen] = Word(16, 0x46DA),
+                [PortraitCapitalsPen] = Word(10, 0x377A),
+                [PortraitWordsPen] = Word(10, 0x377E),
+                [PortraitPromptPen] = Word(10, 0x3782),
+                [HmenuPen] = program[Base(16)!.Value + 0x2DC7],
+            };
+            // Both DAMAGE key waits pass the same pen; every pen is a register (the prompt's may be one of the low 16).
+            if (Word(4, 0x236C) != pens[KeyDamagePen] || pens.Values.Any(p => p is < 0 or > 30))
+                return null;
+            var strings = new Dictionary<string, string>();
+            if (CString(Pointer(25, 0x1202), 80) is not { Length: > 0 } page)
+                return null;
+            strings[PagePromptKey] = page;
+            if (CString(Pointer(10, 0x5446), 40) is not { Length: > 0 } rename)
+                return null;
+            strings[ViewRenameKey] = rename;
+            if (Pointer(10, 0x674) is not var (th, table) || !In(th, table, PartyMenuEntries * PartyMenuStride))
+                return null;
+            for (int i = 0; i < PartyMenuEntries; i++)
+            {
+                if (CString((th, table + PartyMenuStride * i), PartyMenuStride) is not { Length: > 0 } entry)
+                    return null;
+                strings[PartyMenuKey + i] = entry;
+            }
+            return new Calls(pens, strings);
+        }
+        catch (DaxFormatException)
+        {
+            return null;
+        }
+    }
+
     /// <summary>The DOS colours whose pen was read from a call site (the others follow the glyph routine's rule, <c>[?]</c>).</summary>
     public static IReadOnlyList<int> ReadColours { get; } = [.. PenSites.Select(s => s.Dos).Distinct().Order()];
 

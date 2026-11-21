@@ -1138,6 +1138,12 @@ public sealed class CombatScreen
         Chrome.MenuPrompt(f, _font, 0, MenuRow, prompt, PromptColour);
         int col = prompt.Length;
         var items = CursorItems(cr);
+        if (AmigaView.On)
+        {
+            // The Amiga menu routine: the program's words, capitals and digits in the hotkey pen (ExploreScreen.DrawLine).
+            ExploreScreen.DrawLine(f, _font, [.. items.Select(it => it.Word)], selected, col);
+            return;
+        }
         for (int i = 0; i < items.Count; i++)
         {
             var word = items[i].Word;
@@ -1157,6 +1163,11 @@ public sealed class CombatScreen
         int start = MenuStart(c);
         if (c.MenuPrompt is { Length: > 0 } mp)
             Chrome.MenuPrompt(f, _font, 0, MenuRow, mp, PromptColour);
+        if (AmigaView.On)
+        {
+            ExploreScreen.DrawLine(f, _font, c.Items, selected, start, scriptText: c.ScriptText);
+            return;
+        }
         int col = start;
         for (int i = 0; i < c.Items.Count; i++)
         {

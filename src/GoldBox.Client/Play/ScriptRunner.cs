@@ -19,6 +19,13 @@ public sealed record ChoiceRequest(string? Prompt, IReadOnlyList<string> Items, 
     /// </summary>
     public string? MenuPrompt { get; init; }
 
+    /// <summary>The items are an area script's text (MENU / HMENU / vertical menus), not the program's own menu words:
+    /// the Amiga pages keep them as they are (<see cref="AmigaView.MenuCase(string)"/> is not applied).</summary>
+    public bool ScriptText { get; init; }
+
+    /// <summary>The Amiga menu call's own pens (words, capitals) when they are not the usual ones (HMENU's), or null.</summary>
+    public (int Words, int Capitals)? AmigaPens { get; init; }
+
     /// <summary>The prompt's colour when the caller passes another than 13 (the yes/no routine 0x3C5:0x39 takes it as an
     /// argument: 13 or 14, e.g. 14 for the camp's keep questions 0x1818B / 0x182BA and the quit question 0x19791).</summary>
     public byte? MenuPromptColour { get; init; }
@@ -47,6 +54,14 @@ public sealed record ChoiceRequest(string? Prompt, IReadOnlyList<string> Items, 
 
     /// <summary>The item highlighted first (the program's yes/no for a drop starts on No; the combat screen).</summary>
     public int Selected { get; init; }
+
+    /// <summary>
+    /// A vertical list drawn as the program's VMENU draws it (GAME.OVR 0x1C4E → 0x8C5B → list routine 0x2D669): the
+    /// prompt is already in the text window (<see cref="ClientPlayer.Text"/>), the items go at column 1 from this row
+    /// to row 22, the highlighted one in colour 15, the others in 10, no cursor glyph, nothing on row 24. Null: the
+    /// Client's own layout (the prompt on row 17, a cursor glyph; WHO's pick, not read).
+    /// </summary>
+    public int? ListRow { get; init; }
 
     /// <summary>
     /// The menu routine's animate flag ([bp+0xA] of 0x2CC8C): while this menu waits, the picture window's animation
@@ -99,8 +114,15 @@ public sealed record KeyRequest(string? Prompt = null) : PlayerRequest
     /// </summary>
     public int MenuEntries { get; init; }
 
-    /// <summary>A menu-style prompt's text in the program's own case (the Amiga draws it so: <see cref="AmigaView"/>).</summary>
+    /// <summary>The prompt's text in the program's own case (the Amiga draws it so: <see cref="AmigaView"/>).</summary>
     public string? Original { get; init; }
+
+    /// <summary>The text window's page prompt (START 0x7A12's wait; the Amiga's own text and pen, <see cref="AmigaView.KeyPen"/>).</summary>
+    public bool PagePrompt { get; init; }
+
+    /// <summary>The Amiga caller's pen, by its name in the imported call-site pens (<see cref="GoldBox.Data.Module.Por.PorAmigaText.Calls"/>),
+    /// where DOS passes another colour; null: the DOS colour's pen.</summary>
+    public string? AmigaPen { get; init; }
 
     /// <summary>The prompt's colour when it is not 13 (START 0x7C85 takes it as an argument: DAMAGE's line is 15).</summary>
     public byte? Colour { get; init; }
@@ -283,6 +305,12 @@ public sealed class ScriptRunner : IDisposable
     /// </summary>
     public Action<PlayerRequest>? Answered { get; set; }
 
+    /// <summary>
+    /// Worker thread: called with each request before it is posted, and may return it changed (the player's <see
+    /// cref="ClientPlayer.MenuAsked"/>: a program menu opened while VM $4AFF is set draws the loaded picture on every pass).
+    /// </summary>
+    public Func<PlayerRequest, PlayerRequest>? Asking { get; set; }
+
     /// <summary>A command is in progress (running or parked on a request).</summary>
     public bool Busy { get; private set; }
 
@@ -360,7 +388,7 @@ public sealed class ScriptRunner : IDisposable
             throw new RunnerCancelledException();
         if (AnimationTiming.Apply(request, AnimationSpeed) is not { } asked)
             return null; // Instant: a skipped animation pause, answered as a pause is
-        request = asked;
+        request = Asking?.Invoke(asked) ?? asked;
         Pending = request;
         _toUi.Release();
         _toWorker.Wait();

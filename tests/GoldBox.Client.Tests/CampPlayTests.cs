@@ -116,6 +116,46 @@ public class CampPlayTests
         }
     }
 
+    /// <summary>
+    /// A camp Save sets $4AFF, so the quit question after it (yes/no 0x2D9A0, the menu routine) runs the camp picture's
+    /// frames on every pass; it clears the cell, and the camp menu after it holds them for their delays again
+    /// (DOSBox-X s43: the picture changed on every capture under the quit question, 0.22 s holds after No).
+    /// </summary>
+    [Fact]
+    public void The_quit_question_after_a_camp_save_runs_the_camp_picture_every_pass()
+    {
+        if (Dir() is null)
+            return;
+        var tmp = Directory.CreateTempSubdirectory("goldbox-camp-");
+        try
+        {
+            var r = Start(saveDir: tmp.FullName);
+            r.Runner.Answered = r.Player.MenuEnded; // as Program.cs
+            r.Runner.Asking = r.Player.MenuAsked;
+            r.Game.Memory.MenuAnimates = false;
+            Press(r, GameAction.Encamp);
+            var camp = Assert.IsType<ChoiceRequest>(r.Runner.Pending);
+            Assert.True(camp.Animates);
+            Assert.False(camp.EveryPass);
+            Key(r, Keys.S);
+            Key(r, Keys.C);
+            var quit = Assert.IsType<ChoiceRequest>(r.Runner.Pending);
+            Assert.Equal(["YES", "NO"], quit.Items);
+            Assert.True(quit.EveryPass);                           // the save wrote $4AFF
+            Assert.True(quit.Animates);
+            Key(r, Keys.N);
+            var back = Assert.IsType<ChoiceRequest>(r.Runner.Pending);
+            Assert.True(back.Animates);
+            Assert.False(back.EveryPass);                          // the yes/no cleared it
+            Assert.False(r.Game.Memory.MenuAnimates);
+            r.Runner.Dispose();
+        }
+        finally
+        {
+            tmp.Delete(recursive: true);
+        }
+    }
+
     [Fact]
     public void The_camp_uses_the_games_state_and_the_level_seams()
     {

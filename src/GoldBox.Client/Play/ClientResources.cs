@@ -15,6 +15,8 @@ public sealed class ClientResources
     public CombatText CombatTexts { get; init; } = new();
     public Func<int, string?> ItemWord { get; init; } = _ => null;
     public Func<byte, bool> IsScroll { get; init; } = _ => false;
+    /// <summary>The ITEMS table (the stat recalculation START 0x1758 reads the readied items' base bytes), or null.</summary>
+    public BaseItemTable? ItemTypes { get; init; }
     public IReadOnlyList<string>? TempleNames { get; init; }
     public string? CampMenu { get; init; }
     public string? PagePrompt { get; init; }
@@ -23,6 +25,24 @@ public sealed class ClientResources
     public string? MagicMenu { get; init; }
     public string? AlterMenu { get; init; }
     public IReadOnlyList<string>? OrderMenus { get; init; }
+
+    /// <summary>
+    /// The program's menu lines in their own case (the camp's, the fight's, View's and the Items page's words, the
+    /// shop's, temple's and loot's lines, the explore commands, …): what <see cref="AmigaView.LearnMenuLines"/> learns
+    /// the words' spelling from for the Amiga pages, which draw the bytes as they are. The Amiga's lines are the DOS
+    /// lines byte for byte (s43, every one compared with the Amiga <c>program</c>); its own wordings come from
+    /// <see cref="IPorContent.AmigaStrings"/>.
+    /// </summary>
+    public IReadOnlyList<string> MenuLines { get; init; } = [];
+
+    /// <summary>The catalogue keys whose texts are menu lines (<see cref="MenuLines"/>), by prefix.</summary>
+    public static readonly IReadOnlyList<string> MenuKeyPrefixes =
+    [
+        "CombatMsg.Menu", "CombatMsg.Done", "CombatMsg.SpeedExit", "CombatMsg.Aim", "CombatMsg.YesNo", "CombatMsg.View",
+        "CombatMsg.Items", "Msg.EncounterMenu", "Msg.ParleyAttitudes", "Msg.RestMenu", "Msg.Monsters", "Msg.Portraits",
+        "Msg.Faster", "Msg.Slower", "Msg.SpeedExit", "PartyMsg.KeepExit", "PartyMsg.AddExit", "PartyMsg.PortraitMenu",
+        "PartyMsg.Icon", "Menu.",
+    ];
 
     /// <summary>START's member pick's line (00BA:2C41 "Select" + 00BA:2C19 " Exit"), original case, or null.</summary>
     public string? TargetMenu { get; init; }
@@ -62,6 +82,23 @@ public sealed class ClientResources
         SpellNamesDs = 0x2912, LevelNamesDs = 0xA79,
         GenderDs = 0xFEC, RaceDs = 0xF03, AlignmentDs = 0xF53, ClassDs = 0xD38, StatusDs = 0x1047, SheetCoinDs = 0xFFA;
 
+    private static List<string> MenuLinesOf(PorProgramData? program, Func<int, string?> ds, IPorContent dir)
+    {
+        var lines = new List<string?> { ds(CampMenuDs), ds(MagicMenuDs), ds(AlterMenuDs), ds(OrderMenuDs), ds(OrderMenuDs + 41) };
+        if (program?.View?.ExploreCommands is { } commands)
+            lines.Add(string.Join(' ', commands));
+        if (program is not null)
+            lines.AddRange(program.Texts.Where(kv => MenuKeyPrefixes.Any(p => kv.Key.StartsWith(p, StringComparison.Ordinal)))
+                .OrderBy(kv => kv.Key, StringComparer.Ordinal).Select(kv => kv.Value));
+        for (int i = 0; program is not null && i < 11; i++)
+            lines.Add(program.PascalString(PartyMenuDs + 42 * i, 40));
+        lines.AddRange(dir.AmigaStrings()?.Where(kv => !kv.Key.Contains("Prompt", StringComparison.Ordinal)).Select(kv => kv.Value) ?? []);
+        return [.. lines.OfType<string>()];
+    }
+
+    /// <summary>The party menu's entries (string[41]s from DS:0619, <see cref="PartyMenuFlow.MenuItem"/>).</summary>
+    private const int PartyMenuDs = 0x619;
+
     /// <summary>Reads everything from the player's folder or a module (missing pieces stay at their fallbacks).</summary>
     public static ClientResources Load(IPorContent dir)
     {
@@ -79,6 +116,7 @@ public sealed class ClientResources
             CombatTexts = new CombatText(program),
             ItemWord = program is null ? _ => null : program.ItemWord,
             IsScroll = items is null ? _ => false : t => items[t, BaseItemTable.Slot] is >= 11 and <= 13,
+            ItemTypes = items,
             TempleNames = program?.TempleNames(),
             CampMenu = camp,
             MagicMenu = Ds(MagicMenuDs),
@@ -100,6 +138,7 @@ public sealed class ClientResources
             ItemSlot = items is null ? _ => -1 : it => items[it[0x2E], BaseItemTable.Slot],
             PagePrompt = program?.PagePrompt,
             TargetMenu = program?.Text("Pick.Select") is { } sel && program.Text("Pick.Exit") is { } ex ? sel + ex : null,
+            MenuLines = MenuLinesOf(program, v13 ? Ds : _ => null, dir),
         };
     }
 }

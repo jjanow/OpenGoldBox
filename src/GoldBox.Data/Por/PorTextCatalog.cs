@@ -409,6 +409,10 @@ public static class PorTextCatalog
         ["PartyMsg.ChooseFunction"] = 0x19A62,
         ["PartyMsg.QuitToDos"] = 0x19AB5,
         ["PartyMsg.KeepCharacter"] = 0x19EC4,
+        ["PartyMsg.PickRace"] = 0x19E70, // creation's list labels (0x19FC4: a flagged first entry), s43
+        ["PartyMsg.PickGender"] = 0x19E7E,
+        ["PartyMsg.PickClass"] = 0x19E8A,
+        ["PartyMsg.PickAlignment"] = 0x19E95,
         ["PartyMsg.CharacterName"] = 0x19EDA,
         ["PartyMsg.Drop"] = 0x1B851,
         ["PartyMsg.Forever"] = 0x1B857,
@@ -461,6 +465,19 @@ public static class PorTextCatalog
         ["Hall.WishToTrain"] = 0x1C303,
         ["Hall.Congratulations"] = 0x1C31A,
         ["Hall.Learn"] = 0x2702D,
+        // Menu lines the Client's venue screens choose from (s43, for the words' own case: the Amiga draws them as they
+        // are): the shop's (0x6D2D), the temple's (0x5205's unit), the loot's (0x644B) and Take's (0x62B6), Sell's keep
+        // question (0x2660E).
+        ["Menu.Shop"] = 0x7148,
+        ["Menu.ShopNoMoney"] = 0x716F,
+        ["Menu.Temple"] = 0x51B6,
+        ["Menu.TempleNoMoney"] = 0x51DE,
+        ["Menu.LootTake"] = 0x62A5,
+        ["Menu.Loot"] = 0x63AC,
+        ["Menu.LootDetect"] = 0x63C1,
+        ["Menu.LootMoney"] = 0x63CE,
+        ["Menu.LootItems"] = 0x63E3,
+        ["Menu.SellKeep"] = 0x2660E,
         ["Hall.ToChooseFrom"] = 0x239A0,
         // The end game (0x20941): three lines, six lines, four lines.
         ["End.0"] = 0x207B1,

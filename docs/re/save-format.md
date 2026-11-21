@@ -36,6 +36,15 @@ ready-made level-1 party of six, so a new player can start without creating char
   item and effect records) are stale on disk. On load the game reads the record, clears those pointers, reads
   `.ITM`/`.SPC` records until end of file and relinks them (GAME.OVR 0x1EAD2; talonius `LoadChar`,
   DrEvil `ReadCharacter`). The join then refreshes level stats as described below.
+- **Derived bytes on Load (P + D s43):** Load (0x1F5E8, with LoadChar 0x1EAD2 and the join 0x1F42C) and Save
+  (0x1FD3E) do not run the stat recalculation START 0x1758 (a static call search finds none within 10 levels; its 22
+  call sites in GAME.OVR are the fight, ADD NPC, Modify, the spells, View's page 0x21642, the Items loop 0x224AF and
+  the item Trade):
+  the record's weight 0x102, attack dice 0x115–0x11A, AC, THAC0 and movement stay as the file has them until the next
+  recalculation, the first being View's page. **D** (DOSBox-X, 3000 cycles): the unstarted save C with HERO's 0x102
+  edited to 7 and dice to 3d7+9, Load at the party menu, Save to D at once: CHRDATD1.SAV kept 7 and 3d7+9; View then
+  showed 538 and 1D6+2, and a Save after it wrote 538 and 1d6+2. Save A edited the same way, Load, the area entry,
+  Encamp, Save: the same bytes kept. The Client's Load does not recalculate either; its View does (`camp.md` "Trade").
 - Shipped examples of absent files: `CHRDATA4.SPC`, `CHRDATA5.SPC` (no effects). `CHRDATA1.ITM` = 2 items (126 bytes),
   `CHRDATA1.SPC` = 4 effects (36 bytes).
 - Location: the save directory is a path read from the game's configuration text file at start-up (talonius

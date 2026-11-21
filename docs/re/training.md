@@ -126,21 +126,65 @@ the $4AFF rule predicts; the picture is drawn over the party menu's screen there
   `EclVm.EntryInterfaceDue` (the pair's draw, `PorGame.RunLoadedEntry`), `ClientPlayer.PartyMenuUnder` (set by the
   party menu's Load until START 0x3379 or the entry's end) with `ExploreScreen.PartyMenuPage`; 0 differing EGA pixels
   against DOSBox-X on that screen. Tests `CommandLineMenuTests.A_loads_interface_is_drawn_inside_its_vector_4_after_the_file_pair`,
-  `ExploreScreenTests.A_party_menu_loads_vector_4_draws_over_the_menu_page`. `[?]` A `--save` start and a hall Load
-  of another area (no party menu page in the Client) draw the explore screen from the start; a vertical menu or a
-  text input in such a vector 4 is drawn on the explore screen.
+  `ExploreScreenTests.A_party_menu_loads_vector_4_draws_over_the_menu_page`.
+- **A `--save` start and a hall Load of another area, P + D (s43).** Neither has a party menu page in the Client (user
+  decisions: the `--save` start keeps the explore screen under vector 4; a hall Load of another area enters it), so the
+  explore screen is up from the start; what DOSBox-X shows once the pair has drawn START 0x3379 (a start-up Load of the
+  same save) is the reference. Areas checked (scratch saves from save A with `goldbox-tools save-area`, the wall sets
+  of each area): **Sokal Keep** (block 21, `$4A02` = 0, 8,14 N, walls 1/5/9: vector 4's pair, the arrival text, the
+  one-word HMENU) and **civilised Phlan** (block 0, `$4AC5` = 0, 15,1 W, walls 1/3/5: the guide's tour, his close-up
+  and the first text with its one-word HMENU): the Client's `--save` screens equal DOSBox-X's but the help line (Phlan:
+  the close-up's animation frame too); the hall Load of the Sokal save (scratch save G: the step's PROGRAM 0, Remove
+  × 6, Load) gave the same screen. No v1.3 vector 4 shows a vertical menu or a text input, so scratch saves did
+  (vector 4 = LOADFILES 20 / LOADPIECES 2,4,1, PRINT, VMENU, INPUTSTR, PRINT; another with INPUTSTR, INPUTNUM; one
+  with no pair): that found the Client's own VMENU layout (prompt cut to one row in white, rows from column 2 with a
+  cursor glyph) and its input line (from column 0, INPUTNUM with a prompt of its own). Both now follow the program
+  (`ecl-format.md` "VMENU's screen", "The ECL line inputs"): the VMENU screens equal DOSBox-X's but the help line,
+  over the explore screen and over the party menu page (no pair: 0 differing pixels); the inputs differ only by the
+  Client's character grid (decided, s25) and its "_" after the typed text. Tests
+  `EntryScreenTests.A_vmenu_prints_its_prompt_in_the_box_and_lists_from_column_1_under_it`,
+  `The_ecl_inputs_have_no_prompt_and_type_from_column_1`.
 - **Every menu clears $4AFF.** 0x2CC8C has one exit (0x2CFA7–0x2CFAD), and the yes/no 0x2D9A0 and the list routine
   0x2D669 call it too (near calls at 0x2D9EA, 0x2D8AC; 36 far callers: camp, hall, party menu, venues, combat, View,
   ECL menus). DOSBox-X (scratch save C: the step's PICTURE 2; PROGRAM 0; PRINT; HMENU WAIT; loaded at the start-up;
   Up, Save E in the hall, Begin): the HMENU over the view stayed still. Client: `ClientPlayer.MenuEnded` on
   `ScriptRunner.Answered` clears `EclMemory.MenuAnimates` after every program menu (`ClientPlayer.IsProgramMenu`).
-  Test `HallPlayTests.The_halls_menu_clears_the_menu_animate_flag_a_save_set`. `[?]` In that run the hall menu after
-  the Save first drew PICTURE 2's frames over the hall page (the menu routine draws the frame table whenever $4AFF ≠ 0
-  and DS:6ABF > 0, 0x2CD5D–0x2CD9B); a second Save in the same session (after another step's PICTURE 2) drew nothing,
-  not explained. The Client draws no picture over its hall, camp or venue pages. Also from the routine: while
-  $4AFF ≠ 0 the frames advance on every pass without waiting for their delay (0x2CDD6); the Client copies it, each
-  frame lasting one Client update as delay-0 frames do (user, s42; `ChoiceRequest.EveryPass`). The hall/camp/venue
-  picture stays undrawn until DOSBox-X shows it again on purpose (user, s42).
+  Test `HallPlayTests.The_halls_menu_clears_the_menu_animate_flag_a_save_set`. While $4AFF ≠ 0 the frames advance
+  on every pass without waiting for their delay (0x2CDD6); the Client copies it, each frame lasting one Client update
+  as delay-0 frames do (user, s42; `ChoiceRequest.EveryPass`).
+- **The picture over the hall page after a Save, P + D (s43).** The menu routine draws the frame table DS:6ABE at
+  cell (3, 3) on every pass whenever $4AFF ≠ 0 (or its flag) and a picture is loaded (DS:6ABF > 0; 0x2CD5D–0x2CD9B),
+  over whatever page is up; with flag 0 (the hall's menu, 0x19C77) by the plain blit (0x2E0CE → 0x464:0x1951), with 1
+  (the camp's) by the other path (0x464:0xD71 + 0x1B52). The table holds the last picture the loader 0x2E170 read
+  (PICTURE 0x1625, START 0x3379's camp and loot pictures, the encounter close-up) until a free (0x2E55D: the 0x42
+  bytes zeroed, the name DS:6B0A emptied, the id DS:6B1C := 255), which the command line does at its end (0x17746,
+  after every command) and 0xE402 (from 0x9899); PROGRAM 0 and the hall free nothing. 0x2E170 skips the load when the
+  file name and id equal DS:6B0A / DS:6B1C, else frees the table, stores both and reads the block from the current
+  disk's file (DS:5376); a block missing there leaves the table empty (0x2E24B). A Save writes $4AFF (the wall-set
+  slots, 0x1FE70), so the hall's menu after it draws a picture still in the table. **D** (scratch save C from save A,
+  the step's vector 0 = PICTURE 2; PROGRAM 0; PRINT; HMENU WAIT; loaded at the start-up; Up, Save E; states taken at
+  each step): in the hall before the Save DS:6ABE = 2 frames, DS:6ABF = 1, $4AFF = 0, DS:5376 = 3 (set by the hall,
+  0x19AE7; 2 when PICTURE 2 ran); after the Save $4AFF = 3 and PICTURE 2's two frames ran over the party list and the
+  entries, the hall's prompt on row 24; every DOSBox-X row of the window equals one of the Client's two frames
+  (the shots catch the blit mid-way). S kept the last frame under the slot question (no menu redraws the page); Escape:
+  the loop drew its page again (its redraw flag [bp−0xF], set after every entry at 0x19E65), no picture. End (a member
+  pick: 0x19C9E, then the party list START 0x1307 at 0x19CAB, and 0x19E69 skips the redraw flag) left rows 3 and
+  11–13 of the picture: the list blanks each member's row from column 1 to 38 and the row after the last (0x1473).
+  Begin, the WAIT, the command line (count 0, DS:6B0A empty, 6B1C 255: freed), Up again: PICTURE 2 read PIC3.DAX (disk
+  3 still), which has no block 2, so the table stayed empty (count 0, DS:6B0A "PIC", 6B1C 2) and the second Save drew
+  nothing (the Client too, on Xvfb with DOS and Best art: no block 2 on disk 3). With PICTURE 29 (in PIC2 and PIC3) in
+  the same run both Saves drew it. Camp: Encamp, Save E, then the quit
+  question (yes/no 0x2D9A0, the first menu after the Save) ran the camp picture's frames on every pass (every capture
+  different); No, and the camp menu held them about 0.22 s again. Client: `ClientPlayer.MenuAsked` on `ScriptRunner.
+  Asking` (a program menu asked while `EclMemory.MenuAnimates` is set and a picture is loaded: a horizontal menu gets
+  `EveryPass`, the hall's menu `HallMenuRequest.EveryPass` and `HallState.PictureOver`), `HallScreens.Run` (the redraw
+  flag; a member pick leaves the picture under the list, `HallView.DrawListOver`): on Xvfb the Client's screens equal
+  DOSBox-X's, each window row one of the same two frames, and after End 0 differing EGA pixels but the rows of the
+  frame left (which one depends on the pass the key ends). Tests
+  `HallPlayTests.A_hall_menu_after_a_save_draws_the_loaded_picture_over_the_page`,
+  `HallPlayTests.A_member_pick_draws_the_party_list_over_the_picture_left_on_the_hall_page`,
+  `CampPlayTests.The_quit_question_after_a_camp_save_runs_the_camp_picture_every_pass`. `[?]` A venue's menu with
+  $4AFF set (only after a Load whose vector 4 opens a shop or temple) and the page menus (lists, View) were not seen.
 - **A turn draws the view.** After Load D's case 2 (blank box), V and Escape (box blank again), Left drew the 3D view
   in the box, CAMPING kept: a turn (0x2ED72 + 0x2EEF4) and the area map toggle (0x2EEF4) draw the view over a
   picture or blank. Client: `AreaLoop.ViewDrawn` → `ClientPlayer.ViewDrawn` (the CLEARBOX ring stays blank as after

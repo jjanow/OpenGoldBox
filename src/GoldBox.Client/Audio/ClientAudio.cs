@@ -250,6 +250,33 @@ public sealed class ClientAudio : ISoundSink, IDisposable
             }
     }
 
+    /// <summary>
+    /// A bracket with nothing drawn between its ends (a cast aimed at the caster's own square): the program's timer is
+    /// uninstalled before its first tick, so the cue sounds nothing there, and a deferred bracket still sounding is cut
+    /// by that uninstall (DOSBox-X s43). The tune is still started in the driver, as the program does, so its voices
+    /// tick in the next bracket until that bracket's own cue replaces them; install, cue and uninstall run under one
+    /// lock, so no buffer is rendered between them. Under Amiga sound the effect plays as a cue does (unchanged).
+    /// </summary>
+    public void EmptyResident(SoundCue cue)
+    {
+        Log($"({cue})");
+        lock (_lock)
+        {
+            if (_device == ClientSoundDevice.Amiga)
+            {
+                _music!.PlayEffect(cue);
+                return;
+            }
+            if (_player is not { } player)
+                return;
+            if (_resident)
+                CloseBracket();
+            player.BeginResident();
+            player.Cue(cue);
+            player.EndResident();
+        }
+    }
+
     private void CloseBracket()
     {
         _player?.EndResident();

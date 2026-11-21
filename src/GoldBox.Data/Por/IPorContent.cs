@@ -73,6 +73,13 @@ public interface IPorContent : IEclScriptSource, IAreaMapSource
     /// <summary>The Amiga's row-24 colours (register, 12-bit colour pairs; its copper list from line 192), or null.</summary>
     int[]? AmigaRow24() => null;
 
+    /// <summary>Pens single Amiga callers pass (<see cref="Module.Por.PorAmigaText.Calls"/>: page prompt, DAMAGE's
+    /// press-enter, the portrait menu), or null without them.</summary>
+    IReadOnlyDictionary<string, int>? AmigaCallPens() => null;
+
+    /// <summary>Texts the Amiga program words otherwise than DOS (<see cref="Module.Por.PorAmigaText.Calls"/>), or null.</summary>
+    IReadOnlyDictionary<string, string>? AmigaStrings() => null;
+
     /// <summary>
     /// Whether off-map squares read 0 instead of wrapping while area script <paramref name="script"/> runs: the
     /// program's rule for the folder (GAME.OVR 0x2EC5D: scripts 0 and 10), the area's <c>noWrapOffMap</c> in a module.

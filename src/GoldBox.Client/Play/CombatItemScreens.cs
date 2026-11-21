@@ -133,7 +133,7 @@ public sealed partial class CombatChooser
     private bool Detect => View.Fight?.List.Any(m => m[FightRules.Hostile] == 0 && m.HasEffect(5)) ?? false;
 
     private string ItemName(byte[] item) =>
-        ItemNames.Compose(item, Resources().ItemWord, Detect).Trim().ToUpperInvariant();
+        AmigaView.Case(ItemNames.Compose(item, Resources().ItemWord, Detect).Trim());
 
     private string SpellLabel(int spell) =>
         (SpellName(spell) ?? "SPELL " + spell.ToString(CultureInfo.InvariantCulture)).ToUpperInvariant();
@@ -304,7 +304,7 @@ public sealed partial class CombatChooser
         return page;
     }
 
-    private string ViewWord(ViewEntry e) => e == ViewEntry.Rename ? "RENAME" : Text[e switch
+    private string ViewWord(ViewEntry e) => e == ViewEntry.Rename ? AmigaView.RenameWord ?? "RENAME" : Text[e switch
     {
         ViewEntry.Items => CombatMsg.ViewItems,
         ViewEntry.Spells => CombatMsg.ViewSpells,

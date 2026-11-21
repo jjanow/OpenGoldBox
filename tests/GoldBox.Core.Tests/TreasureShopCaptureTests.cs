@@ -72,10 +72,18 @@ public class TreasureShopCaptureTests
 
         // Buy the second stock item (Lucern hammer, 2000): 3010 gold → 1010 = 202 platinum.
         var stock = shop.GetProperty("treasure").EnumerateArray().Select(Hex).ToList();
-        Assert.Equal(ShopRules.BuyResult.Bought, ShopRules.Buy(c, pool, stock[1], Allowance));
+        var items = PorData.Open().ItemTypes()!;
+        Assert.Equal(ShopRules.BuyResult.Bought,
+            ShopRules.Buy(c, pool, stock[1], Allowance, x => StatRecalc.Recalculate(x, items)));
         var buy = Load("s4buy");
         Assert.Equal(Coins(buy, 0), Coins(c));
         Assert.Equal(Convert.ToHexString(stock[1][0x2E..]), Convert.ToHexString(c.Items[^1][0x2E..]));
+        // The copy step's two START 0x1758 (0x237A1, 0x7018) and no recalculation after the payment: the record as the
+        // program left it (weight word with the coins paid still in it, item count, derived bytes), but for pointers.
+        var want = Party(buy)[0];
+        for (int b = 0; b < 0x11D; b++)
+            if (b is not (>= 0x7F and < 0x83) and not (>= 0xC8 and < 0x108))
+                Assert.True(want[b] == c[b], $"+{b:X2}: {c[b]} vs the program's {want[b]}");
 
         // Identify the (already identified) flail: 200 spent anyway.
         Assert.Equal(ShopRules.IdentifyResult.AlreadyIdentified, ShopRules.Identify(c, pool, c.Items[0]));

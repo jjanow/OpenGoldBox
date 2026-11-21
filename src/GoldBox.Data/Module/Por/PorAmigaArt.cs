@@ -444,10 +444,17 @@ public static class PorAmigaArt
         if (LocateTextFont(amigaDir, programBytes) is var (textPath, text) && TextFontCells(textPath) is { } textCells)
         {
             report.Inputs.Add(new ModuleInput { File = $"amiga/fonts/{PorAmigaText.Container}/{text.YSize}", Sha256 = Sha256(File.ReadAllBytes(textPath)) });
+            var calls = PorAmigaText.ReadCalls(programBytes);
             Write(moduleRoot, PorAmigaText.Container, PorAmigaText.Id,
                 [DaxPicture.Create(PorAmigaRunes.Cell, PorAmigaRunes.Cell, 0, 0, textCells)], false, text.InterfaceRgb, null, 0);
             ModuleJson.Write(Path.Combine(moduleRoot, AmigaTextPensDocument.RelativePath.Replace('/', Path.DirectorySeparatorChar)),
-                new AmigaTextPensDocument { Pens = text.Pens, Highlight = text.Highlight, Row24 = text.Row24, Source = new SourceRef { Container = "program" } });
+                new AmigaTextPensDocument
+                {
+                    Pens = text.Pens, Highlight = text.Highlight, Row24 = text.Row24,
+                    CallPens = calls is null ? null : new(calls.Pens),
+                    Strings = calls is null ? null : new(calls.Strings),
+                    Source = new SourceRef { Container = "program" },
+                });
             report.TextFont = true;
         }
         // The window frame (docs/re/por-art-formats.md §4 "Window frame"), from the program's own bitmaps.
@@ -586,6 +593,10 @@ public static class PorAmigaArt
                 || module.AmigaTextHighlight() is not { } lit || !lit.AsSpan().SequenceEqual(text.Highlight)
                 || module.AmigaRow24() is not { } row24 || !row24.AsSpan().SequenceEqual(text.Row24))
                 r.Mismatches.Add("amiga text pens: missing in the module or not the program's");
+            if (PorAmigaText.ReadCalls(File.ReadAllBytes(programPath)) is { } calls
+                && (module.AmigaCallPens() is not { } callPens || !calls.Pens.All(kv => callPens.TryGetValue(kv.Key, out int v) && v == kv.Value)
+                    || module.AmigaStrings() is not { } strings || !calls.Strings.All(kv => strings.TryGetValue(kv.Key, out var v) && v == kv.Value)))
+                r.Mismatches.Add("amiga call-site pens or strings: missing in the module or not the program's");
         }
         if (PorAmigaFrame.Read(File.ReadAllBytes(programPath)) is { } frame)
         {

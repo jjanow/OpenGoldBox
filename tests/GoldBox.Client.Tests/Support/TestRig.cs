@@ -26,6 +26,7 @@ public static class TestRig
     {
         var player = new ClientPlayer(runner, memory) { TypesText = typesText };
         runner.Answered = player.MenuEnded; // as Program.cs: every program menu clears VM $4AFF (needs Game set)
+        runner.Asking = player.MenuAsked;   // and animates the loaded picture while it is set
         return player;
     }
 

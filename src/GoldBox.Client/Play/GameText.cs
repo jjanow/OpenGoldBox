@@ -312,7 +312,9 @@ public sealed class GameText
     }
 
     /// <summary>A coin kind's name (pool and money index 0..6: copper, silver, electrum, gold, platinum, gems, jewellery).</summary>
-    public string Coin(int kind) => this[kind switch
+    public string Coin(int kind) => AmigaView.On ? Raw(CoinMsg(kind)).Trim() : this[CoinMsg(kind)].Trim();
+
+    private static Msg CoinMsg(int kind) => kind switch
     {
         0 => Msg.CoinCopper,
         1 => Msg.CoinSilver,
@@ -321,5 +323,5 @@ public sealed class GameText
         4 => Msg.CoinPlatinum,
         5 => Msg.CoinGems,
         _ => Msg.CoinJewelry,
-    }].Trim();
+    };
 }

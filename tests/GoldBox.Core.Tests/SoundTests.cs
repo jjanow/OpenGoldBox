@@ -92,6 +92,29 @@ public class SoundTests
         Assert.Equal(500, p.Ticks);
     }
 
+    /// <summary>
+    /// A bracket closed before the driver's first tick (a cast aimed at the caster's own square, docs/re/sound.md §2.4
+    /// s43): the uninstall mutes the ports and stops the ticks but leaves the voice blocks, so the started tune runs on in
+    /// the next bracket until that bracket's cue (the damage line's tune 2, which restarts all four voices).
+    /// </summary>
+    [PorFact]
+    public void An_empty_bracket_leaves_its_tune_for_the_next_bracket()
+    {
+        var p = Program.Value.Player(PcSoundDevice.Tandy);
+        p.BeginResident();
+        p.Cue(SoundCue.Fireball);
+        p.EndResident();
+        Assert.Equal(0, p.Ticks);
+        var buf = new float[2000];
+        p.Render(buf);
+        Assert.All(buf, s => Assert.Equal(0f, s));
+        p.BeginResident(); // the name animation's 0x2BB1
+        p.Render(buf);
+        Assert.True(buf.Max(MathF.Abs) > 0.05f, $"peak {buf.Max(MathF.Abs)}");
+        Assert.True(p.Busy);
+        p.EndResident();
+    }
+
     [PorTheory]
     [InlineData(PcSoundDevice.Speaker)]
     [InlineData(PcSoundDevice.Tandy)]

@@ -41,6 +41,11 @@ public static class CharacterView
             // no memorised spells gets Items, Trade, Drop, Exit, so its Exit (4th) leaves the shared highlight on the
             // shop menu's 4th entry (Appraise).
             var entries = AmigaView.Entries(FightItemScreens.ViewEntries(c, venue == Venue.Shop ? FightItemScreens.InShop : (byte)0), c);
+            // Each full draw of the page recalculates the member (0x21084 → 0x21642 → START 0x1758): on entry and after
+            // I, S and T (the redraw set 0x21ACD), so an edited save's weight word or a traded weapon's dice show fresh.
+            // Drop and the Amiga's Rename redraw nothing but the money lines (shown): no recalculation there.
+            if (shown is null)
+                t.Recalculate(c);
             var onPage = shown ?? c;
             shown = null;
             int action = page is not null
@@ -196,7 +201,7 @@ public static class CharacterView
         int selected = 0, lastAction = 0;
         while (t.Current is { } c)
         {
-            Carrying.RecalculateWeight(c); // the items screen redraw recalculates (DOSBox s11: weight fresh again)
+            t.Recalculate(c); // START 0x1758 before each draw (the program: after each command, 0x224AF; DOSBox s11)
             // Use needs DS:49F3 at 2–4 (or a fight; 0x21F32): never at the party menu or in the training hall (0).
             var actions = new List<string> { "READY" };
             if (venue != Venue.PartyMenu)
@@ -250,8 +255,8 @@ public static class CharacterView
     /// 0x21F32 on the program's page (<see cref="TradeContext.ItemsPage"/>): while the character has items, the entries
     /// of <see cref="FightItemScreens.ItemsEntries"/> for the venue's DS:49F3 (Use only in the camp, 2; Sell and Id in a
     /// shop or temple, 1) and the list, the row kept between choices; Exit or Escape back to View. Sell and Id run; the
-    /// other commands are not built yet (our notice on the bottom line). After each choice the weight is recalculated
-    /// (START 0x1758 at 0x224AF).
+    /// other commands are not built yet (our notice on the bottom line). After each choice the member (DS:5D92, the
+    /// giver of a Trade) is recalculated (START 0x1758 at 0x224AF, on [bp−0x3F] := DS:5D92 from 0x21F39).
     /// </summary>
     private static void ProgramItems(TradeContext t, Venue venue,
         Func<EclCharacter, IReadOnlyList<ItemsEntry>, int, Func<byte[], string>, ListAnswer> itemsPage)
@@ -259,14 +264,16 @@ public static class CharacterView
         int row = 0;
         while (t.Current is { } c && c.Items.Count > 0)
         {
-            Carrying.RecalculateWeight(c);
             var entries = FightItemScreens.ItemsEntries(c, Context(venue), null, t.Memory ?? new EclMemory());
             var a = itemsPage(c, entries, row, t.ItemName);
             if (a.Action < 0 || a.Action >= entries.Count || entries[a.Action] == ItemsEntry.Exit)
                 return;
             row = a.Row;
             if (a.Row < 0 || a.Row >= c.Items.Count)
+            {
+                t.Recalculate(c);
                 continue;
+            }
             var item = c.Items[a.Row];
             switch (entries[a.Action])
             {
@@ -310,6 +317,7 @@ public static class CharacterView
                     NotBuilt(t, e.ToString().ToUpperInvariant(), bottomLine: true);
                     break;
             }
+            t.Recalculate(c); // 0x224AF: START 0x1758 on DS:5D92 after every command
         }
     }
 
@@ -404,13 +412,6 @@ public static class CharacterView
         t.RosterDrawn();
     }
 
-    /// <summary>START 0x1758 on a member as far as the Client keeps it here: weight 0x102 and item count 0xC7.</summary>
-    private static void Recalculate(EclCharacter c)
-    {
-        Carrying.RecalculateWeight(c);
-        c[StatRecalc.ItemCount] = (byte)Math.Min(c.Items.Count, 255);
-    }
-
     /// <summary>
     /// The item Trade (0x2276E, after 0x21DAA let the item go): START 0x3379 redraws the venue's screen (the exploring
     /// layout from the command line; on the overland the marker steps on), START's member pick (<see cref="MemberPick"/>)
@@ -425,7 +426,7 @@ public static class CharacterView
         if (MemberPick.Run(t, t.Text[Msg.TradeWithWhom], t.TradeTarget, t.PickMenu) is not { } pick)
             return;
         t.TradeTarget = pick;
-        if (!TradeRules.GiveItem(c, pick, item, Carrying.StrengthAllowance, Recalculate))
+        if (!TradeRules.GiveItem(c, pick, item, Carrying.StrengthAllowance, t.Recalculate))
             RowMessage(t, t.Text[Msg.TradeOverloaded]);
     }
 
@@ -448,7 +449,7 @@ public static class CharacterView
             InterfaceRedraw(t);
             if (MemberPick.Run(t, t.Text[Msg.TradeTo], t.TradeTarget, t.PickMenu) is not { } pick)
                 return;
-            Carrying.RecalculateWeight(c); // the page 0x21084 recalculates DS:5D92 (0x21642 → START 0x1758)
+            t.Recalculate(c); // the page 0x21084 recalculates DS:5D92 (0x21642 → START 0x1758)
             var shown = new EclCharacter(c.Record);
             shown.Items.AddRange(c.Items);
             t.TradeTarget = pick;

@@ -67,11 +67,25 @@ item, any other key leaves. Price = the item's value word (0x3A). Before listing
 every stock item whose value is 0 (0x6D3C: nothing in a shop is free) and renames each item as its name padded to 30
 characters with the value right-aligned at the end (the list's text; s12).
 1. If price ≤ low word of the character's gold, or else ≤ the pool's gold: copy the item (0x6F0D).
-2. The copy (0x6F0D) first asks 0x23795: refused (message, nothing paid) when the character has more than 15 items
-   (+0xC7 > 15) or weight + item weight × count (count 0 = 1; 16-bit) > the carrying limit. Else a copy with
-   `next` cleared goes to the **end** of the character's item list (+0xC8) and the character is recalculated
-   (START 0x1758). The shop's item stays: stock never runs out.
-3. Then the payer pays (character first) as above. Else a "not enough money" message.
+2. The copy (0x6F0D, on DS:5D92) first asks 0x23795, which runs the full stat recalculation START 0x1758 on the
+   character (0x237A1) and then refuses (message START 0x1693, nothing paid) when it has more than 15 items (+0xC7
+   > 15) or weight + item weight × count (count 0 = 1; 16-bit) > the carrying limit. Else a copy with `next`
+   cleared goes to the **end** of the character's item list (+0xC8) and START 0x1758 runs again (0x7018): item
+   count, weight, dice and the other derived bytes. The shop's item stays: stock never runs out.
+3. Then the payer pays (character first) as above, with no recalculation after it. Else a "not enough money"
+   message.
+**What is recalculated (P + D s43).** Buy and the loot's item Take share 0x6F0D (Take calls it through the stub
+0028:002A), so both recalculate the taker in full before the test and after the copy; Appraise (below) after every
+pass of its menu. Checked under emulation: `por_trade_oracle.py` runs 0x6F0D on 300 made-up characters, every
+other one with stale derived bytes and item count (`TradeProgramTests`); the `treasure_shop` capture's record after
+Buy (s4buy: weight 1449 = the items and the coins *before* the payment, 0xC7 = 3) equals `ShopRules.Buy` with
+`StatRecalc` byte for byte. **D** (s43, 3000 cycles, save A's Thrender with 0x102 edited to 7 and dice to 3d7+9,
+test saves of `por_test_saves.py` style; each result read from a camp Save right after, since Load, Save, the camp
+and leaving the loot or shop do not recalculate): a loot of one random item (TREASURE 129, COMBAT with no monsters)
+left untaken kept 7 and 3d7+9; Take of the long sword gave 598 (= 150 + 350 + 60 + 38 coins), 1d6+2, 0xC7 = 3; a
+shop (TREASURE 131, $6E6C = 1) Buy of 10 arrows (150) with 300 pp gave 1236 (the 336 coins before the payment, not
+the 272 after), 1d6+2, 0xC7 = 3. The Client: `ShopRules.GiveCopy` / `Buy` with `TradeContext.Recalculate`; Sell and
+Appraise leave 0xC7 to the next recalculation as the program does (Sell's is the Items loop's 0x224AF).
 
 **View → items** (0x21AED, P where marked; the shop calls it at 0x730D, the temple at 0x5341: page and keys in `camp.md` "View", s39). In a shop (DS:49F3 = 1) the items menu adds **Sell** and **Id**
 (strings at unit 0x2103A + 0xEA8 / 0xEAE; 0x22104–0x2217E). Sell is added for a member with 0x84 < 0x80, and for
@@ -123,7 +137,10 @@ Jewelry / Exit, repeated until Exit or nothing is left.
 - Choices: Sell, plus Keep when 1 more weight does not overload the character and it has fewer than 16 items. K
   (only when offered) adds an identified item (type 70, word 0x65 gem / 0xD6 jewel, value, weight 1, `hidden` 0)
   at the end of the inventory. Any other key sells: value div 5 platinum through "add platinum" (so a jewel loses
-  value mod 5). After each appraisal the character is recalculated (START 0x1758).
+  value mod 5). Every pass of the menu, Exit included, ends with START 0x1758 on the character (0x26EC2); the Keep
+  test reads the stored weight and item count (0x24CDD, +0xC7 against 16). With nothing to appraise at the start the
+  no-gems message and no recalculation (0x26661); when the last gem or jewel is gone after an appraisal the routine
+  ends without a message (0x26698 → 0x26ECF; the Client said the message there before s43).
 
 **Exit** (shop and temple): with money in the pool a question offers to go back; leaving keeps the pool unspent
 (the next TREASURE overwrites it). Pool items alone do not ask.

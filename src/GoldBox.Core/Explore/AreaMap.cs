@@ -34,6 +34,13 @@ public sealed class AreaMap
         Id = id;
     }
 
+    /// <summary>
+    /// The program's map buffer before any GEO block was read into it: 0x400 bytes from GetMem at the start-up (GAME.OVR
+    /// 0xE66B, DS:6A5C), never cleared; DOSBox-X (s43, a start-up Load of a save whose Load reads no map) read all zeros.
+    /// [?] On other machines whatever DOS left in that memory.
+    /// </summary>
+    public static AreaMap Unread() => new(new byte[PlanesLength]);
+
     /// <summary>The live planes (the door code edits plane 3; <see cref="DoorMap"/> works on this span).</summary>
     public Span<byte> Planes => _planes;
 

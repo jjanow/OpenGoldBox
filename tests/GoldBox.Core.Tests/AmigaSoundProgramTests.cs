@@ -173,6 +173,64 @@ public class AmigaSoundProgramTests
         Check("1-3-0", Run([(300, 1), (300, 3), (50, 0)]), root.GetProperty("cases").GetProperty("1-3-0"), block);
     }
 
+    /// <summary>
+    /// An effect over a running song (s43, docs/re/sound.md §5.4): PlayEffect clears "music on", so from the next
+    /// vertical blank the effect tick runs instead of the music tick. Both players write the same chip: song 2 for
+    /// 100 ticks, effect 4 (the step) for 100, then song 2 again, as the oracle's case "2-e4-2".
+    /// </summary>
+    [AmigaOracleFact]
+    public void An_effect_over_a_running_song_matches_the_program()
+    {
+        var root = Root.Value;
+        int block = root.GetProperty("block").GetInt32();
+        var rec = new Recorder();
+        var music = new AmigaMusicPlayer(Image.Value, rec);
+        var effects = Assert.IsType<AmigaEffectPlayer>(AmigaEffectPlayer.Create(Image.Value, rec));
+        var lines = new List<string>();
+        void Ticks(Action tick)
+        {
+            for (int t = 0; t < 100; t++)
+            {
+                rec.Line.Clear();
+                tick();
+                lines.Add(rec.Line.ToString());
+            }
+        }
+        music.PlaySong(2);
+        Ticks(music.Tick);
+        Assert.True(effects.Play(4));
+        Ticks(effects.Tick);
+        music.PlaySong(2);
+        Ticks(music.Tick);
+        // the first effect tick switches all four channels off with 1-3 at volume 0; channel 0 comes on one tick later
+        Assert.Contains("96:f a8:3c b8:0 c8:0 d8:0", lines[100]);
+        Assert.Contains("96:8001 96:e", lines[101]);
+        Check("2-e4-2", lines, root.GetProperty("cases").GetProperty("2-e4-2"), block);
+    }
+
+    /// <summary>
+    /// The Client's mixer (<see cref="AmigaMusic"/>): an effect ends the song on every channel at the next tick (the
+    /// right side, channels 1 and 2, is silent from then on) and nothing brings it back when the effect is over.
+    /// </summary>
+    [AmigaOracleFact]
+    public void An_effect_ends_the_running_song_for_good()
+    {
+        var music = new AmigaMusic(Image.Value, 44_100) { Filter = false };
+        music.Play(2);
+        var left = new float[44_100 * 2];
+        var right = new float[left.Length];
+        music.Render(left, right);
+        Assert.True(right.Max(Math.Abs) > 0.01f);
+        music.PlayEffect(SoundCue.Step);
+        left = new float[44_100 * 6];
+        right = new float[left.Length];
+        music.Render(left, right);
+        int tick = (int)Math.Ceiling(44_100 / AmigaMusic.TickHz);
+        Assert.All(right.Skip(tick), x => Assert.Equal(0f, x));
+        Assert.True(left.Skip(2 * tick).Take(20 * tick).Max(Math.Abs) > 0.01f); // the step effect on channel 0
+        Assert.All(left.Skip(44_100 * 3), x => Assert.Equal(0f, x));            // ended; song 2 does not resume
+    }
+
     [AmigaOracleFact]
     public void Songs_2_to_5_stop_by_themselves_and_1_loops()
     {

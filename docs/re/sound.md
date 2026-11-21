@@ -169,14 +169,53 @@ for far calls to CS:00DC, CS:01A5, CS:017B):
   other member Done / Quit (`fight_frames.py grab` rules `DARKSTAR\|.*CAST.*DONE=c`, `CHOOSE SPELL=c`, `AIM:=t`,
   `DELAY.*QUIT=q`, `QUICK.*DONE=d`). DOSBox-X dies when a state is loaded into a boot that went on playing: each run
   boots, loads A, saves a state, seeds it and loads it at once (dosbox-trace-method.md s29).
-  - **The cast tunes are not heard** on either device for any of the three casts: tune 1 (Magic Missile, cue 2618),
-    7 (Lightning Bolt, 2624) and 10 (Fireball, 262A) give no sample above the noise floor between the target pick and
-    the first damage line, in DOSBox-X as in the Client. The flight bracket (OVR 0x27E05 set auto-stop(0) … 0x27E56
-    set auto-stop(10)) holds a 4-step flight (0x1A29 with 4, 30) whose frames came 21 ms apart (16.531 / 16.552 s);
-    the timer install at the bracket's start reaches the PIT's channel 0 only when the running BIOS period ends (up to
-    55 ms, the §2.4 onset `[?]`), so the driver gets no tick (or none that sounds) before the bracket uninstalls it.
-    The Client's bracket rule ("one that stayed open while the Client drew closes at once", §3) gives the same
-    silence. `[?]` A longer flight (none in PoR's cast path: the flight is always 4 steps) would let the tune start.
+  - **The cast tunes were not heard** on either device for any of the three casts: tune 1 (Magic Missile, cue 2618),
+    7 (Lightning Bolt, 2624) and 10 (Fireball, 262A) gave no sample above the noise floor between the target pick and
+    the first damage line, in DOSBox-X as in the Client. **Settled s43**: every one of these casts was aimed at
+    Darkstar's own square (the aim cursor starts on the caster and the driver's `AIM:=t` took it at once: the damage
+    lines name Darkstar, and the s43 rerun's frames show the cursor box on him), so the flight did nothing (below).
+  - **Cast tunes in flight (s43, P, D).** The bracket (OVR 0x27E05 set auto-stop(0), the cue at 0x27E14 / 0x27E23 /
+    0x27E2E, the moving icon 0x27E4D, 0x27E56 set auto-stop(10)) holds the moving icon START 0x25C9 with arguments
+    (caster x, y, aim x, y, **4 frames, 30 ms**): the 4 is the sprite's frame count, not a step count (s41 had it as
+    "a 4-step flight"); the flight draws every third of a square on the path, so it lasts with the distance
+    (combat-menu.md "Moving icon"). With the aim on the caster's own square the path has one entry and the icon
+    returns at once (START 0x2688: under 2 entries → 0x2B85, nothing drawn, no Delay), so set auto-stop(10) follows
+    set auto-stop(0) within a few hundred instructions. The timer install (CS:137C) writes the control byte 0B6h, which
+    selects **channel 2**, then the divisor to port 40h: channel 0 gets the new count without a new mode. An 8254 in
+    the BIOS's mode 3 loads such a count at the end of the running half period (Intel's data sheet; not measured
+    here); DOSBox-X (`src/hardware/timer.cpp`: `write_latch` sets `update_count` for counter 0 in mode 2 or 3 without
+    a new control word, and `track_time` latches it at a half-period end in mode 3; how its IRQ 0 events then move was
+    not read). Either way the driver's first tick comes at most one BIOS period (55 ms) after the install; an
+    empty bracket is uninstalled long before it and the cue sounds nothing there.
+    **D (s43, DOSBox-X 3000 cycles, Tandy, recorded from its own null sink with `parec`; the s41 save and driver
+    with `AIM:=n,sleep:0.6,t` so Next picks an orc first):** the cast tunes sound through the flight: Fireball
+    388 ms, Lightning Bolt 378 ms, Magic Missile 394 ms, each running into the cast's first damage line; with the
+    flight's Delay patched to 200 ms on a scratch copy (OVR 0x27E4B 1Eh → C8h; positions then 214 ms apart) Fireball
+    1258 ms and Lightning Bolt 1274 ms, cut at the flight's end, and Magic Missile 812 ms, its own length (Tandy tune 1
+    is silent after 192 ticks = 811 ms, oracle). The s43 rerun with `AIM:=t` repeated s41: three self-aimed casts, no
+    cast tune, only the damage lines (below). In these runs the flight's positions came 43 ms apart (30 ms Delay + drawing)
+    after a ~200 ms view rebuild (ScrollView(…, 255), drawing time at 3000 cycles), so the Client's tune (162 ms for
+    the same Fireball) is shorter by the machine's drawing time (machine time, s40). The first tick's delay after the
+    install (up to 55 ms, also the onset of every auto-stop sound, §2.4 above) is the BIOS clock's phase when the
+    program installs the timer: not modelled `[?]` (it shifts a sound's start, never its length: the auto-stop wait
+    counts the driver's own chained ticks).
+    The uninstall (CS:1391) mutes the ports and restores INT 8 but leaves the voice blocks: a tune started in an empty
+    bracket runs on in the **next** bracket (the damage line's name animation, START 0x2BB1) from its first tick until
+    that bracket's cue (0x2C14; tune 2's row restarts all four voices: Tandy table B rows 1, 2, 7 and 10 all have
+    four non-zero entries). DOSBox-X's first damage line after the self-aimed Fireball was 224 ms against 200 ms for the
+    others (one capture; the time between 0x2BB1 and 0x2C14 is the name animation's scroll, drawing time, plus the
+    first tick's phase); after the self-aimed Lightning Bolt and Magic Missile it was 202 / 200 ms `[?]` (not
+    reproduced: the first tick may simply have come after the cue there).
+    **Client (s43)**: `ISoundSink.EmptyResident(cue)`: a cast aimed at its own square (`FlightAnimation.DrawsNothing`)
+    makes no flight call and an empty bracket: the Client installs, starts the tune and uninstalls under one lock (no
+    buffer rendered between), so nothing sounds there and the driver keeps the tune for the next bracket, as the
+    program does; a bracket still deferred is cut, as the uninstall does. Before, the deferred-close rule (§3) kept the
+    bracket open into the damage line's, so the Fireball tune sounded for the ~10 ms before the damage cue plus a
+    buffer (that line came out ~34 ms longer than the other damage lines in the Client's capture). After the change
+    (Client on Xvfb, Tandy, same driver) every damage line of the self-aimed Fireball is 200–202 ms, as DOSBox-X's
+    200 ms ones (the leftover tune gets no time: the Client's cue follows its install at once). Under Amiga sound
+    the effect plays as any cue does (unchanged). Tests `MovingIconCallerTests.A_cast_aimed_*`,
+    `SoundTests.An_empty_bracket_leaves_its_tune_for_the_next_bracket`.
   - **Every damage line in the fight sounds tune 2** (START 0x2B8B, cue 261A): speaker: a 27.5 ms pulse (divisor 0),
     then half periods of 1.5–2.3 ms (≈ 220–330 Hz) and a closing run of 0.4–0.5 ms halves (≈ 1.1 kHz), 147.9 ms
     from the first edge to the last, equal edge for edge (to 0.1 ms) in DOSBox-X and in the Client; Tandy: white
@@ -317,7 +356,11 @@ hunk 29. Neither is ever run together with the other (below).
   +0x78A0. **PlayEffect(n)** (hunk 33 +0x14E, n on the stack): "music on" := 0 and request byte 0 (+0x176) := n.
   So **an effect ends the music**: the music tick no longer runs (its channels are taken over, the voices still
   playing a looped instrument are switched off by the effect's DMA write) and nothing resumes it but the next
-  PlaySong. The music never runs while an effect is wanted.
+  PlaySong. The music never runs while an effect is wanted. **E (s43)**: the oracle's case "2-e4-2" (song 2 for 100
+  ticks, PlayEffect(4), 100 effect ticks, song 2 again): the first effect tick writes channel 0's sample, length and
+  period, then DMACON off for **all four** channels and the volumes 3Ch, 0, 0, 0; from the next tick channel 0 is on
+  and channels 1–3 off with volume 0 on every tick; nothing of the song is written again until the next PlaySong.
+  **D (s43, FS-UAE)**: §5.6 "An effect over a song".
 
 ### 5.2 Music player (hunk 27 +0x78A0 … +0x831E; data hunk 28 +0x16C8 … +0x2C60, samples to the end)
 
@@ -498,15 +541,34 @@ character's name and its icon (3). The Client's side rendered by `goldbox-tools 
   ≥ 0.9 in 82 % / 88 % of 40 ms windows; the rest are note edges) once each note is shifted by up to ±1 ms: FS-UAE
   starts a tick's notes when the 68000 reaches the output (+0x82BE), 350–890 instructions after the tick's start
   depending on its work (the tick's notes all at once, so a voice's phase against a held note on the same side
-  differs), and the DMA fetch adds up to a scan line. Not modelled `[?]` (below 1.5 ms; heard only as the phase
-  between two voices on one side). Song 5 (camp, after the camp's disk load) slips by whole ticks against the
+  differs), and the DMA fetch adds up to a scan line. **Settled s43 (machine time, not modelled)**: the delay is the
+  68000's run time through the tick before the output's channel-on DMACON write. The program's own instruction count
+  to that write (`por_amiga_sound_oracle.py --timing PROGRAM 2`, unicorn, song 2's 385 ticks) is 163–287 on ticks with
+  no new note, 301–387 with one and 674–775 with four (the song's first tick), plus Exec's interrupt dispatch and the
+  servers before it; at 7.09 MHz and roughly 8–12 cycles an instruction that is about 0.3–1.3 ms, the spread FS-UAE
+  shows. It comes from the CPU's speed (another Amiga, or an accelerated one, gives other delays), as DOSBox-X's
+  drawing time does on the DOS side (s40 rule), so the Client starts a tick's notes at the tick (deterministic on a
+  stock A500: it could be modelled from the instruction counts if wanted). The DOS driver has no such spread: its
+  port writes start each timer interrupt and DOSBox-X's edges match the Client's to 0.1 ms (s41). Song 5 (camp, after the camp's disk load) slips by whole ticks against the
   Client (missed vertical blanks while the disk loads, machine time) and matches in band levels only.
 - **Effects**: the Sleep cast in a fight plays effect 5 (cue +0x18A8), then 1.23 s later the name-with-effect cue
   (+0x18AC, effect 8) for each sleeping target, each start replacing the running effect: the channel is off for one
   tick (19–20 ms, holding its last sample at the new volume) and the new effect plays from its start; its decay in
   0.2 s steps equals the Client's. The Client plays the name cues since s41 (§3 "Hooks"); before, only the cast.
-- **Not captured**: an effect cutting a running song (no fight started while a song played in the time given; the
-  program's effect tick switches channels 1–3 off with volume 0 on every tick, E, and the Client does the same).
+- **An effect over a song (s43)**: the battle song 2 (7.7 s) has always ended in FS-UAE before the fight's first
+  sound (the combat set-up loads from disk for longer), so a disk-A copy had the battle-song word (hunk 31 +0x18C0,
+  file offset 0x6D500 of `program`) set to 1, the looping intro/camp song; a rest in the slums brought goblins, the
+  fight started song 1 and Goldleaf's Quick turn made a creature step (effect 4, cue +0x18B8). Captured from FS-UAE's
+  own null sink: the song (aligned to `amiga-sound --song 1 --rate 47923`: 78 % of 20 ms windows correlate > 0.8, as
+  §5.6 above) plays on to the first effect tick; then the left side holds a **constant level for 18 ms** (channel 0
+  off holding the song's last sample at the effect's volume, channel 3 at volume 0), the step plays for ~100 ms from
+  its start (waveform correlation 0.80 with the Client's step), and both sides stay **exactly 0** after it: the song
+  never comes back (the right side had already ended its notes). The Client (`AmigaMusic`, the same cue at that
+  point) gives the same: song, a 20 ms held level, the 100 ms step, silence, right side 0. Tests
+  `AmigaSoundProgramTests.An_effect_over_a_running_song_matches_the_program` (oracle case "2-e4-2") and
+  `An_effect_ends_the_running_song_for_good`. Not modelled, by design: under Best / Amiga art with a DOS sound device
+  the Client plays the Amiga songs and the DOS effects, so an effect does not cut a song there (no original has that
+  pairing).
 - **The Client itself** (s41, `client_xvfb.sh` on Xvfb, its null sink recorded in stereo): `--art amiga --sound
   amiga`, the camp's song 1: left and right uncorrelated (0.00–0.09), band levels against FS-UAE's song 1 within
   1.5 dB to 6 kHz; `--sound speaker`: both sides equal sample for sample, a turn one 27.5 ms pulse, a bump 105.6 ms
@@ -516,10 +578,10 @@ character's name and its icon (3). The Client's side rendered by `goldbox-tools 
 
 ## 6. Open `[?]`
 
-- Auto-stop onset in DOSBox-X (§2.4; also why the cast tunes 1, 7, 10 never sound in the spell flight's short
-  bracket, s41); the speaker's analogue filter; the Client's "lost a
+- Auto-stop onset: the driver's first tick comes when the running BIOS period ends (up to 55 ms after the install,
+  §2.4 s43), the BIOS clock's phase: not modelled; the speaker's analogue filter; the Client's "lost a
   spell" after the caster's own Fireball and one repeated audio chunk (§2.4 s41); machine-time lengths (§2.4 s39)
   are not modelled (user, s40).
 - Amiga (§5): which machine (PAL or NTSC) the program expects (the Client is PAL); the note-start delay inside a
-  tick (§5.6, not modelled); an effect cutting a song not seen in FS-UAE; the screens of hunks 4, 16 and 19.
+  tick is the 68000's run time (§5.6 s43, machine time, not modelled); the screens of hunks 4, 16 and 19.
 - Which other SSI games share this driver and its tunes 12–20.

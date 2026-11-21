@@ -125,9 +125,25 @@ moves, the coin list comes again, and leaving it then goes to the pick. Checked 
 `tools/scripts/por_trade_oracle.py` (0x250D5 and 0x2276E, 300 cases each; `TradeProgramTests`). Client: `TradeRules`
 (Core), `CharacterView` (`TradeItem`, `TradeMoney`, `LetGoOnPage`), `MemberPick` (the camp Cast's target pick too),
 `TradeContext.InterfaceRedraw` / `TradeTarget` / `PickMenu`, `PartyMenuFlow.PickScreen` (case 0); the Client frames
-equal DOSBox-X's but for its help lines (s42). `[?]` The Client's recalculation in Trade is the weight and item count
-only (as the other venue screens), not START 0x1758's other bytes: after the item Trade of a readied-then-unreadied
-weapon View's damage line keeps the weapon's dice (DOSBox-X redraws the bare-hand dice).
+equal DOSBox-X's but for its help lines (s42).
+**What is recalculated (P + D s43).** START 0x1758 (00BA:0BB8) runs in full, never just the weight: on the item
+Trade's pick in the carry test (0x237A1) and after the move (0x2280B); on the giver (DS:5D92, [bp−0x3F] from
+0x21F39) by the Items loop after *every* command (0x224AF; also Ready, Sell, Id, Drop…), not by 0x2276E; in the money
+Trade only by the page 0x21084 → 0x21642 on DS:5D92 after the pick, none in 0x250D5, and the money's pick never; and
+by View's page on every full draw (0x21642: entry and after I, S, T; not after D). The Client does the same with
+`StatRecalc` (`TradeContext.Recalculate`, the ITEMS table from `ClientResources.ItemTypes`; weight and item count only
+without it). Under emulation: `por_trade_oracle.py` also runs START 0x1758 on the giver after 0x2276E, every other giver
+starting with stale attack and movement bytes (`TradeProgramTests`, 300 cases): the giver's recalculation is settled
+there, not on screen (View's redraw after I recalculates as well). **D** (s43, 3000 cycles, save A with Thrender's
+0x102 edited to 7 and his dice to 3d7+9; camp, V, I, R on the flail, T, End, Return, E): View showed 538 and 1D6+2
+(the page's own recalculation); R's 0x224AF already made the dice 1D2+1, the Trade took the encumbrance to 388, and
+View came back with 388, 1D2+1 and no weapon line. The Client (`--save` of that save with the flail unreadied in the
+file; its converted save keeps 0x102 = 7 and 3d7+9) showed 538 and 1D2+1 on entry (View's recalculation, as Ready is
+not built), after the Trade the same final page as DOSBox-X. The Amiga View does the same (P s43): its page (hunk 10
++0x48E0) calls the fighting block at +0x4E92, which runs the Amiga's copy of START 0x1758 (hunk 13 +0x4014: the 13
+equipment pointers at record +0xCE, item count +0xC9, hands +0x102, weight +0x104; called from seven hunks) on the
+current creature first; the View loop (+0x52E8) draws the page on entry (+0x531A) and after I, T, S (+0x5540–0x5554),
+not after D (+0x54F6: the money lines +0x4DB6 only) or R. The Client's shared loop is right for both.
 
 **Items and Drop from View** (P + D, s39). Items is 0x21F32 in every venue: its page (0x221DE–0x2229B: braid rows 0, 2,
 23; the name with "'S" and the title on row 1, the heading on row 3, the list window (1,5)–(38,22)) and the item list
@@ -169,8 +185,10 @@ cell); Id's offer under the page menu with Id lit, Yes, the looks-like words and
 line with Yes lit, PauseOnly (0.97 s on both sides), the page. Before s42 the Client drew the
 page's menu under the second text; now 96 of 104 Client frames equal on the Sell run (the misses: help lines, the
 encumbrance below) and every Id frame but the item list (the run had not sold the first scroll). The test save's
-encumbrance differed (DOSBox-X 1058, the Client 538: the edited gold and items are not in the save's weight word, so
-the program recalculates it on Load or on View and the Client does not `[?]`; a real save keeps them equal). **D** (s41, slot F's shop, Thrender: View, Items, Sell on the
+encumbrance differed (DOSBox-X 1058, the Client 538: the edited gold and items are not in the save's weight word).
+Settled s43: the program recalculates on **View** (every full draw of the page, 0x21642 → START 0x1758), not on Load
+(`save-format.md`, derived bytes on Load); the Client's View now does the same.
+**D** (s41, slot F's shop, Thrender: View, Items, Sell on the
 readied flail, Id, Yes with too little gold, Escape): the unready message, the offer typed over rows 21–22 under
 the page menu with Id lit, the deal question with No lit, the no-money message, the box blanked: 44 of 46
 Client frames equal (the misses the help line and one transition frame between the shop menu and View's page).

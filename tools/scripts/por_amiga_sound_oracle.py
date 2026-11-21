@@ -4,6 +4,8 @@
 and records what they write to the custom chips (DMACON and the four audio channels) on every vertical blank.
 
 Usage: python3 -I por_amiga_sound_oracle.py PROGRAM OUT.json [TICKS] [--full]   (PROGRAM: disk A's `program`)
+       python3 -I por_amiga_sound_oracle.py --timing PROGRAM SONG [TICKS]   per music tick: tick, instructions run
+       before the output's channel-on DMACON write (hunk 27 +0x82BE), instructions in the tick, new-note DMA-off writes
 
 The hunk file is loaded with every hunk at 0x100000 * (index + 1) and its RELOC32 entries applied. A run calls the
 player's own routines: PlaySong (hunk 27 +0x78A0, the song number in d0), then the tick (+0x78B2) TICKS times (default
@@ -24,7 +26,7 @@ import json
 import struct
 import sys
 
-from unicorn import Uc, UC_ARCH_M68K, UC_MODE_BIG_ENDIAN, UC_HOOK_MEM_WRITE
+from unicorn import Uc, UC_ARCH_M68K, UC_MODE_BIG_ENDIAN, UC_HOOK_CODE, UC_HOOK_MEM_WRITE
 from unicorn.m68k_const import UC_CPU_M68K_M68040, UC_M68K_REG_A7, UC_M68K_REG_D0
 
 BLOCK = 25
@@ -105,6 +107,8 @@ class Amiga:
         uc.mem_write(SENTINEL, b'\x4e\x72\x27\x00')
         self.uc = uc
         self.line = []
+        self.count = None       # --timing: instructions run in the current call, and where each write came
+        self.writes_at = []
         uc.hook_add(UC_HOOK_MEM_WRITE, self._custom, begin=CUSTOM, end=CUSTOM + 0x1FF)
         c27 = base(27)
         uc.hook_add(UC_HOOK_MEM_WRITE, self._smc, begin=c27, end=c27 + len(self.hunks[27]) - 1)
@@ -121,6 +125,8 @@ class Amiga:
     def _custom(self, uc, _access, addr, size, value, _ud):
         reg = addr - CUSTOM
         value &= (1 << (8 * size)) - 1
+        if self.count is not None:
+            self.writes_at.append((self.count[0], reg, value))
         if reg == 0x96:
             self.line.append('96:%x' % (value & 0x800F))
         elif 0xA0 <= reg < 0xE0:
@@ -158,6 +164,16 @@ class Amiga:
         self.call(base(33) + 0x172)
         return ' '.join(self.line)
 
+    def counted_song_tick(self):
+        """--timing: a music tick with the instruction count at each custom-chip write."""
+        if self.count is None:
+            self.count = [0]
+            self.uc.hook_add(UC_HOOK_CODE, lambda _uc, _a, _s, c: c.__setitem__(0, c[0] + 1), self.count)
+        self.count[0] = 0
+        self.writes_at = []
+        self.song_tick()
+        return self.count[0], self.writes_at
+
 
 def run(program, ticks):
     res = {'block': BLOCK, 'ticks': ticks, 'songs': {}, 'effects': {}, 'cases': {}}
@@ -178,7 +194,30 @@ def run(program, ticks):
     a.play_song(0)
     t += [a.song_tick() for _ in range(50)]
     res['cases']['1-3-0'] = t
+    # an effect over a running song (s43): PlayEffect (hunk 33 +0x14E) clears "music on", so the vertical-blank
+    # handler (+0x82) runs the effect tick from the next frame on instead of the music tick; then a new PlaySong
+    a = Amiga(program)
+    a.play_song(2)
+    t = [a.song_tick() for _ in range(100)]
+    a.play_effect(4)
+    t += [a.effect_tick() for _ in range(100)]
+    a.play_song(2)
+    t += [a.song_tick() for _ in range(100)]
+    res['cases']['2-e4-2'] = t
     return res
+
+
+def timing(program, song, ticks):
+    """Per music tick: instructions before the output's DMACON write (+0x82BE, the channels switched on)."""
+    a = Amiga(program)
+    a.play_song(song)
+    rows = []
+    for t in range(ticks):
+        total, writes = a.counted_song_tick()
+        on = [n for n, reg, v in writes if reg == 0x96 and v & 0x8000]
+        starts = sum(1 for n, reg, v in writes if reg == 0x96 and not v & 0x8000 and n < (on[0] if on else 0))
+        rows.append((t, on[0] if on else None, total, starts))
+    return rows
 
 
 def blocks(trace):
@@ -186,6 +225,12 @@ def blocks(trace):
 
 
 def main(argv):
+    if len(argv) > 2 and argv[1] == '--timing':
+        # --timing PROGRAM SONG [TICKS]: instructions from the tick's start to the output's DMACON write
+        rows = timing(argv[2], int(argv[3]), int(argv[4]) if len(argv) > 4 else 385)
+        for t, on, total, starts in rows:
+            print('%5d %5s %5d %d' % (t, on, total, starts))
+        return 0
     full = '--full' in argv
     argv = [a for a in argv if a != '--full']
     if len(argv) < 3:

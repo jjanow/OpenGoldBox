@@ -15,7 +15,26 @@ public sealed record HallEntry(string Text, char Key);
 /// <see cref="TradeContext.MemberPick"/> − index). The program has no highlight here (keys only); the Client's
 /// highlight is for the pad and the mouse.
 /// </summary>
-public sealed record HallMenuRequest(IReadOnlyList<HallEntry> Entries, string Prompt) : PlayerRequest;
+public sealed record HallMenuRequest(IReadOnlyList<HallEntry> Entries, string Prompt) : PlayerRequest
+{
+    /// <summary>
+    /// Opened while VM $4AFF was not 0 (the first hall menu after a Save or a Load) with a picture in the frame table:
+    /// the menu routine draws the frames over the hall's page at cell (3, 3), one on every pass (0x2CD5D–0x2CDD6;
+    /// <see cref="ClientPlayer.MenuAsked"/>, <see cref="HallState.PictureOver"/>).
+    /// </summary>
+    public bool EveryPass { get; init; }
+}
+
+/// <summary>What is left of a picture the hall's menu drew over the page (<see cref="HallState.PictureOver"/>).</summary>
+public enum HallPicture
+{
+    /// <summary>None: the loop drew its page (the menu routine draws no picture with $4AFF = 0 and its flag 0).</summary>
+    None,
+    /// <summary>The whole picture at cell (3, 3), its last frame once the menu has ended.</summary>
+    Whole,
+    /// <summary>After a member pick: the party list drawn again over it (START 0x1307 blanks rows 4 to 4 + n).</summary>
+    UnderList,
+}
 
 /// <summary>
 /// What the hall screen shows while it is open (<see cref="ClientPlayer.Hall"/>): the party list and the menu, or a page
@@ -27,6 +46,14 @@ public sealed class HallState
     public (string Text, byte Colour)? Message { get; set; }
     /// <summary>Load brought a save of interface state ≠ 0: the menu ends at once (0x19D91 → 0x19E6C), as Begin does.</summary>
     public bool LeaveAfterLoad { get; set; }
+
+    /// <summary>
+    /// A picture the hall's menu drew over its page (DOSBox-X s43: after a Save, PICTURE 2's frames at cell (3, 3)):
+    /// the menu routine draws the frame table whenever $4AFF ≠ 0 and a picture is loaded, whatever page is up
+    /// (0x2CD5D–0x2CD9B). It stays until the loop draws its page again (its redraw flag [bp−0xF], set after every
+    /// entry at 0x19E65 and tested at 0x19AFE); a member pick (0x19E69) draws only the party list over it.
+    /// </summary>
+    public HallPicture PictureOver { get; set; }
 }
 
 /// <summary>The hall's and the end game's own texts (catalogue keys <c>Hall.*</c> / <c>End.*</c>), with our wording when
@@ -87,8 +114,12 @@ public static class HallScreens
         h.Memory.Disk = 3;
         bool cheat = false;
         var hall = h.State;
+        bool redraw = true; // [bp−0xF] (0x19AF0): the page is drawn before the next menu
         while (true)
         {
+            if (redraw)
+                hall.PictureOver = HallPicture.None; // 0x19B07–0x19C4B: the window blanked, the list and the entries drawn
+            redraw = true; // every entry, a hidden one too, ends at 0x19E65; only a member pick skips it (0x19E69)
             var party = camp.Party;
             bool hasCurrent = party.Current is not null;
             var flags = TrainingHall.MenuFlags(hasCurrent, h.Memory.Read(TrainingHall.HallMaskCell), cheat, h.Defaults);
@@ -96,7 +127,7 @@ public static class HallScreens
             for (int i = 0; i < flags.Length; i++)
                 if (flags[i])
                 {
-                    string text = h.Text.Entry((TrainingHall.Entry)i).ToUpperInvariant();
+                    string text = AmigaView.Case(h.Text.Entry((TrainingHall.Entry)i));   // the Amiga keeps the case
                     entries.Add(new HallEntry(text, text.Length > 0 ? text[0] : '?'));
                 }
             hall.Page = null;
@@ -104,6 +135,9 @@ public static class HallScreens
             if (answer is int member)
             {
                 camp.Trade.SelectMember(member);
+                if (hall.PictureOver != HallPicture.None)
+                    hall.PictureOver = HallPicture.UnderList; // 0x19CAB: START 0x1307 over the picture (DOSBox-X s43)
+                redraw = false;
                 continue;
             }
             if (answer is not char key)
