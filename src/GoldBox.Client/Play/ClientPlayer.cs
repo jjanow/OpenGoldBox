@@ -818,6 +818,8 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
             ShowPageUnder = p => (PageUnder, PageUnderBox) = (p, true),
             ShowPageAlone = p => (PageUnder, PageUnderBox) = (p, false),
             FrameTextBox = on => TextBoxFramed = on,
+            HoldRosterName = HoldRosterName,
+            RosterDrawn = ReleaseRosterNames,
             HoldPositionLine = on => PositionLineHeld = on,
             Text = Resources.Texts,
             Party = party,
@@ -933,8 +935,43 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
         if (!_effectsShown.Add(g))
             return;
         var shown = new OutsideEffectMessages(Text, runner.Ask, () => memory().GameSpeed, Resources.CombatTexts, () => false,
-            cue => Sound.Cue(cue));
+            cue => Sound.Cue(cue), revived: HoldRosterName, listDrawn: ReleaseRosterNames);
         g.OutsideEffects.Event += (c, e) => shown.Show(c, e, g.OutsideEffects);
+    }
+
+    private readonly HashSet<EclCharacter> _rosterHeld = [];
+    private EclCharacter? _rosterHeldCurrent;
+
+    /// <summary>A member the party list still shows out of play (light red) until it is drawn again (<see cref="TradeContext.HoldRosterName"/>).</summary>
+    public void HoldRosterName(EclCharacter c)
+    {
+        lock (_rosterHeld)
+        {
+            if (_rosterHeld.Count == 0)
+                _rosterHeldCurrent = memory().Party?.Current;
+            _rosterHeld.Add(c);
+        }
+    }
+
+    /// <summary>The party list is drawn again (START 0x0767 / 0x1307, or the screen redrawn after a full-screen page).</summary>
+    public void ReleaseRosterNames()
+    {
+        lock (_rosterHeld)
+            _rosterHeld.Clear();
+    }
+
+    public bool RosterNameHeld(EclCharacter c)
+    {
+        lock (_rosterHeld)
+            return _rosterHeld.Count > 0 && _rosterHeld.Contains(c);
+    }
+
+    /// <summary>Another current member: picking one redraws the party list (0x23819; D s38: Home at the camp menu).</summary>
+    public void ReleaseRosterNamesIfPicked(EclCharacter? current)
+    {
+        lock (_rosterHeld)
+            if (_rosterHeld.Count > 0 && !ReferenceEquals(current, _rosterHeldCurrent))
+                _rosterHeld.Clear();
     }
 
     /// <summary>Where the camp's Save writes (the player's save folder; the game folder is never written).</summary>

@@ -276,11 +276,34 @@ public sealed class CampSpells(SpellTable table, Func<byte[], bool> readable)
                 }
                 break;
         }
+        return WithHeadings(rows, Level);
+    }
+
+    /// <summary>
+    /// List kind 2, a scroll's spells (0x275B4 → 0x27466(0), read s38): the scroll used (DS:6B80) identifies itself
+    /// (0x35 := 0) when the reader has effect 0x10 or a cleric level with a cleric scroll (<paramref name="slot"/> 12); a
+    /// scroll still hidden lists nothing; else each non-zero byte 0x3C–0x3E in order, through the row routine 0x272A5
+    /// (level and name of the byte AND 0x7F, a byte above 0x7F marked pending), with the level headings.
+    /// </summary>
+    public static List<CampSpellRow> ScrollList(SpellTable table, EclCharacter c, byte[] scroll, int slot)
+    {
+        if (c.HasEffect(0x10) || (c[ClericLevel] > 0 && slot == 12))
+            scroll[Hidden] = 0;
+        var rows = new List<(int Spell, bool Pending, byte[]? Scroll)>();
+        if (scroll[Hidden] == 0)
+            for (int k = 0; k < 3; k++)
+                if (scroll[ScrollBytes + k] is var b and > 0)
+                    rows.Add((b & 0x7F, b > 0x7F, scroll));
+        return WithHeadings(rows, s => table[s & 0x7F].Level);
+    }
+
+    private static List<CampSpellRow> WithHeadings(List<(int Spell, bool Pending, byte[]? Scroll)> rows, Func<int, int> level)
+    {
         var result = new List<CampSpellRow>();
         int last = 0;
         foreach (var (spell, pending, scroll) in rows)
         {
-            int l = Level(spell);
+            int l = level(spell);
             result.Add(new CampSpellRow(spell, pending, scroll, l != last ? l : null));
             last = l;
         }

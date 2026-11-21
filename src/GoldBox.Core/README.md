@@ -138,10 +138,11 @@ Extra files in that folder are fine: the tests that pin the importer's totals (`
 only the v1.3 release's files (`PorData.ReleaseDir`), so the test saves B–I of `tools/scripts/por_test_saves.py`
 (and the `FINAL2.DAX` it adds) or a played game's saves don't change them.
 
-The Amiga tests also need `GOLDBOX_POR_AMIGA_DIR`: the unpacked disks with `program` and `intro` from disk A and the
-`.dax` files from disk B (found as the importer finds them: any case, up to three folders deep). A folder without
-`program` or `pic.dax` skips the Amiga tests, one without `intro` skips the intro tests, each with a reason naming
-the missing file (`PorAmigaData`, `[PorAmigaIntroFact]`).
+The Amiga tests also need `GOLDBOX_POR_AMIGA_DIR`: the unpacked disks with `program`, `intro` and the `fonts` folder
+(`protect.font`, `protect/8`, …) from disk A and the `.dax` files from disk B (found as the importer finds them: any
+case, up to three folders deep). A folder without `program` or `pic.dax` skips the Amiga tests, one without `intro`
+skips the intro tests, one without `fonts` the rune font tests, each with a reason naming the missing file
+(`PorAmigaData`, `[PorAmigaIntroFact]`, `[PorAmigaRuneFontFact]`; the Client's `AmigaRuneTests` return without it).
 
 `tests/GoldBox.Client.Tests` reads the same variables. Build new rigs from `Support/TestRig.cs`: `TestRig.Player`
 makes a `ClientPlayer` with `TypesText` off, so a rig that steps through scripts gets PRINT's text at once instead of

@@ -128,6 +128,7 @@ public static class PorTextCatalog
         ["Msg.SpellsWord"] = 0x239CE,
         ["Msg.InMemory"] = 0x23973,
         ["Msg.InSpellBook"] = 0x2397D,
+        ["Msg.OnScroll"] = 0x2398B,
         ["Msg.OnScrolls"] = 0x23995,
         ["Msg.ToBeMemorised"] = 0x239AF,
         ["Msg.ToBeScribed"] = 0x239BF,

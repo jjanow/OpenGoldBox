@@ -15,6 +15,8 @@ public sealed class PorAmigaReport
     public bool IconColours { get; set; }
     /// <summary>The music and effect players' data were read from <c>program</c> (<see cref="AmigaSoundDocument"/>).</summary>
     public bool Sound { get; set; }
+    /// <summary>The rune font was imported (disk A's <c>fonts</c> folder was found; it is optional; <see cref="PorAmigaRunes"/>).</summary>
+    public bool RuneFont { get; set; }
     /// <summary>Blocks left out on purpose (placeholders, incomplete sprites), as "file id".</summary>
     public List<string> Skipped { get; } = [];
     /// <summary>Blocks that are not pictures in a picture file, as "file id" (kept out of the overlay).</summary>
@@ -234,11 +236,12 @@ public static class PorAmigaArt
     /// <summary>The art category of a container (DAX name without disk digit, any case), or null when it has none.</summary>
     public static string? Category(string container) =>
         container.Equals(IntroContainer, StringComparison.OrdinalIgnoreCase) ? TitleCategory
+        : container.Equals(PorAmigaRunes.Container, StringComparison.OrdinalIgnoreCase) ? PorAmigaRunes.Category
         : Files.TryGetValue(container.ToLowerInvariant(), out var f) ? f.Category : null;
 
     /// <summary>The categories and the variant the "Best" mix uses for each (PLAN §4.3: Amiga, decided s5; DOS fills the gaps).</summary>
     public static Dictionary<string, string> BestDefaults() =>
-        Files.Values.Select(f => f.Category).Append(TitleCategory).Distinct().Order(StringComparer.Ordinal)
+        Files.Values.Select(f => f.Category).Append(TitleCategory).Append(PorAmigaRunes.Category).Distinct().Order(StringComparer.Ordinal)
             .ToDictionary(c => c, _ => Variant);
 
     /// <summary>The palette table the program sets for block <paramref name="id"/> of <paramref name="container"/>.</summary>
@@ -286,7 +289,31 @@ public static class PorAmigaArt
         files.AddRange(DataFiles(dataDir).Values);
         if (LocateIntro(amigaDir) is { } intro)
             files.Add(intro);
+        if (LocateRuneFont(amigaDir, File.ReadAllBytes(program)) is { } font)
+            files.Add(font.Path);
         return [.. files.Distinct().Order(StringComparer.Ordinal)];
+    }
+
+    /// <summary>
+    /// The rune font the program opens (<see cref="PorAmigaRunes"/>) under <paramref name="amigaDir"/>, with the
+    /// program's set-up for it, or null (no fonts folder from disk A, or a program not laid out so).
+    /// </summary>
+    public static (string Path, PorAmigaRunes.Setup Setup)? LocateRuneFont(string amigaDir, byte[] program) =>
+        PorAmigaRunes.Read(program) is { } setup && PorAmigaRunes.LocateFont(amigaDir, setup.FontName, setup.YSize) is { } path
+            ? (path, setup) : null;
+
+    /// <summary>The rune font's cells and palette (<see cref="PorAmigaRunes.Cells"/>), or null when the font cannot be drawn so.</summary>
+    public static (byte[][] Cells, byte[] Palette)? RuneFont(string fontPath, PorAmigaRunes.Setup setup)
+    {
+        try
+        {
+            return PorAmigaRunes.Cells(AmigaDiskFont.Parse(File.ReadAllBytes(fontPath)), setup.Pen) is { } cells
+                ? (cells, setup.InterfaceRgb) : null;
+        }
+        catch (DaxFormatException)
+        {
+            return null;
+        }
     }
 
     /// <summary>The program's five palette tables, each 16 colours as RGB triplets.</summary>
@@ -374,6 +401,14 @@ public static class PorAmigaArt
                     [DaxPicture.Create(AmigaIntro.Width, AmigaIntro.Height, 0, 0, [px])], false, pal, null, 0);
             report.IntroPanels = id - FirstPanelId;
         }
+        // The rune font (PROTECT's glyphs; docs/re/ecl-format.md "PROTECT"), from disk A's fonts folder when present.
+        if (LocateRuneFont(amigaDir, programBytes) is var (fontPath, setup) && RuneFont(fontPath, setup) is var (cells, rgb))
+        {
+            report.Inputs.Add(new ModuleInput { File = $"amiga/fonts/{PorAmigaRunes.Container}/{setup.YSize}", Sha256 = Sha256(File.ReadAllBytes(fontPath)) });
+            Write(moduleRoot, PorAmigaRunes.Container, PorAmigaRunes.Id,
+                [DaxPicture.Create(PorAmigaRunes.Cell, PorAmigaRunes.Cell, 0, 0, cells)], false, rgb, null, 0);
+            report.RuneFont = true;
+        }
         return report;
     }
 
@@ -424,7 +459,11 @@ public static class PorAmigaArt
             })],
             PackedTiles = tileWidth > 0 ? PackedPerItem : null,
             PaletteTable = table,
-            Source = new SourceRef { Container = container == IntroContainer ? container : container + ".dax", Block = id },
+            Source = new SourceRef
+            {
+                Container = container == IntroContainer ? container : container == PorAmigaRunes.Container ? container + ".font" : container + ".dax",
+                Block = id,
+            },
         });
     }
 
@@ -474,6 +513,15 @@ public static class PorAmigaArt
             r.Count("AMIGA ICON COLOURS");
             if (module.AmigaIconPairs() is not { } got || !got.AsSpan().SequenceEqual(pairs))
                 r.Mismatches.Add("amiga icon colours: missing in the module or not the program's bytes");
+        }
+        if (LocateRuneFont(amigaDir, File.ReadAllBytes(programPath)) is var (fontPath, setup) && RuneFont(fontPath, setup) is var (cells, rgb))
+        {
+            r.Count("AMIGA RUNE FONT");
+            if (module.Art(PorAmigaRunes.Container, PorAmigaRunes.Id, GoldBox.Data.Por.PorArtChoice.Amiga) is not { Variant: Variant, Frames: [var font] } img)
+                r.Mismatches.Add("amiga rune font: missing in the module");
+            else if (font.Items.Count != cells.Length || !font.Items.Select((px, i) => px.AsSpan().SequenceEqual(cells[i])).All(b => b)
+                || !img.PaletteRgb.AsSpan(0, rgb.Length).SequenceEqual(rgb))
+                r.Mismatches.Add("amiga rune font: cells or colours differ from the font file and the program");
         }
         if (LocateIntro(amigaDir) is { } introPath)
         {

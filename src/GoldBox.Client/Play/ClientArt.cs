@@ -23,6 +23,12 @@ public sealed class ClientArt
     public OverlandArt Overland { get; }
     public PorArtChoice Choice { get; private set; }
 
+    /// <summary>
+    /// PROTECT's glyphs in the Amiga rune font (<see cref="RuneGlyphs"/>) under Best / Amiga when the module has it;
+    /// null draws the DOS font's glyphs (Original DOS, or no Amiga font).
+    /// </summary>
+    public RuneGlyphs? Runes { get; private set; }
+
     /// <summary>Called after a change (the Client saves the setting).</summary>
     public Action<PorArtChoice>? Changed { get; set; }
 
@@ -56,6 +62,7 @@ public sealed class ClientArt
         Combat.UseArt(choice, Palette.Base);
         Pictures.UseArt(choice, Palette.Base);
         Overland.UseArt(choice, Palette.Base);
+        Runes = RuneGlyphs.Load(_content, choice, Palette.Base);
     }
 
     /// <summary>

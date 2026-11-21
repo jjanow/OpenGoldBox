@@ -142,12 +142,20 @@ public sealed class CombatView
     /// in <paramref name="dir"/> (8 = none); the view moves for it (<see cref="Rebuild"/>; a redrawn view has lost its
     /// cursor box), the cell (x, y) is redrawn (a box there goes), and with <paramref name="cursorSize"/> (the arena's
     /// cursor flag set) the box is drawn on the target square with that footprint.
+    /// The attack pose is not kept anywhere in the program: 0x31232 draws frame 1 into the view once. A rebuilt view
+    /// draws every creature in play with frame 0 (0x3119F), and the cell redraw 0x30A0F draws the creature on (x, y)
+    /// with frame 0 (0x30AB7), so both put an attacker back in its standing pose (read s38).
     /// </summary>
     public void Scroll(int x, int y, int delta, int dir = CombatTables.Center, int? cursorSize = null)
     {
         int tx = x + CombatTables.DirDx[dir], ty = y + CombatTables.DirDy[dir];
         if (Rebuild(tx, ty, delta))
+        {
             Cursor = null;
+            Attacking.Clear();
+        }
+        if (Fight?.Map is CombatMap map && map.At(x, y) is { } occupant)
+            Attacking.Remove(occupant);
         if (Cursor == (x, y))
             Cursor = null;
         if (cursorSize is { } size)
@@ -628,15 +636,33 @@ public sealed partial class CombatChooser(Func<PlayerRequest, object?> ask, Comb
     /// <summary>
     /// CreatureDowned's display (0x3154B, read s19), in a fight: the downed picture (icon cell 24 = COMSPR 11, loaded at
     /// the fight start 0xEADC with COMSPR i into cell i + 13) on the creature's square, the pause, then the creature
-    /// leaves the map (Core's <see cref="CombatMap.Downed"/>).
+    /// leaves the map (Core's <see cref="CombatMap.Downed"/>). First (0x315CD–0x315ED), when the creature is not wholly
+    /// in view (0x30E54 with 1; false too once it has no icon on the map), ScrollView(its square, 3): a rebuilt view
+    /// draws the attacker standing (<see cref="CombatView.Scroll"/>); otherwise nothing redraws the attacker, which keeps
+    /// the pose MakeAttack drew until its end 0x142C5 (or the standing pose a missile's flight left, read s38).
     /// </summary>
     private void Downed(EclCharacter c)
     {
-        View.HitMarker = Square(c) ?? (_lastSquare.TryGetValue(c, out var last) ? last : null);
+        var sq = Square(c) ?? (_lastSquare.TryGetValue(c, out var last) ? last : null);
+        if (sq is { } s && !WhollyInView(c))
+            View.Scroll(s.X, s.Y, 3);
+        View.HitMarker = sq;
         Pause(MessageMs);
         View.HitMarker = null;
-        // [?] DOSBox-X s29: once the vampire's attacker pose went with the downed picture (Thrender, below it, drained
-        // dead), once it stayed (Bakshi, beside it, the same way): which redraw takes it is not read.
+        // [?] DOSBox-X s29: the vampire's pose went under Thrender's downed picture (below it) and stayed under Bakshi's
+        // (beside it); this read keeps it for both when they are wholly in view (combat-menu.md "Attack pose").
+    }
+
+    /// <summary>0x30E54(creature, 1): it has an icon on the map and every footprint cell is in the view.</summary>
+    private bool WhollyInView(EclCharacter c)
+    {
+        if (View.Fight?.Map is not CombatMap map || !map.OnMap(c))
+            return false;
+        var (x, y) = map.Position(c);
+        for (int i = 0; i < 4; i++)
+            if (map.Tables.IconCell(map.IconSize(c), i, out int dx, out int dy) && !View.InView(x + dx, y + dy))
+                return false;
+        return true;
     }
 
     /// <summary>The end of MakeAttack (0x142C5–0x1430E): the attacker is drawn again in its standing pose.</summary>
@@ -908,7 +934,7 @@ public sealed partial class CombatChooser(Func<PlayerRequest, object?> ask, Comb
         View.Page = null;
         View.Mode = CombatMode.Watch;
         var sq = Square(c);
-        if (sq is { } s0 && !View.InView(s0.X, s0.Y))
+        if (sq is { } s0 && !WhollyInView(c)) // START 0x2BD7: 0x30E54(creature, 1)
             View.Scroll(s0.X, s0.Y, 3);
         PrintCreatureMessage(c, text, CombatView.MessageTop, false);
         int reps = effect ? View.Speed : 0;

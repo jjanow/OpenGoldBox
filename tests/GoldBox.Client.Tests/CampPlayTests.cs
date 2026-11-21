@@ -173,6 +173,71 @@ public class CampPlayTests
         r.Runner.Dispose();
     }
 
+    private static void Frame(Rig r)
+    {
+        r.Input.Update(default, default, default, TimeSpan.Zero, _ => null);
+        r.Screen.Update(r.Input);
+    }
+
+    /// <summary>The colour of a text cell's lit pixels (the most common non-black one), 0 when the cell is empty.</summary>
+    private static byte CellColour(IndexedFrame f, int col, int row)
+    {
+        var n = new int[16];
+        for (int y = 0; y < 8; y++)
+            for (int x = 0; x < 8; x++)
+                n[f[col * 8 + x, row * 8 + y]]++;
+        n[0] = 0;
+        return (byte)Array.IndexOf(n, n.Max());
+    }
+
+    [Fact]
+    public void Rest_time_menu_left_right_move_the_field_and_an_entry_starts_at_its_capital()
+    {
+        // 0x244ED (D s38): Left / Right move the time field on row 17 and leave row 24's lit word; the menu routine's
+        // entries run from their capital to two cells before the next, so "daYs" lit shows "YS" white and "DA" green;
+        // Rest lit also lights the D.
+        if (Dir() is null)
+            return;
+        var r = Start();
+        long t0 = GameClock.TotalMinutes(r.Game.Memory);
+        Press(r, GameAction.Encamp);
+        Key(r, Keys.R);
+        var f = new IndexedFrame(320, 200);
+        r.Screen.Draw(f, r.Input);
+        var menu = Row(f, 24);
+        Press(r, GameAction.MenuRight);                        // minutes → days
+        Assert.Equal((byte)15, r.Player.Text.Cell(17, 12).Colour);
+        Assert.Equal((byte)10, r.Player.Text.Cell(17, 18).Colour);
+        var g = new IndexedFrame(320, 200);
+        r.Screen.Draw(g, r.Input);
+        Assert.Equal(menu, Row(g, 24));                        // row 24 unchanged
+        Press(r, GameAction.MenuLeft);                         // days → past days back to minutes
+        Assert.Equal((byte)15, r.Player.Text.Cell(17, 18).Colour);
+        Key(r, Keys.Y);                                        // daYs
+        Frame(r);
+        var h = new IndexedFrame(320, 200);
+        r.Screen.Draw(h, r.Input);
+        Assert.Equal([10, 10, 15, 15], Enumerable.Range(7, 4).Select(c => CellColour(h, c, 24)));
+        Key(r, Keys.M);
+        Press(r, GameAction.MenuUp);                           // 5 minutes
+        Press(r, GameAction.Confirm);                          // Enter = Rest
+        Idle(r);
+        Assert.Equal(t0 + 5, GameClock.TotalMinutes(r.Game.Memory));
+        r.Runner.Dispose();
+    }
+
+    [Fact]
+    public void Rest_lit_also_lights_the_D_of_days()
+    {
+        // D s38: with Rest lit the menu routine lights "Rest   d" (its entry runs to two cells before the Y).
+        var font = new TextFont(Enumerable.Repeat((byte)0xFF, 177 * 8).ToArray());
+        var line = "Rest   daYs Hours Mins   Inc Dec   Exit";
+        var (items, keys) = CampScreens.ParseMenu(line);
+        var f = new IndexedFrame(320, 200);
+        ExploreScreen.DrawLine(f, font, items, 0, 0, i => keys[i], CampScreens.MenuColumns(line));
+        Assert.Equal([15, 15, 15, 15, 15, 10, 15, 10, 15, 10], new[] { 0, 1, 2, 3, 7, 8, 9, 10, 12, 13 }.Select(c => CellColour(f, c, 24)));
+    }
+
     [Fact]
     public void Camp_by_mouse_rest_stop_and_place_order()
     {

@@ -59,6 +59,15 @@ public sealed record ChoiceRequest(string? Prompt, IReadOnlyList<string> Items, 
     public int? UpAnswer { get; init; }
     public int? DownAnswer { get; init; }
 
+    /// <summary>
+    /// Answers for Left / Right and Confirm of a horizontal menu that takes them itself instead of moving the highlight
+    /// (the rest-time menu 0x244ED: Left / Right move the time field, Enter rests; D s38: row 24 keeps its lit word);
+    /// null = the usual highlight move and pick.
+    /// </summary>
+    public int? LeftAnswer { get; init; }
+    public int? RightAnswer { get; init; }
+    public int? ConfirmAnswer { get; init; }
+
     /// <summary>The hotkey of item <paramref name="i"/>.</summary>
     public char HotkeyOf(int i) => Hotkeys is { } h && i < h.Length ? h[i] : Items[i].Length > 0 ? Items[i][0] : '\0';
 }

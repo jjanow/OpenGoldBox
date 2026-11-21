@@ -52,6 +52,15 @@ public sealed class TradeContext
     public Action<bool> FrameTextBox { get; init; } = _ => { };
 
     /// <summary>
+    /// A member's name stays as the party list last drew it (out of play, light red) after a revive outside a fight:
+    /// 0x2C753 draws no list and the rest loop never calls START 0x0767 (D s38); the next full redraw shows it again.
+    /// </summary>
+    public Action<EclCharacter> HoldRosterName { get; init; } = _ => { };
+
+    /// <summary>The party list drawn again (START 0x0767): held names show their colour again.</summary>
+    public Action RosterDrawn { get; init; } = () => { };
+
+    /// <summary>
     /// The position line keeps what it showed (true) until released (false): the rest loop 0x24A66 never draws it, the
     /// camp's Rest draws it after (0x1804A; D s33: 10:50 under a handler message on the first tick, the clock at 10:55).
     /// </summary>

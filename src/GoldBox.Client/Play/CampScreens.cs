@@ -29,7 +29,8 @@ public sealed class CampContext
 
     /// <summary>The handler messages outside a fight on the camp's text window; <paramref name="resting"/> is DS:6DDA.</summary>
     public OutsideEffectMessages OutsideMessages(bool resting) =>
-        new(Dialog.Text, Dialog.Ask, () => Memory.GameSpeed, Resources.CombatTexts, () => resting, Cue, () => Trade.FrameTextBox(true));
+        new(Dialog.Text, Dialog.Ask, () => Memory.GameSpeed, Resources.CombatTexts, () => resting, Cue, () => Trade.FrameTextBox(true),
+            Trade.HoldRosterName, Trade.RosterDrawn);
 
     public Dialog Dialog => Trade.Dialog;
     public GameText Text => Trade.Text;
@@ -348,6 +349,8 @@ public static class CampScreens
             return (v < 10 ? "0" + s : s)[..2];
         }
 
+        private const int FieldLeft = -30, FieldRight = -31;
+
         public bool ChooseRestTime(RestTimeMenu menu)
         {
             c.Dialog.Text.Clear();
@@ -362,11 +365,17 @@ public static class CampScreens
                     Hotkeys = keys,
                     UpAnswer = inc >= 0 ? inc : null,
                     DownAnswer = dec >= 0 ? dec : null,
+                    // 0x244ED: Left / Right move the field (row 24 keeps its lit word, D s38), Enter = Rest
+                    LeftAnswer = FieldLeft,
+                    RightAnswer = FieldRight,
+                    ConfirmAnswer = keys.IndexOf('R') is >= 0 and var restAt ? restAt : null,
                     Columns = columns,
                 }) is int a ? a : items.Count - 1;
-                char k = i >= 0 && i < keys.Length ? keys[i] : 'E';
+                char k = i == FieldLeft ? '<' : i == FieldRight ? '>' : i >= 0 && i < keys.Length ? keys[i] : 'E';
                 RestTimeMenu.Key key = k switch
                 {
+                    '<' => RestTimeMenu.Key.Left,
+                    '>' => RestTimeMenu.Key.Right,
                     'R' => RestTimeMenu.Key.Rest,
                     'Y' => RestTimeMenu.Key.Days,
                     'H' => RestTimeMenu.Key.Hours,
@@ -402,6 +411,8 @@ public static class CampScreens
         public void PartyHealed(bool anyone)
         {
             Draw(0);
+            if (anyone)
+                c.Trade.RosterDrawn(); // 0x2463D redraws the party list when anyone healed
             c.Dialog.Text.Put(19, 1, c.Text[Msg.PartyHealed], 10);
             c.Dialog.WaitKey();
             ClearMessages();

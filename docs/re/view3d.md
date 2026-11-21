@@ -249,7 +249,8 @@ Code: `GoldBox.Core.Explore.AreaLoop` (one command at a time), `GameClock`, `Are
 - The glyph routine (START 0x726F: column, row, colour, count, character, flag) draws text with the flag set as
   glyph UpCase(character) mod 64, which is this mapping (s12); with the flag clear the byte is the glyph number
   (PROTECT's runes) in the same font: the font pointer DS:5E20 has one writer, the start-up (0xE650), so the runes
-  are 8X8D1 block 201 glyphs (65–139 in v1.3's twelve lines). Client: `TextFont.RawGlyph` (U+E000 + glyph in a text
+  are 8X8D1 block 201 glyphs (65–139 in v1.3's twelve lines). The Amiga v1.0 draws them from a font of its own, `protect.font`, in
+  pen 28, set bits only (ecl-format.md "PROTECT"; the Client does so under Best / Amiga). Client: `TextFont.RawGlyph` (U+E000 + glyph in a text
   cell); `[?]` a glyph number past 176 reads past the font (none in v1.3; the Client draws it blank). Columns above 39 or rows above 24 are not drawn. In CGA mode (DS:4A1E = 0) the colour goes
   through a 16-entry table at DS:25D5; in EGA it is used as is.
 

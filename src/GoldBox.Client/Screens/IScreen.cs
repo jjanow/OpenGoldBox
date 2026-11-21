@@ -97,7 +97,7 @@ public static class Chrome
     /// <paramref name="hide"/> answers true are left out (their rows close up).
     /// </summary>
     public static void PartyList(IndexedFrame f, TextFont font, EclParty? party, int col, int? highlighted = null,
-        Func<EclCharacter, bool>? hide = null)
+        Func<EclCharacter, bool>? hide = null, Func<EclCharacter, bool>? heldOutOfPlay = null)
     {
         Text(f, font, col, 2, "NAME", White);
         TextRight(f, font, 34, 2, "AC", White);
@@ -110,7 +110,7 @@ public static class Chrome
             if (hide?.Invoke(m) == true)
                 continue;
             var name = m.Name.Length > 15 ? m.Name[..15] : m.Name;
-            byte nameColour = i == (highlighted ?? party.CurrentIndex) ? White : m[0x10D] == 0 ? LightRed : m[0x10E] == 1 ? Yellow : Cyan;
+            byte nameColour = i == (highlighted ?? party.CurrentIndex) ? White : m[0x10D] == 0 || heldOutOfPlay?.Invoke(m) == true ? LightRed : m[0x10E] == 1 ? Yellow : Cyan;
             Text(f, font, col, row, name.ToUpperInvariant(), nameColour);
             TextRight(f, font, 34, row, (60 - m[0x111]).ToString(CultureInfo.InvariantCulture), Green);
             TextRight(f, font, 38, row, m[0x11B].ToString(CultureInfo.InvariantCulture), m[0x11B] < m[0x32] ? Yellow : Green);

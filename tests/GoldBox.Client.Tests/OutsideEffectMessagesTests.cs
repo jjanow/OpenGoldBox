@@ -87,4 +87,41 @@ public class OutsideEffectMessagesTests
         ], r.Log);
         Assert.False(r.Shown.Show(Creature(), EffectEvent.Healed)); // not a handler message: the caller's
     }
+
+    [Fact]
+    public void A_revive_holds_the_name_and_statusdone_draws_the_list_again()
+    {
+        // D s38: 0x2C753 outside a fight draws no party list, so the revived name stays light red; 0xECB3's end calls
+        // START 0x0767.
+        var held = new List<string>();
+        int drawn = 0;
+        var w = new TextWindow();
+        var shown = new OutsideEffectMessages(w, _ => null, () => 0, new CombatText(), () => true,
+            revived: c => held.Add(c.Name), listDrawn: () => drawn++);
+        var c = Creature();
+        Assert.True(shown.Show(c, EffectEvent.Revived));
+        Assert.Equal(["Tess"], held);
+        Assert.Equal(0, drawn);
+        Assert.True(shown.Show(c, EffectEvent.StatusDone));
+        Assert.Equal(1, drawn);
+    }
+
+    [Fact]
+    public void A_held_name_is_drawn_light_red()
+    {
+        var font = new GoldBox.Core.Explore.TextFont(Enumerable.Repeat((byte)0xFF, 177 * 8).ToArray());
+        var party = new EclParty();
+        party.Members.Add(Creature());
+        var c = new EclCharacter { Name = "Ada", [FightRules.InPlay] = 1 };
+        party.Members.Add(c);
+        party.CurrentIndex = 0;
+        byte Colour(Func<EclCharacter, bool>? held)
+        {
+            var f = new GoldBox.Core.Explore.IndexedFrame(320, 200);
+            GoldBox.Client.Screens.Chrome.PartyList(f, font, party, 17, null, null, held);
+            return f[17 * 8, 5 * 8];
+        }
+        Assert.Equal(GoldBox.Client.Screens.Chrome.Cyan, Colour(null));
+        Assert.Equal(GoldBox.Client.Screens.Chrome.LightRed, Colour(m => ReferenceEquals(m, c)));
+    }
 }

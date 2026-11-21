@@ -39,7 +39,7 @@ public enum Msg
     // Save (0x1FCAB–0x1FD11)
     SaveWhich, SaveSlots, Saving,
     // Spell lists and the cast (0x23973–0x27C16)
-    SpellsWord, InMemory, InSpellBook, OnScrolls, ToBeMemorised, ToBeScribed, ChooseSpell, CastAction, MemoriseAction,
+    SpellsWord, InMemory, InSpellBook, OnScroll, OnScrolls, ToBeMemorised, ToBeScribed, ChooseSpell, CastAction, MemoriseAction,
     ScribeAction, CastOnWhom, CombatOnly, LoseIt, Casts,
     // Character view (0x2103A–0x21AC7)
     Age, Str, Int, Wis, Dex, Con, Cha, Level, Exp, Status, Encumbrance, Movement, ViewPrompt,
@@ -175,6 +175,7 @@ public sealed class GameText
         [Msg.SpellsWord] = "Spells ",
         [Msg.InMemory] = "ready",
         [Msg.InSpellBook] = "in the book",
+        [Msg.OnScroll] = "on scroll",
         [Msg.OnScrolls] = "on scrolls",
         [Msg.ToBeMemorised] = "to learn",
         [Msg.ToBeScribed] = "to copy",

@@ -376,7 +376,12 @@ public sealed class ExploreScreen : IScreen
                 if (ItemAt(c, click.X / 8, click.Y / 8) is { } i)
                 {
                     _selected = i;
-                    return GameAction.Confirm;
+                    if (c.ConfirmAnswer is null)
+                        return GameAction.Confirm;
+                    // the clicked item itself where Confirm has its own answer (the rest-time menu's Enter = Rest)
+                    _clickAnswer = i;
+                    _hasClickAnswer = true;
+                    return null;
                 }
                 if (c.PartySelect && RosterAt(click.X / 8, click.Y / 8) is { } m)
                 {
@@ -680,12 +685,16 @@ public sealed class ExploreScreen : IScreen
             case ChoiceRequest c:
             {
                 int n = c.Items.Count;
+                if (!c.Vertical && c.LeftAnswer is { } left && input.Pressed(GameAction.MenuLeft))
+                    return new Reply(left);
+                if (!c.Vertical && c.RightAnswer is { } right && input.Pressed(GameAction.MenuRight))
+                    return new Reply(right);
                 bool back = input.Pressed(c.Vertical ? GameAction.MenuUp : GameAction.MenuLeft);
                 bool fwd = input.Pressed(c.Vertical ? GameAction.MenuDown : GameAction.MenuRight);
                 if (back) _selected = (_selected + n - 1) % n;
                 if (fwd) _selected = (_selected + 1) % n;
                 if (input.Pressed(GameAction.Confirm))
-                    return new Reply(_selected);
+                    return new Reply(c.ConfirmAnswer ?? _selected);
                 if (input.Pressed(GameAction.Cancel) && c.CancelIndex is { } ci)
                     return new Reply(ci);
                 if (!c.Vertical && c.UpAnswer is { } up && input.Pressed(GameAction.MenuUp))
@@ -787,29 +796,36 @@ public sealed class ExploreScreen : IScreen
         _keptMenuDrawn = false;
         if (_combat.Active)
         {
+            _player.ReleaseRosterNames();
             _combat.Draw(f, input);
             return;
         }
         var font = _game.Art.Font;
         var pending = _runner.Pending;
+        // A full-screen page (a list, View, the hall, a window) covers the party list; the screen drawn after it draws
+        // the list again (START 0x1307; D s38: the camp's View shows the revived name's colour again).
         if (pending is ListRequest page)
         {
+            _player.ReleaseRosterNames();
             _list.Draw(f, font, page, input);
             return;
         }
         if (_player.PageUnder is { } under)
         {
+            _player.ReleaseRosterNames();
             DrawOverPage(f, font, under, pending, input);
             return;
         }
         if (_player.Hall is { } hall)
         {
+            _player.ReleaseRosterNames();
             _hall.Draw(f, font, hall, _game.Memory.Party, pending, _selected, input);
             return;
         }
         f.Clear(0);
         if (_player.Window is { } window)
         {
+            _player.ReleaseRosterNames();
             // A full-screen window (START 03F1:02E8 with 1, 1, 38, 22) and the bottom line.
             Chrome.Box(f, 0, 0, 39, 23);
             foreach (var line in window)
@@ -903,9 +919,12 @@ public sealed class ExploreScreen : IScreen
         if (pending is null && !_runner.Busy)
             _player.BottomRowDrawn(); // the run ended: the command line is on row 24 again
         // PROTECT's glyphs outside the text box and the picture window (frame rows 16 / 23, row 24; P s30): drawn over
-        // whatever is there, a glyph cell whole (black behind it), until something draws there again.
+        // whatever is there, a glyph cell whole (black behind it), until something draws there again. The Amiga rune
+        // font (Best / Amiga) draws its set bits only (JAM1, hunk 25 +0xBFC).
         foreach (var (c, r, g) in _player.ScreenGlyphs)
         {
+            if (_art.Runes?.Draw(f, c, r, g) == true)
+                continue;
             Chrome.Clear(f, c, r, 1);
             Chrome.Text(f, font, c, r, g.ToString(), Chrome.White);
         }
@@ -976,7 +995,7 @@ public sealed class ExploreScreen : IScreen
             for (int c = TextWindow.Left; c <= TextWindow.Right + 1; c++)
             {
                 var (ch, colour) = t.Cell(r, c);
-                if (ch == default)
+                if (ch == default || _art.Runes?.Draw(f, c, r, ch) == true) // PROTECT's glyphs in the Amiga rune font
                     continue;
                 if (c > TextWindow.Right)
                     Chrome.Clear(f, c, r, 1); // a glyph cell is drawn whole: over the frame its background is black
@@ -1129,7 +1148,8 @@ public sealed class ExploreScreen : IScreen
             for (int r = 1; r <= 15; r++)
                 Chrome.Clear(f, 1, r, 15);
             foreach (var (c, r, g) in _player.ViewGlyphs)
-                Chrome.Text(f, font, c, r, g.ToString(), Chrome.White);
+                if (_art.Runes?.Draw(f, c, r, g) != true)
+                    Chrome.Text(f, font, c, r, g.ToString(), Chrome.White);
         }
         else if (ShownPicture is { } picture && _art.Pictures.Draw(f, ViewX, ViewY, picture, _anim.Frame))
         {
@@ -1156,7 +1176,7 @@ public sealed class ExploreScreen : IScreen
     }
 
     /// <summary>A line of words on the bottom row as the original draws its menus: the highlighted item all white, the others with a white hotkey letter.</summary>
-    private static void DrawLine(IndexedFrame f, TextFont font, IReadOnlyList<string> items, int selected, int start,
+    internal static void DrawLine(IndexedFrame f, TextFont font, IReadOnlyList<string> items, int selected, int start,
         Func<int, char>? hotkey = null, IReadOnlyList<int>? columns = null)
     {
         int col = start;
@@ -1169,6 +1189,14 @@ public sealed class ExploreScreen : IScreen
                 break;
             int k = hotkey is null ? 0 : Math.Max(0, w.IndexOf(hotkey(i)));
             Chrome.Text(f, font, col, MenuRow, w, i == selected ? Chrome.White : Chrome.Green);
+            // The menu routine's entry runs from its capital to two cells before the next capital (D s38, the rest-time
+            // menu "Rest   daYs": daYs lit shows "YS" white, Rest lit also lights the D; the A is never lit).
+            if (k > 0)
+            {
+                Chrome.Text(f, font, col, MenuRow, w[..k], Chrome.Green);
+                if (i > 0 && i - 1 == selected && k > 1)
+                    Chrome.Text(f, font, col, MenuRow, w[..(k - 1)], Chrome.White);
+            }
             Chrome.Text(f, font, col + k, MenuRow, w.Substring(k, 1), Chrome.White);
             col += w.Length + 1;
         }
@@ -1219,7 +1247,8 @@ public sealed class ExploreScreen : IScreen
         // fixed points, none between LOADMON and the fight: DOSBox-X s29 (a vampire loaded by a step's script) shows the
         // six members through "A battle begins". [?] START 0x1307 is not read: whether a redraw there would list them.
         var monsters = _game.Encounter.State.Monsters;
-        Chrome.PartyList(f, font, party, 17, shown, monsters.Count > 0 ? monsters.Contains : null);
+        _player.ReleaseRosterNamesIfPicked(party?.Current);
+        Chrome.PartyList(f, font, party, 17, shown, monsters.Count > 0 ? monsters.Contains : null, _player.RosterNameHeld);
     }
 
     /// <summary>Two help lines in the text window, in the device used last (keys, pad buttons, or mouse gestures).</summary>

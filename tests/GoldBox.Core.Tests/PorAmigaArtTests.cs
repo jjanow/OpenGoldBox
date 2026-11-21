@@ -134,7 +134,7 @@ public class PorAmigaArtTests(ITestOutputHelper output)
     public void Best_uses_amiga_for_every_category_as_decided()
     {
         var d = PorAmigaArt.BestDefaults();
-        Assert.Equal(["combatGround", "icon", "picture", "portrait", "sprite", "title", "wall"], d.Keys);
+        Assert.Equal(["combatGround", "font", "icon", "picture", "portrait", "sprite", "title", "wall"], d.Keys);
         Assert.All(d.Values, v => Assert.Equal("amiga", v));
         Assert.Equal(4, PorAmigaArt.TableFor("final", 2));
         Assert.Equal(3, PorAmigaArt.TableFor("final", 7));
@@ -304,12 +304,16 @@ public class PorAmigaArtTests(ITestOutputHelper output)
         bool title = Imported.Value.Report.Amiga!.Title;
         Assert.Equal(PorAmigaArt.LocateIntro(PorAmigaData.Dir!) is not null, title);
         Assert.Equal(title ? PorAmigaArt.PanelCount : 0, Imported.Value.Report.Amiga!.IntroPanels);
-        Assert.Equal(508 + (title ? 1 + PorAmigaArt.PanelCount : 0), files.Count);
+        bool runes = Imported.Value.Report.Amiga!.RuneFont;
+        Assert.Equal(PorAmigaData.RuneFont is not null, runes);
+        Assert.Equal(508 + (title ? 1 + PorAmigaArt.PanelCount : 0) + (runes ? 1 : 0), files.Count);
         foreach (var path in files)
         {
             var doc = (ArtDocument)System.Text.Json.JsonSerializer.Deserialize(File.ReadAllText(path), typeof(ArtDocument), ModuleSchemas.Strict)!;
-            // The title painting carries the intro's own palette, not one of the program's tables.
-            Assert.Equal(doc.Source!.Container != PorAmigaArt.IntroContainer, doc.PaletteTable is not null);
+            // The title painting carries the intro's own palette, the rune font the interface colours 16–31, not one
+            // of the program's five tables.
+            Assert.Equal(doc.Source!.Container is not (PorAmigaArt.IntroContainer or PorAmigaRunes.Container + ".font"),
+                doc.PaletteTable is not null);
             Assert.NotNull(doc.Frames);
         }
     }
@@ -380,4 +384,118 @@ public class PorAmigaArtTests(ITestOutputHelper output)
 
     private static string DosFile(PorModule module, string container, int id) =>
         Enumerable.Range(1, 8).Select(d => container + d).First(f => module.Picture(f, id) is not null);
+
+    // ---- the rune font (docs/re/ecl-format.md "PROTECT", PorAmigaRunes) ----
+
+    /// <summary>
+    /// A made-up disk font: characters 0x41 (8 wide, bit y of row y), 0x42 (4 wide, every row full) and the slot after
+    /// them (row 0 full), in one bitmap of 3 bytes a row, as the AmigaOS layout stores them.
+    /// </summary>
+    private static byte[] FontFile(int baseline = 6, int flags = 0x42)
+    {
+        var h = new byte[148];
+        void W(int at, int v) { h[at] = (byte)(v >> 8); h[at + 1] = (byte)v; }
+        void L(int at, int v) { W(at, v >> 16); W(at + 2, v); }
+        L(0, 0x70004E75);                       // moveq #0, d0; rts
+        W(18, AmigaDiskFont.FileId);
+        int m = 78;                             // the TextFont's metrics
+        W(m, 8); h[m + 3] = (byte)flags; W(m + 4, 8); W(m + 6, baseline);
+        h[m + 12] = 0x41; h[m + 13] = 0x42;
+        L(m + 14, 110); W(m + 18, 3); L(m + 20, 134);
+        for (int y = 0; y < 8; y++)
+        {
+            h[110 + 3 * y] = (byte)(0x80 >> y);
+            h[110 + 3 * y + 1] = 0xF0;
+            h[110 + 3 * y + 2] = (byte)(y == 0 ? 0xFF : 0);
+        }
+        W(134, 0); W(136, 8); W(138, 8); W(140, 4); W(142, 16); W(144, 8);
+        static byte[] B(params uint[] v) => [.. v.SelectMany(x => new[] { (byte)(x >> 24), (byte)(x >> 16), (byte)(x >> 8), (byte)x })];
+        return [.. B(0x3F3, 0, 1, 0, 0, (uint)h.Length / 4, 0x3E9, (uint)h.Length / 4), .. h, .. B(0x3F2)];
+    }
+
+    [Fact]
+    public void Disk_fonts_draw_each_character_from_its_slot_and_others_from_the_one_after_hichar()
+    {
+        var f = AmigaDiskFont.Parse(FontFile());
+        Assert.Equal((8, 8, 6, 0x41, 0x42), (f.YSize, f.XSize, f.Baseline, f.LoChar, f.HiChar));
+        Assert.True(f.Pixel(0x41, 3, 3));
+        Assert.False(f.Pixel(0x41, 4, 3));
+        Assert.True(f.Pixel(0x42, 3, 5));
+        Assert.False(f.Pixel(0x42, 4, 5));      // past its width: the next character's bits are not drawn
+        Assert.Equal(2, f.Slot(0x20));
+        Assert.Equal(2, f.Slot(0x43));
+        Assert.True(f.Pixel(0, 7, 0));
+        Assert.False(f.Pixel(0, 7, 1));
+        Assert.Throws<DaxFormatException>(() => AmigaDiskFont.Parse(FontFile()[..40]));
+
+        // The cells as the glyph routine draws them: pen 28 is index 12 of the interface run, the glyph's top line at
+        // row · 8 + 6 − baseline; a proportional font is not drawn this way.
+        var cells = PorAmigaRunes.Cells(f, 28)!;
+        Assert.Equal(256, cells.Length);
+        Assert.Equal(12, cells[0x41][3 * 8 + 3]);
+        Assert.Equal(0, cells[0x41][3 * 8 + 4]);
+        Assert.Equal(cells[0], cells[0xFF]);
+        var lower = PorAmigaRunes.Cells(AmigaDiskFont.Parse(FontFile(baseline: 5)), 28)!;
+        Assert.Equal(12, lower[0x41][4 * 8 + 3]);
+        Assert.All(lower[0x41][..8], v => Assert.Equal(0, v));
+        Assert.Null(PorAmigaRunes.Cells(AmigaDiskFont.Parse(FontFile(flags: 0x62)), 28));
+
+        // The glyph routine's colour → pen: below 16 the even pen of the interface pair.
+        Assert.Equal([16, 16, 30, 30, 26, 28], new[] { 0, 1, 14, 15, 10, 28 }.Select(PorAmigaRunes.ScreenPen));
+    }
+
+    [Fact]
+    public void Font_contents_files_list_each_size_s_file()
+    {
+        var c = new byte[4 + 260];
+        c[0] = 0x0F; c[3] = 1;
+        "runes/8"u8.CopyTo(c.AsSpan(4));
+        c[4 + 257] = 8;
+        Assert.Equal([("runes/8", 8)], AmigaDiskFont.Contents(c));
+        Assert.Throws<DaxFormatException>(() => AmigaDiskFont.Contents(new byte[8]));
+    }
+
+    [PorAmigaFact]
+    public void The_program_opens_the_rune_font_and_draws_in_pen_28()
+    {
+        var program = File.ReadAllBytes(PorAmigaArt.Locate(PorAmigaData.Dir!).Program);
+        var s = PorAmigaRunes.Read(program)!;
+        Assert.Equal(("protect.font", 8, 28), (s.FontName, s.YSize, s.Pen));
+        // Registers 16–31 as start-up loads them (hunk 2 words 16–31).
+        var hunks = AmigaHunks.Parse(program);
+        Assert.Equal(AmigaHunks.Rgb12To24(program.AsSpan(hunks[2].DataOffset!.Value + 32), 16), s.InterfaceRgb);
+        // PROTECT's colour push moved: nothing is taken.
+        var changed = (byte[])program.Clone();
+        changed[hunks[16].DataOffset!.Value + 0x4CCE] ^= 1;
+        Assert.Null(PorAmigaRunes.Read(changed));
+        Assert.Null(PorAmigaRunes.Read(new byte[64]));
+    }
+
+    [PorAmigaRuneFontFact]                                        // skipped, naming the files, without disk A's fonts
+    public void The_rune_font_is_the_dos_runes_redrawn_and_reaches_the_module()
+    {
+        var (dir, report) = Imported.Value;
+        Assert.True(report.Amiga!.RuneFont);
+        var module = PorModule.Open(dir);
+        var r = PorAmigaArt.Check(PorAmigaData.Dir!, module);
+        Assert.Empty(r.Mismatches);
+        Assert.Equal(1, r.Checked["AMIGA RUNE FONT"]);
+        var setup = PorAmigaRunes.Read(File.ReadAllBytes(PorAmigaArt.Locate(PorAmigaData.Dir!).Program))!;
+        foreach (var choice in new[] { PorArtChoice.Best, PorArtChoice.Amiga })
+        {
+            var a = module.Art(PorAmigaRunes.Container, PorAmigaRunes.Id, choice)!;
+            Assert.Equal("amiga", a.Variant);
+            Assert.Equal(setup.InterfaceRgb, a.PaletteRgb);
+        }
+        Assert.Null(module.Art(PorAmigaRunes.Container, PorAmigaRunes.Id, PorArtChoice.Dos));
+        var cells = module.Art(PorAmigaRunes.Container, PorAmigaRunes.Id, PorArtChoice.Amiga)!.Frames.Single();
+        Assert.Equal((8, 8, 256), (cells.Width, cells.Height, cells.Items.Count));
+        Assert.All(cells.Items, c => Assert.All(c, v => Assert.True(v is 0 or 12)));
+        // Against the DOS text font (8X8D1 block 201): the glyphs the rune lines use (65–139 in v1.3) are the same
+        // bits but four, which the Amiga artist redrew (two of them, 79 and 80, are in ECL4 block 21 and ECL5 block 4).
+        var dos = module.ArtData("8X8D1", 201)!;
+        var differ = Enumerable.Range(65, 75).Where(g => Enumerable.Range(0, 64)
+            .Any(i => (cells.Items[g][i] != 0) != ((dos[g * 8 + i / 8] & (0x80 >> (i % 8))) != 0))).ToList();
+        Assert.Equal([75, 79, 80, 117], differ);
+    }
 }

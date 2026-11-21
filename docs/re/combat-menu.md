@@ -504,15 +504,35 @@ and Speed menus, an AI attack at game speed 9). Code: `src/GoldBox.Client/Screen
   frames equal; the rest are the help lines and Display's window (0x187ED: centred white title on row 1, the list
   from row 5, " Exit" at column 1; s34: the Client draws it from the program, camp.md "Display"; s35: save A, Encamp, Magic, Display: every Client frame equal but the help lines, the page itself pixel-equal, a member without effects gets one line, indented one column). Scribe (a scroll of 3 spells, two picks, the
   question) every frame equal but the help lines. Client: `SpellPageLayout` (`ListPage`), `SpellLists.Layout` /
-  `SlotBox`, tests `SpellPageLayoutTests`, `CampPlayTests.Memorize_types_its_slot_lines_first_…`. The scroll list
-  (kind 2) keeps the Client's layout and the hall's Learn uses the same screen; neither seen in DOSBox-X `[?]`.
+  `SlotBox`, tests `SpellPageLayoutTests`, `CampPlayTests.Memorize_types_its_slot_lines_first_…`. **The scroll list**
+  (kind 2, P + D s38): 0x275B4 → 0x27466(0): the scroll used (DS:6B80) identifies itself (0x35 := 0) with effect 0x10 or
+  a cleric level and a cleric scroll (slot 12); still hidden, nothing is listed; else each non-zero byte 0x3C–0x3E in
+  order through the row routine 0x272A5 (level and name of the byte AND 0x7F, above 0x7F pending with the asterisk),
+  with level headings; the title words are "on Scroll" (0x2398B, kind 3's "on Scrolls" is 0x23995). The screen is the
+  fight Cast's: title strip, the window from row 3, the highlight from the entry rule (the last row), row 24 the
+  prompt, Cast and Exit, the combat palette (grey). Client: `CampSpells.ScrollList`, `CombatItemScreens.ChooseScrollSpell`
+  (`SpellLists.Layout` with `Msg.OnScroll`, importer 0.7.23), tests `ScrollSpellListTests`. **D** (s38, 3000 cycles,
+  seed 12345; save A, one orc, every member 200 HP, Darkstar given ITEM8 block 43 record 1 readied: Charm Person,
+  Protection from Evil, Strength): Use, the scroll, Home × 2, End, Home, Enter, the aim: 47 of 48 Client frames equal
+  (the help-line frame before the step); before the fix the Client showed its own list page. The 69 DOSBox-X frames
+  with no Client match are the program's machine-time redraws (each under 0.1 s: the map and panel drawn piece by
+  piece, the list drawn unlit for 17 ms with row 24 still the Items menu). **The hall's Learn** (D s38, training.md)
+  uses the same screen: every Client frame equal but the help-line frame.
 - **s33 DOSBox-X checks** (`fight_frames.py`, now with `sleep:S` entries in key lists and `--ignore` boxes for the
   camp fire; `fight_save.py --item`): the spell screens above; handler 131 (spells-effects.md); the wild boar's
   revive (all-Quick party, MON6 block 120 with 1 HP, seed 12345): 406 of 538 frames equal, every revive frame among
   them (the monster-side revive text typed from row 10, the pause, the clear). Fixed: the AI's start 0xABCF clears row 24
-  after the menu's Quick too (the menu row stayed in the Client). Left `[?]`: after Quick, the attacker's pose while
-  darts fly (Darkstar, Phineas: the icon differs in ~30 frames per throw) and the AI panel's draw-clear-draw (machine
-  time, s30). Keypad 7 / 1 move list highlights (they come as the step bindings' NumPad7 / NumPad1).
+  after the menu's Quick too (the menu row stayed in the Client). After Quick, the attacker's pose while darts fly
+  (Darkstar, Phineas: the icon differed in ~30 frames per throw): the flight's view rebuild draws the thrower standing
+  (read s38, "Attack pose" below; the Client kept the pose, fixed). **D** (s38, the same fight again: `fight_save.py
+  BASE OUT 1C0B00780001007824 --mon 6 --monpatch 120:0x32=1,0x11B=1`, seed 12345, all Quick): 513 of 518 Client frames
+  equal; the dart turns (Darkstar's and Phineas's, two rounds) 158 of 160, the two misses the weapon line retyped at the
+  AI's start after Quick, where the Client shows "11 DAR" in its first frame and DOSBox-X types it from the empty line
+  (0.3 s) `[?]`; the others the help lines and two frames at the end: the boar falls dead (handler 99's revive not
+reached in this run) and DOSBox-X draws the downed picture on **both** cells of its 2 × 1 footprint where the Client
+draws it on the first only `[?]`; then the program stops with "Runtime error 204 at 00B0:013A" (an invalid pointer
+operation) over the map, where the Client asks the continue-battle question `[?]` (not looked into). The AI panel's draw-clear-draw is machine time
+  (s30, s38). Keypad 7 / 1 move list highlights (they come as the step bindings' NumPad7 / NumPad1).
 - **View scrolling** (read s19, 0x30F0E / 0x310D0): ScrollView(x, y, delta, dir) aims at (x, y) + one step in dir;
   the view's centre is (view x + 3, view y + 3); a point within delta of it on both axes leaves the view (delta 255:
   always rebuilt, band 0); else on each axis where the point is outside the band the centre steps to the point, x kept
@@ -539,8 +559,8 @@ and Speed menus, an AI attack at game speed 9). Code: `src/GoldBox.Client/Screen
   - The end of round (0xA087) shows the teammate-dying words (GAME.OVR 0xA05F) through START 0x1693 when 0xA806
     finds a party member dying (0xA11A–0xA134; **D**: row 24, the pause, cleared). Client `Fight.PartyMemberDying`.
   - `[?]` left: an AI creature's panel is drawn, cleared and drawn again at its turn's start (~50 ms in DOSBox-X;
-    the Client draws it once); an attacker's pose went with a downed picture once (Thrender below the vampire) and
-    stayed once (Bakshi beside it); 3 pixels of the downed picture (COMSPR 11, the skull's mouth) show the ground grey
+    the Client draws it once; machine time, s30/s38); an attacker's pose went with a downed picture once (Thrender below
+    the vampire) and stayed once (Bakshi beside it; s38: "Attack pose" below); 3 pixels of the downed picture (COMSPR 11, the skull's mouth) show the ground grey
     in DOSBox-X and black in the Client. (s30: the panel's second draw read, the skull pixels fixed; see below.)
 - **s30 DOSBox-X checks** (method of s29, now kept as `tools/scripts/fight_frames.py`, dosbox-trace-method.md "s30";
   save A on disk 2, seed 12345 on both sides; counts are Client frames equal to a DOSBox-X frame with every s30 fix in,
@@ -566,17 +586,19 @@ and Speed menus, an AI attack at game speed 9). Code: `src/GoldBox.Client/Screen
     **stepping creature's cell redrawn by its facing** (0x31232 in 0xB3B2) before the attacks of opportunity (its
     cursor box goes), and the **mover's panel drawn again after each attack of opportunity** (0x13418–0x13429, START
     0x1583 while it is in play).
-  - The **AI panel's draw-clear-draw** (s29 `[?]`): read — the second draw is the weapon readying 0xBF8A's START
+  - The **AI panel's draw-clear-draw** (s29): read — the second draw is the weapon readying 0xBF8A's START
     0x1583 at 0xC4D7, called when anything changed (`[bp−0x1D]`; always for a creature with no weapon and no
     shield, as the orcs and spectres). In DOSBox-X at 3000 cycles the cleared panel stays ~50–70 ms (CPU time between
     the clear and the redraw; no Delay). The Client draws the panel once; the frames that differ are the in-between
-    states DOSBox-X's refresh catches (panel half drawn under the old menu row). Not changed (machine time) `[?]`.
+    states DOSBox-X's refresh catches (panel half drawn under the old menu row). Not changed: machine time (P, s38: from the
+    AI start 0xABCF to 0xC4D7 the only waits are those of a message shown (0xBB81, 0xBC97, 0xBF8A's PauseOnly) and START
+    0x1583's own typing; START 0x1583 clears rows 1–21 at 0x1595 and draws its lines right after, with no wait).
   - **Poisoned hit** (four huge scorpions MON4 39, handler 64; seed 4242, chosen on the Client side): 234 of 235 (the help lines). A
     scorpion's hit on Rhiannon, then the poisoned words and the killed words (handler 64's texts, typed from row 10
     with their pauses), the downed picture and the pause: equal frame by frame. The one miss was s29's **3 skull
     pixels**: COMSPR 11 is drawn whole, its three colour-0 pixels included (grey under the combat palette); the
     Client drew colour 0 see-through, showing what lay under it (fixed, real-data test). The attacker's pose under a
-    downed picture (s29: kept once, gone once) not seen in s30 `[?]`. Set-up note: party saves written into CHRDAT 0x6D were back to the class values in DOSBox-X's
+    downed picture (s29: kept once, gone once) not seen in s30; read s38 ("Attack pose" below). Set-up note: party saves written into CHRDAT 0x6D were back to the class values in DOSBox-X's
     memory after Load. Load's party join at 0x1F9C9 → 0x1F42C calls the full level-stat routine at 0x1F55A → 0x2AA87,
     including the saving-throw routine 0x2ACDC. The Client applies the full routine when loading a legacy save (s32,
     `save-format.md` "How a save game ties the files together").
@@ -595,10 +617,11 @@ and Speed menus, an AI attack at game speed 9). Code: `src/GoldBox.Client/Screen
     DS:6F81 = 4. The Client uses that slot and applies the colour remap (s32; see SETUPMON in `ecl-format.md`).
   - The **cast's plain icon** at its facing (s29): equal again in both casts (Darkstar's Sleep and Charm Person).
     CLEARBOX and the runes: ecl-format.md "PROTECT" (s30).
-  - "A battle begins" (s29 `[?]`, DOSBox-X 3000 cycles only): on row 24 for 0.817 s (three boots: from the full line to
-    the cleared row), 0.75 s after the blank pause began; the PauseOnly at speed 3 is 675 ms, the rest presumably the
-    fight set-up's CPU time `[?]`. The Client guarantees a rendered frame for the battle-start line even if updates
-    catch up before drawing (s31). The measured interval is still a reference observation.
+  - "A battle begins" (s29, DOSBox-X 3000 cycles only): on row 24 for 0.817 s (three boots: from the full line to
+    the cleared row), 0.75 s after the blank pause began; the PauseOnly at speed 3 is 675 ms (before the line), the
+    rest the fight set-up's machine and disk time: no wait between the line and the combat screen (P, s38;
+    combat-map.md "Start messages"). The Client guarantees a rendered frame for the battle-start line even if updates
+    catch up before drawing (s31). The measured interval is a reference observation of that machine.
 - **The panel's text** (read s19): START 0x16EC in a fight clears (23, row)–(38, 21), writes the name at (23, row)
   (START 0x23B6: out of play light red, hostile = 1 yellow, else cyan) and word-wraps the text into
   (23, row + 1)–(38, 21) in green through START 0x77F8 (the text window routine, `TextWindow`; break set DS:0D16 =
@@ -632,6 +655,24 @@ and Speed menus, an AI attack at game speed 9). Code: `src/GoldBox.Client/Screen
   3-point hit (attacks word, defender, hitting words + 3 on row 13, points and damage words on row 14) and of a miss. A plain hit draws no picture (the s13 skull
   was CreatureDowned's). MakeAttack (0x1407F) first shows the attacker in the panel (0x140FE), draws it in its attack
   pose (0x31232 frame 1) and waits Delay(100) (0x1412E); the end (0x142C5) draws frame 0 again.
+- **Attack pose** (read s38, P): nothing stores the pose; 0x31232(creature, direction, frame, no-draw) draws the icon
+  once into the view (0x31F68 with the frame, then START 0x464:0x1B52). Every other icon draw passes frame 0: the view
+  rebuild in ScrollView 0x310D0 (0x3111B–0x311B8: every creature in play with an icon in view, frame 0 pushed at
+  0x3119F) and the cell redraw 0x30A0F that ScrollView always makes for its (x, y) (the creature on that cell, frame 0
+  at 0x30AB7). So between the pose and the end 0x142C5 the attacker stands again only when a ScrollView rebuilds the
+  view or names its cell:
+  - **A missile** (0x14EAB at 0x14152 / 0x1417E, after the Delay(100)): the moving icon's first ScrollView(…, 255)
+    always rebuilds, so the thrower stands for the whole flight and the messages after it (**D** s33: the darts of
+    Darkstar and Phineas under Quick, ~30 frames per throw where the Client kept the pose). A sling's flight the same.
+  - **The downed picture** (CreatureDowned 0x3154B, 0x315CD–0x315ED): ScrollView(the downed creature's square, 3)
+    only when it is not wholly in view (0x30E54 with 1: every footprint cell in view; false once its icon is off the
+    map); a rebuild then stands the attacker. A downed creature wholly in view leaves the pose up through the downed
+    picture and its pause, until the attack's end. The hit picture START 0x2B8B uses the same test (START 0x2BD7).
+  - Client: `CombatView.Scroll` drops the pose on a rebuild and for the creature on the redrawn cell; `Downed` and
+    `ShowHit` scroll when the creature is not wholly in view (`CombatPoseTests`). The s29 vampire case (Thrender below
+    it lost the pose under the downed picture, Bakshi beside it kept it) needs the squares and view of that capture to
+    tell which ScrollView ran there `[?]`: for an adjacent creature the AI's ScrollView(attacker, 2, toward the target)
+    at 0xBA22 normally leaves it in view.
 - **Spell results** (read s19, non-weapon damage 0x2C22E): the takes word, n and the points-of-damage words (n = 1: its own
   string 0x2C18B), then the element by DS:6819 AND 0xF7 (1 fire, 2 cold, 4 electricity, 0x10 acid) and the magic words when
   DS:6819 AND 8 = DS:6819 (mask 0 too; 9 and 0x0C get no magic words), shown by PrintNameStringAnim START 0x2B8B

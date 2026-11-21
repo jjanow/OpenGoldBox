@@ -126,6 +126,42 @@ public class CombatScreenUnitTests
     }
 
     [Fact]
+    public void A_scrolls_spells_come_on_the_spell_lists_screen()
+    {
+        // 0x22AC4 → 0x239D6 kind 2, action 1 (D s38): headings, the list's own screen titled "Spells on Scroll", the
+        // choose-spell prompt with Cast and Exit, the combat palette; the pick is the spell id.
+        var asked = new List<PlayerRequest>();
+        var view = new CombatView();
+        var table = new SpellTable(new Dictionary<int, SpellInfo>
+        {
+            [10] = new(1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0),
+            [35] = new(1, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0),
+        });
+        var chooser = new CombatChooser(q => { asked.Add(q); return new ListAnswer(0, 3); }, view)
+        {
+            Pauses = false,
+            Resources = () => new ClientResources { Spells = table },
+        };
+        var c = new EclCharacter { Name = "Darkstar" };
+        var scroll = new byte[0x3F];
+        (scroll[0x3C], scroll[0x3D]) = (10, 35);
+        Assert.Equal(35, chooser.ChooseScrollSpell(c, scroll));
+        var req = Assert.IsType<ListRequest>(asked[^1]);
+        Assert.Equal(4, req.Rows.Count);                   // 1st level, the spell, 2nd level, the spell
+        Assert.Equal(new HashSet<int> { 0, 2 }, req.Labels);
+        Assert.True(req.Grey);
+        Assert.Equal(SpellLists.FirstRow, req.FirstRow);
+        Assert.Equal(2, req.Actions.Count);
+        Assert.EndsWith("ON SCROLL", req.Spell!.Title);
+        Assert.NotNull(req.Spell.Prompt);
+
+        scroll[0x35] = 1;                                  // a hidden scroll lists nothing
+        int before = asked.Count;
+        Assert.Equal(0, chooser.ChooseScrollSpell(c, scroll));
+        Assert.Equal(before, asked.Count);
+    }
+
+    [Fact]
     public void The_item_screens_ask_through_pages()
     {
         var asked = new List<PlayerRequest>();

@@ -48,7 +48,7 @@ public sealed class PorImportReport
 /// </summary>
 public static class PorImporter
 {
-    public const string ImporterName = "GoldBox.Importer 0.7.21";
+    public const string ImporterName = "GoldBox.Importer 0.7.23";
 
     /// <summary>VM $6E12 (DS:5376): the disk LOADFILES reads GEO&lt;d&gt; from.</summary>
     private const ushort DiskCell = 0x6E12;

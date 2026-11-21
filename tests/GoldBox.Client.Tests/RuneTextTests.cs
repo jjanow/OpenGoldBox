@@ -259,3 +259,123 @@ public class TextTypingTests
         Assert.DoesNotContain(Requests(typing: false), p => p is DelayRequest { Chained: true });
     }
 }
+
+/// <summary>
+/// PROTECT's glyphs under Best / Amiga (docs/re/ecl-format.md "PROTECT"; P, s38): the Amiga program draws them in its
+/// rune font (disk A's <c>fonts/protect/8</c>, module <c>art/amiga/protect/0/8</c>) in pen 28, set bits only (JAM1).
+/// Needs GOLDBOX_POR_DIR and GOLDBOX_POR_AMIGA_DIR with disk A's <c>fonts</c> folder; returns without them.
+/// </summary>
+public class AmigaRuneTests
+{
+    private static string? Env(string name) =>
+        Environment.GetEnvironmentVariable(name) is { } d && Directory.Exists(d) ? d : null;
+
+    private static readonly Lazy<GoldBox.Data.Module.Por.PorModule?> Module = new(() =>
+        Env("GOLDBOX_POR_DIR") is { } dos && Env("GOLDBOX_POR_AMIGA_DIR") is { } amiga
+            ? GoldBox.Data.Module.Por.PorModule.Open(GoldBox.Data.Module.Por.PorModuleCache.Ensure(dos,
+                Path.Combine(Path.GetTempPath(), "goldbox-tests", "client-amiga-cache"), amiga))
+            : null);
+
+    private sealed record Rig(ExploreScreen Screen, PorGame Game, ClientPlayer Player, PorGameDirectory Dir, ActionInput Input,
+        ScriptRunner Runner, ClientArt Art, ScreenPalette Palette, DaxPicture Font);
+
+    private static Rig? Start(PorArtChoice choice)
+    {
+        if (TestRig.PorDir() is null || Module.Value is not { } module
+            || module.Art(GoldBox.Data.Module.Por.PorAmigaRunes.Container, GoldBox.Data.Module.Por.PorAmigaRunes.Id, PorArtChoice.Amiga)
+                is not { Variant: "amiga", Frames: [var font] })
+            return null;
+        var dir = new PorGameDirectory(TestRig.PorDir()!);
+        var runner = new ScriptRunner();
+        PorGame? game = null;
+        var player = TestRig.Player(runner, () => game!.Memory);
+        player.Resources = ClientResources.Load(dir);
+        game = PorGame.FromSave(dir, PorViewArt.Load(dir), dir.Find("SAVGAMA.DAT")!, new PorPlayer(player, player, player, player), 7);
+        var palette = new ScreenPalette();
+        var art = new ClientArt(module, null, palette, choice);
+        return new Rig(new ExploreScreen(game, player, runner, new TestRig.NoHost(), art: art), game, player, dir,
+            new ActionInput(InputBindings.Defaults()), runner, art, palette, font);
+    }
+
+    /// <summary>Glyph <paramref name="g"/>'s cell: the Amiga font's set bits in its pen, the rest as <paramref name="under"/> had it.</summary>
+    private static void AssertAmigaCell(Rig r, IndexedFrame f, IndexedFrame? under, int col, int row, int g)
+    {
+        int b = r.Palette.Base(Module.Value!.Art(GoldBox.Data.Module.Por.PorAmigaRunes.Container, GoldBox.Data.Module.Por.PorAmigaRunes.Id, PorArtChoice.Amiga)!.PaletteRgb);
+        for (int y = 0; y < 8; y++)
+            for (int x = 0; x < 8; x++)
+            {
+                byte v = r.Font.Items[g][y * 8 + x];
+                Assert.Equal(v != 0 ? b + v : under?[col * 8 + x, row * 8 + y] ?? 0, f[col * 8 + x, row * 8 + y]);
+            }
+    }
+
+    [Fact]
+    public void The_parchment_runes_are_drawn_in_the_amiga_rune_font_and_pen()
+    {
+        if (Start(PorArtChoice.Amiga) is not { } r)
+            return;
+        r.Player.Print("A", clearFirst: true);
+        var data = DaxFile.Open(r.Dir.Find("ECL4.DAX")!).Block(21)!;
+        var vm = new EclVm(r.Game.Memory, r.Player);
+        vm.Memory.LoadScriptBlock(data);
+        Assert.Equal(EclStopReason.Budget, vm.RunFrom(0x9BD7, 6).Reason);   // CLEARBOX and the three lines
+        Assert.NotEmpty(r.Player.ViewGlyphs);
+        var f = new IndexedFrame(320, 200);
+        r.Screen.Draw(f, r.Input);
+        foreach (var (c, row, ch) in r.Player.ViewGlyphs)
+            AssertAmigaCell(r, f, null, c, row, TextFont.RawGlyphNumber(ch)!.Value);
+        // Pen 28 is register 28 of the program's interface colours (index 12 of the PNG's palette).
+        var setup = GoldBox.Data.Module.Por.PorAmigaRunes.Read(File.ReadAllBytes(
+            GoldBox.Data.Module.Por.PorAmigaArt.Locate(Env("GOLDBOX_POR_AMIGA_DIR")!).Program))!;
+        int b = r.Palette.Base(setup.InterfaceRgb);
+        Assert.Equal(new Microsoft.Xna.Framework.Color(setup.InterfaceRgb[36], setup.InterfaceRgb[37], setup.InterfaceRgb[38]),
+            r.Palette.Colours[b + 12]);
+        // Glyph 79 (the third line) is one the Amiga artist redrew: its cell is not the DOS glyph.
+        var dos = DaxFile.Open(r.Dir.Find("8X8D1.DAX")!).Block(201)!;
+        var (c79, r79, _) = r.Player.ViewGlyphs.First(g => g.Glyph == TextFont.RawGlyph(79));
+        Assert.Contains(Enumerable.Range(0, 64), i =>
+            (f[c79 * 8 + i % 8, r79 * 8 + i / 8] != 0) != ((dos[79 * 8 + i / 8] & (0x80 >> (i % 8))) != 0));
+        // Original DOS: the DOS font's glyph in colour 15 again.
+        r.Art.Set(PorArtChoice.Dos);
+        r.Screen.Draw(f, r.Input);
+        for (int i = 0; i < 64; i++)
+            Assert.Equal((dos[79 * 8 + i / 8] & (0x80 >> (i % 8))) != 0 ? 15 : 0, f[c79 * 8 + i % 8, r79 * 8 + i / 8]);
+        r.Runner.Dispose();
+    }
+
+    [Fact]
+    public void Amiga_runes_in_the_text_box_and_over_the_frame_draw_their_set_bits_only()
+    {
+        if (Start(PorArtChoice.Best) is not { } r)
+            return;
+        Assert.NotNull(r.Art.Runes);
+        // ECL5 block 4 $A45E: the runes after the text on rows 17 and 19.
+        var data = DaxFile.Open(r.Dir.Find("ECL5.DAX")!).Block(4)!;
+        var vm = new EclVm(r.Game.Memory, r.Player);
+        vm.Memory.LoadScriptBlock(data);
+        Assert.Equal(EclStopReason.Budget, vm.RunFrom(0xA45E, 7).Reason);
+        var f = new IndexedFrame(320, 200);
+        r.Screen.Draw(f, r.Input);
+        int cells = 0;
+        foreach (int row in new[] { 17, 19 })
+            for (int c = TextWindow.Left; c <= TextWindow.Right; c++)
+                if (TextFont.RawGlyphNumber(r.Player.Text.Cell(row, c).Char) is { } g)
+                {
+                    AssertAmigaCell(r, f, null, c, row, g);
+                    cells++;
+                }
+        Assert.Equal(12 + 6, cells); // the two lines at $A4AA and $A4B7
+        // A line on row 23 lies over the text box's bottom frame: where a glyph has no bit, the frame stays (JAM1).
+        r.Player.Text.MoveTo(5, 23);
+        r.Player.DrawGlyphs(0, [79, 80]);
+        var with = new IndexedFrame(320, 200);
+        r.Screen.Draw(with, r.Input);
+        r.Player.CommandRedrawn();
+        var without = new IndexedFrame(320, 200);
+        r.Screen.Draw(without, r.Input);
+        AssertAmigaCell(r, with, without, 5, 23, 79);
+        AssertAmigaCell(r, with, without, 6, 23, 80);
+        Assert.Contains(Enumerable.Range(0, 64), i => r.Font.Items[79][i] == 0 && without[5 * 8 + i % 8, 23 * 8 + i / 8] != 0);
+        r.Runner.Dispose();
+    }
+}

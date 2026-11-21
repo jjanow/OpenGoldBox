@@ -262,7 +262,8 @@ s29's poller and grabber were not kept; s30 wrote them as `tools/scripts/fight_f
   row 24, read with the game's own font, a lit word in brackets) has passed through another state since the last
   press: row 24 keeps the last menu through pauses, and a second key there would be eaten by the AI's key check
   (0xBB81) and desynchronise the sides. `--step` entries are used once each in order, `--rule` whenever no step
-  matches; both sides stop after the same number of presses plus a tail.
+  matches; both sides stop after the same number of presses plus a tail (since s38 counted from the last key of a
+  list with `sleep:S` entries, so a long list is grabbed to its end).
 - `until`, `seed` (RandSeed DS:4428 into a state's `Memory`), `ocr` (rows of every frame), `compare` (each Client
   frame looked up among DOSBox-X's as exact pixels; the misses with the nearest DOSBox-X frame and the box of
   differing pixels, PNGs with `--report`), `png`.

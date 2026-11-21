@@ -525,25 +525,48 @@ public sealed partial class CombatChooser
 
     // ---- Use: scrolls and the aim -----------------------------------------------------------------------------------
 
-    /// <summary>A scroll's spells (bytes 0x3C–0x3E, bit 7 = flagged for scribing). [?] The list 0x239D6's layout is
-    /// not read: the Client's spell list.</summary>
+    /// <summary>
+    /// A scroll's spells: 0x22AC4 → 0x239D6 (kind 2, action 1 Cast; P s30, s38): the list of
+    /// <see cref="CampSpells.ScrollList"/> (the scroll identifies itself first; a hidden one lists nothing and the list
+    /// returns at once), level headings, a byte above 0x7F marked pending, on the list's own screen as the fight's Cast
+    /// (title "Spells on Scroll", the choose-spell prompt, Cast and Exit on row 24, the combat palette; D s38).
+    /// </summary>
     public int ChooseScrollSpell(EclCharacter c, byte[] scroll)
     {
-        var spells = new[] { scroll[0x3C], scroll[0x3D], scroll[0x3E] }.Select(b => b & 0x7F).Where(s => s > 0).ToList();
-        if (spells.Count == 0)
+        if (((View.Fight?.Spells as FightSpells)?.Table ?? Resources().Spells) is not { } table)
             return 0;
+        var list = CampSpells.ScrollList(table, c, scroll, Resources().ItemSlot(scroll));
+        if (list.Count == 0)
+            return 0;
+        var rows = new List<string>();
+        var ids = new List<int>();
+        var labels = new HashSet<int>();
+        foreach (var r in list)
+        {
+            if (r.HeadingLevel is { } l)
+            {
+                labels.Add(rows.Count);
+                rows.Add((Resources().LevelName(l) ?? "LEVEL " + l.ToString(CultureInfo.InvariantCulture)).ToUpperInvariant());
+                ids.Add(0);
+            }
+            rows.Add((r.Pending ? " *" : "  ") + SpellLabel(r.Spell));
+            ids.Add(r.Spell);
+        }
         var page = View.Page;
         View.Page = null;
         View.Mode = CombatMode.Spell;
-        var rows = spells.Select(SpellLabel).ToList();
-        string cast = Word(FightCommand.Cast), exit = Text[CombatMsg.ViewExit].Trim();
-        var a = Ask(new ListRequest([new ListLine(Name(c), NameColour(c))], rows, [cast, exit], 1)
+        string cast = Word(FightCommand.Cast), exit = Text.Words(CombatMsg.AimCenterExit).ElementAtOrDefault(1) ?? "EXIT";
+        var a = Ask(new ListRequest([new ListLine(Name(c), NameColour(c))], rows, [cast, exit], 1, FirstRow: SpellLists.FirstRow)
         {
             RowActions = new HashSet<int> { 0 },
+            Labels = labels,
+            Paging = SpellPaging(2),
+            Spell = SpellLists.Layout(c, Resources().Texts, Msg.OnScroll, prompt: true),
+            Grey = true,
         }) as ListAnswer;
         View.Page = page;
         View.Mode = CombatMode.Page;
-        return a is { Action: 0 } && a.Row >= 0 && a.Row < spells.Count ? spells[a.Row] : 0;
+        return a is { Action: 0 } && a.Row >= 0 && a.Row < ids.Count ? ids[a.Row] : 0;
     }
 
     /// <summary>

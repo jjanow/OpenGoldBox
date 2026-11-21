@@ -102,7 +102,7 @@ Console.WriteLine($"  scripts {report.Scripts}, areas {report.Areas}, maps {repo
 Console.WriteLine($"  art: {report.Pictures} pictures, {report.ArtData} data blocks; program texts {report.Texts}; rules tables {report.RulesTables}; saves {report.Saves} files read, {report.EngineSaves} engine saves" +
                   (report.Overland ? "; overland" : ""));
 if (report.Amiga is { } amiga)
-    Console.WriteLine($"  Amiga overlay: {amiga.Pictures} pictures{(amiga.Sound ? ", music and effects" : "")}; placeholders left out: {string.Join(", ", amiga.Skipped)}" +
+    Console.WriteLine($"  Amiga overlay: {amiga.Pictures} pictures{(amiga.Sound ? ", music and effects" : "")}{(amiga.RuneFont ? ", rune font" : "")}; placeholders left out: {string.Join(", ", amiga.Skipped)}" +
                       (amiga.NotPictures.Count > 0 ? $"; not pictures: {string.Join(", ", amiga.NotPictures)}" : ""));
 Console.WriteLine($"  inputs: {report.Inputs.Count} files");
 if (report.ItemIdCollisions.Count > 0)

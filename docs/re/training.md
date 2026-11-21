@@ -131,7 +131,15 @@ action is Learn; Escape shows it again. With an empty list the routine returns 0
 **E**: 900 generated characters (`program-v1.3/training.json`): record bytes, refusal, RandSeed, Learn list, halts.
 **D** (`dosbox-v1.3/training_hall`): thieves' hall (mask 116) refusing the dwarf fighter with the cap; the halfling
 thief to level 2 (coins 500/300/20/900/20 → 0/0/1/2/5, 1d6); magic-users' hall (113): a magic-user to level 2 learning
-spell 20. Hall masks seen in ECL3 block 11: 113 magic-users, 114 clerics, 116 thieves, 120 fighters.
+spell 20. **D** (s38, `fight_frames.py`, 3000 cycles, seed 12345; save A with vector 0 = PROGRAM 0, $6DA8 = 113,
+DARKSTAR XP 2600 and 1000 platinum, `fight_save.py … 380000 --vm 6DA8=113 --char 5:0xAC=0x28,0xAD=0x0A,0xAE=0,0xAF=0,0x90=0xE8,0x91=3`):
+the step, Home × 2, Train, Yes, the Learn list (Home, Escape, keypad End, Home, L), the menu back with the new hit
+points: every Client frame equal to a DOSBox-X frame but the first (the Client's help lines), 10 of 11. The list is
+the spell list's own screen (combat-menu.md "The screen": title strip "NAME'S SPELLS TO CHOOSE FROM", the window
+from row 3, row 24 "CHOOSE SPELL: LEARN", no Exit); Escape leaves the list on screen with the same row lit (nothing
+visible changes). The page draws in about 0.32 s of machine time in DOSBox-X (19 frames: the row 24 clear, the frames,
+the title, the rows); the Client draws it at once. A level-1 list of 9 spells fits the window, so Next / Prev do not
+show. Hall masks seen in ECL3 block 11: 113 magic-users, 114 clerics, 116 thieves, 120 fighters.
 
 ## End game (0x20941) — P, D
 

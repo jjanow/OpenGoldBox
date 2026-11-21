@@ -81,7 +81,15 @@ Then the text box is cleared and DS:6DDA := 0.
 and hours (two digits each, with a colon between), then minutes as 10 × ten-minutes + minutes; the highlighted word in white
 (0x243BC). Menu (0x244A5): Rest, Days (hotkey Y), Hours, Mins, Inc, Dec, Exit. Extended keys: Up = Inc, Down = Dec, Left = the next word up
 (past days back to minutes), Right = the next word down (past minutes to days); other extended keys do nothing.
-Enter = Rest. Y / H / M pick the word; Inc adds 1 to it (5 to the minutes word when minutes are highlighted); Dec
+Enter = Rest. **D** (s38, 3000 cycles): Left / Right move the field on row 17 (minutes → days → hours → minutes for
+Right) and leave row 24's lit word as it is; a hotkey lights its word. The menu routine (0x2CC8C) lights an entry
+from its capital to two cells before the next capital, so "daYs" lit shows YS white (D, A green) and Rest lit shows REST and the
+D of DAYS white (the A stays green); while the rest runs row 24 keeps Rest lit. Seen on this menu only; the Client
+draws every menu line by the same rule, since one routine draws them all (the span arithmetic in 0x2CC8C not read
+`[?]`). Client: `ChoiceRequest.LeftAnswer` /
+`RightAnswer` / `ConfirmAnswer` (Enter = Rest; a click still picks the clicked word), `ExploreScreen.DrawLine`; every
+row-24 and row-17 frame equal to DOSBox-X (tests `CampPlayTests.Rest_time_menu_left_right_…`,
+`Rest_lit_also_lights_the_D_of_days`). Y / H / M pick the word; Inc adds 1 to it (5 to the minutes word when minutes are highlighted); Dec
 takes 1 (5 minutes) through 0x24246; both then carry (0x2416F). Returns true on Rest, false on Exit / Escape.
 
 **Rest-time arithmetic**: 0x2416F = the clock carry 0x240BE on DS:6DC2 (so a year overflow would age the party), then

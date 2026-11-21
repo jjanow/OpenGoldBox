@@ -153,6 +153,13 @@ public static class PorAmigaData
     /// <summary>Disk A's <c>intro</c> in <see cref="Dir"/>, or null (the importer treats it as optional).</summary>
     public static string? Intro { get; } = Dir is null ? null : PorAmigaArt.LocateIntro(Dir);
 
+    /// <summary>
+    /// Disk A's rune font (<c>fonts/protect.font</c> and <c>fonts/protect/8</c>) in <see cref="Dir"/>, as the program
+    /// names it, or null (the importer treats it as optional).
+    /// </summary>
+    public static string? RuneFont { get; } = Dir is null || Missing is not null ? null
+        : PorAmigaArt.LocateRuneFont(Dir, File.ReadAllBytes(PorAmigaArt.Locate(Dir).Program))?.Path;
+
     /// <summary>The overlay can be imported: <see cref="Dir"/> holds <c>program</c> and the <c>.dax</c> files.</summary>
     public static bool Usable => Dir is not null && Missing is null;
 
@@ -165,6 +172,11 @@ public static class PorAmigaData
     public static string IntroSkipReason => Present
         ? $"needs the Amiga intro: {EnvVar} ({Dir}) has no 'intro' file; unpack it from disk A of Pool of Radiance " +
           "next to 'program' (the overlay imports without it, so only the intro tests skip)"
+        : SkipReason;
+
+    public static string RuneFontSkipReason => Present
+        ? $"needs the Amiga rune font: {EnvVar} ({Dir}) has no 'fonts/protect.font' with 'fonts/protect/8'; copy disk A's " +
+          "'fonts' folder of Pool of Radiance next to 'program' (the overlay imports without it, so only the rune font tests skip)"
         : SkipReason;
 
     private static string? FindMissing()
@@ -190,6 +202,16 @@ public sealed class PorAmigaFactAttribute : FactAttribute
     {
         if (!PorAmigaData.Present)
             Skip = PorAmigaData.SkipReason;
+    }
+}
+
+/// <summary>A fact that also needs disk A's rune font (<see cref="PorAmigaData.RuneFont"/>); skipped naming the files without it.</summary>
+public sealed class PorAmigaRuneFontFactAttribute : FactAttribute
+{
+    public PorAmigaRuneFontFactAttribute()
+    {
+        if (!PorAmigaData.Present || PorAmigaData.RuneFont is null)
+            Skip = PorAmigaData.RuneFontSkipReason;
     }
 }
 

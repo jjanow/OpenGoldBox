@@ -98,7 +98,9 @@ first (`FightKit.Create`), shows it afterwards with the same result: `CombatChoo
 line appears whole in one grab (not typed) on the blank row 24 after the speed-4 pause (the Client's blank pause
 measured 0.92 s); it stayed 0.73 s on the area screen, then the screen was cleared to the combat grey over 0.3 s with
 the line still up, then the combat map: about 1 s of load and draw time on that machine, against one update in the
-Client `[?]` (machine time, no code timing; a user decision if the line should stay longer). The Amiga plays song 2 with this line (sound.md
+Client (machine and disk time: P, s38, the static call trees from the line to the combat screen, 0xD815, 0xD8B2,
+0xDFC6, START 0x464:0x248E and START 0x3728, hold no Delay, PauseOnly, key wait or BIOS-tick read; a user decision
+if the line should stay longer). The Amiga plays song 2 with this line (sound.md
 §5.3; not in the Client). The trigger-8 effects run
 after the combat screen is drawn: DOSBox-X showed Tyranithraxus's fear aura as one message per party member
 (paralysis / unaffected texts, with the effect frames) on the combat screen before the first turn. The

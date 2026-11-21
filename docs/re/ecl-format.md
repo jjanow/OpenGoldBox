@@ -550,11 +550,31 @@ roll per item (RandSeed).
   command line comes (`BottomRowDrawn`), the window's frame cells by EXIT (`TextHome`); tests in `RuneTextTests`.
   `[?]` When the program draws the other frame cells and the party list again (a full redraw, START 0x3379, or the
   party list 00BA:0767) is not followed: the Client keeps those glyphs until the next area command.
-  **Amiga** `[?]`: the Amiga's 8x8d.dax holds the wall sets only (no block 201), so its text font is elsewhere; the
-  Client draws the DOS font's runes under every art set. To settle it: find the Amiga program's PROTECT handler (ECL
-  0x3C) and the glyph routine it calls, read whether the byte is taken as a raw glyph number there too and which font
-  it indexes (and whether that font has glyphs 65–139 at all), then see ECL4 block 21's parchment in an Amiga
-  emulator run.
+  **Amiga v1.0** (P, s38; Amiga `program`, hunks numbered from 0 in file order; no emulator run): the runes come from
+  a disk font of their own, `protect.font` (disk A, `fonts/protect.font` and `fonts/protect/8`), not from the text
+  font (`poolrad.font`, used for everything else). Start-up opens both with OpenDiskFont (hunk 1 +0x1C4 / +0x1D4 from
+  the TextAttrs at hunk 2 +0x4E and +0x64, kept at hunk 32 +0x20 and +0x6A). The ECL dispatch (hunk 16 +0x4D12, opcode
+  at hunk 32 +0x1AA7) sends 0x3C to hunk 16 +0x4C06, PROTECT as on DOS: 84C8/84C9 and 84E0 cleared; with 84DE (hunk 32
+  +0x2F75) set and the row (hunk 32 +0x2D0) above 13 the cursor goes to column 2, row 5 and 84E2 (+0x2F79) := 1; 84DF
+  (+0x2F76) := 1; each byte b read from the VM is drawn as character b + 1 through the glyph routine (hunk 25 +0xA4E,
+  the copy of START 0x726F: column, row, colour, count 1, character, flag 0) and the column moves on; at the end the
+  row goes down one. Two differences: the line ends only on a byte 0 (`cmp.b`/`bls` at hunk 16 +0x4CAA), so a byte
+  255 draws character 0 and goes on where DOS stops (no effect in v1.3: all twelve lines end in 0, and the Amiga
+  `ecl.dax` holds the same lines byte for byte in blocks 3, 4, 21, 23); and the colour is **28**, not 15 (`pea $1C`
+  at hunk 16 +0x4CCE). With its flag clear the glyph routine (hunk 25 +0xB6E) sets the rastport's font to
+  `protect.font`, takes a colour below 16 as pen colour + 16 − colour mod 2 (28 stays 28: a pen of the interface
+  colours 16–31, which start-up loads from hunk 2 +0 and nothing changes later), skips columns above 39 and rows above
+  24, and per glyph does SetAPen, Move(column · 8, row · 8 + 6), SetDrMd(0) and Text(character, 1): **JAM1**, so
+  only the glyph's set bits are drawn and the cell's other pixels stay as they were (DOS draws the cell whole), then
+  it puts `poolrad.font` back. The font (8 × 8, baseline 6, not proportional, characters 32–255) holds the DOS
+  glyphs 65–139 redrawn, all but four bit for bit (docs/re/por-art-formats.md §4 "Runes"). **Client**: the importer
+  reads the font from the player's disk A (optional, like `intro`) and the pen and colours from `program`
+  (`PorAmigaRunes`, module `art/amiga/protect/0/8`, category `font`); under Best / Amiga `ClientArt.Runes`
+  (`RuneGlyphs`) draws PROTECT's glyphs with it, set bits only, in the text box, the picture window and elsewhere
+  (`ExploreScreen`); Original DOS, or a module without the font, keeps the DOS font's glyphs in colour 15. The text
+  stays the DOS font under every setting, and the line still ends on 0 or 255 (DOS is the rules reference). Tests:
+  `PorAmigaArtTests` (the reading, the font against DOS block 201), `AmigaRuneTests`. `[?]` Not seen in an Amiga
+  emulator; what the Amiga's CLEARBOX and EXIT window redraw fill with is not read (the Client uses DOS's).
   **D** (s30, DOSBox-X frame by frame, save A on disk 2 with this tool's own script: PRINTCLR, CLEARBOX,
   the three glyph lines of ECL4 block 21 copied into the script area with PRINTRET between, PRINTCLR, a one-word
   HMENU): CLEARBOX blanks cells (1, 1)–(15, 15) (the view's box too), the runes land at (2, 5), (1, 7), (1, 9), the

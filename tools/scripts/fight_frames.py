@@ -21,7 +21,8 @@ seconds (default 0.4) and the state (panel row 1 + row 24 text with the highligh
 through a different state since the last press, so a menu row that a pause leaves on screen never gets a second
 key. The state string is ``NAME|ROW24``; ``--step RE=KEYS`` entries are used once each, in order, when the next one
 matches; ``--rule RE=KEYS`` apply whenever no step does. KEYS: xdotool-style names separated by commas (``q``,
-``Return``, ``KP_Home``…); a ``sleep:S`` entry waits S seconds, the frames still grabbed meanwhile. The grab ends after --presses presses plus --tail seconds, or after --seconds.
+``Return``, ``KP_Home``…); a ``sleep:S`` entry waits S seconds, the frames still grabbed meanwhile. The grab ends after --presses presses plus --tail seconds
+(counted from the last key of a list with sleep:S entries), or after --seconds.
 
 No game data is stored in this file: the font is read from the game's own 8X8D1.DAX at run time.
 """
@@ -235,7 +236,7 @@ def cmd_grab(args):
     end_at = t0 + a.seconds
     queue, queue_at = [], 0.0  # the rest of a key list with sleep:S entries, pressed one by one between grabs
     try:
-        while time.monotonic() < end_at:
+        while time.monotonic() < end_at or queue:
             f = win.grab()
             now = time.monotonic()
             if queue and now >= queue_at:
@@ -244,6 +245,8 @@ def cmd_grab(args):
                     queue_at = now + float(k[6:])
                 else:
                     win.press([k])
+                if not queue and a.presses and n_press >= a.presses:  # the tail runs from the list's last key
+                    end_at = max(end_at, time.monotonic() + a.tail)
                 continue
             if last is None or (f is not last and not np.array_equal(f, last)):
                 frames.append(f)

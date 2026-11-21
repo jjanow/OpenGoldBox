@@ -27,6 +27,10 @@ public sealed class TextFont
 
     private const int RawGlyphBase = 0xE000;
 
+    /// <summary>The glyph number of a <see cref="RawGlyph"/> character, or null for any other character.</summary>
+    public static byte? RawGlyphNumber(char c) =>
+        c is >= (char)RawGlyphBase and <= (char)(RawGlyphBase + 0xFF) ? (byte)(c - RawGlyphBase) : null;
+
     /// <summary>Glyph index of a character, or −1 when the font has none.</summary>
     public int GlyphOf(char c)
     {

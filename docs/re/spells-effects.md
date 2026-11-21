@@ -431,9 +431,17 @@ the party-side revive text: the name on row 19, the text typed from row 20, the 
 as drawn (15 minutes, the minutes still lit) and the position line at the old time until the rest ends; the
 rest-time menu row stays through the message. Fixed: the rest-time menu keeps the program's spacing ("Rest   daYs
 Hours Mins   Inc Dec   Exit"), its field stays lit, the position line holds through the rest, the menu row stays
-under the pause. Still differing `[?]`: the party list keeps Darkstar's light red name through the rest and the camp
-menu after it (nothing calls 0x0767; the Client draws the list from memory), and while Rest is lit row 24 also lights
-the D of daYs (a menu routine quirk, not read).
+under the pause. **D** (s38, the same set-up from a test save: Darkstar status 4, 0x10D = 0, 3 HP, `CHRDATA5.SPC` =
+one record 0x4E, 1 minute, param 255, removal call 1; Encamp, Rest, Inc × 3, Rest): the party list keeps Darkstar's
+light red name through the rest, the camp menu and the area after leaving the camp (nothing calls 0x0767); the camp's
+View redraws the screen and the name comes back cyan. Client: the revive outside a fight holds the name
+(`TradeContext.HoldRosterName`, `ClientPlayer.RosterNameHeld`) until a full-screen page, a fight, StatusDone's 0x0767
+the rest's heal message with anyone healed (0x2463D) or another current member (Home / End at the camp menu, D s38)
+draws the list again; with the help lines and the camp picture masked,
+the revive then View run 20 of 21 Client frames equal (the miss: the Client's own View page) and the revive then Home /
+End run 42 of 42. Which other
+points redraw the list while exploring (a step, a turn) is not checked `[?]`. While Rest is lit row 24 also lights the
+D of daYs: camp.md "Rest-time menu".
 `[?]` A creature dropped twice in one call chain (0xECB3's end inside 0x2BEF4 of an attack): 0x3154B's early exit
 (0x31571–0x315A3 compares the body entry DS:70C7 × 7 + DS:66D6 eight times) not settled; the Client shows the downed
 picture again.
@@ -470,9 +478,16 @@ the name (cyan) goes on row 10, the CS:0C4F words (green) typed on row 11 over ~
 then the icon leaves the map, the map redrawn and the next member's panel. Row 24 keeps the flee question with **YES
 lit** (Y, E, S colour 15; N 15, O 10) until the next menu; s36's "neither lit" was the frame tool's reading. **P + emulation (s37):** the question is 0x2D9A0 (GAME.OVR 0xA431, Y → 0x13465 at 0xA440); its hotkey path 0x2CF48 → 0x2CAA9 redraws the row with YES lit, and nothing after it (0x13465, 0x2BDF0 with every draw trapped under unicorn) writes row 24; text goes to both EGA pages directly (0709:01DF), so no page copy brings back an older row. Client
 (s37, seeded, same keys): every frame equal to one of DOSBox-X's but the help lines (away 138 of 139, not away 227 of
-228). Timing left: DOSBox-X waits ~0.21 s between the text's clear and the icon leaving the map (away), and ~0.23 s
-between row 24's clear and the next panel (not away); the Client does both at once `[?]` (machine time at 3000 cycles,
-or a wait not read).
+228). The two gaps DOSBox-X showed (~0.21 s between the text's clear and the icon leaving the map, away; ~0.23 s
+between row 24's clear and the next panel, not away) are **machine time** (P, s38): no Delay, PauseOnly, key wait or
+BIOS-tick read lies on either path (static call trees; the program's only wait is CRT Delay 0xA40:0x29C, and nothing
+reads INT 1Ah or 0040:006C). Away: START 0x16EC returns right after its clear (START 0x2383 at 0x237A), then 0x2BDF0
+runs 0x30C65 (the ground over the footprint, 0x31B5D → START 0x464:0x8D4), START 0x464:0x1B52 (the changed view rows
+copied to the screen: here the icon goes), 0x30ADA (the cell grid), START 0x31D7 and 0x2BEF4. Not away: after START
+0x1693's clear, START 0x31D7, the menu loop's exit (0x9DC5 → 0x9DFA), the turn's end (0x31321, 0x31349, 0x30A0F),
+the next pick 0x9938 and the next turn's start (0x2B1E4, 0x319D2, START 0x1758, START 0x1583); a round end 0xA087
+between them waits only with a message or picture of its own. The Client does both
+at once, as the program does on a fast machine; not changed.
 The panel's creature lines (s37): START 0x1583 draws the name colour and HP once; damage and leaving play do not redraw
 them (the vampire above kept its yellow name and HP 1 through the damage and death texts). Client
 `CombatView.ShownLines`, taken at each 0x1583 (`ShowPanel`, Manual's panel, the attack-ally question).

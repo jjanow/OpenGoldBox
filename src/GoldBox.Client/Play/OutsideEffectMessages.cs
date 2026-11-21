@@ -17,7 +17,8 @@ namespace GoldBox.Client.Play;
 /// 0x1693 (handlers 40, 135) is the row-24 message in green with the pause.
 /// </summary>
 public sealed class OutsideEffectMessages(TextWindow window, Func<PlayerRequest, object?> ask, Func<int> speed,
-    CombatText texts, Func<bool> resting, Action<SoundCue>? cue = null, Action? framed = null)
+    CombatText texts, Func<bool> resting, Action<SoundCue>? cue = null, Action? framed = null,
+    Action<EclCharacter>? revived = null, Action? listDrawn = null)
 {
     /// <summary>
     /// Shows the event's message as the program does outside a fight; false for an event this class does not draw (the
@@ -46,6 +47,7 @@ public sealed class OutsideEffectMessages(TextWindow window, Func<PlayerRequest,
                 }
                 Pause();
                 Clear();
+                listDrawn?.Invoke(); // START 0x0767
                 return true;
             // The messages before them and the other handler texts: with the pause flag.
             case EffectEvent.Rots: Message(c, t[CombatMsg.Rots], true); return true;
@@ -58,7 +60,10 @@ public sealed class OutsideEffectMessages(TextWindow window, Func<PlayerRequest,
                 return true;
             }
             case EffectEvent.Revived:
-                // 0x2C753 outside a fight: no view (0x319D2 only in a fight), the text by the hostile byte 0x10E.
+                // 0x2C753 outside a fight: no view (0x319D2 only in a fight), the text by the hostile byte 0x10E. No party
+                // list is drawn: the name stays light red until the next redraw (D s38: the camp's rest, its menu, the
+                // area after the camp; the camp's View redraws it).
+                revived?.Invoke(c);
                 Message(c, t[c[FightRules.Hostile] == 1 ? CombatMsg.StatusRevivedEnemy : CombatMsg.StatusRevived], true);
                 return true;
             case EffectEvent.Diseased: Message(c, t[CombatMsg.HandlerDiseased], true); return true;
