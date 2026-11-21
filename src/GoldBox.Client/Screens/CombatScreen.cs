@@ -128,7 +128,10 @@ public sealed class CombatScreen
                     if (sq == (cr.View.X, cr.View.Y))
                     {
                         if (cr.View.TargetOffered)
+                        {
+                            _cursorReturn = true;   // as Return: the lit entry stays
                             Answer(ManualInput.Target);
+                        }
                     }
                     else
                         Answer(new CursorWalk(sq.X, sq.Y));
@@ -457,10 +460,11 @@ public sealed class CombatScreen
                 // Manual's menu (0x2CC8C at 0x1596E) is the menu routine on the shared cell: a hotkey moves the cell to
                 // its entry and the row stays up with it lit until row 24 is written again (DOSBox-X s41: Darkstar's
                 // Sleep, Manual's line with Target lit through the flight and Rhiannon's
-                // panel). Escape leaves the cell; [?] Return (0x0D, Target whatever is lit) is taken as Target's entry.
+                // panel). Escape leaves the cell. Return gives 13 (the call passes colours 10 / 15, so 0x2CE7D takes
+                // it) without writing the cell or the row (0x2CE88), and 0x15979 takes 13 as Target: the lit entry stays.
                 var items = CursorItems(cr);
                 int entry = m == ManualInput.Target ? 0 : m == ManualInput.Center ? 1 : 2;
-                int at = items.FindIndex(e => e.Item == entry);
+                int at = _cursorReturn ? -1 : items.FindIndex(e => e.Item == entry);
                 if (chosen && at >= 0)
                     Highlight.Index = at;
                 _staleCursor = (cr, chosen && at >= 0 ? at : _selected, _view.Row24Writes);
@@ -511,16 +515,26 @@ public sealed class CombatScreen
         }
     }
 
-    private void CursorItem(CombatCursorRequest cr, int item) => Answer(CursorEntry(cr, item));
+    private void CursorItem(CombatCursorRequest cr, int item)
+    {
+        _cursorReturn = false;
+        Answer(CursorEntry(cr, item));
+    }
+
+    /// <summary>Manual's last answer came by Return (the pad's A, a click on the cursor's square): Target with the
+    /// cell left as it was (0x2CE7D), not moved there as by T or a click on the word.</summary>
+    private bool _cursorReturn;
 
     /// <summary>
     /// The keys 0x155F5 reads, each one pass of Core's cursor (<see cref="FightMenu.Manual"/>): a direction moves it one
     /// square; Return (Confirm) and T are Target, which ends Manual even where Target is not offered; E and Escape
-    /// (Cancel) are Exit; C and the shoulders (Home / End) re-centre the view.
+    /// (Cancel) are Exit; C and the shoulders (Home / End) re-centre the view. ',' / '.' light the previous / next
+    /// entry inside the menu routine (0x2CE93 / 0x2CEB7: the cell, no answer).
     /// </summary>
     private bool DecideCursor(CombatCursorRequest cr, ActionInput input, out object? answer)
     {
         answer = null;
+        _cursorReturn = false;
         if (Direction(input) is { } d)
         {
             answer = new ManualInput(d);
@@ -528,8 +542,16 @@ public sealed class CombatScreen
         }
         if (input.Pressed(GameAction.Confirm))
         {
+            _cursorReturn = true;
             answer = ManualInput.Target;
             return true;
+        }
+        int count = CursorItems(cr).Count;
+        if (input.NewInput is (InputDevice.Keyboard, "OemComma" or "OemPeriod") nk)
+        {
+            _selected = nk.Name == "OemComma" ? (_selected + count - 1) % count : (_selected + 1) % count;
+            Highlight.Index = _selected;
+            return false;
         }
         if (input.Pressed(GameAction.Cancel))
         {
@@ -652,14 +674,15 @@ public sealed class CombatScreen
     private void Step(TextRequest t, int delta)
     {
         long v = long.TryParse(_typed, NumberStyles.None, CultureInfo.InvariantCulture, out var x) ? x : 0;
-        long max = (long)Math.Pow(10, t.MaxLength) - 1;
+        long max = t.Maximum ?? (long)Math.Pow(10, t.MaxLength) - 1;
         v = Math.Clamp(v + delta, 0, max);
         _typed = v.ToString(CultureInfo.InvariantCulture);
     }
 
     /// <summary>
-    /// A number (drop money's amount; the input routine 0x24F1D is not read [?]): keyboard digits, Backspace, Return,
-    /// Escape (nothing); pad Up / Down ±1, Right / Left ±10, A done, B nothing; the mouse uses the buttons on row 22.
+    /// A number (drop money's amount, the input 0x24F1D: a value above the maximum becomes the maximum as it is typed):
+    /// keyboard digits, Backspace, Return, Escape (0); pad Up / Down ±1, Right / Left ±10, A done, B 0; the mouse uses the
+    /// buttons on row 22.
     /// </summary>
     private bool DecideNumber(TextRequest t, ActionInput input, out object? answer)
     {
@@ -670,6 +693,8 @@ public sealed class CombatScreen
             {
                 if (_typed.Length < t.MaxLength)
                     _typed = (_typed == "0" ? "" : _typed) + ch;
+                if (t.Maximum is { } most && long.Parse(_typed, CultureInfo.InvariantCulture) > most)
+                    _typed = most.ToString(CultureInfo.InvariantCulture);
                 return false;
             }
             if (name == "Back")

@@ -116,10 +116,41 @@ shots caught mid-XOR). Tests `ExploreScreenTests.A_camp_state_left_by_a_hall_loa
 `SaveWriteTests.Hall_load_of_a_game_save_goes_on_in_the_running_script`. **D** (s41, scratch save E: vector 4 =
 PICTURE 2; HMENU, loaded at the start-up): the HMENU animates the picture (no menu between the Load and vector 4), as
 the $4AFF rule predicts; the picture is drawn over the party menu's screen there (START 0x3379 runs after vector 4,
-0x40BE), which the Client does not show `[?]`. Also `[?]`: the camp's, hall's and venues' menus do not clear the
-Client's flag; a turn (0x2EEF4) after case 2's blank box, or over any picture, keeps the picture in the Client (not
-seen in DOSBox-X). Not the same (seen in passing): the Client's Load prompt over an empty party shows the list heading
-and no menu, DOSBox-X the menu's four entries and no heading `[?]`. **Decided (user, s39):** the Client
+0x40BE). **P + D (s42)** for the rest of that run and its neighbours:
+- **The party menu under a Load's vector 4.** START 0x3379 runs inside the LOADFILES / LOADPIECES handler once both
+  have run since the first pass armed it (DS:4432 set at 0x4058, DS:4434 by LOADFILES 0x19F8, DS:4433 by LOADPIECES
+  0x1A66; 0x1B05–0x1B2C draws START 0x3379 and the party list and clears DS:4432), else after the vector (0x40B7–0x40C3,
+  not at DS:49F3 = 3). Until then the party menu's page stays and vector 4 draws over it: scratch save I (vector 4 =
+  PRINT, PICTURE 2, HMENU WAIT, loaded from the start-up menu) showed the four entries, the picture at cell (3, 3)
+  with no view box, the text at row 17 column 1 and WAIT on row 24; after WAIT the whole explore screen. Client:
+  `EclVm.EntryInterfaceDue` (the pair's draw, `PorGame.RunLoadedEntry`), `ClientPlayer.PartyMenuUnder` (set by the
+  party menu's Load until START 0x3379 or the entry's end) with `ExploreScreen.PartyMenuPage`; 0 differing EGA pixels
+  against DOSBox-X on that screen. Tests `CommandLineMenuTests.A_loads_interface_is_drawn_inside_its_vector_4_after_the_file_pair`,
+  `ExploreScreenTests.A_party_menu_loads_vector_4_draws_over_the_menu_page`. `[?]` A `--save` start and a hall Load
+  of another area (no party menu page in the Client) draw the explore screen from the start; a vertical menu or a
+  text input in such a vector 4 is drawn on the explore screen.
+- **Every menu clears $4AFF.** 0x2CC8C has one exit (0x2CFA7–0x2CFAD), and the yes/no 0x2D9A0 and the list routine
+  0x2D669 call it too (near calls at 0x2D9EA, 0x2D8AC; 36 far callers: camp, hall, party menu, venues, combat, View,
+  ECL menus). DOSBox-X (scratch save C: the step's PICTURE 2; PROGRAM 0; PRINT; HMENU WAIT; loaded at the start-up;
+  Up, Save E in the hall, Begin): the HMENU over the view stayed still. Client: `ClientPlayer.MenuEnded` on
+  `ScriptRunner.Answered` clears `EclMemory.MenuAnimates` after every program menu (`ClientPlayer.IsProgramMenu`).
+  Test `HallPlayTests.The_halls_menu_clears_the_menu_animate_flag_a_save_set`. `[?]` In that run the hall menu after
+  the Save first drew PICTURE 2's frames over the hall page (the menu routine draws the frame table whenever $4AFF ≠ 0
+  and DS:6ABF > 0, 0x2CD5D–0x2CD9B); a second Save in the same session (after another step's PICTURE 2) drew nothing,
+  not explained. The Client draws no picture over its hall, camp or venue pages. Also from the routine: while
+  $4AFF ≠ 0 the frames advance on every pass without waiting for their delay (0x2CDD6); the Client copies it, each
+  frame lasting one Client update as delay-0 frames do (user, s42; `ChoiceRequest.EveryPass`). The hall/camp/venue
+  picture stays undrawn until DOSBox-X shows it again on purpose (user, s42).
+- **A turn draws the view.** After Load D's case 2 (blank box), V and Escape (box blank again), Left drew the 3D view
+  in the box, CAMPING kept: a turn (0x2ED72 + 0x2EEF4) and the area map toggle (0x2EEF4) draw the view over a
+  picture or blank. Client: `AreaLoop.ViewDrawn` → `ClientPlayer.ViewDrawn` (the CLEARBOX ring stays blank as after
+  a redraw). Tests `ExploreScreenTests.A_turn_or_the_area_map_draws_over_a_picture`, the camp-state test above.
+- **Load over an empty party.** Remove × 6 left the menu's four entries (Create, Add, Load, Exit) with no NAME / AC /
+  HP heading, and L kept them under the which-game-to-load prompt. Client: `HallView` draws no list for an empty party and keeps
+  the last menu's entries under the bottom-line questions. Test
+  `HallPlayTests.The_hall_over_an_empty_party_keeps_its_entries_under_the_load_question`.
+
+**Decided (user, s39):** the Client
 does that only for a save of the running area (its $49F2, DS:84DC after a load, and its disk byte equal to the running
 script's block and disk, `PorGame.LoadInHall` → `HallLoad.CarryOn`); a save of another area is not copied in and is
 entered as a loaded game (its entry and vector 4, `HallLoad.EnterArea` → `HallLoadException`), a deliberate

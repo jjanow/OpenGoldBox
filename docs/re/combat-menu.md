@@ -186,8 +186,14 @@ Arguments: creature, range (0xFF = from the weapon), attack mode (1 from the men
   the chosen entry lit until row 24 is written again. **D** (s41, Darkstar's Sleep aimed by hand seven squares right of
   the view, T): Manual's menu line with Exit lit while the cursor moved, Target lit after T
   through the flight and Rhiannon's panel; her menu then opened on Move (the cell 0). Client: `CombatScreen`
-  (`DrawCursorMenu`, the kept line `_staleCursor`); `[?]` Return (0x0D, Target whatever is lit) is taken to move the
-  cell to Target as T does (not read in 0x2CC8C).
+  (`DrawCursorMenu`, the kept line `_staleCursor`). **Return** (P + D s42): the call passes colours 10 / 15, so
+  0x2CC8C returns 13 (0x2CE7D–0x2CE90) without writing the cell or redrawing the line; 0x15979 takes 13 as T. So Return
+  targets with the lit entry left as it was (T, a hotkey, moves the cell to Target, 0x2CF48); ',' / '.' light another
+  entry inside the routine. **D** (s42, `fight_save.py` goblin fight, Thrender moved next to an orc: A (Manual lit), M
+  (Center lit, cell 3 past 2 entries), Home onto the orc (Target lit), '.', Return): the attack ran with the line
+  showing Center lit through the attack text. Client: Return, the pad's A and a click on the cursor's square leave the
+  cell (`CombatScreen._cursorReturn`), ',' / '.' move it; test
+  `CombatScreenGameTests.Manuals_return_takes_target_with_the_lit_entry_kept`.
 - **D**: `m09`/`m10` (aim starts on the creature itself at range 0, Next goes to a goblin at range 1 with Target
   offered, Target makes the melee attack); `fight_ranged` (darts, range 6 − 1 = 5: a goblin at range 3 is offered;
   three darts thrown, count 11 → 8). Manual (s18, `fight_manual_use`): the arrow keys move the cursor; it starts on
@@ -310,7 +316,7 @@ below means 0x84 ≥ 0x80, in play (0x10D ≠ 0) and status ≠ 1.
 |---|---|---|
 | Items | the item list (0xC8) is not empty | the Items screen 0x21F32 (it may set done) |
 | Spells | a byte of 0x17–0x2B is non-zero | the memorised list (0x239D6 in show mode); nothing changes |
-| Trade | not an NPC in play, the character has money (a word of 0x88–0x94 ≠ 0), not in a fight | money trade 0x23190 `[?]` |
+| Trade | not an NPC in play, the character has money (a word of 0x88–0x94 ≠ 0), not in a fight | money trade 0x23190 (camp.md "Trade") |
 | Drop | it has money | drop money 0x234E1 (below) |
 | Exit | always | |
 
@@ -321,7 +327,7 @@ entries, then the item list (0x2D669: an entry key and the item under the cursor
 |---|---|---|
 | Ready | always | ready / unready 0x2250A (`combat-ai.md` "Ready / unready") |
 | Use | in play, VM $49E5 = 0, and DS:49F3 is 2–4, or a fight with combat record +2 (item use allowed) ≠ 0 | not readied → a "needs readying" message; a scroll (0x2A255) or power 0x3D > 0 with kind 0x3E < 0x80 → item use 0x22AC4 (`combat-ai.md` "Item use"), done as it reports (outside a fight done is reset to 0); else nothing. The player's pick is 0x27C38's (ai = 0): the same aim and abort loop as a cast from the menu (Core: `FightMenu.PickForItem`, through `IFightItemScreens.Use(fight, c, menu)`; `IItemScreenChooser.AimItem` only when the screens are opened without the menu) |
-| Trade | not an NPC in play, not in a fight | 0x21DAA, then 0x2276E `[?]` |
+| Trade | not an NPC in play, not in a fight | 0x21DAA, then 0x2276E (camp.md "Trade") |
 | Drop | always | 0x21DAA, then "drop it?" → the item leaves the list (START 0x20A9) |
 | Halve | 0xC7 < 16 | 0x22827 |
 | Join | always | 0x228D7 |
@@ -902,7 +908,8 @@ and Speed menus, an AI attack at game speed 9). Code: `src/GoldBox.Client/Screen
     (spells-effects.md "Status changes"; **D** s29: the vampire's level drain, the dead-forever text (0x10D56) and the basilisk's stone
     messages equal frame by frame).
 - **Manual in the Client**: Aim's Manual answers `AimKey.Manual` and each cursor pass is Core's (`ChooseManual`):
-  arrows / pad move it one square, Return / T Target (ending Manual even where it is not offered), E / Escape Exit,
+  arrows / pad move it one square, Return / T Target (ending Manual even where it is not offered; Return keeps the
+  lit entry), ',' / '.' the lit entry, E / Escape Exit,
   C / shoulders re-centre; the panel shows `ManualView.Creature`, row 23 the range to the square in attack mode when the line got
   through (`ManualView.LineReached`). Bare squares work in a spell's square mode. A mouse click on another square
   walks the cursor there one pass per square (our mapping; the target check runs on each square crossed, as with the
@@ -977,12 +984,15 @@ called once in `ScriptRunner.Ask` for every `DelayRequest` tagged `Animation`).
 - Not scaled: every game-speed pause and the typing, the fixed message pauses (encounter line 900 ms, party killed
   3 s), the DOS end game's frames ((speed + 3) × delay, already game speed); the picture window's looping animations
   are scaled too (INSTANT = FASTEST there: a loop has no last frame). The intro and title are not scaled (a key ends
-  them). Fastest play: game speed 0 plus INSTANT.
+  them). Fastest play: game speed 0 plus INSTANT. **Played** (s42, Client on Xvfb, `--anim-speed instant --sound
+  speaker` into a null sink, `por_test_saves.py` slot D: the 1-HP party against eight goblin guards, every member on
+  Quick): the whole fight ran to the party-destroyed window and its key in about 2.5 minutes, no error in the log, no
+  gap between screen changes above 0.97 s (the game-speed pauses at speed 4, which ANIMATION does not touch). ORIGINAL
+  stays the program's timing: `AnimationTiming.Apply` returns the request unchanged (`AnimationSpeedTests`).
 
 ## Open `[?]`
 
-- Trade (0x2276E, 0x23190), Sell (0x22D28) and Id (0x22F8C) on the item screens (not shown in a fight); the money
-  input 0x24F1D in detail; the area search's order (0x3045B) and the path distance; the step
+- The area search's order (0x3045B) and the path distance; the step
   routines (0x130AD, 0x12F0D) and flee (0x13465) in detail (combat-map work).
 - Manual: settled s19 (ScrollView 0x310D0 with delta 3 per pass, the box through DrawCursorCell; see "View scrolling", "Cursor box").
 - The abort question's wording and what it shows (0x27EF2); the 1–7 mode's repeat message (0x14B7F).

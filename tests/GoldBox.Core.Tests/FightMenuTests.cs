@@ -93,9 +93,17 @@ public class FightMenuTests
             Casts.Add((spell, target));
             return true;
         }
-        public bool ContinueCasting(Fight fight, EclCharacter caster, IReadOnlyList<EclCharacter> targets, (int X, int Y)? square)
+        /// <summary>The caster's +0 when the begun spell was cast (0x9B21 clears it first).</summary>
+        public List<int> SpellCastAtCast { get; } = [];
+        /// <summary>Read when the begun spell is cast (the menu's <see cref="FightMenu.BegunSpell"/>).</summary>
+        public Func<int>? Probe { get; set; }
+        public List<int> Probed { get; } = [];
+        public bool ContinueCasting(Fight fight, EclCharacter caster, int spell, IReadOnlyList<EclCharacter> targets, (int X, int Y)? square)
         {
-            Casts.Add((fight.Record(caster)[CombatRecord.SpellCast], targets.Count > 0 ? targets[0] : null));
+            SpellCastAtCast.Add(fight.Record(caster)[CombatRecord.SpellCast]);
+            if (Probe is { } probe)
+                Probed.Add(probe());
+            Casts.Add((spell, targets.Count > 0 ? targets[0] : null));
             FightRules.EndActions(fight.Record(caster));
             return true;
         }
@@ -664,8 +672,13 @@ public class FightMenuTests
         Assert.Equal(7, s.Fight.Record(mage)[CombatRecord.SpellCast]);
         Assert.Equal(3, s.Fight.Record(mage).InitiativeValue); // 5 − 2
         Assert.Empty(spells.Casts);
-        s.Menu(mage).Run(); // the next pick: cast now, no menu
+        var next = s.Menu(mage);
+        spells.Probe = () => next.BegunSpell;
+        next.Run(); // the next pick: cast now, no menu
         Assert.Equal([(7, (EclCharacter?)null)], spells.Casts);
+        Assert.Equal([0], spells.SpellCastAtCast);          // +0 cleared before the cast (0x9B59)
+        Assert.Equal([7], spells.Probed);                   // the chooser still knows the spell (its cast message)
+        Assert.Equal(0, next.BegunSpell);
         Assert.Equal(0, s.Fight.Record(mage)[CombatRecord.SpellCast]);
         Assert.Equal(0, s.Fight.Record(mage).InitiativeValue);
         Assert.Empty(s.Script.Shown);

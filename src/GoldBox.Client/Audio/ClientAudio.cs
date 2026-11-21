@@ -58,8 +58,19 @@ public sealed class ClientAudio : ISoundSink, IDisposable
     {
         "speaker" or "pc" or "p" => ClientSoundDevice.Speaker,
         "tandy" or "t" => ClientSoundDevice.Tandy,
+        "tandy-early" or "pcjr" => ClientSoundDevice.TandyEarly,
         "amiga" => ClientSoundDevice.Amiga,
         _ => null,
+    };
+
+    /// <summary>The setting word of <paramref name="device"/> (<see cref="Parse"/> reads it back); null = <c>"off"</c>.</summary>
+    public static string Word(ClientSoundDevice? device) => device switch
+    {
+        ClientSoundDevice.Speaker => "speaker",
+        ClientSoundDevice.Tandy => "tandy",
+        ClientSoundDevice.TandyEarly => "tandy-early",
+        ClientSoundDevice.Amiga => "amiga",
+        _ => "off",
     };
 
     /// <summary>
@@ -112,6 +123,7 @@ public sealed class ClientAudio : ISoundSink, IDisposable
             {
                 ClientSoundDevice.Speaker => _sound!.Player(PcSoundDevice.Speaker, SampleRate),
                 ClientSoundDevice.Tandy => _sound!.Player(PcSoundDevice.Tandy, SampleRate),
+                ClientSoundDevice.TandyEarly => _sound!.Player(PcSoundDevice.Tandy, SampleRate, TandyChip.Sn76496),
                 _ => null,
             };
             _resident = false;

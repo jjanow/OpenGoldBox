@@ -109,8 +109,27 @@ public sealed class TradeContext
     /// </summary>
     public Action<bool> TalkOverItemsPage { get; init; } = _ => { };
 
-    /// <summary>View's Drop (0x234E1): the coin list and the amount (<see cref="PartyMenuFlow.Coins"/>); null: not built.</summary>
-    public Func<EclCharacter, IReadOnlyList<int>, (int Kind, ushort Amount)?>? Coins { get; init; }
+    /// <summary>
+    /// View's coin list and amount (<see cref="PartyMenuFlow.Coins"/>): Drop's (0x234E1, texts null) and the money
+    /// Trade's (0x23190, its own copies of the texts); null: not built.
+    /// </summary>
+    public Func<EclCharacter, IReadOnlyList<int>, CoinTexts?, (int Kind, ushort Amount)?>? Coins { get; init; }
+
+    /// <summary>
+    /// START 0x3379 for the venue's interface state DS:49F3 (the item and money Trade draw it before their member pick:
+    /// 0x22781, 0x231A4): exploring, the area's layout (<see cref="ClientPlayer.DrawInterface"/>); null: the text box
+    /// cleared and the party list drawn.
+    /// </summary>
+    public Action? InterfaceRedraw { get; init; }
+
+    /// <summary>The member pick's item line (START 0x37E1: Select, Exit), or null for ours.</summary>
+    public string? PickMenu { get; init; }
+
+    /// <summary>
+    /// DS:471A, the member Trade's pick starts on: View sets it to the viewed member (0x21B0B), each Trade to its pick
+    /// (0x227B0, 0x231E4), so a later Trade in the same View starts on the last member traded with.
+    /// </summary>
+    public EclCharacter? TradeTarget { get; set; }
 
     /// <summary>The game's memory (VM $49E5 for the Items menu's Use), when there is a game.</summary>
     public EclMemory? Memory { get; init; }
@@ -151,6 +170,9 @@ public sealed class TradeContext
     /// <summary>Answers at or below this pick a member directly (a click on the party list): <c>MemberPick − index</c>.</summary>
     public const int MemberPick = -100;
 }
+
+/// <summary>The coin list's title and the amount question's two halves (Drop's or the money Trade's copies).</summary>
+public sealed record CoinTexts(string Title, string HowMuch, string WillYou);
 
 /// <summary>The money routines the shop, temple and loot menus share (GAME.OVR 0x25191, 0x252C3, 0x25974, 0x2663B).</summary>
 public static class MoneyScreens

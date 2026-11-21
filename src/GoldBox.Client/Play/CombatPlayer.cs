@@ -1217,10 +1217,11 @@ public sealed partial class CombatChooser(Func<PlayerRequest, object?> ask, Comb
 
     public AimKey ChooseAim(FightMenu menu, AimView aim)
     {
-        // 0x27C38 shows the cast message before its target pick, for a spell begun earlier too (combat record +0, cast
-        // from the menu 0x9B21 when its turn comes again): announced at its first aim, the later Announce skipped.
+        // 0x27C38 shows the cast message before its target pick, for a spell begun earlier too (cast from the menu
+        // 0x9B21 when its turn comes again, +0 cleared first: FightMenu.BegunSpell): announced at its first aim, the
+        // later Announce skipped.
         // DOSBox-X s41: Brother Sean's Cure Light Wounds: the begins-casting words, the casts-a-spell words, then the aim.
-        if (menu.Record[CombatRecord.SpellCast] is var begun and > 0
+        if (menu.BegunSpell is var begun and > 0
             && !(_announced is { } an && ReferenceEquals(an.Caster, menu.Creature) && an.Spell == begun))
         {
             SayCast(menu.Creature, begun);

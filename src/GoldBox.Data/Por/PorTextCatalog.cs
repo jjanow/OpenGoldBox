@@ -173,6 +173,12 @@ public static class PorTextCatalog
         ["Msg.IdentifyNoMoney"] = 0x22F39,
         ["Msg.NothingNew"] = 0x22F4A,
         ["Msg.LooksLike"] = 0x22F70, // 0x23112 (Id after paying, s41)
+        ["Msg.TradeWithWhom"] = 0x22752,  // the item Trade's pick prompt (0x2276E, unit offset 0x1718; s42)
+        ["Msg.TradeOverloaded"] = 0x22763, // its refusal (unit offset 0x1729)
+        ["Msg.TradeTo"] = 0x23154,        // the money Trade's pick prompt (0x23190, unit offset 0x211A)
+        ["Msg.TradeSelectCoin"] = 0x23160, // its coin list title and amount question (0x2126, 0x213B, 0x2145)
+        ["Msg.TradeHowMuch"] = 0x23175,
+        ["Msg.WillYouTrade"] = 0x2317F,
         ["Msg.MoneyToPool"] = 0x24E64,
         ["Msg.Overloaded"] = 0x250CA,
         ["Msg.CoinGems"] = 0x257E3,

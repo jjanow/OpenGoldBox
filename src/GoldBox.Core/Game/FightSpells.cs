@@ -260,11 +260,10 @@ public sealed partial class FightSpells : IFightSpells
     /// [Seam addition] The turn of a creature that began casting (combat record +0 &gt; 0): the menu (0x9B21) and the AI
     /// cast the spell now (0x27C38) and the actions end. False when there was no spell being cast.
     /// </summary>
-    public bool ContinueCasting(Fight fight, EclCharacter caster, IReadOnlyList<EclCharacter> targets, (int X, int Y)? square)
+    public bool ContinueCasting(Fight fight, EclCharacter caster, int spell, IReadOnlyList<EclCharacter> targets, (int X, int Y)? square)
     {
         Bind(fight);
         var rec = fight.Record(caster);
-        int spell = rec[CombatRecord.SpellCast];
         if (spell == 0)
             return false;
         CastNow(fight, caster, spell, () => Pick(fight, caster, spell, targets, square));

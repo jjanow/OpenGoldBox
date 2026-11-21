@@ -39,7 +39,8 @@ public sealed class ClientSettings
 
     /// <summary>
     /// The sound (docs/re/sound.md), key <c>"Sound"</c>: <c>"speaker"</c> (default: the PC speaker, the installer's
-    /// usual choice), <c>"tandy"</c> (the Tandy 1000's SN76489), <c>"amiga"</c> (with its imported samples), or <c>"off"</c>. Changed
+    /// usual choice), <c>"tandy"</c> (the Tandy 1000 EX/HX/TX's NCR 8496), <c>"tandy-early"</c> (the early Tandy 1000 / PCjr's
+    /// SN76496), <c>"amiga"</c> (with its imported samples), or <c>"off"</c>. Changed
     /// with <c>--sound</c> or the controls screen's SOUND row. Ctrl-S mutes or restores it for the session.
     /// </summary>
     public string Sound { get; set; } = "speaker";

@@ -324,12 +324,24 @@ public sealed class PorGame
         bool outdoors = block is >= 25 and <= 27 && Memory.Read(AreaLoop.View3DCell) == 0; // DS:49F3 := 3 (0x408E)
         Memory.InterfaceState = (byte)(outdoors ? 3 : 4); // 0x405D / 0x408E, before vector 4
         // A NEWECL in this vector 4 is followed only after the next command's vector (DS:442F stays set).
-        EntryRun = Vm.RunLoadedGame();
-        // At DS:49F3 = 4, START 0x3379 case 4 (0x1B1A inside the LOADFILES / LOADPIECES pair, or 0x40BE after the vector)
-        // draws every window and the view, then 0x40C8 redraws the view: a CLEARBOX blank of the old game is gone, the
-        // view's box with it. At 3 neither runs (the window keeps what vector 4 drew). [?] Drawn here after vector 4:
-        // a CLEARBOX in vector 4 after its LOADFILES pair would leave the box ring blank in the program.
-        if (!outdoors)
+        // START 0x3379 by DS:49F3 (case 4: every window and the view) runs inside the LOADFILES / LOADPIECES pair once
+        // both have run (0x1B1A, EclVm.EntryInterfaceDue), or else after the vector (0x40BE) unless DS:49F3 = 3; then
+        // 0x40C8 redraws the view: a CLEARBOX blank of the old game is gone, the view's box with it. At 3 nothing runs
+        // after the vector (the window keeps what vector 4 drew).
+        void PairDraw() => Loop.DrawInterface();
+        Vm.EntryInterfaceDue += PairDraw;
+        Vm.ArmEntryDraw();
+        try
+        {
+            EntryRun = Vm.RunLoadedGame();
+        }
+        finally
+        {
+            Vm.EntryInterfaceDue -= PairDraw;
+        }
+        bool armed = Vm.EntryDrawArmed;
+        Vm.EntryDrawArmed = false;
+        if (!outdoors && armed)
             Loop.DrawInterface();
         FinishEntry(follow: false, redraw: !outdoors);
     }

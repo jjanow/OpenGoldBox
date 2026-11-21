@@ -537,6 +537,7 @@ public class ExploreScreenTests
         Assert.True(r.Player.CampingLine);
         var menu = Assert.IsType<ChoiceRequest>(r.Runner.Pending);
         Assert.True(menu.Animates);                         // $4AFF ≠ 0 although DS:84E1 is 0 after the start-up load
+        Assert.True(menu.EveryPass);                        // and a frame on every pass (0x2CDD6; user s42)
         r.Screen.Update(r.Input);
         Assert.False(r.Player.PictureUndrawn);
         Press(r, GameAction.Confirm);
@@ -547,6 +548,69 @@ public class ExploreScreenTests
         Assert.Contains(" CAMPING", ExploreScreen.StatusLine(r.Game, r.Player.CampingLine));
         Press(r, GameAction.TurnLeft);
         Assert.True(r.Player.CampingLine);                  // a turn writes no DS:49F3
+        Assert.False(r.Player.PictureUndrawn);              // but draws the view in the blank box (0x2EEF4; DOSBox-X s42)
+        Assert.Null(r.Player.ViewPicture);
+        r.Runner.Dispose();
+    }
+
+    /// <summary>
+    /// A turn (0x2ED72 + 0x2EEF4) and the area map toggle (0x2EEF4) draw the view into the window over a picture, as a
+    /// redraw does; the picture flags DS:84E0 / 84E1 are not touched (DOSBox-X s42: the view after Left, h5).
+    /// </summary>
+    [Fact]
+    public void A_turn_or_the_area_map_draws_over_a_picture()
+    {
+        if (Dir() is null)
+            return;
+        var r = Start();
+        Settle(r);
+        r.Runner.Start(() => r.Player.ShowPicture(2, null));
+        Assert.Equal(ViewPictureKind.Picture, r.Player.ViewPicture?.Kind);
+        bool shown = r.Game.Memory.PictureShown;
+        Press(r, GameAction.TurnLeft);
+        Settle(r);
+        Assert.Null(r.Player.ViewPicture);
+        Assert.Equal(shown, r.Game.Memory.PictureShown);
+        r.Runner.Start(() => r.Player.ShowPicture(2, null));
+        Assert.NotNull(r.Player.ViewPicture);
+        Press(r, GameAction.AreaMap);
+        Settle(r);
+        Assert.True(r.Game.Loop.ShowAreaMap);
+        Assert.Null(r.Player.ViewPicture);
+        r.Runner.Dispose();
+    }
+
+    /// <summary>
+    /// A party menu Load's vector 4 draws over the party menu's page until START 0x3379 (DOSBox-X s42, PRINT, PICTURE 2,
+    /// HMENU in vector 4: the page with the picture at cell (3, 3) and no view box, the text at row 17, WAIT on row 24;
+    /// 0 differing EGA pixels against the Client).
+    /// </summary>
+    [Fact]
+    public void A_party_menu_loads_vector_4_draws_over_the_menu_page()
+    {
+        if (Dir() is null)
+            return;
+        var r = Start();
+        Settle(r);
+        var page = new byte[320 * 8 * 24];
+        Array.Fill(page, (byte)5);
+        r.Screen.PartyMenuPage = page;
+        r.Player.PartyMenuUnder = true;
+        r.Runner.Start(() =>
+        {
+            r.Player.ShowPicture(2, null);
+            r.Player.HorizontalMenu(["WAIT"]);
+        });
+        Assert.IsType<ChoiceRequest>(r.Runner.Pending);
+        var f = new IndexedFrame(320, 200);
+        r.Screen.Draw(f, r.Input);
+        Assert.Equal(5, f[0, 0]);                           // the page, not the explore frame
+        Assert.Equal(5, f[20, 20]);                         // no view box around the picture
+        Assert.Equal(5, f[200, 100]);                       // no party list or position line
+        Assert.NotEqual(5, f[60, 60]);                      // the picture at (24, 24)
+        Press(r, GameAction.Confirm);
+        r.Player.InterfaceDrawn(4);                         // START 0x3379 (the pair, or after the vector)
+        Assert.False(r.Player.PartyMenuUnder);
         r.Runner.Dispose();
     }
 }

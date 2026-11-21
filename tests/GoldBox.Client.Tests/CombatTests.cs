@@ -717,6 +717,51 @@ public class CombatScreenGameTests
     }
 
     [Fact]
+    public void Manuals_return_takes_target_with_the_lit_entry_kept()
+    {
+        if (Dir() is null)
+            return;
+        var r = ToFight();
+        var v = r.Player.FightView;
+        var fight = v.Fight!;
+        var me = v.Current!;
+        var wand = GiveWand(me);
+        Key(r, Keys.U);
+        Key(r, Keys.U);
+        for (int g = 0; g < 10 && !(r.Runner.Pending is ChoiceRequest && v.Mode == CombatMode.Aim); g++)
+            Press(r, GameAction.Confirm);
+        for (int g = 0; g < 20 && v.Shown is { } s && s[FightRules.Hostile] == me[FightRules.Hostile]; g++)
+            Key(r, Keys.N);
+        var target = v.Shown!;
+        Assert.NotEqual(me[FightRules.Hostile], target[FightRules.Hostile]);
+
+        // Manual on the enemy: Target, Center, Exit. ',' / '.' light another entry inside the menu routine (0x2CE93 /
+        // 0x2CEB7: the cell moves, no pass of the cursor).
+        Key(r, Keys.M);
+        var cur = Assert.IsType<CombatCursorRequest>(r.Runner.Pending);
+        Assert.True(cur.View.TargetOffered);
+        int lit = r.Screen.MenuHighlight;
+        Key(r, Keys.OemPeriod);
+        Assert.Same(cur, r.Runner.Pending);
+        Assert.Equal((lit + 1) % 3, r.Screen.MenuHighlight);
+        Key(r, Keys.OemComma);
+        Key(r, Keys.OemComma);
+        Assert.Equal((lit + 2) % 3, r.Screen.MenuHighlight);
+        if (r.Screen.MenuHighlight == 0)
+            Key(r, Keys.OemPeriod);
+        lit = r.Screen.MenuHighlight;
+        Assert.NotEqual(0, lit);
+
+        // Return gives 13 (0x2CE7D), which Manual takes as Target (0x15979); the cell is not written, so the line keeps
+        // Center or Exit lit (T would move it to Target, 0x2CF48).
+        Key(r, Keys.Enter);
+        Assert.Equal(19, wand[0x3C]);
+        Assert.Same(target, fight.Record(me).Other);
+        Assert.Equal(lit, r.Screen.MenuHighlight);
+        r.Runner.Dispose();
+    }
+
+    [Fact]
     public void An_items_spell_is_aimed_on_the_map_by_keys_pad_and_mouse()
     {
         if (Dir() is null)

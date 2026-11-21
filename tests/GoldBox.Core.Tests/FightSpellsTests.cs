@@ -123,7 +123,7 @@ public class FightSpellsTests
         var (fight, spells, _) = Setup(new Area(), rng, cleric, friend);
         Assert.True(spells.CastOn(fight, cleric, 3, [friend]) || fight.Record(cleric)[CombatRecord.SpellCast] == 3);
         if (fight.Record(cleric)[CombatRecord.SpellCast] == 3) // a casting time: cast on its next turn
-            Assert.True(spells.ContinueCasting(fight, cleric, [friend], null));
+            Assert.True(spells.ContinueCasting(fight, cleric, 3, [friend], null));
         Assert.Equal(7, friend[FightRules.Hp]);
     }
 
@@ -138,7 +138,7 @@ public class FightSpellsTests
         fight.Record(cleric).InitiativeValue = 10;
         Assert.True(spells.Cast(fight, cleric, 1, null, (1, 1)));
         if (fight.Record(cleric)[CombatRecord.SpellCast] == 1)
-            spells.ContinueCasting(fight, cleric, [], (1, 1));
+            spells.ContinueCasting(fight, cleric, 1, [], (1, 1));
         Assert.NotNull(EffectHandlers.FindEffect(cleric, 1));
         Assert.NotNull(EffectHandlers.FindEffect(friend, 1));
         Assert.Null(EffectHandlers.FindEffect(foe, 1));
@@ -176,6 +176,36 @@ public class FightSpellsTests
     }
 
     [PorFact]
+    public void A_begun_fireball_costs_its_caster_a_second_copy_only_on_the_ais_turn()
+    {
+        // The menu's 0x9B21 clears +0 before 0x27C38 (0x9B59), the AI's 0xACEE does not: a caster in its own begun
+        // Fireball loses the spell again (START 0x202B on the current character, the caster) only on the AI's turn.
+        foreach (bool ai in new[] { false, true })
+        {
+            var mage = Creature("M", hp: 40);
+            mage[FightSpells.MageLevel] = 5;
+            mage[FightSpells.Memorised] = 47;
+            mage[FightSpells.Memorised + 1] = 47;
+            var orc = Creature("O", hostile: true, hp: 40);
+            var (fight, spells, _) = Setup(new Area(mage, orc), new Rng(), mage, orc);
+            spells.Effects.Attach(fight);
+            fight.Record(mage).InitiativeValue = 10;
+            Assert.True(spells.Cast(fight, mage, 47, null, (3, 3)));
+            Assert.Equal(47, fight.Record(mage)[CombatRecord.SpellCast]);
+            // 0x27C38 with +0 as each caller leaves it: cleared by the menu (FightMenu.Run, 0x9B59), still set by the AI
+            // (ContinueCastingAuto: 0xACEE clears it only with the actions' end, START 0x31D7).
+            if (!ai)
+                fight.Record(mage)[CombatRecord.SpellCast] = 0;
+            Assert.True(spells.ContinueCasting(fight, mage, 47, [], (3, 3)));
+            Assert.True(mage[FightRules.Hp] < 40, $"ai {ai}: mage {mage[FightRules.Hp]} orc {orc[FightRules.Hp]} mem {mage[FightSpells.Memorised]},{mage[FightSpells.Memorised + 1]}");
+            Assert.True(orc[FightRules.Hp] < 40);
+            int left = Enumerable.Range(0, FightSpells.MemorisedSlots).Count(i => mage[FightSpells.Memorised + i] == 47);
+            Assert.Equal(ai ? 0 : 1, left);
+            Assert.Equal(0, fight.Record(mage)[CombatRecord.SpellCast]);
+        }
+    }
+
+    [PorFact]
     public void Shocking_grasp_needs_an_attack_roll()
     {
         var mage = Creature("M");
@@ -187,7 +217,7 @@ public class FightSpellsTests
         Assert.Equal(0xFF, Table[20].RangeFixed);
         Assert.True(spells.Cast(fight, mage, 20, orc, null));
         if (fight.Record(mage)[CombatRecord.SpellCast] == 20)
-            spells.ContinueCasting(fight, mage, [orc], null);
+            spells.ContinueCasting(fight, mage, 20, [orc], null);
         Assert.Equal(30, orc[FightRules.Hp]);
         Assert.Equal(new ushort[] { 8, 20 }, rng.Ranges);
     }

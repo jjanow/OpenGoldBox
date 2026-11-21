@@ -151,7 +151,7 @@ one typing delay per character (the Client itself keeps typing on, as the progra
 Temp folders: the tests write under `<temp>/goldbox-tests/` (on this machine a tmpfs with 1M inodes). Imports go
 through `Support/TestImportCache.cs`: one folder per importer build (a hash of `GoldBox.Data`) and game files, reused
 and touched by later runs. When the Core test assembly loads, it removes its own entries there (and in the Client tests'
-`client-module-cache` / `client-amiga-cache`) that no run has used for a day. New tests that need a large folder should
+`client-module-cache` / `client-amiga-cache`) that no run has used for three hours (a day before s42). New tests that need a large folder should
 use `TestImportCache`, not a new GUID folder per run.
 
 ## Doors (`Doors/`)

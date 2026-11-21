@@ -12,7 +12,7 @@ namespace GoldBox.Core.Tests.Support;
 /// <see cref="PorModuleCache.Key"/> (importer name, game files, Amiga files) plus a hash of the built
 /// <c>GoldBox.Data</c> assembly, so any change to the importer's code imports again. The import report is kept next to
 /// the folder as <c>&lt;folder&gt;.report.json</c>. A reused folder is touched, and <see cref="Prune"/> (run once when
-/// the test assembly loads) removes what no run has used for a day (user decision s29).
+/// the test assembly loads) removes what no run has used for <see cref="KeepFor"/> (user decision s29; three hours since s42).
 /// </summary>
 public static class TestImportCache
 {
@@ -78,8 +78,12 @@ public static class TestImportCache
         }
     }
 
-    /// <summary>How long an unused folder is kept.</summary>
-    public static readonly TimeSpan KeepFor = TimeSpan.FromDays(1);
+    /// <summary>
+    /// How long an unused folder is kept. Three hours since s42 (was a day): every rebuild of <c>GoldBox.Data</c> imports
+    /// again (~4,300 inodes for an Amiga import), and with several lanes rebuilding all day the old builds filled 70 % of
+    /// the tmpfs's inodes. A run touches what it uses, so a lane's current build stays.
+    /// </summary>
+    public static readonly TimeSpan KeepFor = TimeSpan.FromHours(3);
 
     /// <summary>
     /// Removes the test folders under <see cref="Root"/> that no run has used for <see cref="KeepFor"/>: entries made by

@@ -97,8 +97,11 @@ public sealed class AreaLoop
     /// camp picture START 0x3379 case 2 had loaded (DOSBox-X s39 / s41), while after a start-up Load the command line
     /// clears it first (an HMENU in the first step's vector 0 stays on its first frame, DOSBox-X s24 / s41), and a loaded
     /// game's vector 4 runs before any menu (PICTURE 2 + HMENU there animates, DOSBox-X s41). The engine keeps the
-    /// program's zero apart from the cell (<see cref="EclMemory.MenuAnimates"/>). [?] In the Client only the ECL menus
-    /// and the command line clear it; the camp's, hall's and venues' own menus do not (they animate or show no picture).
+    /// program's zero apart from the cell (<see cref="EclMemory.MenuAnimates"/>). Every menu of the routine clears it, the
+    /// camp's, hall's and venues' too (the Client's front end after each answered menu, s42). While it is set the routine
+    /// moves to the next frame on every pass without waiting for the frame's delay (0x2CDD6) [?] (the Client keeps the
+    /// delays), and it draws the loaded frame table over whatever page is up (DOSBox-X s42: PICTURE 2 over the hall's page
+    /// after a hall Save, once) [?] (not drawn by the Client).
     /// </summary>
     public const ushort MenuAnimateCell = 0x4AFF;
 
@@ -170,8 +173,17 @@ public sealed class AreaLoop
     /// <summary>DS:49FF: the party was defeated; the area loop ends (the caller leaves the area).</summary>
     public bool Defeated => Vm.ExternalStop || Ended;
 
-    /// <summary>The 3D view is up: $49E6 ≠ 0 and a map is loaded. Outdoors the program shows the wilderness picture.</summary>
-    public bool InView3D => Map is not null && Memory.Read(View3DCell) != 0;
+    /// <summary>
+    /// The redraw 0x2DCF4 draws the 3D view: DS:49FA = 1 or $49E6 ≠ 0 (0x2DCFA–0x2DD15: $49E6 ≠ 0 makes the mode 1);
+    /// modes 2–4 with $49E6 = 0 are the overland (<see cref="Overland.Shown"/>), any other mode draws nothing.
+    /// </summary>
+    public static bool Draws3D(EclMemory m) => m.ViewMode == 1 || m.Read(View3DCell) != 0;
+
+    /// <summary>
+    /// The 3D view is up (<see cref="Draws3D"/>) and a map is loaded. [?] With no map the program draws whatever its map
+    /// buffer holds; the Client draws nothing there.
+    /// </summary>
+    public bool InView3D => Map is not null && Draws3D(Memory);
 
     public bool SearchOn => (Memory.Read(SearchMode) & 1) != 0;
 
@@ -214,6 +226,14 @@ public sealed class AreaLoop
     public event Action? Redrawn;
 
     /// <summary>
+    /// Raised when a turn (0x2ED72, then 0x2EEF4) or the area map toggle (0x2EEF4) draws the 88 × 88 view (or the area
+    /// map) into the window: whatever picture was there is gone, as at a redraw, but nothing else of 0x2DCF4 runs (no
+    /// event byte, no area-map switch-off). DOSBox-X (s42): after a hall Load of a camp save, View and Escape left the
+    /// box blank (START 0x3379 case 2), and Left drew the view there, CAMPING kept.
+    /// </summary>
+    public event Action? ViewDrawn;
+
+    /// <summary>
     /// The view redraw's state part (0x2DCF4): the event byte of the party's square is read again; the area map is
     /// switched off where $49FB ≠ 0. The program does this when DS:49FA = 1 or $49E6 ≠ 0 (0x2DCFA–0x2DD15).
     /// </summary>
@@ -226,7 +246,7 @@ public sealed class AreaLoop
             Overland.Redrawn(Memory);
             return;
         }
-        if (Map is null || (Memory.ViewMode != 1 && Memory.Read(View3DCell) == 0))
+        if (Map is null || !Draws3D(Memory))
             return;
         Memory.Position.EventByte = EventHere();
         if (Memory.Read(NoAreaMap) != 0)
@@ -394,7 +414,10 @@ public sealed class AreaLoop
             case AreaCommand.TurnAround: Turn(Facing.Back(Memory.Position.Facing)); return;
             case AreaCommand.AreaMap:
                 if (Memory.Read(NoAreaMap) == 0)
+                {
                     ShowAreaMap = !ShowAreaMap;
+                    ViewDrawn?.Invoke(); // 0x2EEF4
+                }
                 else
                     Ui.Message(AreaMessage.NoAreaMapHere);
                 return;
@@ -488,6 +511,7 @@ public sealed class AreaLoop
         var p = Memory.Position;
         p.Facing = (byte)facing;
         p.WallAhead = (byte)(Map?.Wall(p.X, p.Y, facing) ?? 0);
+        ViewDrawn?.Invoke(); // 0x2EEF4
     }
 
     /// <summary>

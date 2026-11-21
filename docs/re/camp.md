@@ -78,20 +78,56 @@ screen with `--save` too (`Program.SharedHighlightFor`). Tests `VenueTests.Camp_
 loop") call the same 0x21AED and the camp Magic menu's Cast 0x17CD2 with DS:49F3 = 4 or 3: View's Items offer Use as
 in the camp; View's exit and Cast's redraws (0x17D96, the target pick's 0x27AFA) draw START 0x3379 for that state (the
 exploring screen, not the camp's). Client: `ClientPlayer.View` / `Cast`, `Venue.Explore`, `CampContext.InterfaceRedraw`.
-`[?]` Seen on the overland (s41): Down on Brother Sean's spell list (0x2D669 with the keypad flag) moved DOSBox-X's lit
-row to the next spell, the Client's not (the camp's list is the same).
-**Trade, read (P s41; not built `[?]`).** The Items page's Trade (0x2276E, on the lit item): the viewed member
-DS:471A is the pick's start; START 0x3379 redraws the screen for DS:49F3 (the exploring layout from the command line);
-START's member pick 0x37E8 with the prompt at unit offset 0x1718 (the ask-whom-to-trade-with prompt, keypad flag 1); nothing picked
-ends; else DS:471A := the pick, and 0x23795 (`ShopRules.CanCarry`: 0xC7 > 15, or weight 0x102 + item 0x37 × 0x39
-above START 0x1F4B + 1500, after START 0x1758 on the pick) refuses with the overloaded message (offset 0x1729) through START
-0x2233 (row 24, game-speed pause); else START 0x2197 adds the item to the pick, START 0x20A9 takes it from DS:5D92 and
-START 0x1758 recalculates the pick. View's money Trade (0x23190): the same redraw and pick with the trade-to prompt (offset
-0x211A); then the page of DS:471A (0x21084) and its money lines (0x21547), DS:471A := the pick, the coin list of DS:5D92
-(0x2D669, as Drop's), the amount (0x24F1D) and the transfer 0x250D5, until the list is left (0x2DAC2 frees it). Both
-draw START 0x3379 (so on the overland each advances the marker, geo-format.md). Open: the three texts are not in the
-module yet (importer keys), 0x250D5's limits, and whether the View page after a trade shows DS:471A (the pick) while
-its menu acts on DS:5D92 (to be seen in DOSBox-X).
+**Down on a spell list** (P + D s42): 0x2D669 acts on the extended keys G / O (Home / End, 0x2D8C6 / 0x2D8D4) and I /
+Q (PgUp / PgDn) only; the arrows (0x48 / 0x50, also the keypad's 8 / 2 through DS:288C) fall through and redraw. DOSBox-X
+(save A on the 3D map and a `save-overland` save at 26 8,19 N; End × 3, C on Brother Sean): Down, Up, KP_Down and,
+with NumLock, keypad 2 left the lit row; End wrapped it to the first spell. The s41 note had the sides swapped: the
+Client moves the row on Up / Down (`ListPage`, as Home / End since s30), the program does not; a Client addition like
+the View / Items arrows (user s40). No change.
+**Trade (P s41/s42, D s42; built s42).** View starts by setting DS:471A := DS:5D92 (0x21B0B): the member Trade's pick
+starts on. *Item* (the Items page's T, 0x22368): 0x21DAA first (readied: the unready message on row 24; a scroll to
+scribe from: its question; else nothing), then 0x2276E: START 0x3379 redraws the screen for DS:49F3; START's member pick
+0x37E8 with the ask-whom prompt (unit offset 0x1718, keypad flag 1) on DS:471A; nobody picked ends; else DS:471A := the
+pick (before the test) and 0x23795 (`ShopRules.CanCarry`: the stat recalculation START 0x1758 on the pick, then 0xC7 >
+15, or weight 0x102 + item 0x37 × 0x39 above START 0x1F4B + 1500) refuses with its own overloaded text (offset 0x1729)
+through START 0x2233 (row 24, game-speed pause); else START 0x2197 appends a copy (next nil) to the pick's items, START
+0x20A9 unlinks and frees the item from DS:5D92 (0xC7 is left to the next recalculation) and START 0x1758 runs on the
+pick. To the giver itself the item moves to the end of its list (the carry test counts it twice). The Items loop then
+sets its full-redraw flag (0x2238A, whatever the outcome) and recalculates DS:5D92. *Money* (View's T, 0x23190): from
+0x2315D START 0x3379 and the pick with the trade-to prompt (offset 0x211A); nobody picked ends; else the page 0x21084
+and its money lines 0x21547 of DS:5D92 (the viewer, not the pick: 0x21084 copies DS:5D92 into DS:4716), DS:471A := the
+pick, then from 0x231A0: the money lines, the coin list of DS:5D92 (0x2D669 with Drop's arguments; title, how-many and
+will-you-trade texts are this unit's own copies, offsets 0x2126, 0x213B, 0x2145), the amount (0x24F1D with the coin
+count as maximum) and the transfer 0x250D5 (kind, amount, the pick, DS:5D92): refused (`Msg.Overloaded`, 0x250CA, row
+24) when the pick's stored 0x102 + amount (16-bit) is above its START 0x1F4B + 1500, no recalculation first; else the
+giver's coin word goes down and the pick's up (16-bit, no cap). **Weight bug, fixed (user, s42; not an option, as the
+boar double free):** 0x250D5 takes the amount off the giver's 0x102 (0x24CA9) and then adds it back to the giver's
+(0x24CC3 on [bp+0xE] again): in the program neither weight word moves, so the pick keeps its old weight until a
+recalculation and can be handed coins past its limit. The Client moves the amount from the giver's weight to the pick's. Two flags
+end the loop (0x23415–0x2346F): after a transfer (a refused one, and an amount of 0, count) the coin list comes again
+while the giver holds money; with none Trade ends; leaving the coin list after a transfer goes back to 0x2315D (the
+redraw and the pick, on the last pick). Leaving the first coin list before any transfer reads [bp−0x131] unwritten:
+DOSBox-X returns to View every time (3 of 3, overland and hall), and so does the Client. View then draws its page again
+(T is in the redraw set) on DS:5D92. **The amount (0x24F1D, P s42):** row 24 cleared, the question in the colour passed
+(10), then digits only: each digit is appended (6 characters at most) and the value is read; a value above the maximum
+replaces the text with the maximum at once; Backspace takes one off; Return gives the value (empty: 0), Escape 0.
+**The pick's keys:** the menu shares the cell DS:6B2B (the Items page's T leaves it on the 2nd word, so Exit is lit),
+but Return gives 13, which ends the loop with the pick whatever word is lit; E (or Exit) ends with nobody, Escape clears
+the pick and stays. **D** (s42, 3000 cycles, `save-overland` 26 at 8,19 N as slot J, Thrender's flail unreadied with R;
+the hall of `por_test_saves.py` slot C): T redraws the whole exploring layout (overland view, party list, empty text
+box) under the pick, the viewer lit first; End, Return: the giver's Items page back without the item, which is last in
+the receiver's list; each START 0x3379 (T, money T, the pick again after a transfer) steps the overland marker once;
+the money pick starts on the last target; the coin page is the giver's; typing 9, 9 shows 9, then 36 (all held); after
+a transfer the page's encumbrance is not redrawn; View's Exit lights DS:5D92 in the party list. In the hall (DS:49F3 =
+0, case 0) the pick blanks everything inside the outer frame (no inner windows, no menu) and draws the party list in the
+party menu's own layout with the pick lit; the coin page has its portrait there. Escape at the amount gives 0: nothing
+moves, the coin list comes again, and leaving it then goes to the pick. Checked under emulation:
+`tools/scripts/por_trade_oracle.py` (0x250D5 and 0x2276E, 300 cases each; `TradeProgramTests`). Client: `TradeRules`
+(Core), `CharacterView` (`TradeItem`, `TradeMoney`, `LetGoOnPage`), `MemberPick` (the camp Cast's target pick too),
+`TradeContext.InterfaceRedraw` / `TradeTarget` / `PickMenu`, `PartyMenuFlow.PickScreen` (case 0); the Client frames
+equal DOSBox-X's but for its help lines (s42). `[?]` The Client's recalculation in Trade is the weight and item count
+only (as the other venue screens), not START 0x1758's other bytes: after the item Trade of a readied-then-unreadied
+weapon View's damage line keeps the weapon's dice (DOSBox-X redraws the bare-hand dice).
 
 **Items and Drop from View** (P + D, s39). Items is 0x21F32 in every venue: its page (0x221DE–0x2229B: braid rows 0, 2,
 23; the name with "'S" and the title on row 1, the heading on row 3, the list window (1,5)–(38,22)) and the item list
@@ -123,12 +159,24 @@ removed and paid, and the overloaded message on row 24 when platinum went to the
 yes/no; Yes: paid (character, else pool) or the no-money message on row 24; paid: the nothing-new words before
 the item when it was identified already, else it is identified and the looks-like words before its new name
 (string 0x22F70, `Msg.LooksLike`, importer 0.7.30), both in the box, then PauseOnly. While a text types or pauses
-row 24 keeps the page's menu with the chosen entry lit. **D** (s41, slot F's shop, Thrender: View, Items, Sell on the
+row 24 keeps the page's menu with the chosen entry lit; after a yes/no it keeps the question's line with the answer lit
+(nothing redraws row 24 until the next question or row-24 message). **D** (s42, a shop save from `fight_save.py`
+with the slot-F code, Thrender given 500 gold, a scroll with its first spell flagged for scribing (0x3C | 0x80) and an
+unidentified scroll (0x35 = 1): View, Items, End, End, S, Y, Y, I, Y): the scribe warning (the name in its colour at
+(1, 21), the warning typed in yellow, the lose-the-scroll question with No lit), Yes, the box blanked and the offer typed
+under the warning's line with Yes lit, the deal question, Yes, the sold message, the page back with Ready lit (the
+cell); Id's offer under the page menu with Id lit, Yes, the looks-like words and the new name typed under the deal
+line with Yes lit, PauseOnly (0.97 s on both sides), the page. Before s42 the Client drew the
+page's menu under the second text; now 96 of 104 Client frames equal on the Sell run (the misses: help lines, the
+encumbrance below) and every Id frame but the item list (the run had not sold the first scroll). The test save's
+encumbrance differed (DOSBox-X 1058, the Client 538: the edited gold and items are not in the save's weight word, so
+the program recalculates it on Load or on View and the Client does not `[?]`; a real save keeps them equal). **D** (s41, slot F's shop, Thrender: View, Items, Sell on the
 readied flail, Id, Yes with too little gold, Escape): the unready message, the offer typed over rows 21–22 under
 the page menu with Id lit, the deal question with No lit, the no-money message, the box blanked: 44 of 46
 Client frames equal (the misses the help line and one transition frame between the shop menu and View's page).
 Client: `CharacterView.SellOnPage` / `IdentifyOnPage` with `TradeContext.TalkOverItemsPage` (the party-menu
-overlay stays up and draws the box, `PartyMenuFlow.TextOverPage`); tests `ItemsPageTalkTests`.
+overlay stays up and draws the box, `PartyMenuFlow.TextOverPage`; the kept yes/no line `PartyMenuScreen._talkChoice`);
+tests `ItemsPageTalkTests`, `PartyMenuScreenTests.Sell_and_ids_yes_no_line_stays_on_row_24_while_the_next_text_types`.
 
 ## Rest (0x17FAB → 0x24A66) — P, D
 

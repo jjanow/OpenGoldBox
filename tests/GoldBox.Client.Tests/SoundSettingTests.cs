@@ -17,6 +17,8 @@ public class SoundSettingTests
     {
         Assert.Equal("tandy", ClientOptions.Parse(["--sound", "Tandy"]).Sound);
         Assert.Equal("amiga", ClientOptions.Parse(["--sound", "Amiga"]).Sound);
+        Assert.Equal("tandy-early", ClientOptions.Parse(["--sound", "Tandy-Early"]).Sound);
+        Assert.Equal("tandy-early", ClientOptions.Parse(["--sound", "pcjr"]).Sound);
         Assert.Equal("off", ClientOptions.Parse(["--sound", "off"]).Sound);
         Assert.Null(ClientOptions.Parse([]).Sound);
         Assert.Throws<ArgumentException>(() => ClientOptions.Parse(["--sound", "adlib"]));
@@ -28,6 +30,10 @@ public class SoundSettingTests
         Assert.Equal(ClientSoundDevice.Speaker, ClientAudio.Parse("speaker"));
         Assert.Equal(ClientSoundDevice.Tandy, ClientAudio.Parse("tandy"));
         Assert.Equal(ClientSoundDevice.Amiga, ClientAudio.Parse("amiga"));
+        Assert.Equal(ClientSoundDevice.TandyEarly, ClientAudio.Parse("tandy-early"));
+        foreach (var d in Enum.GetValues<ClientSoundDevice>())
+            Assert.Equal(d, ClientAudio.Parse(ClientAudio.Word(d)));
+        Assert.Equal("off", ClientAudio.Word(null));
         Assert.Null(ClientAudio.Parse("off"));
         Assert.Null(ClientAudio.Parse(null));
         Assert.Equal("speaker", new ClientSettings().Sound);
@@ -53,13 +59,19 @@ public class SoundSettingTests
         Assert.Equal(1, saves);
 
         sound.Step(forward: true);
+        Assert.Equal("tandy-early", settings.Sound);
+        Assert.Equal("SOUND: TANDY (EARLY)", sound.Row);
+        sound.Step(forward: true);
         Assert.Equal("off", settings.Sound);
         sound.ToggleMute();
         Assert.Equal("SOUND: OFF", sound.Row);
         sound.Step(forward: false);
+        Assert.Equal("tandy-early", settings.Sound);
+        sound.Step(forward: false);
         Assert.Equal("tandy", settings.Sound);
-        Assert.Equal(3, saves);
-        Assert.Equal([ClientSoundDevice.Tandy, null, ClientSoundDevice.Tandy, null, ClientSoundDevice.Tandy], modes);
+        Assert.Equal(5, saves);
+        Assert.Equal([ClientSoundDevice.Tandy, null, ClientSoundDevice.Tandy, ClientSoundDevice.TandyEarly, null,
+            ClientSoundDevice.TandyEarly, ClientSoundDevice.Tandy], modes);
     }
 
     [Fact]

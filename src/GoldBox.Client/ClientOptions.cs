@@ -44,14 +44,14 @@ public sealed record ClientOptions
     public string? AmigaDirectory { get; init; }
     /// <summary>--art dos|best|amiga (remembered).</summary>
     public Data.Por.PorArtChoice? Art { get; init; }
-    /// <summary>--sound speaker|tandy|amiga|off (remembered).</summary>
+    /// <summary>--sound speaker|tandy|tandy-early|amiga|off (remembered).</summary>
     public string? Sound { get; init; }
     /// <summary>--anim-speed slowest|slower|original|faster|fastest|instant (remembered; QoL, original = off).</summary>
     public Play.AnimationSpeed? AnimationSpeed { get; init; }
     /// <summary>--param WORD: the word after START on the DOS command line (remembered; --no-param clears it, as "").</summary>
     public string? ProgramWord { get; init; }
 
-    public const string Usage = "usage: GoldBox.Client [--game DIR] [--amiga DIR] [--module DIR] [--art dos|best|amiga] [--save A|FILE] [--area N --at X,Y,F] [--scale K] [--stretch|--no-stretch] [--sound speaker|tandy|amiga|off] [--anim-speed slowest|slower|original|faster|fastest|instant] [--param WORD|--no-param] [--seed N]";
+    public const string Usage = "usage: GoldBox.Client [--game DIR] [--amiga DIR] [--module DIR] [--art dos|best|amiga] [--save A|FILE] [--area N --at X,Y,F] [--scale K] [--stretch|--no-stretch] [--sound speaker|tandy|tandy-early|amiga|off] [--anim-speed slowest|slower|original|faster|fastest|instant] [--param WORD|--no-param] [--seed N]";
 
     public static ClientOptions Parse(IReadOnlyList<string> args)
     {
@@ -74,8 +74,8 @@ public sealed record ClientOptions
                 "--param" => o with { ProgramWord = Next() },
                 "--no-param" => o with { ProgramWord = "" },
                 "--sound" => Next() is var sw && (Audio.ClientAudio.Parse(sw) is not null || sw.Equals("off", StringComparison.OrdinalIgnoreCase))
-                    ? o with { Sound = sw.ToLowerInvariant() }
-                    : throw new ArgumentException($"--sound {sw}: use speaker, tandy, amiga or off"),
+                    ? o with { Sound = Audio.ClientAudio.Word(Audio.ClientAudio.Parse(sw)) }
+                    : throw new ArgumentException($"--sound {sw}: use speaker, tandy, tandy-early, amiga or off"),
                 "--anim-speed" => Next() is var aw && Play.AnimationTiming.Parse(aw) is { } anim
                     ? o with { AnimationSpeed = anim }
                     : throw new ArgumentException($"--anim-speed {aw}: use slowest, slower, original, faster, fastest or instant"),

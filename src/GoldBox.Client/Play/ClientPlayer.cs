@@ -107,15 +107,40 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
     /// <summary>Host calls that have no player-facing effect yet, for the log.</summary>
     public List<string> Log { get; } = [];
 
+    /// <summary>
+    /// The request is a menu of the program's menu routine 0x2CC8C: every word menu and vertical menu (the camp's,
+    /// hall's, party menu's, venues', the ECL menus, yes/no 0x2D9A0, the press-enter lines) and the pages whose menu line
+    /// it draws (the item lists 0x2D669 call it at 0x2D8AC, View 0x21AED and its Items page, the icon editor, Modify). Not: a plain key wait
+    /// (the page prompt, GetKey), a text input, a pause, the fight's move and aim cursor.
+    /// </summary>
+    public static bool IsProgramMenu(PlayerRequest request) => request is ChoiceRequest or ListRequest or KeyRequest { AsMenu: true }
+        or PartyMenuRequest or PickRequest or SheetRequest or CharacterPageRequest or IconRequest or ModifyRequest or HallMenuRequest
+        or PageRequest;
+
+    /// <summary>
+    /// Every call of the menu routine 0x2CC8C ends with VM $4AFF := 0 (0x2CFA7–0x2CFAD, its only exit; no other writer
+    /// in START.EXE or GAME.OVR): <see cref="GoldBox.Core.Ecl.EclMemory.MenuAnimates"/> is cleared after each program
+    /// menu the player answers (<see cref="ScriptRunner.Answered"/>), not only the ECL menus and the command line.
+    /// DOSBox-X (s42): after a hall Save (which sets the cell) the hall's next menu ran before Begin, and the step's HMENU
+    /// over PICTURE 2 after Begin stayed still.
+    /// </summary>
+    public void MenuEnded(PlayerRequest request)
+    {
+        if (IsProgramMenu(request) && Game() is { } g)
+            g.Memory.MenuAnimates = false;
+    }
+
     private int Choose(string? prompt, IReadOnlyList<string> items, bool vertical = false, int? cancel = null,
         bool animates = false)
     {
         // The menu routine 0x2CC8C also animates while VM $4AFF is not 0, and clears it at its end (AreaLoop.MenuAnimateCell).
         var mem = memory();
-        animates |= mem.MenuAnimates && ViewPicture is { Kind: ViewPictureKind.Picture };
+        bool everyPass = mem.MenuAnimates && ViewPicture is { Kind: ViewPictureKind.Picture };
+        animates |= everyPass;
         try
         {
-            return runner.Ask(new ChoiceRequest(prompt, items, vertical, cancel) { Animates = animates }) is int i ? i : 0;
+            return runner.Ask(new ChoiceRequest(prompt, items, vertical, cancel) { Animates = animates, EveryPass = everyPass })
+                is int i ? i : 0;
         }
         finally
         {
@@ -551,8 +576,17 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
             g.Loop.InterfaceDrawn += InterfaceDrawn;
     }
 
+    /// <summary>
+    /// A party menu Load's vector 4 is running before START 0x3379 drew the game's screen (inside the LOADFILES /
+    /// LOADPIECES pair, or after the vector): the party menu's page is still on screen and vector 4 draws over it, the
+    /// picture at cell (3, 3) without the view's box, the text in the text box's place, menus on row 24 (DOSBox-X s42:
+    /// PRINT, PICTURE 2, HMENU in vector 4, loaded from the start-up menu). Set by the front end for that load only.
+    /// </summary>
+    public bool PartyMenuUnder { get; set; }
+
     public void InterfaceDrawn(byte state)
     {
+        PartyMenuUnder = false;
         if (state is not (2 or 3 or 4))
             return;
         ViewBlanked = false;
@@ -971,13 +1005,28 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
             TalkOverItemsPage = on => ItemsTalk?.Invoke(on ? Text : null),
             Coins = Coins,
             Memory = memory(),
+            PickMenu = Resources.TargetMenu,
+            // Trade's START 0x3379 (0x22781, 0x231A4): from the command line (no venue) the exploring layout for
+            // DS:49F3 = 3 / 4, as View's exit and Cast draw it; in the camp, shop, temple and loot menu the text box
+            // cleared and the party list drawn (as the camp's Cast target pick, 0x27AFA).
+            InterfaceRedraw = () =>
+            {
+                if (Interface is null)
+                {
+                    DrawInterface();
+                    return;
+                }
+                Text.Clear();
+                TextBoxFramed = false;
+                ReleaseRosterNames();
+            },
         };
     }
 
     /// <summary>View's Items page and Drop's coin list (0x21F32, 0x234E1; the party menu's, <see cref="PartyMenuFlow"/>),
     /// set with <see cref="ViewPage"/>.</summary>
     public Func<EclCharacter, IReadOnlyList<ItemsEntry>, int, Func<byte[], string>, ListAnswer>? ItemsPage { get; set; }
-    public Func<EclCharacter, IReadOnlyList<int>, (int Kind, ushort Amount)?>? Coins { get; set; }
+    public Func<EclCharacter, IReadOnlyList<int>, CoinTexts?, (int Kind, ushort Amount)?>? Coins { get; set; }
 
     /// <summary>The text window Sell / Id talk in over <see cref="ItemsPage"/> (null when they are done), set with it.</summary>
     public Action<TextWindow?>? ItemsTalk { get; set; }

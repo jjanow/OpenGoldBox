@@ -21,6 +21,10 @@ public sealed class HallView
     private HallMenuRequest? _shown;
     private int _selected;
 
+    /// <summary>The hall session and its last menu: the entries stay on the page under the bottom-line questions.</summary>
+    private HallState? _hall;
+    private HallMenuRequest? _lastMenu;
+
     public int Selected => _selected;
 
     private void Sync(HallMenuRequest r)
@@ -36,13 +40,19 @@ public sealed class HallView
     {
         f.Clear(0);
         Chrome.Box(f, 0, 0, 39, 23);
+        if (!ReferenceEquals(hall, _hall))
+            (_hall, _lastMenu) = (hall, null);
+        if (pending is HallMenuRequest current)
+            _lastMenu = current;
         if (hall.Page is { } page)
             foreach (var (col, row, text, colour) in page)
                 Chrome.Text(f, font, col, row, Fit(text, 39 - col), colour);
         else
         {
             DrawRoster(f, font, party);
-            if (pending is HallMenuRequest m)
+            // The menu routine draws only row 24: the entries the loop drew stay under its other questions (Load's and
+            // Save's slots, the yes/no, the messages; DOSBox-X s42: Load over an empty party shows the four entries).
+            if (_lastMenu is { } m)
             {
                 Sync(m);
                 for (int i = 0; i < m.Entries.Count; i++)
@@ -50,7 +60,7 @@ public sealed class HallView
                     var e = m.Entries[i];
                     int row = MenuRow + i;
                     // The original marks no entry (as the party menu); the pad and the mouse get a pointer.
-                    if (i == _selected && input.LastDevice != InputDevice.Keyboard)
+                    if (i == _selected && pending is HallMenuRequest && input.LastDevice != InputDevice.Keyboard)
                         Chrome.Text(f, font, MenuColumn - 1, row, ">", Chrome.Yellow);
                     Chrome.Text(f, font, MenuColumn, row, Fit(e.Text, 37), Chrome.Green);
                     if (e.Text.Length > 0)
@@ -93,7 +103,13 @@ public sealed class HallView
 
     private const byte PromptColour = 13;
 
-    private static void DrawRoster(IndexedFrame f, TextFont font, EclParty? party) => Chrome.PartyList(f, font, party, 1);
+    /// <summary>The party list with its heading; none for an empty party, as the party menu (DOSBox-X s42: the hall after
+    /// Remove × 6 shows the four entries alone).</summary>
+    private static void DrawRoster(IndexedFrame f, TextFont font, EclParty? party)
+    {
+        if (party is { Members.Count: > 0 })
+            Chrome.PartyList(f, font, party, 1);
+    }
 
     /// <summary>The menu's answer this frame: a hotkey letter, Confirm on the highlighted entry, a member switch.</summary>
     public object? Answer(HallMenuRequest m, ActionInput input)

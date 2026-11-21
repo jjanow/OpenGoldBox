@@ -55,6 +55,12 @@ public sealed record ChoiceRequest(string? Prompt, IReadOnlyList<string> Items, 
     /// </summary>
     public bool Animates { get; init; }
 
+    /// <summary>
+    /// Opened while VM $4AFF was not 0: the menu routine advances the frames on every pass without waiting for their
+    /// delays (0x2CDD6; user s42: copied, each frame lasting one Client update as delay-0 frames do, s27).
+    /// </summary>
+    public bool EveryPass { get; init; }
+
     /// <summary>Items answered by the Up / Down actions of a horizontal menu (the rest-time menu's Inc / Dec); null = none.</summary>
     public int? UpAnswer { get; init; }
     public int? DownAnswer { get; init; }
@@ -203,7 +209,14 @@ public sealed record ListPaging(string Next, string Prev, int Rows, int WordsAt)
 public sealed record ListAnswer(int Action, int Row, int Top = 0);
 
 /// <summary>A line typed by the player: digits only when <paramref name="Numeric"/>. The answer is the string.</summary>
-public sealed record TextRequest(string Prompt, bool Numeric, int MaxLength) : PlayerRequest;
+public sealed record TextRequest(string Prompt, bool Numeric, int MaxLength) : PlayerRequest
+{
+    /// <summary>
+    /// A numeric input's largest value (the money input 0x24F1D: a number typed above it becomes it, Escape answers an
+    /// empty line); null: none.
+    /// </summary>
+    public ushort? Maximum { get; init; }
+}
 
 /// <summary>A pause (DELAY): answered by the screen when the time has passed.</summary>
 public sealed record DelayRequest(TimeSpan Duration) : PlayerRequest
@@ -263,6 +276,12 @@ public sealed class ScriptRunner : IDisposable
         get => _animationSpeed;
         set => _animationSpeed = value;
     }
+
+    /// <summary>
+    /// Worker thread: called with each request once the UI has answered it, before <see cref="Ask"/> returns (the
+    /// player's <see cref="ClientPlayer.MenuEnded"/>: every menu of the program's menu routine clears VM $4AFF at its end).
+    /// </summary>
+    public Action<PlayerRequest>? Answered { get; set; }
 
     /// <summary>A command is in progress (running or parked on a request).</summary>
     public bool Busy { get; private set; }
@@ -347,7 +366,9 @@ public sealed class ScriptRunner : IDisposable
         _toWorker.Wait();
         if (_cancel)
             throw new RunnerCancelledException();
-        return _answer;
+        var answer = _answer;
+        Answered?.Invoke(request);
+        return answer;
     }
 
     /// <summary>Stops a parked worker (window closing): it throws <see cref="RunnerCancelledException"/> and ends.</summary>

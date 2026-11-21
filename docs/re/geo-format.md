@@ -448,7 +448,8 @@ Checked against DOSBox-X (PoR v1.3, EGA, save A put on the overland with `goldbo
     `save-overland` 26 at 8,19 N, 3000 cycles): V, Escape; C on Thrender (no spells: the message, nothing drawn);
     End × 3, C, Bless and Cure Light Wounds with the target pick (the cast-on-whom prompt), S, Escape: every screen equal
     to the Client's but its help lines and the pick's hints (one DOSBox-X frame drew the spell page before its menu
-    line: machine time). Trade (0x2276E / 0x23190, each with its own START 0x3379) is not built `[?]`.
+    line: machine time). Trade (0x2276E / 0x23190, s42): each START 0x3379 (T, and the money pick again after a transfer) steps the marker
+    once (**D** s42, the same save: frames alternate per draw; camp.md "Trade").
   The draw (0x2DC18–0x2DC30) takes icon slot 9 + counter / 2, frame counter % 2; the interface load puts ICON 0, 1, 2
   into slots 9, 10, 11 (0x17285–0x172D5, each slot block b and b + 128). The camp's Alter Icon on the overland ends by
   loading ICON 0 into slot 11 (and 1 into slot 12; icon editor 0x1D84A, start-menu.md §3), so until the next interface

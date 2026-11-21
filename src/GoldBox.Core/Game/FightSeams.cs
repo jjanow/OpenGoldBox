@@ -126,9 +126,10 @@ public interface IFightSpells
     bool CastOn(Fight fight, EclCharacter caster, int spell, IReadOnlyList<EclCharacter> targets) =>
         Cast(fight, caster, spell, targets.Count > 0 ? targets[0] : null, null);
     /// <summary>The turn of a creature that began casting earlier (combat record +0 &gt; 0, set by a cast with a casting
-    /// time): the menu (0x9B21) and the AI cast it now (0x27C38) on the targets picked now, and the actions end.
-    /// False when it was casting nothing.</summary>
-    bool ContinueCasting(Fight fight, EclCharacter caster, IReadOnlyList<EclCharacter> targets, (int X, int Y)? square) => false;
+    /// time): the menu (0x9B21) and the AI cast <paramref name="spell"/> now (0x27C38) on the targets picked now, and
+    /// the actions end. The menu clears +0 before the cast (0x9B59), the AI only after it (0xACEE, START 0x31D7).
+    /// False when it was casting nothing (spell 0).</summary>
+    bool ContinueCasting(Fight fight, EclCharacter caster, int spell, IReadOnlyList<EclCharacter> targets, (int X, int Y)? square) => false;
 
     // Added for the menu's Cast (0x14C0F, s12, docs/re/combat-menu.md "Cast"); default bodies so implementations
     // compile unchanged. The menu aims for the player first (0x14611 with ai = 0, FightMenu.CastNow) and then calls
@@ -157,7 +158,8 @@ public interface IFightSpells
     void UseItem(Fight fight, EclCharacter user, byte[] item) { }
     /// <summary>0xACEE: the AI's turn of a creature that began casting: 0x27C38(spell, ai = 1, 1), the program's own
     /// target pick, then the actions end. Default: <see cref="ContinueCasting"/> with no targets.</summary>
-    bool ContinueCastingAuto(Fight fight, EclCharacter caster) => ContinueCasting(fight, caster, [], null);
+    bool ContinueCastingAuto(Fight fight, EclCharacter caster) =>
+        ContinueCasting(fight, caster, fight.Record(caster)[CombatRecord.SpellCast], [], null);
 }
 
 /// <summary>No moves: every step is blocked (a fight with no combat map).</summary>

@@ -83,6 +83,13 @@ public sealed class PartyMenuScreen(PartyMenuFlow flow, ScriptRunner runner, ISc
             request is not (KeyRequest { AsMenu: false } or TextRequest));
         if (Answer(request, input) is { } reply)
         {
+            // Sell's and Id's yes/no over the Items page: its line stays on row 24 with the answer lit until row 24 is
+            // written again (the menu routine draws the chosen entry once more, 0x2CF48; DOSBox-X s42: the scroll
+            // warning's question under Sell's offer, the deal question under Id's result).
+            if (request is ChoiceRequest { Vertical: false } tc && flow.TextOverPage is not null)
+                _talkChoice = reply.Value is int ti and >= 0 && ti < tc.Items.Count ? (tc, ti) : null;
+            else if (request is not DelayRequest || request is DelayRequest { BottomLine: not null })
+                _talkChoice = null; // START 0x2233 writes row 24 and clears it after its pause
             runner.Answer(reply.Value);
             if (runner.Fault is { } e)
             {
@@ -109,6 +116,8 @@ public sealed class PartyMenuScreen(PartyMenuFlow flow, ScriptRunner runner, ISc
             bool viewPages = _background is SheetRequest { IsView: true } or CharacterPageRequest;
             if (IsPage(r)
                 || (viewPages && r is KeyRequest { Prompt.Length: > 0 } or TextRequest)
+                // the money Trade's refusal (0x250D5: START 0x1693 on row 24) over its coin list
+                || (_background is CharacterPageRequest { PickRows: true } && r is DelayRequest { BottomLine: not null })
                 || (_background is CharacterPageRequest && flow.TextOverPage is not null
                     && r is ChoiceRequest { Vertical: false } or DelayRequest or KeyRequest)
                 || (!viewPages && r is TextRequest or ChoiceRequest or KeyRequest && _background is not null and not IconRequest))
@@ -120,7 +129,10 @@ public sealed class PartyMenuScreen(PartyMenuFlow flow, ScriptRunner runner, ISc
         if (flow.Started is { } game)
         {
             _switched = true;
-            host.Replace(explore(game));
+            var next = explore(game);
+            if (next is ExploreScreen es)
+                es.PartyMenuPage = _menuPage; // a Load's vector 4 draws over the page (ClientPlayer.PartyMenuUnder)
+            host.Replace(next);
             return true;
         }
         if (!runner.Busy && Problem is null)
@@ -143,7 +155,10 @@ public sealed class PartyMenuScreen(PartyMenuFlow flow, ScriptRunner runner, ISc
         _typed = "";
         _hasClick = false;
         if (r is PartyMenuRequest or PickRequest or SheetRequest or IconRequest or ModifyRequest or CharacterPageRequest)
+        {
             _background = r;
+            flow.PickScreen = false; // a page draws over Trade's pick screen
+        }
         if (r is CharacterPageRequest cp)
             _selected = cp.Page.Selected;
         if (r is DelayRequest d)
@@ -256,7 +271,11 @@ public sealed class PartyMenuScreen(PartyMenuFlow flow, ScriptRunner runner, ISc
             case ModifyRequest md:
                 return ModifyKeys(md, input);
             case ChoiceRequest c:
-                return Words(c.Items, c.CancelIndex, input);
+                // Trade's member pick (START 0x37E8): Home / End move the lit member, Return selects whatever word is lit.
+                if (c.PartySelect && input.Pressed(GameAction.PreviousMember)) return new Reply(ChoiceRequest.PreviousMember);
+                if (c.PartySelect && input.Pressed(GameAction.NextMember)) return new Reply(ChoiceRequest.NextMember);
+                if (c.ConfirmAnswer is { } confirm && input.Pressed(GameAction.Confirm)) return new Reply(confirm);
+                return Words(c.Items, c.CancelIndex, input, c.Hotkeys);
             case TextRequest t:
                 return TypeOrPick(t, input);
             case KeyRequest:
@@ -409,6 +428,17 @@ public sealed class PartyMenuScreen(PartyMenuFlow flow, ScriptRunner runner, ISc
 
     private void Type(TextRequest t, char ch)
     {
+        if (t.Maximum is { } max)
+        {
+            // The money input 0x24F1D takes digits only; a number above the maximum becomes the maximum at once.
+            if (ch is < '0' or > '9')
+                return;
+            string next = _typed + ch;
+            _typed = next.Length > 6 || int.Parse(next, System.Globalization.CultureInfo.InvariantCulture) > max
+                ? max.ToString(System.Globalization.CultureInfo.InvariantCulture)
+                : next;
+            return;
+        }
         if (_typed.Length < t.MaxLength)
             _typed += ch;
     }
@@ -419,6 +449,8 @@ public sealed class PartyMenuScreen(PartyMenuFlow flow, ScriptRunner runner, ISc
         {
             if (name == "Enter")
                 return new Reply(_typed);
+            if (name == "Escape" && t.Maximum is not null)
+                return new Reply(""); // 0x24F1D answers 0 to Escape
             if (name == "Back")
             {
                 if (_typed.Length > 0)
@@ -437,6 +469,8 @@ public sealed class PartyMenuScreen(PartyMenuFlow flow, ScriptRunner runner, ISc
         if (input.Pressed(GameAction.MenuRight)) _selected = (_selected + 1) % Cells;
         if (input.Pressed(GameAction.MenuUp)) _selected = Math.Max(0, _selected - GridCols);
         if (input.Pressed(GameAction.MenuDown)) _selected = Math.Min(Cells - 1, _selected + GridCols);
+        if (input.Pressed(GameAction.Cancel) && _typed.Length == 0 && t.Maximum is not null)
+            return new Reply(""); // the money input: B with nothing typed is Escape (0)
         if (input.Pressed(GameAction.Cancel) && _typed.Length > 0)
             _typed = _typed[..^1];
         if (input.Pressed(GameAction.Confirm))
@@ -477,6 +511,9 @@ public sealed class PartyMenuScreen(PartyMenuFlow flow, ScriptRunner runner, ISc
     /// </summary>
     private static int WordsStart(string? prompt, bool vertical = false) =>
         prompt is { Length: > 0 } p ? p.Length : vertical ? 1 : 0;
+
+    /// <summary>The last yes/no answered while Sell or Id talks over the Items page, and its answer: row 24 keeps it.</summary>
+    private (ChoiceRequest Choice, int Lit)? _talkChoice;
 
     /// <summary>A bottom-line menu's words: <see cref="Dialog"/> trims its prompts, so one space after a trimmed one
     /// (DOSBox-X s41: Id's deal question over the Items page).</summary>
@@ -620,6 +657,8 @@ public sealed class PartyMenuScreen(PartyMenuFlow flow, ScriptRunner runner, ISc
                     flow.Highlight.Chosen(cw);
                     Give(cw);
                 }
+                else if (c.PartySelect && flow.PickScreen && row >= 4 && row - 4 < flow.Party.Members.Count && row < 12)
+                    Give(TradeContext.MemberPick - (row - 4)); // a click on a name of Trade's pick (ours)
                 return null;
             case TextRequest:
                 if (click.Right)
@@ -641,6 +680,9 @@ public sealed class PartyMenuScreen(PartyMenuFlow flow, ScriptRunner runner, ISc
     // Draw
     // ---------------------------------------------------------------------------------------------------------------
 
+    /// <summary>The menu page's pixels above row 24 as last drawn (null before the first draw).</summary>
+    private byte[]? _menuPage;
+
     public void Draw(IndexedFrame f, ActionInput input)
     {
         Sync(); // a request answered this frame is drawn with its own highlight at once (no frame with the old one)
@@ -660,10 +702,23 @@ public sealed class PartyMenuScreen(PartyMenuFlow flow, ScriptRunner runner, ISc
                 Chrome.Text(f, font, col, row, Fit(text, 39 - col), colour);
             back = null;
         }
+        if (flow.PickScreen && pending is ChoiceRequest or DelayRequest or KeyRequest)
+        {
+            // Trade's pick in the party menu or the hall (START 0x3379 case 0, then 00BA:2CA1): the frame, nothing inside
+            // but the party list with the pick lit (nobody when there is no pick).
+            Chrome.Box(f, 0, 0, 39, 23);
+            var party = flow.Party;
+            Chrome.PartyList(f, font, party, 1, flow.PickLit is { } lit ? party.Members.IndexOf(lit) : -1);
+            back = null;
+        }
         switch (back)
         {
             case PartyMenuRequest m:
                 DrawMenu(f, m, input, pending == m);
+                // The page above row 24 as it stands, for a Load's vector 4 to draw over.
+                _menuPage ??= new byte[f.Width * 8 * 24]; // rows 0–23
+                if (_menuPage.Length <= f.Pixels.Length)
+                    Array.Copy(f.Pixels, _menuPage, _menuPage.Length);
                 break;
             case PickRequest p:
                 DrawPick(f, p, input);
@@ -744,6 +799,8 @@ public sealed class PartyMenuScreen(PartyMenuFlow flow, ScriptRunner runner, ISc
                 Chrome.Clear(f, 0, MenuRow, 40);
                 Chrome.Text(f, font, 0, MenuRow, Fit(bl.Text, 40), bl.Colour);
             }
+            else if (pending is DelayRequest && _talkChoice is var (kc, lit))
+                Line(f, kc.MenuPrompt, PromptColour, kc.Items, lit, ChoiceStart(kc.MenuPrompt));
             else if (pending is DelayRequest && back is CharacterPageRequest itemsPage)
                 // Row 24 keeps the page's menu with the chosen entry lit while the text types and pauses (DOSBox-X
                 // s41: the page menu with Id lit under Id's offer).

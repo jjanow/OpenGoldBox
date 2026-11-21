@@ -239,7 +239,13 @@ Code: `GoldBox.Core.Explore.AreaLoop` (one command at a time), `GameClock`, `Are
   the list ages its timed effects by the same duration). Core: `AreaLoop.AdvanceClock` with `AreaLoop.EffectTimeout`,
   wired by `PorGame` to the session's flags (`PorGame.Camp`).
 - **Redraw 0x2DCF4** (3D): reads the event byte of the party's square again (DS:6AB1), switches the area map off
-  where $49FB ≠ 0, recomputes the backdrop.
+  where $49FB ≠ 0, recomputes the backdrop. Which view (P s42, 0x2DCFA–0x2DDBD): the mode is DS:49FA, made 1 when
+  $49E6 ≠ 0; mode 1 draws the 3D view from the map in memory, modes 2–4 the overland, any other nothing. So location
+  type 1 with $49E6 = 0 is the 3D view (`AreaLoop.Draws3D`; before s42 the Client showed "NO VIEW" there, e.g. a
+  `save-overland` save with its location type set back to 1: the program stops on that one with its cannot-load-the-wall-set error,
+  and a save A with $49E6 = 0 gets it back from vector 4, DOSBox-X s42). `[?]` With no map loaded (a location type
+  2–4 save with $49E6 ≠ 0: Load reads no map) the program draws its map buffer as it is; the Client draws "NO VIEW"
+  (`save-overland … 49E6=1` came back to the overland through block 26's vector 4 on both sides).
 - **Camp menu 0x196A0** (s12): DS:49F3 = 2 (saved and restored), a camp message in the text box, then the menu
   routine with a "Camp:" prompt and the DS menu line (v1.3 DS:0508; six words: save, view, magic, rest, alter,
   exit) until E (or key 0). S saves (0x1FD3E) and asks whether to quit, V views (0x21AED), M magic (0x18C22), R rest
@@ -306,7 +312,8 @@ EXIT: (1, 17), no clear).
      no path to 0x77F8, so never typed (row-24 messages through START 0x2233, the rest START 0x76B6 and the menu
      routine). Only View → Items (0x21F32) types: its Drop question (0x223FC) and the refusal of 0x21DAA (0x21E53),
      in (1, 21)–(38, 22) colour 14, while the flag stands (1 at the start-up party menu, 0 in the training hall
-     after a PRINT). The Client's party-menu Items commands other than Sell / Id are not built (our notice); Sell / Id
+     after a PRINT). The Client's party-menu Items commands other than Trade, Sell and Id are not built (our notice); Trade's
+     refusal goes on row 24 (START 0x2233) after its pick; Sell / Id
      (shop) print into the program's box (1, 21)–(38, 22) over the Items page since s41 (camp.md "View"), typing
      with the flag like every 0x77F8 text.
    The status panel's weapon name types (s29, `CombatChooser.Typing`).
@@ -331,8 +338,8 @@ message, no list) leaves it blank; V and Escape, and C on Brother Sean with the 
 Client (s41): `ClientPlayer.InterfaceDrawn` (START 0x3379 by `AreaLoop.DrawInterface`: the hall's end, a load's
 entry, View's exit, Cast) ends it, with the venues, the fight and EXIT as before; the CLEARBOX run's screens equal
 DOSBox-X's but the help lines (test `ExploreScreenTests.View_and_cast_on_the_command_line_by_key_pad_and_mouse`).
-`[?]` A CLEARBOX in a loaded game's vector 4 after its LOADFILES pair (0x1B1A drew the layout before it) would leave
-the ring blank in the program; the Client draws the layout after the vector. The clear (START 0x7E63 on cells 1–15) takes
+A CLEARBOX in a loaded game's vector 4 after its LOADFILES pair (0x1B1A drew the layout before it) leaves the ring
+blank: since s42 the Client draws the layout inside the pair as well (`EclVm.EntryInterfaceDue`, training.md). The clear (START 0x7E63 on cells 1–15) takes
 the view's own box (cells 2 and 14) too, which EXIT draws again only after a PROTECT went into the window
 (ecl-format.md "PROTECT"); since s29 the Client blanks all of cells 1–15 in the 3D view as well (before: the 88 × 88
 view only) and draws PROTECT's runes there. **D** (s30): DOSBox-X blanks the same cells and the Client's frame is equal

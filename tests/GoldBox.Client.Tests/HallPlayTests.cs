@@ -282,6 +282,96 @@ public class HallPlayTests
         }
     }
 
+    /// <summary>Lit pixels of text row <paramref name="row"/> (8 pixel lines) between columns 1 and 38.</summary>
+    private static int LitPixels(IndexedFrame f, int row)
+    {
+        int n = 0;
+        for (int y = row * 8; y < row * 8 + 8; y++)
+            for (int x = 8; x < 39 * 8; x++)
+                if (f[x, y] != 0)
+                    n++;
+        return n;
+    }
+
+    /// <summary>
+    /// The hall over an empty party (DOSBox-X s42: Remove × 6, then Load): the four entries alone, no NAME / AC / HP
+    /// heading, and the entries stay while Load's slot question is on row 24 (the menu routine draws only that row).
+    /// </summary>
+    [Fact]
+    public void The_hall_over_an_empty_party_keeps_its_entries_under_the_load_question()
+    {
+        if (Dir() is null)
+            return;
+        var r = Start();
+        r.Game.Memory.Party!.Members.Clear();
+        r.Game.Memory.Party.CurrentIndex = -1;
+        r.Player.HallHooks.Load = () => r.Runner.Ask(new ChoiceRequest(null, ["A", "J"], false, null) { MenuPrompt = "LOAD WHICH GAME:" });
+        r.Runner.Start(() => r.Player.TrainingHall());
+        Settle(r);
+        var menu = Assert.IsType<HallMenuRequest>(r.Runner.Pending);
+        Assert.Equal(4, menu.Entries.Count);              // Create, Add, Load, Exit
+        var f = new IndexedFrame(320, 200);
+        r.Screen.Draw(f, r.Input);
+        Assert.Equal(0, LitPixels(f, 2));                 // no heading
+        int entries = Enumerable.Range(HallView.MenuRow, 4).Sum(row => LitPixels(f, row));
+        Assert.True(entries > 0);
+        Key(r, Keys.L);
+        Settle(r);
+        Assert.IsType<ChoiceRequest>(r.Runner.Pending);
+        var g = new IndexedFrame(320, 200);
+        r.Screen.Draw(g, r.Input);
+        Assert.Equal(entries, Enumerable.Range(HallView.MenuRow, 4).Sum(row => LitPixels(g, row)));
+        Assert.Equal(0, LitPixels(g, 2));
+        r.Runner.Dispose();
+    }
+
+    /// <summary>
+    /// A hall Save writes the wall-set cells, so VM $4AFF is not 0 (0x1FE70), but the hall's own menu (the menu routine
+    /// 0x2CC8C) clears it at its end (0x2CFAD): after Begin the step's HMENU over PICTURE 2 does not animate (DOSBox-X
+    /// s42: PICTURE 2; PROGRAM 0; PRINT; HMENU from a start-up Load, Save E in the hall, Begin: the view stayed still).
+    /// </summary>
+    [Fact]
+    public void The_halls_menu_clears_the_menu_animate_flag_a_save_set()
+    {
+        if (Dir() is null)
+            return;
+        var r = Start();
+        r.Runner.Answered = r.Player.MenuEnded; // as Program.cs
+        var folder = Directory.CreateTempSubdirectory("hall-save-");
+        try
+        {
+            r.Player.SaveFolder = folder.FullName;
+            var m = r.Game.Memory;
+            m.PictureArmed = false;                       // as after a start-up Load: HMENU's own flag stays 0
+            r.Runner.Start(() =>
+            {
+                r.Player.ShowPicture(2, null);
+                r.Player.TrainingHall();
+                r.Player.HorizontalMenu(["WAIT"]);
+            });
+            Settle(r);
+            Assert.IsType<HallMenuRequest>(r.Runner.Pending);
+            Key(r, Keys.S);
+            Settle(r);
+            var slots = Assert.IsType<ChoiceRequest>(r.Runner.Pending);
+            int e = Enumerable.Range(0, slots.Items.Count).First(k => slots.HotkeyOf(k) == 'E');
+            r.Runner.Answer(e);
+            Settle(r);
+            Assert.IsType<HallMenuRequest>(r.Runner.Pending);
+            Assert.True(m.MenuAnimates);                  // the save wrote the cells
+            Key(r, Keys.B);
+            Settle(r);
+            var menu = Assert.IsType<ChoiceRequest>(r.Runner.Pending);
+            Assert.False(m.MenuAnimates);                 // the hall's menu ended (Begin): before s42 still set here
+            Assert.False(menu.Animates);
+            r.Runner.Dispose();
+        }
+        finally
+        {
+            folder.Delete(recursive: true);
+        }
+    }
+
     /// <summary>
     /// The key buffer (GetKey START 0x89E9 keeps the last waiting key): keys pressed during the refusal message's pause
     /// do not act then; the last one is read by the menu afterwards (B: Begin leaves the hall).

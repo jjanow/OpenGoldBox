@@ -354,8 +354,9 @@ through the menus with Keep, Exit, Escape and No; `IconEditorProgramTests`).
   0x19E65). DOSBox-X s25: Items, Trade, Drop, Exit under the page. Client: `PartyMenuFlow.View` runs the camp's
   `CharacterView.Run` with the program's page (`SheetRequest`, the portrait as Modify's), prompt and words, no member
   switch, venue `Venue.PartyMenu` (no Use); the training hall's View goes through the same (`HallHooks.View`). The
-  entries' screens are the camp's as built (Spells, money Trade / Drop and the item commands other than Sell / Id are
-  not built yet: our notice on the bottom line).
+  entries' screens are the camp's as built (Spells and the item commands other than Trade, Sell and Id are not built
+  yet: our notice on the bottom line). Trade's pick here is START 0x3379 case 0: the frame and the party list in this
+  menu's layout only (D s42, camp.md "Trade").
   **Keys** (P + D, s39): View calls the menu routine at 0x21CD1 with colours 13 / 10 / 15 and keypad flag 0, so
   Return returns 13 and space ' ' (0x2CE81, 0x2CEFB), which the loop ignores (exit set CS:0A4C = {0, E}, redraw set
   CS:0A93 = {I, S, T}; D redraws only the money lines, 0x21547); extended keys are swallowed (0x2CE4F without the
@@ -523,8 +524,8 @@ before it uses them (`PorProgramData.CreationTables`). `[?]` Not decoded into a 
   runs the same routine (camp.md "Alter").
 - File names of roster characters (8.3 clean-up); the save's deletion of the members' roster files (camp.md).
 - Load at the party menu of a state-0 save: what the program's re-read of map $49C5 = 0 and wall set 0 gives.
-- View's Items commands other than Sell / Id (Ready, Use, Trade, Drop, Halve, Join) and View's Spells and Trade outside
-  a fight are still our notice (the pages are the program's since s39, camp.md "View").
+- View's Items commands other than Trade, Sell and Id (Ready, Use, Drop, Halve, Join) and View's Spells outside a
+  fight are still our notice (the pages are the program's since s39, camp.md "View").
 
 ## 8. After the game loop: the party destroyed (0x403E, START 0x013D) — P, D
 

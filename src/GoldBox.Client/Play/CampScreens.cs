@@ -126,7 +126,7 @@ public static class SpellLists
 public static class CampScreens
 {
     /// <summary>The target pick's answer to Escape (<see cref="PickTarget"/>; the program's menu answers 0).</summary>
-    internal const int Escaped = -10;
+    internal const int Escaped = MemberPick.Escaped;
 
     // ---- Menu lines ----------------------------------------------------------------------------------------------
 
@@ -647,32 +647,7 @@ public static class CampScreens
         if (c.InterfaceRedraw is { } redraw)
             redraw(); // 0x27AFA outside the camp: START 0x3379 for DS:49F3 = 3 / 4
         c.Trade.FrameTextBox(false);
-        var party = c.Party;
-        var (items, keys) = ParseMenu(c.Resources.TargetMenu ?? "Select Exit");
-        var pick = remembered;
-        {
-            while (true)
-            {
-                c.Trade.RosterDrawnLit(pick);
-                int a = c.Dialog.Ask(new ChoiceRequest(null, items, false, Escaped)
-                {
-                    MenuPrompt = c.Text[Msg.CastOnWhom].TrimEnd(),
-                    PartySelect = true,
-                    Hotkeys = keys,
-                }) is int x ? x : items.Count - 1;
-                int n = party.Members.Count;
-                if (a == Escaped)
-                    pick = null; // 00BA:2DD6, and the loop goes on
-                else if (a == ChoiceRequest.NextMember)
-                    pick = n == 0 || pick is null ? null : party.Members[(party.Members.IndexOf(pick) + 1) % n];
-                else if (a == ChoiceRequest.PreviousMember)
-                    pick = n == 0 ? null : party.Members[pick is null ? n - 1 : (party.Members.IndexOf(pick) + n - 1) % n];
-                else if (a <= TradeContext.MemberPick && TradeContext.MemberPick - a < n)
-                    pick = party.Members[TradeContext.MemberPick - a]; // a click on a name (ours)
-                else
-                    return a == 0 ? pick : null;
-            }
-        }
+        return MemberPick.Run(c.Trade, c.Text[Msg.CastOnWhom], remembered, c.Resources.TargetMenu);
     }
 
     private static void CastOne(CampContext c, EclCharacter who, int spell)

@@ -458,7 +458,7 @@ public sealed class PartyMenuFlow(Func<PlayerRequest, object?> ask, PartyMenuTex
     public void View()
     {
         // The camp's screens on the menu's party. The party menu draws no text window: our notices (commands not built
-        // yet) go on its bottom line. No pool or treasure list here ([?] the money Trade / Drop are not built).
+        // yet) go on its bottom line. No pool or treasure list here.
         var t = new TradeContext
         {
             Dialog = new Dialog(ask, new TextWindow()),
@@ -474,8 +474,20 @@ public sealed class PartyMenuFlow(Func<PlayerRequest, object?> ask, PartyMenuTex
             ItemsPage = (c, entries, row, name) => ItemsPage(c, entries, row, name),
             Coins = Coins,
             Memory = GameMemory ?? _loaded?.Memory,
+            PickMenu = Resources?.TargetMenu,
+            // Trade's START 0x3379 with DS:49F3 = 0 (case 0: everything inside the outer frame blanked); the member pick
+            // then draws the party list in the party menu's layout with its pick lit (DOSBox-X s42, the hall of slot C).
+            InterfaceRedraw = () => PickScreen = true,
+            RosterDrawnLit = who => PickLit = who,
         };
-        CharacterView.Run(t, Venue.PartyMenu, ViewPage);
+        try
+        {
+            CharacterView.Run(t, Venue.PartyMenu, ViewPage);
+        }
+        finally
+        {
+            PickScreen = false;
+        }
     }
 
     private CombatText CombatTexts => Resources?.CombatTexts ?? new CombatText();
@@ -498,6 +510,16 @@ public sealed class PartyMenuFlow(Func<PlayerRequest, object?> ask, PartyMenuTex
     }
 
     /// <summary>
+    /// START 0x3379 drew case 0 for Trade's member pick (the party menu and the hall, DS:49F3 = 0): the screen inside
+    /// the outer frame blank but for the party list (the party menu's layout) with <see cref="PickLit"/> lit, until the
+    /// next page. Set by the item and money Trade (<see cref="TradeContext.InterfaceRedraw"/>).
+    /// </summary>
+    public bool PickScreen { get; set; }
+
+    /// <summary>The member the pick lights (START 00BA:2CA1), or null for nobody.</summary>
+    public EclCharacter? PickLit { get; set; }
+
+    /// <summary>
     /// The venue's text window while an Items command (Sell, Id) talks over the Items page: its box (1, 21)–(38, 22) is
     /// drawn over the page, and the overlay stays up for the command's yes/no and row-24 messages. Null otherwise.
     /// </summary>
@@ -506,9 +528,10 @@ public sealed class PartyMenuFlow(Func<PlayerRequest, object?> ask, PartyMenuTex
     /// <summary>
     /// Drop money's coin pick and amount (0x234E1): the coin list over View's page (the money lines are its rows, the
     /// coin-type prompt in colour 13, then Exit; 0x2D669 stores 1 in the cell), then the amount (input 0x24F1D) on row
-    /// 24. Null when the player leaves the list. [?] The input routine is not read: an unreadable answer drops nothing.
+    /// 24 (0x24F1D: digits only, clamped to the count held as they are typed, Backspace, Return; Escape answers 0).
+    /// Null when the player leaves the list. <paramref name="words"/>: the money Trade's texts (0x23190), null Drop's.
     /// </summary>
-    public (int Kind, ushort Amount)? Coins(EclCharacter c, IReadOnlyList<int> kinds)
+    public (int Kind, ushort Amount)? Coins(EclCharacter c, IReadOnlyList<int> kinds, CoinTexts? words = null)
     {
         var text = CombatTexts;
         var r = Resources ?? new ClientResources();
@@ -524,7 +547,7 @@ public sealed class PartyMenuFlow(Func<PlayerRequest, object?> ask, PartyMenuTex
             LastRow = Math.Max(CombatSheet.MoneyFirstRow, CombatSheet.MoneyFirstRow + order.Count - 1),
         };
         Highlight.ItemList();
-        var a = ask(new CharacterPageRequest(page, [text[CombatMsg.ViewExit].Trim()], text[CombatMsg.SelectCoin].Trim() + " ", 0)
+        var a = ask(new CharacterPageRequest(page, [text[CombatMsg.ViewExit].Trim()], (words?.Title ?? text[CombatMsg.SelectCoin]).Trim() + " ", 0)
         {
             Sheet = c,
             PickRows = true,
@@ -532,8 +555,10 @@ public sealed class PartyMenuFlow(Func<PlayerRequest, object?> ask, PartyMenuTex
         if (a is null || a.Action != PageRequest.RowPicked || a.Row < 0 || a.Row >= order.Count)
             return null;
         int kind = order[a.Row];
-        string prompt = GameText.Cat(GameText.Cat(text[CombatMsg.HowMuch], CombatSheet.CoinName(r, kind)), text[CombatMsg.WillYouDrop]).TrimEnd();
-        var typed = ask(new TextRequest(prompt, true, 5)) as string;
+        string prompt = GameText.Cat(GameText.Cat(words?.HowMuch ?? text[CombatMsg.HowMuch], CombatSheet.CoinName(r, kind)),
+            words?.WillYou ?? text[CombatMsg.WillYouDrop]).TrimEnd();
+        // The input 0x24F1D: digits up to the count held (a larger number becomes the count as it is typed), Escape 0.
+        var typed = ask(new TextRequest(prompt, true, 5) { Maximum = FightItemScreens.Coins(c, kind) }) as string;
         ushort amount = ushort.TryParse(typed, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var n) ? n : (ushort)0;
         return (kind, amount);
     }

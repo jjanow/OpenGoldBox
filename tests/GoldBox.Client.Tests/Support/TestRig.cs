@@ -22,8 +22,12 @@ public static class TestRig
     /// game's typing, DS:4A00, stays on in the Client). Pass <paramref name="typesText"/> = true for a rig that checks
     /// the typing.
     /// </summary>
-    public static ClientPlayer Player(ScriptRunner runner, Func<EclMemory> memory, bool typesText = false) =>
-        new(runner, memory) { TypesText = typesText };
+    public static ClientPlayer Player(ScriptRunner runner, Func<EclMemory> memory, bool typesText = false)
+    {
+        var player = new ClientPlayer(runner, memory) { TypesText = typesText };
+        runner.Answered = player.MenuEnded; // as Program.cs: every program menu clears VM $4AFF (needs Game set)
+        return player;
+    }
 
     /// <summary>A screen host that ignores pushes, pops and quits.</summary>
     public sealed class NoHost : IScreenHost

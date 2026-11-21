@@ -3,7 +3,13 @@ namespace GoldBox.Client.Audio;
 public enum ClientSoundDevice
 {
     Speaker,
+    /// <summary>The Tandy 1000 EX / HX / TX's NCR 8496 (setting word <c>"tandy"</c>).</summary>
     Tandy,
+    /// <summary>
+    /// The early Tandy 1000 / PCjr's SN76496 (setting word <c>"tandy-early"</c>, user s42): its noise differs, so misses
+    /// become a 237 Hz buzz and steps are near silent (docs/re/sound.md §3 "SN76496").
+    /// </summary>
+    TandyEarly,
     Amiga,
 }
 
@@ -25,6 +31,7 @@ public sealed class SoundSetting(ClientSettings settings, Action<ClientSoundDevi
                 {
                     ClientSoundDevice.Speaker => "PC SPEAKER",
                     ClientSoundDevice.Tandy => "TANDY",
+                    ClientSoundDevice.TandyEarly => "TANDY (EARLY)",
                     ClientSoundDevice.Amiga => AmigaAvailable ? "AMIGA" : "PC SPEAKER (AMIGA UNAVAILABLE)",
                     _ => "OFF",
                 });
@@ -40,13 +47,14 @@ public sealed class SoundSetting(ClientSettings settings, Action<ClientSoundDevi
             _configured = (current, forward) switch
             {
                 (null, true) or (ClientSoundDevice.Tandy, false) => ClientSoundDevice.Speaker,
-                (ClientSoundDevice.Speaker, true) or (ClientSoundDevice.Amiga, false) => ClientSoundDevice.Tandy,
-                (ClientSoundDevice.Tandy, true) or (null, false) when AmigaAvailable => ClientSoundDevice.Amiga,
-                (null, false) => ClientSoundDevice.Tandy,
+                (ClientSoundDevice.Speaker, true) or (ClientSoundDevice.TandyEarly, false) => ClientSoundDevice.Tandy,
+                (ClientSoundDevice.Tandy, true) or (ClientSoundDevice.Amiga, false) => ClientSoundDevice.TandyEarly,
+                (ClientSoundDevice.TandyEarly, true) or (null, false) when AmigaAvailable => ClientSoundDevice.Amiga,
+                (null, false) => ClientSoundDevice.TandyEarly,
                 _ => null,
             };
             _muted = false;
-            settings.Sound = _configured?.ToString().ToLowerInvariant() ?? "off";
+            settings.Sound = ClientAudio.Word(_configured);
             apply(_configured);
             (save ?? settings.Save)();
         }

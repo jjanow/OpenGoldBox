@@ -47,6 +47,8 @@ public enum Msg
     // Items (0x21D5A–0x22F70)
     MustBeUnreadied, ScribeWarning, OkayToLose, IllGiveYou, GoldPiecesForYour, IsItADeal, Sold, SoldOverloaded,
     IdentifyOffer, IdentifyDeal, IdentifyNoMoney, NothingNew, LooksLike,
+    // Trade (0x22752–0x2317F: the item Trade 0x2276E, the money Trade 0x23190)
+    TradeWithWhom, TradeOverloaded, TradeTo, TradeSelectCoin, TradeHowMuch, WillYouTrade,
     // Money (0x24E64–0x25964)
     MoneyToPool, Overloaded, CoinGems, CoinGold, CoinPlatinum, CoinElectrum, CoinSilver, CoinCopper, CoinJewelry,
     SelectCoin, HowMuch, WillYouTake,
@@ -220,6 +222,12 @@ public sealed class GameText
         [Msg.IdentifyNoMoney] = "NOT ENOUGH MONEY.",
         [Msg.NothingNew] = "NOTHING MORE TO LEARN ABOUT",
         [Msg.LooksLike] = "IDENTIFIED: ",
+        [Msg.TradeWithWhom] = "GIVE IT TO:",
+        [Msg.TradeOverloaded] = "TOO HEAVY",
+        [Msg.TradeTo] = "GIVE TO:",
+        [Msg.TradeSelectCoin] = "WHICH COINS?",
+        [Msg.TradeHowMuch] = "HOW MANY ",
+        [Msg.WillYouTrade] = "TO GIVE? ",
         [Msg.MoneyToPool] = "TOO HEAVY: THE REST GOES TO THE POOL.",
         [Msg.Overloaded] = "TOO HEAVY",
         [Msg.CoinGems] = "GEMS",

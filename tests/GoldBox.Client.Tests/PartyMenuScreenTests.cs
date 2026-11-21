@@ -65,7 +65,7 @@ public class PartyMenuScreenTests
     }
 
     private static Rig Start(uint seed, Action<PartyMenuFlow, CreationTables, BaseItemTable>? setup = null, string? saves = null,
-        string? word = null)
+        string? word = null, Action<PartyMenuFlow, ScriptRunner>? script = null)
     {
         var dir = new PorGameDirectory(Dir()!);
         var art = PorViewArt.Load(dir);
@@ -98,7 +98,7 @@ public class PartyMenuScreenTests
             g => new ExploreScreen(g, player, runner, host)) { Program = program, Items = items };
         rig = new Rig { Screen = screen, Flow = flow, Runner = runner, Host = host, Roster = roster, Tables = tables, Items = items };
         setup?.Invoke(flow, tables, items);
-        runner.Start(flow.Run);
+        runner.Start(script is null ? flow.Run : () => script(flow, runner));
         return rig;
     }
 
@@ -684,6 +684,62 @@ public class PartyMenuScreenTests
     }
 
     /// <summary>
+    /// Sell / Id over the Items page (shop: TextOverPage on): after a yes/no is answered, row 24 keeps its line with the
+    /// answer lit while the next text types (DOSBox-X s42: the scroll warning's question under Sell's offer, the deal
+    /// question under Id's result), until a row-24 message (START 0x2233) writes it; the page's menu comes back with
+    /// the page.
+    /// </summary>
+    [Fact]
+    public void Sell_and_ids_yes_no_line_stays_on_row_24_while_the_next_text_types()
+    {
+        if (Dir() is null)
+            return;
+        using var r = Start(5, (flow, t, items) =>
+        {
+            var c = new EclCharacter { Name = "ONE" };
+            c[0x10D] = 1;
+            c.Items.Add(new byte[EclCharacter.ItemRecordSize]);
+            flow.Party.Members.Add(c);
+            flow.Party.CurrentIndex = 0;
+        }, script: (flow, runner) =>
+        {
+            ItemsEntry[] entries = [ItemsEntry.Ready, ItemsEntry.Sell, ItemsEntry.Id, ItemsEntry.Exit];
+            var c = flow.Party.Members[0];
+            while (flow.ItemsPage(c, entries, 0).Action != 3)
+            {
+                var w = new TextWindow();
+                flow.TextOverPage = w;
+                var d = new Dialog(runner.Ask, w);
+                d.YesNo("OKAY?");
+                runner.Ask(new DelayRequest(TimeSpan.Zero));     // the next text types, one pause per character
+                runner.Ask(new DelayRequest(TimeSpan.Zero));
+                runner.Ask(new DelayRequest(TimeSpan.Zero) { BottomLine = ("SOLD!", TextWindow.ScriptColour) });
+                runner.Ask(new DelayRequest(TimeSpan.Zero));
+                flow.TextOverPage = null;
+            }
+        });
+        Assert.IsType<CharacterPageRequest>(r.Runner.Pending);
+        r.Key(Keys.S);                                         // Sell: the page menu with Sell lit, then the question
+        Assert.Equal("OKAY?", Assert.IsType<ChoiceRequest>(r.Runner.Pending).MenuPrompt);
+        r.Key(Keys.Y);
+        Assert.IsType<DelayRequest>(r.Runner.Pending);
+        var f = Drawn(r);
+        Assert.Contains((byte)13, Cell(f, 0, 24));             // the question's prompt, not the page's READY
+        Assert.Contains(Chrome.White, Cell(f, 7, 24));         // YES lit (0x2CF48 draws the chosen entry)
+        Assert.DoesNotContain(Chrome.Green, Cell(f, 7, 24));
+        r.Key(Keys.None);                                      // still kept after the first character's pause
+        Assert.Contains((byte)13, Cell(Drawn(r), 0, 24));
+        r.Key(Keys.None);
+        Assert.Equal("SOLD!", Assert.IsType<DelayRequest>(r.Runner.Pending).BottomLine?.Text);
+        r.Key(Keys.None);
+        var g = Drawn(r);                                      // after the row-24 message: the page's menu again
+        Assert.DoesNotContain((byte)13, Cell(g, 0, 24));
+        r.Key(Keys.None);
+        Assert.IsType<CharacterPageRequest>(r.Runner.Pending);
+        r.Key(Keys.E);
+    }
+
+    /// <summary>
     /// V runs 0x21AED, the camp's View: the program's page with the View menu after "View:" (DOSBox-X s25: a fighter
     /// with an item and gold gets Items, Trade, Drop, Exit); Home / End do nothing in View (0x21AED's loop has no member
     /// selection); Items opens the items menu without Use (DS:49F3 = 0) and comes back to the View menu; Escape and Exit
@@ -734,11 +790,13 @@ public class PartyMenuScreenTests
         r.Key(Keys.Escape);
         Assert.IsType<SheetRequest>(r.Runner.Pending);         // back on the View menu
 
-        r.Key(Keys.T);                                         // Trade: not built yet, said on the bottom line
-        var note = Assert.IsType<KeyRequest>(r.Runner.Pending);
-        Assert.Equal("TRADE: NOT IN THIS BUILD YET.", note.Prompt);
-        Assert.Contains(Chrome.Yellow, Cell(Drawn(r), 0, 24));
-        r.Key(Keys.Enter);
+        r.Key(Keys.T);                                         // the money Trade: START 0x3379 case 0, then the pick
+        var pick = Assert.IsType<ChoiceRequest>(r.Runner.Pending);
+        Assert.True(pick.PartySelect);
+        var fp = Drawn(r);
+        Assert.Contains(Chrome.White, Cell(fp, 1, 4));         // the viewer lit in the party menu's list
+        Assert.Single(Cell(fp, 33, 6));                         // no page, no portrait: blank inside the frame
+        r.Key(Keys.E);                                         // Exit: nobody, back to View
         Assert.IsType<SheetRequest>(r.Runner.Pending);
 
         r.Key(Keys.Escape);                                    // Escape (the menu routine's 0) ends View
@@ -795,6 +853,80 @@ public class PartyMenuScreenTests
         Assert.NotSame(me, page.Character);                    // the page as shown: old weight, new money
         Assert.Equal(weight, page.Character.Word(0x102));
         Assert.Equal(before - 1, FightItemScreens.Coins(page.Character, kind));
+        r.Key(Keys.E);
+        Assert.IsType<PartyMenuRequest>(r.Runner.Pending);
+    }
+
+    /// <summary>
+    /// View's Trade on the party menu (DOSBox-X s42, the hall of slot C): the item Trade by keys (T, End to the next
+    /// member, Return), the money Trade by the pad (the pick, the coin row, the amount clamped to what is held as it is
+    /// typed) and the mouse (a name, then Select); the pick screen is the frame and the party list with the pick lit.
+    /// </summary>
+    [Fact]
+    public void Trade_by_keys_pad_and_mouse()
+    {
+        if (Dir() is null)
+            return;
+        using var r = WithTwoFighters();
+        var (one, two) = (r.Flow.Party.Members[0], r.Flow.Party.Members[1]);
+        var item = one.Items[0];
+        one.SetWord(Money.Coins + 2, 5);                       // 5 silver besides the gold
+        r.Key(Keys.V);
+        r.Key(Keys.I);
+        r.Key(Keys.T);                                         // the item Trade (an unreadied item)
+        var pick = Assert.IsType<ChoiceRequest>(r.Runner.Pending);
+        Assert.Contains(Chrome.White, Cell(Drawn(r), 1, 4));   // the pick starts on the viewer (DS:471A)
+        r.Key(Keys.End);
+        Assert.Contains(Chrome.White, Cell(Drawn(r), 1, 5));   // TWO lit
+        r.Key(Keys.Enter);                                     // Return selects (whatever word is lit)
+        Assert.Empty(one.Items);
+        Assert.Single(two.Items);
+        Assert.NotSame(item, two.Items[0]);
+        var view = Assert.IsType<SheetRequest>(r.Runner.Pending); // no items left: the Items page ends, View again
+        Assert.Equal(["TRADE", "DROP", "EXIT"], view.Actions);
+
+        int kind = CombatSheet.MoneyKinds(one)[0];
+        ushort held = FightItemScreens.Coins(one, kind), had = FightItemScreens.Coins(two, kind);
+        Assert.True(held is > 0 and < 10000);
+        // The Items page's T put the shared cell on its 2nd word; the pick (Exit lit) and View keep it: DROP lit.
+        Assert.Equal(1, r.Flow.Highlight.Index);
+        r.Act(GameAction.MenuLeft);                            // the pad: to TRADE, A
+        r.Act(GameAction.Confirm);
+        Assert.IsType<ChoiceRequest>(r.Runner.Pending);
+        Assert.Contains(Chrome.White, Cell(Drawn(r), 1, 5));   // the pick starts on the last one traded with
+        r.Act(GameAction.Confirm);
+        var coins = Assert.IsType<CharacterPageRequest>(r.Runner.Pending);
+        Assert.True(coins.PickRows);
+        Assert.Equal(one.Name, coins.Sheet!.Name);             // the viewer's page under the coin list
+        r.Act(GameAction.Confirm);                             // the first coin row
+        var amount = Assert.IsType<TextRequest>(r.Runner.Pending);
+        Assert.Equal(held, amount.Maximum);
+        foreach (var k in new[] { Keys.D9, Keys.D9, Keys.D9, Keys.D9, Keys.D9 })
+            r.Key(k);                                          // 0x24F1D: the number becomes the maximum as it is typed
+        r.Key(Keys.Enter);
+        Assert.Equal(0, FightItemScreens.Coins(one, kind));
+        Assert.Equal(held + had, FightItemScreens.Coins(two, kind));
+        Assert.True(TradeRules.HasMoney(one));                 // the silver
+        {
+            Assert.IsType<CharacterPageRequest>(r.Runner.Pending);
+            r.Act(GameAction.Cancel);                          // leave the coin list: the pick again
+            Assert.IsType<ChoiceRequest>(r.Runner.Pending);
+            r.Act(GameAction.Cancel);                          // Escape clears the pick
+            Assert.DoesNotContain(Chrome.White, Cell(Drawn(r), 1, 5));
+            void Click(int col, int row)
+            {
+                r.Input.Update(default, default, default, TimeSpan.Zero, _ => null);
+                if (r.Screen.MapClick(new ScreenClick(col * 8 + 3, row * 8 + 3, false)) is { } a)
+                    r.Input.Inject(a);
+                r.Screen.Update(r.Input);
+            }
+            Click(2, 5);                                       // the mouse: TWO's name
+            Assert.Contains(Chrome.White, Cell(Drawn(r), 1, 5));
+            var again = Assert.IsType<ChoiceRequest>(r.Runner.Pending);
+            int exitCol = again.MenuPrompt!.Length + 1 + again.Items[0].Length + 1;
+            Click(exitCol + 1, 24);                            // EXIT: nobody, View again
+        }
+        Assert.IsType<SheetRequest>(r.Runner.Pending);
         r.Key(Keys.E);
         Assert.IsType<PartyMenuRequest>(r.Runner.Pending);
     }

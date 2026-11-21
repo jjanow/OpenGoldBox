@@ -91,4 +91,60 @@ public class CommandLineMenuTests
         Assert.Equal([4, 2], seen);
         Assert.Equal(1, redraws);                             // case 2 draws the camp picture's frames, not the view
     }
+
+    /// <summary>
+    /// The redraw 0x2DCF4 takes DS:49FA = 1 as the 3D view whatever $49E6 holds (0x2DCFA–0x2DD15): a save on the overland
+    /// with its location type set back to 1 loads map $49C5 (Load reads a map below 2) and shows that map's view, not
+    /// nothing (the Client drew "NO VIEW" there before s42). The overland's own save (type 3, $49E6 = 0) stays the
+    /// overland. P only: the program stops on this save ("Unable to load wallset", the saved wall sets are not on the
+    /// overland's disk).
+    /// </summary>
+    [PorFact]
+    public void Location_type_1_draws_the_3D_view_with_the_3D_flag_off()
+    {
+        var content = PorData.Open();
+        var path = content.Find("SAVGAMA.DAT")!;
+        var overland = PorSaveGame.PlaceOnOverland(File.ReadAllBytes(path), content, 26, 8, 19, 0);
+        var (o, _) = Load(overland, Path.GetDirectoryName(path)!);
+        Assert.True(Overland.Shown(o.Memory));
+        Assert.False(o.Loop.InView3D);
+        var save = (byte[])overland.Clone();
+        save[PorSaveGame.OffLocationType] = 1;
+        var (g, _) = Load(save, Path.GetDirectoryName(path)!);
+        Assert.Equal(1, g.Memory.ViewMode);
+        Assert.Equal(0, g.Memory.Read(AreaLoop.View3DCell));
+        Assert.NotNull(g.Loop.Map);
+        Assert.True(AreaLoop.Draws3D(g.Memory));
+        Assert.True(g.Loop.InView3D);
+    }
+
+    /// <summary>
+    /// A loaded game's first pass draws the interface (START 0x3379) inside its vector 4 once both LOADFILES and
+    /// LOADPIECES have run (0x1B05–0x1B2C: DS:4432–4434), not after the vector; with no such pair, after it (0x40BE).
+    /// Save A's vector 4 (ECL2 block 20 $9A5E) runs the pair at $9A8B / $9A92: the draw comes with the PC at $9A99.
+    /// </summary>
+    [PorFact]
+    public void A_loads_interface_is_drawn_inside_its_vector_4_after_the_file_pair()
+    {
+        var content = PorData.Open();
+        var path = content.Find("SAVGAMA.DAT")!;
+        (int Draws, ushort Pc) Run(byte[] save)
+        {
+            int draws = 0;
+            ushort pc = 0;
+            var player = new PorPlayer(new ScriptedEclHost { StopWhenInputMissing = true },
+                new ScriptedEncounterUi { StopWhenInputMissing = true }, new RecordingCombatRunner(), new ScriptedAreaUi());
+            PorGame.FromSave(content, PorViewArt.Load(content), save, Path.GetDirectoryName(path)!, player, 1,
+                started: g => g.Loop.InterfaceDrawn += _ => (draws, pc) = (draws + 1, g.Vm.Pc));
+            return (draws, pc);
+        }
+        var a = File.ReadAllBytes(path);
+        Assert.Equal((1, (ushort)0x9A99), Run(a));
+        var exitOnly = (byte[])a.Clone();
+        exitOnly[PorSaveGame.OffScript + 18] = 0x1F; // vector 4 → $991F
+        exitOnly[PorSaveGame.OffScript + 19] = 0x99;
+        exitOnly[PorSaveGame.OffScript + 0x1F] = 0;  // EXIT
+        var (draws, _) = Run(exitOnly);
+        Assert.Equal(1, draws);
+    }
 }

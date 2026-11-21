@@ -188,8 +188,8 @@ for far calls to CS:00DC, CS:01A5, CS:017B):
     counterpart. The speaker impacts that follow (orc hits, tune 6 with auto-stop) were 59 ms in the Client against
     64 ms in DOSBox-X and 84 / 93 ms (machine time, s40: not modelled).
   - Seen in the same capture, not sound: after Darkstar's own Fireball damage the Client typed the caster's lost-spell
-    line (spells-effects.md "Damage"), which DOSBox-X did not show `[?]`
-    (combat lane); and the Client's audio once repeated ~25 ms of a tune (two Fireball damage sounds 162/176 ms with a
+    line, which DOSBox-X did not show; settled s42: the menu's 0x9B21 clears +0 before casting a begun spell
+    (spells-effects.md "Non-weapon damage"); and the Client's audio once repeated ~25 ms of a tune (two Fireball damage sounds 162/176 ms with a
     repeated tail) `[?]` (a buffer submitted twice or a capture artefact; not seen elsewhere).
 - Tune lengths (speaker / Tandy, driver ticks until silent, from the emulated driver): step 9: 8 / 16; impact 6:
   65 / 20; miss 8: 9 / 60; bump = impact. With auto-stop the impact and miss sounds are cut to 14–26 ticks.
@@ -234,8 +234,9 @@ there, 105.8 ms); the missile tunes (tone channels) as on the NCR. This is the "
 by resetting the register on every write: what an early Tandy 1000 or a PCjr plays. Core: `Sn76489Synth(rate,
 TandyChip.Sn76496)` / `PcSoundPlayer(…, chip)` / `PorSound.Player(device, rate, chip)` (`TandyNoiseTests`: the
 SN76496 repeats every tick, correlation > 0.8; at E6 its output is constant). The default stays the NCR 8496 (what
-DOSBox-X's Tandy machine plays). `[?]` Whether the Client offers it as a sound device ("Tandy 1000 (early) /
-PCjr"): both are original hardware the game supported, so it is a choice of machine rather than a QoL change.
+DOSBox-X's Tandy machine plays). **Offered (user, s42):** the Client's sound choice "TANDY (EARLY)" (`--sound
+tandy-early`, also `pcjr`; settings word `tandy-early`), between TANDY and AMIGA on the controls screen's SOUND row: a
+choice of machine the game supported, not a QoL change.
 
 - The auto-stop model: cue → start the tune, run (BIOS-chain count + 13) ticks, silence; in a resident bracket the
   tune runs until the bracket closes (`PcSoundPlayer`). Rendered, a step is one 27.4 ms pulse and a bump 104–108 ms,
@@ -280,6 +281,9 @@ PCjr"): both are original hardware the game supported, so it is a choice of mach
   the step and area-check cues after it 109.84 ms apart (were 114 ms in s32). The very first pair after start-up came
   128.5 ms apart (the logic thread late, start-up JIT): a call later than the hold starts at the next buffer as before.
   Test `SoundTests.Rendering_until_idle_stops_where_the_auto_stop_ends_and_the_next_cue_starts_there`.
+  (s42) A party menu Load plays the vector-4 cues as a `--save` start does: scratch save B (the same vector 4, then
+  PICTURE 2 and an HMENU), L, B in the Client on its null sink: tune 9, then tune 10 110 ms later. Test
+  `LoadSoundTests.A_loaded_games_vector_4_sound_plays_on_both_loads` (both paths).
 
 ## 4. Module (`audio/`)
 
@@ -513,7 +517,7 @@ character's name and its icon (3). The Client's side rendered by `goldbox-tools 
 ## 6. Open `[?]`
 
 - Auto-stop onset in DOSBox-X (§2.4; also why the cast tunes 1, 7, 10 never sound in the spell flight's short
-  bracket, s41); the speaker's analogue filter; whether the Client offers the SN76496 (§3); the Client's "lost a
+  bracket, s41); the speaker's analogue filter; the Client's "lost a
   spell" after the caster's own Fireball and one repeated audio chunk (§2.4 s41); machine-time lengths (§2.4 s39)
   are not modelled (user, s40).
 - Amiga (§5): which machine (PAL or NTSC) the program expects (the Client is PAL); the note-start delay inside a

@@ -525,8 +525,8 @@ public sealed partial class CombatChooser
     /// The coin pick (a coin-type prompt in colour 13, then Exit; DOSBox-X: the sheet's money lines are the list, the
     /// picked one white, the others green) and the amount (an amount question naming the coin, in green on row 24,
     /// digits typed after it). The list rows are the page's money lines (<see cref="CombatSheet.MoneyLine"/>: kinds 6
-    /// down to 0; names DS:0FFA + 11·kind). [?] The input routine 0x24F1D is not read: an empty or unreadable answer
-    /// drops nothing and the coin list comes back.
+    /// down to 0; names DS:0FFA + 11·kind). The input 0x24F1D (camp.md "Trade"): digits up to the count held, an empty
+    /// answer or Escape 0, which drops nothing, and the coin list comes back.
     /// </summary>
     public (int Kind, ushort Amount)? ChooseCoins(EclCharacter c, IReadOnlyList<int> kinds)
     {
@@ -557,7 +557,7 @@ public sealed partial class CombatChooser
         int kind = order[a.Row];
         coinPage.Selected = a.Row;
         string prompt = GameText.Cat(GameText.Cat(Text[CombatMsg.HowMuch], CombatSheet.CoinName(r, kind)), Text[CombatMsg.WillYouDrop]).TrimEnd();
-        var typed = Ask(new TextRequest(prompt, true, 5)) as string;
+        var typed = Ask(new TextRequest(prompt, true, 5) { Maximum = FightItemScreens.Coins(c, kind) }) as string;
         ushort amount = ushort.TryParse(typed, NumberStyles.None, CultureInfo.InvariantCulture, out var n) ? n : (ushort)0;
         return (kind, amount);
     }

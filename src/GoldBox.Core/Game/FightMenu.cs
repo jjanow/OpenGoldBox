@@ -173,10 +173,15 @@ public sealed class FightMenu
     // ---- 0x9B21 -----------------------------------------------------------------------------------------------------
 
     /// <summary>
-    /// 0x9B21: out of play → actions end. A spell begun earlier (+0 &gt; 0): +0 = 0, cast now (0x27C38: aimed
-    /// now, <see cref="IFightSpells.ContinueCasting"/>), actions end.
+    /// 0x9B21: out of play → actions end. A spell begun earlier (+0 &gt; 0): +0 = 0 (0x9B59, before the cast, so the
+    /// caster caught in its own area spell loses nothing: no lost-spell line, no second copy removed), cast now
+    /// (0x27C38: aimed now, <see cref="IFightSpells.ContinueCasting"/>), actions end.
     /// Else menu loop until an action reports done; each display runs trigger 0x0F first (0x9E7D).
     /// </summary>
+    /// <summary>The spell begun earlier that <see cref="Run"/> is casting now (0x9B21 passes it to 0x27C38 with +0
+    /// already cleared), for the chooser's cast message before the aim; 0 otherwise.</summary>
+    public int BegunSpell { get; private set; }
+
     public void Run()
     {
         var c = Creature;
@@ -188,9 +193,18 @@ public sealed class FightMenu
         var rec = Record;
         if (rec[CombatRecord.SpellCast] > 0)
         {
-            // 0x9B21 clears +0 before 0x27C38; ContinueCasting reads the spell from +0, so it is cleared after.
-            CastNow(rec[CombatRecord.SpellCast], true);
+            // 0x9B4B–0x9B59: the spell taken from +0 and +0 cleared before 0x27C38 (the AI's 0xACEE does not clear it).
+            int begun = rec[CombatRecord.SpellCast];
             rec[CombatRecord.SpellCast] = 0;
+            BegunSpell = begun;
+            try
+            {
+                CastNow(begun, true);
+            }
+            finally
+            {
+                BegunSpell = 0;
+            }
             Fight.EndActions(c);
             return;
         }
@@ -926,7 +940,7 @@ public sealed class FightMenu
                 continue;
             }
             if (begun)
-                Fight.Spells.ContinueCasting(Fight, c, targets, square);
+                Fight.Spells.ContinueCasting(Fight, c, spell, targets, square);
             else if (targets.Count > 1)
                 Fight.Spells.CastOn(Fight, c, spell, targets);
             else

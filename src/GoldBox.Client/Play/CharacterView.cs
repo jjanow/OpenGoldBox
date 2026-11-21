@@ -7,8 +7,8 @@ namespace GoldBox.Client.Play;
 /// <summary>
 /// View (GAME.OVR 0x21AED): the character page with its menu (Items, Spells, Trade, Drop, Exit), and the items page
 /// whose menu adds Sell and Id in a shop or temple (DS:49F3 = 1; 0x22104–0x2217E). Only Sell, Id and the member
-/// selection do real work; the other item commands say they are not built yet (TODO: Ready 0x2207B, Use 0x2D669,
-/// Trade 0x23154, Drop 0x234B2, Halve, Join, Spells — not read). The character page is the program's (0x21084,
+/// selection do real work, and Trade (the item's 0x2276E, the money's 0x23190; <see cref="TradeRules"/>); the other item
+/// commands say they are not built yet (TODO: Ready 0x2207B, Use 0x2D669, Drop 0x234B2, Halve, Join, Spells). The character page is the program's (0x21084,
 /// <see cref="CombatSheet"/>) through <see cref="TradeContext.ViewPage"/>; our list page (<see cref="Sheet(TradeContext,
 /// EclCharacter)"/>) only when the Client has no party pages. [?] The items page is still ours, not 0x21F32's.
 /// </summary>
@@ -34,6 +34,7 @@ public static class CharacterView
         page ??= t.ViewPage;
         // After Drop the loop redraws only the money lines (0x21547): the page keeps the other values it showed.
         EclCharacter? shown = null;
+        t.TradeTarget = t.Current; // DS:471A := DS:5D92 (0x21B0B): Trade's pick starts on the viewed member
         while (t.Current is { } c)
         {
             // The menu has only the entries 0x21AED offers (FightItemScreens.ViewEntries): DOSBox-X s24, a fighter with
@@ -59,6 +60,9 @@ public static class CharacterView
                     break;
                 case ViewEntry.Drop when page is not null && t.Coins is { } coins:
                     shown = DropMoney(t, c, venue, coins, onPage);
+                    break;
+                case ViewEntry.Trade when page is not null && t.Coins is { } coins:
+                    TradeMoney(t, c, coins); // T is in the redraw set (0x21ACD): the page is drawn again after it
                     break;
                 case ViewEntry.Rename:
                     shown = Rename(t, c, onPage);
@@ -95,7 +99,7 @@ public static class CharacterView
     /// money words, since the loop redraws only the money lines (encumbrance and the rest keep their old values).
     /// </summary>
     private static EclCharacter DropMoney(TradeContext t, EclCharacter c, Venue venue,
-        Func<EclCharacter, IReadOnlyList<int>, (int Kind, ushort Amount)?> coins, EclCharacter shownBefore)
+        Func<EclCharacter, IReadOnlyList<int>, CoinTexts?, (int Kind, ushort Amount)?> coins, EclCharacter shownBefore)
     {
         var shown = new EclCharacter(shownBefore.Record);
         shown.Items.AddRange(shownBefore.Items);
@@ -108,7 +112,7 @@ public static class CharacterView
         {
             Money();
             var kinds = Enumerable.Range(0, FightItemScreens.CoinKinds).Where(k => FightItemScreens.Coins(c, k) != 0).ToList();
-            if (kinds.Count == 0 || coins(shown, kinds) is not { } pick || !kinds.Contains(pick.Kind))
+            if (kinds.Count == 0 || coins(shown, kinds, null) is not { } pick || !kinds.Contains(pick.Kind))
                 break;
             ushort amount = Math.Min(pick.Amount, FightItemScreens.Coins(c, pick.Kind));
             FightItemScreens.DropCoins(c, pick.Kind, amount, Context(venue), t.Pool);
@@ -288,6 +292,20 @@ public static class CharacterView
                         t.TalkOverItemsPage(false);
                     }
                     break;
+                case ItemsEntry.Trade:
+                    bool letGo;
+                    t.TalkOverItemsPage(true); // 0x21DAA's refusal and question talk over the page
+                    try
+                    {
+                        letGo = LetGoOnPage(t, c, item);
+                    }
+                    finally
+                    {
+                        t.TalkOverItemsPage(false);
+                    }
+                    if (letGo)
+                        TradeItem(t, c, item);
+                    break;
                 case var e:
                     NotBuilt(t, e.ToString().ToUpperInvariant(), bottomLine: true);
                     break;
@@ -331,24 +349,8 @@ public static class CharacterView
     private static void SellOnPage(TradeContext t, EclCharacter c, byte[] item)
     {
         var d = t.Dialog;
-        switch (ShopRules.SellCheck(item, t.IsScroll(item[0x2E])))
-        {
-            case null:
-                RowMessage(t, t.Text[Msg.MustBeUnreadied]);
-                BoxBlank(t);
-                return;
-            case true:
-                var name = c.Name.ToUpperInvariant();
-                d.Text.ClearRect(BoxLeft, BoxTop, BoxRight, BoxBottom);
-                d.Text.Put(BoxTop, BoxLeft, name, CombatChooser.NameColour(c)); // START 0x23B6 at (1, 21)
-                d.Text.MoveTo(BoxLeft + name.Length + 1, BoxTop);               // DS:5E24 = name length + 2
-                BoxText(t, t.Text[Msg.ScribeWarning], clear: false);
-                bool lose = d.YesNo(t.Text[Msg.OkayToLose]);
-                BoxBlank(t);
-                if (!lose)
-                    return;
-                break;
-        }
+        if (!LetGoOnPage(t, c, item))
+            return;
         ushort price = ShopRules.SellPrice(item);
         BoxText(t, GameText.Cat(GameText.Cat(t.Text[Msg.IllGiveYou], price) + t.Text[Msg.GoldPiecesForYour], t.ItemName(item)));
         if (d.YesNo(t.Text[Msg.IsItADeal]))
@@ -358,6 +360,118 @@ public static class CharacterView
                 RowMessage(t, t.Text[Msg.SoldOverloaded]);
         }
         BoxBlank(t);
+    }
+
+    /// <summary>
+    /// 0x21DAA on the program's Items page (Trade, Drop and Sell ask it first): a readied item gets the unready message
+    /// on row 24; a scroll with a spell to scribe its owner's name at (1, 21) (START 0x23B6), the warning from column
+    /// name length + 2 in the box and the yes/no. The box is blanked at its end (0x21E8F). True: the item may go.
+    /// </summary>
+    private static bool LetGoOnPage(TradeContext t, EclCharacter c, byte[] item)
+    {
+        var d = t.Dialog;
+        switch (ShopRules.SellCheck(item, t.IsScroll(item[0x2E])))
+        {
+            case null:
+                RowMessage(t, t.Text[Msg.MustBeUnreadied]);
+                BoxBlank(t);
+                return false;
+            case true:
+                var name = c.Name.ToUpperInvariant();
+                d.Text.ClearRect(BoxLeft, BoxTop, BoxRight, BoxBottom);
+                d.Text.Put(BoxTop, BoxLeft, name, CombatChooser.NameColour(c)); // START 0x23B6 at (1, 21)
+                d.Text.MoveTo(BoxLeft + name.Length + 1, BoxTop);               // DS:5E24 = name length + 2
+                BoxText(t, t.Text[Msg.ScribeWarning], clear: false);
+                bool lose = d.YesNo(t.Text[Msg.OkayToLose]);
+                BoxBlank(t);
+                return lose;
+            default:
+                return true;
+        }
+    }
+
+    /// <summary>START 0x3379 for the venue (<see cref="TradeContext.InterfaceRedraw"/>): the item and money Trade draw
+    /// it before their member pick.</summary>
+    private static void InterfaceRedraw(TradeContext t)
+    {
+        if (t.InterfaceRedraw is { } redraw)
+        {
+            redraw();
+            return;
+        }
+        t.Dialog.Text.Clear();
+        t.FrameTextBox(false);
+        t.RosterDrawn();
+    }
+
+    /// <summary>START 0x1758 on a member as far as the Client keeps it here: weight 0x102 and item count 0xC7.</summary>
+    private static void Recalculate(EclCharacter c)
+    {
+        Carrying.RecalculateWeight(c);
+        c[StatRecalc.ItemCount] = (byte)Math.Min(c.Items.Count, 255);
+    }
+
+    /// <summary>
+    /// The item Trade (0x2276E, after 0x21DAA let the item go): START 0x3379 redraws the venue's screen (the exploring
+    /// layout from the command line; on the overland the marker steps on), START's member pick (<see cref="MemberPick"/>)
+    /// with the ask-whom prompt starts on DS:471A (<see cref="TradeContext.TradeTarget"/>); nobody picked ends. Else
+    /// DS:471A := the pick and <see cref="TradeRules.GiveItem"/>: the carry test refuses with the overloaded message on
+    /// row 24 (START 0x1693, the game-speed pause), or the item moves. The Items loop then draws its page again
+    /// (0x2238A sets its redraw flag).
+    /// </summary>
+    private static void TradeItem(TradeContext t, EclCharacter c, byte[] item)
+    {
+        InterfaceRedraw(t);
+        if (MemberPick.Run(t, t.Text[Msg.TradeWithWhom], t.TradeTarget, t.PickMenu) is not { } pick)
+            return;
+        t.TradeTarget = pick;
+        if (!TradeRules.GiveItem(c, pick, item, Carrying.StrengthAllowance, Recalculate))
+            RowMessage(t, t.Text[Msg.TradeOverloaded]);
+    }
+
+    /// <summary>
+    /// The money Trade (0x23190): START 0x3379 redraws the venue's screen and the member pick asks with the trade-to
+    /// prompt from DS:471A; nobody picked ends. Else View's page of the viewed member (0x21084, its recalculation) and,
+    /// with DS:471A := the pick, until the coin list is left: the money lines (0x21547), the coin list of the viewed
+    /// member and the amount (the input 0x24F1D, at most what it holds) with Trade's own texts, then the transfer
+    /// 0x250D5 (<see cref="TradeRules.GiveCoins"/>; refused: the overloaded message on row 24). With no money left Trade
+    /// ends; leaving the coin list after a transfer goes back to the redraw and the pick (0x23468 → 0x2315D: the flag
+    /// [bp−0x131] the last transfer cleared). Leaving the first coin list before any transfer reads that flag
+    /// unwritten `[?]` (stack contents): the Client ends Trade there.
+    /// </summary>
+    private static void TradeMoney(TradeContext t, EclCharacter c,
+        Func<EclCharacter, IReadOnlyList<int>, CoinTexts?, (int Kind, ushort Amount)?> coins)
+    {
+        var texts = new CoinTexts(t.Text[Msg.TradeSelectCoin], t.Text[Msg.TradeHowMuch], t.Text[Msg.WillYouTrade]);
+        while (true)
+        {
+            InterfaceRedraw(t);
+            if (MemberPick.Run(t, t.Text[Msg.TradeTo], t.TradeTarget, t.PickMenu) is not { } pick)
+                return;
+            Carrying.RecalculateWeight(c); // the page 0x21084 recalculates DS:5D92 (0x21642 → START 0x1758)
+            var shown = new EclCharacter(c.Record);
+            shown.Items.AddRange(c.Items);
+            t.TradeTarget = pick;
+            bool traded = false;
+            while (true)
+            {
+                for (int i = 0; i < 2 * FightItemScreens.CoinKinds; i++)
+                    shown[FightItemScreens.Money + i] = c[FightItemScreens.Money + i];
+                var kinds = Enumerable.Range(0, FightItemScreens.CoinKinds).Where(k => FightItemScreens.Coins(c, k) != 0).ToList();
+                if (coins(shown, kinds, texts) is not { } p || !kinds.Contains(p.Kind))
+                {
+                    if (!traded)
+                        return;
+                    break;
+                }
+                ushort amount = Math.Min(p.Amount, FightItemScreens.Coins(c, p.Kind));
+                if (!TradeRules.GiveCoins(c, pick, p.Kind, amount, Carrying.StrengthAllowance(pick)))
+                    RowMessage(t, t.Text[Msg.Overloaded]);
+                traded = true;
+                if (!TradeRules.HasMoney(c))
+                    return;
+            }
+        }
     }
 
     /// <summary>

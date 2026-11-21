@@ -382,7 +382,7 @@ public sealed class FightItemScreens(IItemScreenChooser chooser, Action<EclChara
 
     /// <summary>
     /// 0x234E1: until the player stops or no money is left: a coin kind the character has and an amount (at most what it
-    /// holds; the input routine 0x24F1D is not read in detail [?]); 0x2568A takes the coins off, lowers the weight word
+    /// holds: the input 0x24F1D clamps to the count, docs/re/camp.md "Trade"); 0x2568A takes the coins off, lowers the weight word
     /// 0x102 by the amount and, in a shop or DS:49F3 = 6, adds them to the pool (DS:67F4 + 4·kind); in a fight they are
     /// lost.
     /// </summary>

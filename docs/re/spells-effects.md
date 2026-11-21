@@ -100,7 +100,12 @@ type ≤ DS:6816 (unsigned). One draw.
 reduction 1 cancels and 2 halves (shift); nothing at 0. Else (message) START 0x2DC8 applies it (`FightRules.InflictDamage`;
 in a fight the side's team count drops). In a fight the target's cast allowed (+1) = 0, and a spell it was
 casting (+0 > 0) is lost: message, START 0x202B removes **the current character's** first memorised copy of that id
-(DS:5D92, not the target's — the attacker or caster, a quirk), +0 = 0. A target now out of play in a fight: the
+(DS:5D92, not the target's — the attacker or caster, a quirk), +0 = 0. A begun spell cast on the creature's next
+pick (P s42): the menu's 0x9B21 takes the spell and clears +0 first (0x9B4B–0x9B59), so a player's caster caught in its
+own Fireball loses nothing more (the s41 capture: no lost-spell line for Darkstar); the AI's 0xACEE passes +0 and leaves
+it set until the actions end (START 0x31D7), so an AI caster in its own area spell gets the message and loses another
+memorised copy. Core: `FightMenu.Run` (`BegunSpell` keeps the spell for the Client's cast message before the aim), `IFightSpells.ContinueCasting(…, spell, …)`, tests `FightMenuTests.A_spell_with_a_casting_time_waits_for_the_next_pick_and_is_cast_then`,
+`FightSpellsTests.A_begun_fireball_costs_its_caster_a_second_copy_only_on_the_ais_turn`. A target now out of play in a fight: the
 dropped-creature removal, class 0x0D, and still out of play it leaves the map (0x3154B). A target still in play
 (0x2C44D) jumps to the end 0x2C527: START 0x17E3 clears the message area (read s29; **D**: a lightning bolt's damage
 message gone before the bolt's next flight). The message itself goes through START 0x2B8B, which copies its text into

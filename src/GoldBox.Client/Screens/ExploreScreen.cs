@@ -94,6 +94,11 @@ public sealed class ExploreScreen : IScreen
             player.ViewDrawn(); // the view replaces the picture, sprite or blank on screen
             Interlocked.Increment(ref _viewRedraws); // and a picture kept on screen (DrawView)
         };
+        game.Loop.ViewDrawn += () =>
+        {
+            player.ViewDrawn(); // a turn or the area map (0x2EEF4) draws over the picture or blank (DOSBox-X s42)
+            Interlocked.Increment(ref _viewRedraws);
+        };
         game.Vm.ScriptSwitchRedrawn += () =>
         {
             player.SwitchRedrawn(); // 0x3FF5: the new area's view over the old script's picture or blank
@@ -129,6 +134,10 @@ public sealed class ExploreScreen : IScreen
     /// <summary>The creation and roster pages over the training hall and the camp's icon editor (a <see cref="PartyMenuScreen"/>
     /// overlay), or null.</summary>
     public Func<IScreen>? PartyPages { get; init; }
+
+    /// <summary>The party menu's page (rows 0–23) the Load came from, drawn under a Load's vector 4 while
+    /// <see cref="ClientPlayer.PartyMenuUnder"/>.</summary>
+    public byte[]? PartyMenuPage { get; set; }
 
     /// <summary>A save loaded in the training hall: the new game's screen (its entry run), or null when it failed.</summary>
     public Func<char, IScreen?>? LoadSave { get; init; }
@@ -521,9 +530,12 @@ public sealed class ExploreScreen : IScreen
         Sync();
         var shown = ShownPicture;
         _anim.Show(shown);
-        if (_runner.Pending is ChoiceRequest { Animates: true } && shown is not null)
+        if (_runner.Pending is ChoiceRequest { Animates: true } menu && shown is not null)
         {
-            _anim.Tick(_clock.Elapsed, _art.Pictures.Delays(shown), _runner.AnimationSpeed);
+            var delays = _art.Pictures.Delays(shown);
+            if (menu.EveryPass) // $4AFF ≠ 0: a frame on every pass (0x2CDD6), one Client update each (ScriptRunner.EveryPass)
+                delays = new uint[delays.Count];
+            _anim.Tick(_clock.Elapsed, delays, _runner.AnimationSpeed);
             _player.PictureUndrawn = false; // the menu draws the frames (a camp picture loaded by START 0x3379 case 2 too)
         }
         if (_left)
@@ -872,6 +884,11 @@ public sealed class ExploreScreen : IScreen
             _hall.Draw(f, font, hall, _game.Memory.Party, pending, _selected, input);
             return;
         }
+        if (_player.PartyMenuUnder && PartyMenuPage is { } menuPage && menuPage.Length <= f.Pixels.Length)
+        {
+            DrawOverPartyMenu(f, font, menuPage, pending, input);
+            return;
+        }
         f.Clear(0);
         if (_player.Window is { } window)
         {
@@ -998,6 +1015,34 @@ public sealed class ExploreScreen : IScreen
                 continue;
             Chrome.Clear(f, c, r, 1);
             Chrome.Text(f, font, c, r, g.ToString(), Chrome.White);
+        }
+    }
+
+    /// <summary>
+    /// A party menu Load's vector 4 before START 0x3379 (<see cref="ClientPlayer.PartyMenuUnder"/>, DOSBox-X s42): the
+    /// party menu's page stays, the picture goes at cell (3, 3) with no view box, the text box's text over the page, and
+    /// row 24 holds the menu or key prompt asked (blank otherwise).
+    /// </summary>
+    private void DrawOverPartyMenu(IndexedFrame f, TextFont font, byte[] page, PlayerRequest? pending, ActionInput input)
+    {
+        f.Clear(0);
+        Array.Copy(page, f.Pixels, page.Length);
+        if (ShownPicture is { } picture && !_player.PictureUndrawn)
+            _art.Pictures.Draw(f, ViewX, ViewY, picture, _anim.Frame);
+        DrawTextWindow(f, font);
+        switch (pending)
+        {
+            case ChoiceRequest { Vertical: false } h:
+                if (h.MenuPrompt is { Length: > 0 } mp)
+                    Chrome.MenuPrompt(f, font, 0, MenuRow, mp, h.MenuPromptColour ?? MenuPromptColour);
+                DrawLine(f, font, h.Items, _selected, MenuStart(h), h.HotkeyOf, h.Columns);
+                break;
+            case KeyRequest k:
+                Chrome.Text(f, font, AmigaView.KeyColumn(k), MenuRow, Fit(KeyPrompt(k, input), 40 - AmigaView.KeyColumn(k)), KeyColour(k));
+                break;
+            case DelayRequest { BottomLine: not null } d:
+                DrawBottomLine(f, font, d);
+                break;
         }
     }
 
@@ -1193,7 +1238,8 @@ public sealed class ExploreScreen : IScreen
         }
         else if (!_game.Loop.InView3D)
         {
-            // [?] No map in memory and not the overland (DS:49FA 5+, or $49E6 = 0 outside blocks 25–27): nothing drawn.
+            // No map in memory, or a mode the redraw 0x2DCF4 draws nothing for (DS:49FA 0 or 5+ with $49E6 = 0). [?] With
+            // no map the program draws its map buffer as it is (a save whose Load reads no map: location type 2–4).
             Chrome.Text(f, font, 3, 7, "NO VIEW", Chrome.Cyan);
             return;
         }

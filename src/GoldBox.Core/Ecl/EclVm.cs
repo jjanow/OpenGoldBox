@@ -116,6 +116,34 @@ public sealed class EclVm
     /// </summary>
     public bool LoadingSave { get; set; }
 
+    /// <summary>
+    /// DS:4432: the area loop's first pass (0x403E) arms it (0x4058) and clears DS:4433 / DS:4434; LOADFILES sets 4434
+    /// (0x19F8), LOADPIECES 4433 (0x1A66). Once all three are set the handler's end draws the interface (START 0x3379
+    /// and the party list, 0x1B05–0x1B2C: <see cref="EntryInterfaceDue"/>) and clears 4432, so the first pass's own
+    /// draw at 0x40BE does not run. Armed by the loaded entry (<see cref="ArmEntryDraw"/>).
+    /// </summary>
+    public bool EntryDrawArmed { get; set; }
+    private bool _entryFiles, _entryPieces;
+
+    /// <summary>Raised when a LOADFILES / LOADPIECES pair completes in an armed first pass (0x1B1A).</summary>
+    public event Action? EntryInterfaceDue;
+
+    /// <summary>The first pass arms the pair's draw (0x4044–0x4058).</summary>
+    public void ArmEntryDraw() => (EntryDrawArmed, _entryFiles, _entryPieces) = (true, false, false);
+
+    private void EntryPairStep(bool files)
+    {
+        if (files)
+            _entryFiles = true;
+        else
+            _entryPieces = true;
+        if (EntryDrawArmed && _entryFiles && _entryPieces)
+        {
+            EntryInterfaceDue?.Invoke();
+            EntryDrawArmed = false; // 0x1B2C
+        }
+    }
+
     /// <summary>Opcode now executing / previous (DS:6F7F / 6F7E).</summary>
     public byte Opcode { get; set; }
     public byte PreviousOpcode { get; set; }
@@ -1026,14 +1054,20 @@ public sealed class EclVm
             case EclOpcodes.LoadFiles:
                 Memory.FilesLoadedSinceSwitch = true; // DS:4431 := 1 (0x19C8; SotSB OVR 0x18B8: DS:59B7)
                 if (PorHandlers)
+                {
                     DoLoadFiles();
+                    EntryPairStep(files: true);
+                }
                 else
                     DoLoadFilesSotsb();
                 return null;
             case EclOpcodes.LoadPieces:
                 Memory.FilesLoadedSinceSwitch = true;
                 if (PorHandlers)
+                {
                     DoLoadPieces();
+                    EntryPairStep(files: false);
+                }
                 else
                     DoLoadPiecesSotsb();
                 return null;

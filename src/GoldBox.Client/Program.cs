@@ -139,6 +139,7 @@ else
         var endArt = clientArt;
         player.EndArt = (disk, block) => endArt.Pictures.Find("FINAL", block, disk, anyDisk: true);
         player.InstallPaging();
+        runner.Answered = player.MenuEnded; // every program menu clears VM $4AFF at its end (0x2CFAD)
         // Sound (docs/re/sound.md): the program's driver data from the content, on the device the setting names.
         audio = ClientAudio.Open(content.Sound(), ClientAudio.Parse(settings.Sound), content.AmigaSound());
         Console.Error.WriteLine($"sound: {audio?.Device?.ToString().ToLowerInvariant() ?? "off"}");
@@ -189,12 +190,24 @@ else
                 SaveSlots = Slots,
                 // DS:6DDC (the overland marker's counter) is not saved: a load goes on from the session's. The player's
                 // hosts read `game`, so it is the loaded one before vector 4 runs (the entry may open the hall).
-                LoadGame = (slot, s, started) => game = WithSound(PorGame.LoadAtPartyMenu(content, art, SlotPath(slot), who, s,
-                    game?.Memory.MarkerCounter ?? 0, g =>
+                LoadGame = (slot, s, started) =>
+                {
+                    try
                     {
-                        game = WithSound(g);
-                        started(g);
-                    })),
+                        return game = WithSound(PorGame.LoadAtPartyMenu(content, art, SlotPath(slot), who, s,
+                            game?.Memory.MarkerCounter ?? 0, g =>
+                            {
+                                game = WithSound(g);
+                                // vector 4 draws over the party menu's page until START 0x3379 runs (DOSBox-X s42)
+                                player.PartyMenuUnder = g.LoadedInterfaceState != 0;
+                                started(g);
+                            }));
+                    }
+                    finally
+                    {
+                        player.PartyMenuUnder = false; // the entry ended (DS:49F3 = 3: the first command draws the interface)
+                    }
+                },
                 SaveGame = (slot, party, loaded) => player.SaveAtPartyMenu(slot, party, content, loaded),
                 Highlight = sharedHighlight,
                 // J and Train at the start-up menu (the hall's, on the menu's party).
@@ -271,7 +284,7 @@ else
                 // Its Items page (0x21F32) and Drop's coin list (0x234E1), on the same overlay.
                 player.ItemsPage = (c, entries, row, name) => hf.ItemsPage(c, entries, row, name);
                 player.ItemsTalk = w => hf.TextOverPage = w;
-                player.Coins = (c, kinds) => hf.Coins(c, kinds);
+                player.Coins = (c, kinds, words) => hf.Coins(c, kinds, words);
             }
             loadSlot = (slot, started) =>
             {
