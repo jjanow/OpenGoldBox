@@ -171,6 +171,8 @@ public sealed class ExploreScreen : IScreen
         if (_runner.Busy || _game.Loop.Defeated || _player.Halted is not null)
             return;
         _player.Notice = null;
+        if (_player.ViewBlanked && !OverlandUi.Shown(_game))
+            _player.ViewBoxBlank = true; // the command's redraw draws the view alone (ClientPlayer.ViewBoxBlank)
         _player.ViewBlanked = false; // CLEARBOX's blank lasts until the next command's redraw (or a script switch's, SwitchRedrawn)
         char? letter = command switch
         {
@@ -777,6 +779,7 @@ public sealed class ExploreScreen : IScreen
     // ---------------------------------------------------------------------------------------------------------------
 
     private bool _commandLineDrawn;
+    private int _bottomRowClearsSeen;
 
     /// <summary>
     /// The last menu line drawn on row 24 and its highlighted entry (the chosen one once answered: a hotkey moves the
@@ -785,6 +788,8 @@ public sealed class ExploreScreen : IScreen
     /// the camp's Magic menu stays while Memorize types its slot message).
     /// </summary>
     private ChoiceRequest? _keptMenu;
+    /// <summary>Row 24's pixels in the last combat frame drawn (the party-destroyed window keeps them).</summary>
+    private byte[]? _combatRow24;
     private int _keptSelected;
     private bool _keptMenuDrawn;
 
@@ -794,12 +799,29 @@ public sealed class ExploreScreen : IScreen
         _commandLineDrawn = false;
         bool keptMenuWasDrawn = _keptMenuDrawn;
         _keptMenuDrawn = false;
+        if (_player.BottomRowClears is var clears && clears != _bottomRowClearsSeen)
+        {
+            // NEWECL's script load cleared row 24 (0x7814 → 0x2CFCA): the line kept through typing is gone.
+            _bottomRowClearsSeen = clears;
+            commandLineWasDrawn = keptMenuWasDrawn = false;
+        }
         if (_combat.Active)
         {
+            _player.ViewBoxBlank = false; // COMBAT's end draws the layout again (0x2635 → START 0x3379)
             _player.ReleaseRosterNames();
             _combat.Draw(f, input);
+            // Row 24 as the fight left it: nothing writes the row between the fight's end and the party-destroyed
+            // window's key line (0x6AA5 → 0x6B37–0x6BAA; DOSBox-X s39: the vampire's move line under "THE END!").
+            _combatRow24 ??= new byte[f.Width * 8];
+            Array.Copy(f.Pixels, MenuRow * 8 * f.Width, _combatRow24, 0, Math.Min(_combatRow24.Length, f.Pixels.Length - MenuRow * 8 * f.Width));
+            // The pixels stay; the palette goes back (the combat screen swaps EGA colours 0 and 8, CombatScreen.SwapGrey).
+            for (int i = 0; i < _combatRow24.Length; i++)
+                _combatRow24[i] = _combatRow24[i] switch { 0 => 8, 8 => 0, var v => v };
             return;
         }
+        // A request the logic thread posted after this frame's Update: take its opening highlight before drawing it (D s39:
+        // Drop's yes/no drew one frame with the previous menu's Yes lit before the yes/no routine's No, 0x2D9B9).
+        Sync();
         var font = _game.Art.Font;
         var pending = _runner.Pending;
         // A full-screen page (a list, View, the hall, a window) covers the party list; the screen drawn after it draws
@@ -834,21 +856,42 @@ public sealed class ExploreScreen : IScreen
                 Chrome.Text(f, font, 0, MenuRow, Fit(KeyPrompt(wk, input), 40), KeyColour(wk));
             else if (pending is DelayRequest { BottomLine: not null } windowDelay)
                 DrawBottomLine(f, font, windowDelay);
+            else if (_player.KeepsCombatRow24 && _combatRow24 is { } row24 && row24.Length == f.Width * 8)
+                Array.Copy(row24, 0, f.Pixels, MenuRow * 8 * f.Width, row24.Length); // the fight's last row 24 (DOSBox-X s39)
             else if (pending is DelayRequest && !_player.WindowAfterFight)
                 DrawLine(f, font, Commands, _highlight.Start(Commands.Length), 0); // the DAMAGE wipe's pause: row 24 kept (DOSBox-X s22)
             return;
         }
+        // The area screen is up: a later window (a COMBAT with no monsters straight to the share) has no fight row 24.
+        _combatRow24 = null;
         // Frame cells as on the original screen: outer box, the divider under the view and party list, the divider
         // between view and party list, the view's own box, the box over the command line.
-        Chrome.Box(f, 0, 0, 39, 23);
-        Chrome.HLine(f, 16, 1, 38);
-        Chrome.VLine(f, 16, 1, 15);
         bool overlandBoxed = OverlandUi.Shown(_game) && OverlandUi.Boxed(_player);
-        if (!OverlandUi.Shown(_game) || overlandBoxed)
-            Chrome.Box(f, 2, 2, 14, 14); // the 3D view's own box; the overland view fills cells 1–15
-        foreach (var (c, r) in new[] { (16, 0), (0, 16), (16, 16), (39, 16) })
-            Chrome.BraidCell(f, c, r, true);
-        if (_player.TextBoxFramed)
+        bool viewBox = !OverlandUi.Shown(_game) || overlandBoxed;
+        if (Chrome.AmigaFrame is not null)
+        {
+            // The Amiga frames the screen as whole windows, later ones over earlier ones' shared cells. Seen in FS-UAE
+            // (s39, the explore and camp screens after a load): the full window (1, 1)–(38, 22), the text box's
+            // (1, 17)–(38, 22), the view's (1, 1)–(15, 15) and its box (3, 3)–(13, 13): rows 0, 16 and 23 are strips from
+            // column 1, column 16 the view window's right side, the corners at (16, 0) and (16, 16) the view window's
+            // (por-art-formats.md §4 "Window frame").
+            Chrome.Box(f, 0, 0, 39, 23);
+            Chrome.Box(f, 0, 16, 39, 23);
+            Chrome.Box(f, 0, 0, 16, 16);
+            if (viewBox)
+                Chrome.Box(f, 2, 2, 14, 14);
+        }
+        else
+        {
+            Chrome.Box(f, 0, 0, 39, 23);
+            Chrome.HLine(f, 16, 1, 38);
+            Chrome.VLine(f, 16, 1, 15);
+            if (viewBox)
+                Chrome.Box(f, 2, 2, 14, 14); // the 3D view's own box; the overland view fills cells 1–15
+            foreach (var (c, r) in new[] { (16, 0), (0, 16), (16, 16), (39, 16) })
+                Chrome.BraidCell(f, c, r, true);
+        }
+        if (_player.TextBoxFramed && Chrome.AmigaFrame is null) // [?] the Amiga camp keeps the view window's (16, 16) corner (FS-UAE s39)
             Chrome.Box(f, 0, 16, 39, 23); // START 0x16EC's camp branch drew the box's frame again (D s33: the joint goes)
 
         DrawView(f, font);
@@ -889,7 +932,7 @@ public sealed class ExploreScreen : IScreen
         {
             int start = MenuStart(h);
             if (h.MenuPrompt is { Length: > 0 } mp)
-                Chrome.Text(f, font, 0, MenuRow, mp, h.MenuPromptColour ?? MenuPromptColour);
+                Chrome.MenuPrompt(f, font, 0, MenuRow, mp, h.MenuPromptColour ?? MenuPromptColour);
             DrawLine(f, font, h.Items, _selected, start, h.HotkeyOf, h.Columns);
             (_keptMenu, _keptSelected, _keptMenuDrawn) = (h, _selected, true);
         }
@@ -898,7 +941,7 @@ public sealed class ExploreScreen : IScreen
             // typing keeps the row; in the camp a message's pause does too (D s33: the rest-time menu under the revive text)
         {
             if (kept.MenuPrompt is { Length: > 0 } kp)
-                Chrome.Text(f, font, 0, MenuRow, kp, kept.MenuPromptColour ?? MenuPromptColour);
+                Chrome.MenuPrompt(f, font, 0, MenuRow, kp, kept.MenuPromptColour ?? MenuPromptColour);
             DrawLine(f, font, kept.Items, _keptSelected, MenuStart(kept), kept.HotkeyOf, kept.Columns);
             _keptMenuDrawn = true;
         }
@@ -959,7 +1002,7 @@ public sealed class ExploreScreen : IScreen
             Chrome.Clear(f, 0, MenuRow, 40);
             int start = MenuStart(h);
             if (h.MenuPrompt is { Length: > 0 } mp)
-                Chrome.Text(f, font, 0, MenuRow, mp, h.MenuPromptColour ?? MenuPromptColour);
+                Chrome.MenuPrompt(f, font, 0, MenuRow, mp, h.MenuPromptColour ?? MenuPromptColour);
             DrawLine(f, font, h.Items, _selected, start, h.HotkeyOf, h.Columns);
         }
         else if (pending is KeyRequest k)
@@ -1173,12 +1216,34 @@ public sealed class ExploreScreen : IScreen
             for (int i = 0; i < lines.Length && i < 11; i++)
                 Chrome.Text(f, font, 3, 3 + i, Fit(lines[i], 11), Chrome.Yellow);
         }
+        if (_player.Interface is not null || _player.Hall is not null)
+            _player.ViewBoxBlank = false; // these screens draw the whole layout again (START 0x3379 → 0x272A)
+        else if (_player.ViewBoxBlank && !_player.ViewBlanked && !OverlandUi.Shown(_game))
+        {
+            // A CLEARBOX blank followed by a view redraw (0x2DCF4 draws the 88 × 88 view alone): the window's cells 1–15
+            // around the view, the view's box among them, stay blank (DOSBox-X s39).
+            for (int r = 1; r <= 15; r++)
+            {
+                if (r is >= 3 and <= 13)
+                {
+                    Chrome.Clear(f, 1, r, 2);
+                    Chrome.Clear(f, 14, r, 2);
+                }
+                else
+                    Chrome.Clear(f, 1, r, 15);
+            }
+        }
     }
 
     /// <summary>A line of words on the bottom row as the original draws its menus: the highlighted item all white, the others with a white hotkey letter.</summary>
     internal static void DrawLine(IndexedFrame f, TextFont font, IReadOnlyList<string> items, int selected, int start,
         Func<int, char>? hotkey = null, IReadOnlyList<int>? columns = null)
     {
+        // Under Amiga the current entry is not lit: it is drawn as the others, then its gadget box complemented.
+        var gadget = Chrome.AmigaGadget;
+        int lit = selected;
+        if (gadget is not null)
+            selected = -1;
         int col = start;
         for (int i = 0; i < items.Count; i++)
         {
@@ -1189,8 +1254,10 @@ public sealed class ExploreScreen : IScreen
                 break;
             int k = hotkey is null ? 0 : Math.Max(0, w.IndexOf(hotkey(i)));
             Chrome.Text(f, font, col, MenuRow, w, i == selected ? Chrome.White : Chrome.Green);
-            // The menu routine's entry runs from its capital to two cells before the next capital (D s38, the rest-time
-            // menu "Rest   daYs": daYs lit shows "YS" white, Rest lit also lights the D; the A is never lit).
+            // The menu routine's entry runs from its capital (or digit) to two cells before the next one (0x2C99A, drawn
+            // by 0x2CAA9; D s38, the rest-time menu "Rest   daYs": daYs lit shows "YS" white, Rest lit also lights the D;
+            // D s39, the icon editor's "Parts color-1": Parts lit also lights COLOR). Every other line starts each
+            // word with its hotkey, where this is the whole word.
             if (k > 0)
             {
                 Chrome.Text(f, font, col, MenuRow, w[..k], Chrome.Green);
@@ -1198,6 +1265,8 @@ public sealed class ExploreScreen : IScreen
                     Chrome.Text(f, font, col, MenuRow, w[..(k - 1)], Chrome.White);
             }
             Chrome.Text(f, font, col + k, MenuRow, w.Substring(k, 1), Chrome.White);
+            if (i == lit)
+                gadget?.Entry(f, col, MenuRow, w);
             col += w.Length + 1;
         }
     }
@@ -1236,6 +1305,12 @@ public sealed class ExploreScreen : IScreen
     /// </summary>
     private bool _memberPicked;
 
+    /// <summary>The area script the party list was last drawn in (a switch or a new area draws it again).</summary>
+    private int _rosterScript = int.MinValue;
+
+    /// <summary>The party's size when the list was last drawn.</summary>
+    private int _rosterCount = -1;
+
     private void DrawRoster(IndexedFrame f, TextFont font)
     {
         var party = _game.Memory.Party;
@@ -1247,8 +1322,26 @@ public sealed class ExploreScreen : IScreen
         // fixed points, none between LOADMON and the fight: DOSBox-X s29 (a vampire loaded by a step's script) shows the
         // six members through "A battle begins". [?] START 0x1307 is not read: whether a redraw there would list them.
         var monsters = _game.Encounter.State.Monsters;
-        _player.ReleaseRosterNamesIfPicked(party?.Current);
-        Chrome.PartyList(f, font, party, 17, shown, monsters.Count > 0 ? monsters.Contains : null, _player.RosterNameHeld);
+        // Where the program draws the list while exploring (D s39, GAME.OVR read): an area's entry and a script switch
+        // (LOADFILES + LOADPIECES 0x1B27 or the loop's 0x40BE, the switch's end 0x402B), a member picked with Home / End
+        // (0x23819 then 0x0767), DAMAGE (0x96DD), the camp's entry and the full-screen pages. Not a step (0x17438), a
+        // turn or the area map (0x2EEF4), the view's rebuild (0x2DCF4) or text and pictures: a held name stays.
+        // A change of the party's size: every path that adds or removes a member draws the list (LOADCHAR's NPC removal
+        // 0x10E7, ADDNPC 0x3940, the camp's Drop 0x19234).
+        if (_game.Vm.CurrentScript != _rosterScript || (party?.Members.Count ?? 0) != _rosterCount)
+        {
+            _rosterScript = _game.Vm.CurrentScript;
+            _rosterCount = party?.Members.Count ?? 0;
+            _player.ReleaseRosterNames();
+        }
+        // LOADCHAR changes the current member without a redraw (the list keeps the player's pick): only the pick shown
+        // counts.
+        _player.ReleaseRosterNamesIfPicked(shown is int s ? party!.Members[s] : party?.Current);
+        // START's member pick drew the list with its pick lit (or none); it stays so until the next redraw.
+        if (_player.RosterLitOverride(out var lit) && party is not null)
+            shown = lit is null ? -1 : party.Members.IndexOf(lit);
+        Chrome.PartyList(f, font, party, 17, shown, monsters.Count > 0 ? monsters.Contains : null, _player.RosterNameHeld,
+            _player.RosterAsDrawn);
     }
 
     /// <summary>Two help lines in the text window, in the device used last (keys, pad buttons, or mouse gestures).</summary>

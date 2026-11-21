@@ -154,6 +154,19 @@ public class PartyMenuScreenTests
         r.Key(Keys.H);                           // head 2
         r.Key(Keys.K);
         Assert.IsType<IconRequest>(r.Runner.Pending);
+        // D s39: the line "Parts color-1 color-2 Size Exit" lit as the menu routine does: Parts lit also lights the
+        // COLOR of color-1 (its entry runs to two cells before the hotkey 1); the '-' stays green, the 1 is white.
+        for (int i = r.Flow.Highlight.Index; i % 5 != 0; i++)
+            r.Act(GameAction.MenuRight);
+        var icon = Drawn(r);
+        // The combat palette (0x3081D, colours 0 and 8 swapped): row 24's ground and the frame's gaps are dark grey.
+        Assert.Equal([8], Cell(icon, 5, 24));
+        Assert.Equal([8], Cell(icon, 20, 12));
+        Assert.Contains((byte)8, Cell(icon, 10, 0));
+        Assert.Equal([15, 15, 15, 15, 10, 15, 10], new[] { 0, 4, 6, 10, 11, 12, 15 }.Select(c => Cell(icon, c, 24).Max()));
+        r.Act(GameAction.MenuRight);             // color-1 lit: P white, COLOR- green, 1 white, the next COLOR white
+        icon = Drawn(r);
+        Assert.Equal([15, 10, 10, 15, 15, 15, 10, 15], new[] { 0, 1, 6, 12, 14, 18, 19, 20 }.Select(c => Cell(icon, c, 24).Max()));
         r.Key(Keys.E);                           // Exit
         r.Key(Keys.Y);                           // the icon is ok
         Assert.IsType<PartyMenuRequest>(r.Runner.Pending);
@@ -702,10 +715,22 @@ public class PartyMenuScreenTests
         Assert.Same(page, r.Runner.Pending);
         Assert.Same(party.Members[0], party.Current);
 
-        r.Key(Keys.I);                                         // Items: the camp's items menu
-        var items = Assert.IsType<ListRequest>(r.Runner.Pending);
-        Assert.Equal(["READY", "TRADE", "DROP", "HALVE", "JOIN", "EXIT"], items.Actions);
-        Assert.Single(items.Rows);
+        r.Key(Keys.I);                                         // Items: 0x21F32's page, no Use (DS:49F3 = 0)
+        var items = Assert.IsType<CharacterPageRequest>(r.Runner.Pending);
+        Assert.Equal(["READY", "TRADE", "DROP", "HALVE", "JOIN", "EXIT"], items.Entries);
+        Assert.Single(items.Page.Rows);
+        Assert.Equal([0, 2, 23], items.Page.FrameRows);
+        Assert.Contains(items.Page.Texts, t => t.Row == 3 && t.Text == "READY ITEM");
+        r.Key(Keys.None);
+        var fi = Drawn(r);
+        Assert.Contains(Chrome.White, Cell(fi, 2, 24));        // READY lit (0x2D669 opens on its first word)
+        Assert.DoesNotContain(Chrome.Green, Cell(fi, 2, 24));
+        r.Key(Keys.Enter);                                     // Return: 13, which 0x21F32 does not act on
+        Assert.Same(items, r.Runner.Pending);
+        r.Key(Keys.R);                                         // Ready: not built yet, on the bottom line
+        Assert.Equal("READY: NOT IN THIS BUILD YET.", Assert.IsType<KeyRequest>(r.Runner.Pending).Prompt);
+        r.Key(Keys.Enter);
+        Assert.IsType<CharacterPageRequest>(r.Runner.Pending);
         r.Key(Keys.Escape);
         Assert.IsType<SheetRequest>(r.Runner.Pending);         // back on the View menu
 
@@ -722,13 +747,54 @@ public class PartyMenuScreenTests
         Assert.IsType<SheetRequest>(r.Runner.Pending);
         r.Key(Keys.E);                                         // and Exit
         Assert.IsType<PartyMenuRequest>(r.Runner.Pending);
-        Assert.Equal(3, r.Flow.Highlight.Index);               // Exit moved the shared highlight (4th word)
+        // Exit moved the shared highlight to the 4th word, but the party menu's own menu call (an empty item line) puts
+        // the cell back on the first entry (0x2CCE7) when it comes up.
+        Assert.Equal(3, r.Flow.Highlight.Index);
+        r.Key(Keys.None);
+        Assert.Equal(0, r.Flow.Highlight.Index);
 
         r.Key(Keys.End);                                       // the next member, picked on the party menu
         r.Key(Keys.V);
         page = Assert.IsType<SheetRequest>(r.Runner.Pending);
         Assert.Same(party.Members[1], page.Character);
         Assert.Equal(["TRADE", "DROP", "EXIT"], page.Actions); // no items: no Items
+        r.Key(Keys.E);
+        Assert.IsType<PartyMenuRequest>(r.Runner.Pending);
+    }
+
+    /// <summary>
+    /// View's Drop (0x234E1, DOSBox-X s39 in the camp): the coin list over the page (prompt, Exit lit; Return takes the
+    /// row), the amount typed, the coin list again until Escape; View then opens on Items (0x2D669 stored 1 in the
+    /// cell), and the page keeps the old encumbrance (only the money lines are redrawn, 0x21547).
+    /// </summary>
+    [Fact]
+    public void View_drop_goes_through_the_coin_list()
+    {
+        if (Dir() is null)
+            return;
+        using var r = WithTwoFighters();
+        var me = r.Flow.Party.Members[0];
+        int kind = CombatSheet.MoneyKinds(me)[0];
+        ushort before = FightItemScreens.Coins(me, kind), weight = me.Word(0x102);
+        r.Key(Keys.V);
+        r.Key(Keys.D);
+        var coins = Assert.IsType<CharacterPageRequest>(r.Runner.Pending);
+        Assert.True(coins.PickRows);
+        Assert.NotNull(coins.Sheet);
+        Assert.Equal(["EXIT"], coins.Entries);
+        r.Key(Keys.Enter);                                     // the first (highest) coin kind
+        Assert.IsType<TextRequest>(r.Runner.Pending);
+        r.Key(Keys.D1);
+        r.Key(Keys.Enter);
+        Assert.Equal(before - 1, FightItemScreens.Coins(me, kind));
+        Assert.Equal(weight - 1, me.Word(0x102));
+        Assert.IsType<CharacterPageRequest>(r.Runner.Pending); // the coin list again
+        r.Key(Keys.Escape);
+        var page = Assert.IsType<SheetRequest>(r.Runner.Pending);
+        Assert.Equal(0, r.Flow.Highlight.Index);               // View back on Items
+        Assert.NotSame(me, page.Character);                    // the page as shown: old weight, new money
+        Assert.Equal(weight, page.Character.Word(0x102));
+        Assert.Equal(before - 1, FightItemScreens.Coins(page.Character, kind));
         r.Key(Keys.E);
         Assert.IsType<PartyMenuRequest>(r.Runner.Pending);
     }
@@ -752,11 +818,68 @@ public class PartyMenuScreenTests
         if (r.Screen.MapClick(new ScreenClick(6 * 8 + 3, 24 * 8 + 3, false)) is { } a)  // ITEMS (column 5–9)
             r.Input.Inject(a);
         r.Screen.Update(r.Input);
-        Assert.IsType<ListRequest>(r.Runner.Pending);
+        Assert.IsType<CharacterPageRequest>(r.Runner.Pending);
         r.Act(GameAction.Cancel);
         Assert.IsType<SheetRequest>(r.Runner.Pending);
         r.Act(GameAction.MenuLeft);                            // the highlight wraps to EXIT
         r.Act(GameAction.Confirm);
+        Assert.IsType<PartyMenuRequest>(r.Runner.Pending);
+    }
+
+    /// <summary>
+    /// View's keys as DOSBox-X took them (s39, a created dwarf fighter: Items Trade Drop Exit): ',' / '.' move the
+    /// highlight (wrapping), Return, Home, End and space do nothing (0x2CC8C gives 13 or ' ', which 0x21AED's loop
+    /// ignores; keypad flag 0, so extended keys are swallowed); Escape leaves View, and V again opens on Items (the
+    /// party menu's menu call resets the cell). The pad's A still takes the highlighted word.
+    /// </summary>
+    [Fact]
+    public void View_keys_are_the_programs()
+    {
+        if (Dir() is null)
+            return;
+        using var r = WithTwoFighters();
+        r.Key(Keys.V);
+        var page = Assert.IsType<SheetRequest>(r.Runner.Pending);
+        Assert.True(page.IsView);
+        // The lit word is white from its first to its last letter; the others green but for the white hotkey.
+        bool Lit(int col0, int len)
+        {
+            var f = Drawn(r);
+            for (int c = col0 + 1; c < col0 + len; c++)
+                if (Cell(f, c, 24).Contains(Chrome.Green))
+                    return false;
+            return true;
+        }
+        Assert.True(Lit(5, 5));                                // ITEMS
+        r.Key(Keys.OemPeriod);
+        Assert.Equal(1, r.Flow.Highlight.Index);
+        Assert.True(Lit(11, 5));                               // TRADE
+        Assert.False(Lit(5, 5));
+        r.Key(Keys.OemComma);
+        r.Key(Keys.OemComma);                                  // wraps to EXIT
+        Assert.Equal(3, r.Flow.Highlight.Index);
+        Assert.True(Lit(22, 4));
+        r.Key(Keys.OemPeriod);
+        foreach (var k in new[] { Keys.Enter, Keys.Home, Keys.End, Keys.Space })
+        {
+            r.Key(k);
+            Assert.Same(page, r.Runner.Pending);
+        }
+        Assert.True(Lit(5, 5));
+        r.Key(Keys.OemPeriod);
+        r.Key(Keys.OemPeriod);                                 // DROP
+        r.Key(Keys.Escape);
+        Assert.IsType<PartyMenuRequest>(r.Runner.Pending);
+        Assert.Equal(2, r.Flow.Highlight.Index);               // Escape leaves the cell where '.' put it
+        r.Key(Keys.None);
+        Assert.Equal(0, r.Flow.Highlight.Index);               // the party menu's call puts it back on the first
+        r.Key(Keys.V);
+        Assert.IsType<SheetRequest>(r.Runner.Pending);
+        Assert.True(Lit(5, 5));                                // on Items again
+        r.Act(GameAction.MenuRight);
+        r.Act(GameAction.MenuRight);
+        r.Act(GameAction.MenuRight);
+        r.Act(GameAction.Confirm);                             // the pad's A on EXIT
         Assert.IsType<PartyMenuRequest>(r.Runner.Pending);
     }
 

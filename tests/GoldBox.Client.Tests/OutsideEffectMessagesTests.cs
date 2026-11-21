@@ -85,7 +85,30 @@ public class OutsideEffectMessagesTests
             $"pause 450 [TESS|{r.Texts[CombatMsg.StatusRevived].Trim()}|]",
             $"row24 {r.Texts[CombatMsg.HandlerAirClears]} 450",
         ], r.Log);
-        Assert.False(r.Shown.Show(Creature(), EffectEvent.Healed)); // not a handler message: the caller's
+    }
+
+    [Fact]
+    public void Healed_shows_START_0x2EEA_words_by_full_hit_points_and_draws_the_list()
+    {
+        // START 0x2EEA (00BA:234A): "fully" when HP 0x11B = 0x32, else "partially"; START 0x16EC with the pause, then
+        // the party list outside a fight (00BA:23AE). Handlers 15 / 44 draw the list after their damage (0xF299 / 0xFE19).
+        int drawn = 0;
+        var log = new List<string>();
+        var w = new TextWindow();
+        var texts = new CombatText();
+        var shown = new OutsideEffectMessages(w, q => { if (q is DelayRequest) log.Add(w.Lines[2].Trim()); return null; },
+            () => 2, texts, () => false, listDrawn: () => drawn++);
+        var c = Creature();
+        c[0x32] = 10;
+        c[0x11B] = 10;
+        Assert.True(shown.Show(c, EffectEvent.Healed));
+        c[0x11B] = 9;
+        Assert.True(shown.Show(c, EffectEvent.Healed));
+        Assert.Equal([texts[CombatMsg.FullyHealed].Trim(), texts[CombatMsg.PartiallyHealed].Trim()], log);
+        Assert.Equal(2, drawn);
+        Assert.True(shown.Show(c, EffectEvent.HandlerDamageListed));
+        Assert.Equal(3, drawn);
+        Assert.Equal(2, log.Count);                                   // no text of its own
     }
 
     [Fact]

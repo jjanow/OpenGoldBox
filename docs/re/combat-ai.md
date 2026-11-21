@@ -133,7 +133,8 @@ DS:443C = 8, 443D = 0, 443E = 0; trigger 0x0E; initiative 0 → nothing. Loop wh
    finish. Some → **1d(count)** picks one (a draw even for count 1). A ranged weapon that is not throwable with an
    enemy adjacent (enemies within 1) → ready the best weapon (0xBF8A) and the loop ends. Else in reach when the
    distance (START 0x30FB) is 1 or it may be targeted.
-6. In reach: face it (0x310D0, drawing), sweep (0x1367D; made → actions end, done), else note the attack (0x13FF1)
+6. In reach: ScrollView(its square, 2, toward the target) (0xBA22, drawing only: +9 is set later by MakeAttack's
+   0x31232 at 0x14113, after the panel; combat-menu.md "MakeAttack's drawing order"), sweep (0x1367D; made → actions end, done), else note the attack (0x13FF1)
    and MakeAttack (0x1407F) with the ammunition (START 0x3A2B; none for a throwable weapon at distance 1). Actions
    done → the loop ends; a target out of play → this pass is done (the outer loop searches again).
 

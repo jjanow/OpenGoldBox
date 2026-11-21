@@ -74,7 +74,7 @@ internal static class OverlandCommands
             });
         var m = game.Memory;
         if (!Overland.Shown(m) || game.Content.Overland() is not { } map
-            || game.Content.OverlandColumn(game.Vm.CurrentScript) is not { } column)
+            || game.Content.OverlandColumn(m.ViewMode - Overland.FirstMode + PorOverland.FirstScript) is not { } column)
         {
             Console.WriteLine($"not on the overland: script {game.Vm.CurrentScript} mode {m.ViewMode} $49E6 {m.Read(0x49E6)}");
             return 1;

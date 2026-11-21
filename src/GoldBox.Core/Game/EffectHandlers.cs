@@ -45,6 +45,11 @@ public enum EffectEvent
     /// the message area (in a fight rows 10–21). DOSBox-X s29: the bolt's damage message gone before the next flight.
     /// </summary>
     DamageDone,
+    /// <summary>
+    /// Handlers 15 (0xF246) and 44 (0xFDC3) after their 1-point damage: outside a fight (DS:49F3 ≠ 5) START 0x0767 draws
+    /// the party list (0xF28A / 0xF299, 0xFE0A / 0xFE19). No text.
+    /// </summary>
+    HandlerDamageListed,
     // 0xECB3's callers (docs/re/spells-effects.md "Status changes"): each passes its own text (a Pascal string in the
     // handler unit 0xEC5B), shown by START 0x16EC from row 10 without the pause flag before the dead / stone / gone test.
     /// <summary>Handler 22 (0xF406, text CS:0764): poisoned when slow poison ends.</summary>

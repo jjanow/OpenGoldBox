@@ -519,18 +519,9 @@ public sealed class CombatScreen
 
     // ---- Character pages (View, Items, drop money) -------------------------------------------------------------------
 
-    /// <summary>The first list row shown (the list scrolls to keep the selected row in its window).</summary>
-    private static int PageTop(CombatPage p)
-    {
-        int visible = p.LastRow - p.FirstRow + 1;
-        return Math.Clamp(p.Selected - visible + 1, 0, Math.Max(0, p.Rows.Count - visible));
-    }
+    private static int PageTop(CombatPage p) => PageChrome.PageTop(p);
 
-    private static int? PageRowAt(CombatPage p, int row)
-    {
-        int i = PageTop(p) + row - p.FirstRow;
-        return row >= p.FirstRow && row <= p.LastRow && i >= 0 && i < p.Rows.Count ? i : null;
-    }
+    private static int? PageRowAt(CombatPage p, int row) => PageChrome.RowAt(p, row);
 
     private GameAction? PageClick(PageRequest pr, ScreenClick click)
     {
@@ -575,8 +566,17 @@ public sealed class CombatScreen
             page.Selected = (page.Selected + n - 1) % n;
         if (n > 0 && (input.Pressed(GameAction.MenuDown) || input.Pressed(GameAction.NextMember) || (keys && input.Pressed(GameAction.StepDownLeft))))
             page.Selected = (page.Selected + 1) % n;
-        if (m > 0 && input.Pressed(GameAction.MenuLeft)) _selected = (_selected + m - 1) % m;
-        if (m > 0 && input.Pressed(GameAction.MenuRight)) _selected = (_selected + 1) % m;
+        // ',' / '.' are the menu routine's own keys for the lit word (0x2CE93 / 0x2CEB7); Left / Right the Client's.
+        if (m > 0 && (input.Pressed(GameAction.MenuLeft) || input.NewInput is (InputDevice.Keyboard, "OemComma")))
+            _selected = (_selected + m - 1) % m;
+        if (m > 0 && (input.Pressed(GameAction.MenuRight) || input.NewInput is (InputDevice.Keyboard, "OemPeriod")))
+            _selected = (_selected + 1) % m;
+        // View's menu (0x2CC8C called by 0x21AED at 0x21CD1) and the Items page (0x2D669 called by 0x21F32 at 0x222C9):
+        // Return gives 13, which neither loop acts on (DOSBox-X s39 / s39: View at the party menu and the venues, the
+        // camp's Items page only redraws); the pad's A and a click still take the lit word. The coin list takes the row
+        // whatever the key (0x234E1), so Return picks there.
+        if (!pr.PickRows && input.Pressed(GameAction.Confirm) && input.NewInput is (InputDevice.Keyboard, _))
+            return false;
         if (input.Pressed(GameAction.Confirm))
         {
             answer = new ListAnswer(pr.PickRows && n > 0 ? PageRequest.RowPicked : _selected, page.Selected);
@@ -682,36 +682,15 @@ public sealed class CombatScreen
 
     private void DrawPage(IndexedFrame f, CombatPage p, ActionInput input)
     {
-        f.Clear(0);
-        int top = p.FrameRows.Min(), bottom = p.FrameRows.Max();
-        foreach (var r in p.FrameRows)
-            Chrome.HLine(f, r, 0, 39);
-        Chrome.VLine(f, 0, top, bottom);
-        Chrome.VLine(f, 39, top, bottom);
-        foreach (var r in p.FrameRows)
-        {
-            Chrome.BraidCell(f, 0, r, true);
-            Chrome.BraidCell(f, 39, r, true);
-        }
-        foreach (var (col, row, text, colour) in p.Texts)
-            Text(f, col, row, Fit(text, 39 - col), colour);
-        int first = PageTop(p);
-        for (int k = 0; p.FirstRow + k <= p.LastRow && first + k < p.Rows.Count; k++)
-        {
-            int i = first + k;
-            // the list routine draws its rows again without the highlight when it returns (D s33: every row green
-            // under handler 131's text)
-            bool sel = i == p.Selected && p.ShowSelection && _view.ItemEffectText is null;
-            Text(f, p.RowCol, p.FirstRow + k, Fit(p.Rows[i], 39 - p.RowCol), sel ? Chrome.White : Chrome.Green);
-        }
-        for (int k = 0; k < p.Warning.Count; k++)
-            Text(f, 1, 21 + k, Fit(p.Warning[k], 38), Chrome.Yellow);
+        // the list routine draws its rows again without the highlight when it returns (D s33: every row green under
+        // handler 131's text; D s39: the coin rows while Drop's amount is asked)
+        PageChrome.DrawBody(f, _font, p, showSelection: _view.ItemEffectText is null && _runner.Pending is not TextRequest);
 
         switch (_runner.Pending)
         {
             case PageRequest pr:
                 if (pr.Prompt is { Length: > 0 } prompt)
-                    Text(f, 0, MenuRow, prompt, PromptColour);
+                    Chrome.MenuPrompt(f, _font, 0, MenuRow, prompt, PromptColour);
                 DrawEntries(f, pr.Entries, pr.Prompt?.Length ?? 0, _selected);
                 (_pageMenu, _pageEntry) = (pr, _selected);
                 if (input.LastDevice != InputDevice.Keyboard)
@@ -720,19 +699,25 @@ public sealed class CombatScreen
             case DelayRequest when _view.ItemEffectText is not null && _pageMenu is { } kept:
                 // Handler 131's text over the Items page (D s33): the menu row stays as the pick left it.
                 if (kept.Prompt is { Length: > 0 } keptPrompt)
-                    Text(f, 0, MenuRow, keptPrompt, PromptColour);
+                    Chrome.MenuPrompt(f, _font, 0, MenuRow, keptPrompt, PromptColour);
                 DrawEntries(f, kept.Entries, kept.Prompt?.Length ?? 0, _pageEntry);
                 break;
             case ChoiceRequest { Vertical: false } c:
                 if (c.MenuPrompt is { Length: > 0 } mp)
-                    Text(f, 0, MenuRow, mp, PromptColour);
+                    Chrome.MenuPrompt(f, _font, 0, MenuRow, mp, PromptColour);
                 DrawEntries(f, c.Items, MenuStart(c), _selected);
                 break;
             case DelayRequest when _view.PageMessage is { } msg:
                 Text(f, 0, MenuRow, Fit(msg, 40), Chrome.Green);
                 break;
             case TextRequest t:
-                Text(f, 0, MenuRow, Fit(t.Prompt + " " + _typed + "_", 40), Chrome.Green);
+            {
+                // Drop's amount (input 0x24F1D; DOSBox-X s39, the camp's View): the question in green, a space, the
+                // digits typed in white, no cursor.
+                string question = Fit(t.Prompt + " ", 40);
+                Text(f, 0, MenuRow, question, Chrome.Green);
+                Text(f, question.Length, MenuRow, Fit(_typed, 40 - question.Length), Chrome.White);
+            }
                 if (input.LastDevice != InputDevice.Keyboard)
                 {
                     int col = 1;
@@ -755,7 +740,9 @@ public sealed class CombatScreen
             if (w.Length == 0 || col + w.Length > 40)
                 break;
             Text(f, col, MenuRow, w[..1], Chrome.White);
-            Text(f, col + 1, MenuRow, w[1..], i == selected ? Chrome.White : Chrome.Green);
+            Text(f, col + 1, MenuRow, w[1..], i == selected && Chrome.AmigaGadget is null ? Chrome.White : Chrome.Green);
+            if (i == selected)
+                Chrome.AmigaGadget?.Entry(f, col, MenuRow, w);   // under Amiga: the pressed gadget, not a lit word
             col += w.Length + 1;
         }
     }
@@ -782,7 +769,7 @@ public sealed class CombatScreen
         {
             _list.Draw(f, _font, page, input);
             if (page.Grey)
-                SwapGrey(f);
+                Palette(f);
             return;
         }
         if (_view.Page is { } cp)
@@ -790,7 +777,7 @@ public sealed class CombatScreen
             DrawPage(f, cp, input);
             DrawItemEffectText(f);
             if (cp.Grey)
-                SwapGrey(f);
+                Palette(f);
             return;
         }
         f.Clear(0);
@@ -799,7 +786,25 @@ public sealed class CombatScreen
         DrawPanel(f);
         DrawLines(f, input);
         DrawItemEffectText(f);
-        SwapGrey(f);
+        Palette(f);
+    }
+
+    /// <summary>
+    /// The combat screen's palette: DOS swaps EGA colours 0 and 8 (<see cref="SwapGrey"/>). Under the Amiga art the
+    /// program loads palette table 0 instead (hunk 13 +0x5F0E), whose pen 0 is the dark ground: the blank cells (index 0)
+    /// and the frame's pen 0 take it; EGA 8 (DOS-filled art) still becomes 0 `[?]`.
+    /// </summary>
+    private void Palette(IndexedFrame f)
+    {
+        if (_art.AmigaGround is not { } g)
+        {
+            SwapGrey(f);
+            return;
+        }
+        int frameZero = Chrome.AmigaFrame?.Zero ?? -1;
+        var p = f.Pixels;
+        for (int i = 0; i < p.Length; i++)
+            p[i] = p[i] switch { 0 => g, 8 => 0, var v when v == frameZero => g, var v => v };
     }
 
     private void DrawItemEffectText(IndexedFrame f)
@@ -829,6 +834,14 @@ public sealed class CombatScreen
 
     private static void DrawFrame(IndexedFrame f)
     {
+        if (Chrome.AmigaFrame is not null)
+        {
+            // The Amiga's combat screen is two windows, the map (1, 1)–(21, 21), then the panel (23, 1)–(38, 21) over
+            // their shared column 22 (hunk 13 +0x5EB0–0x5EF4).
+            Chrome.Box(f, 0, 0, 22, 22);
+            Chrome.Box(f, 22, 0, 39, 22);
+            return;
+        }
         // DOSBox-X: braid on rows 0 and 22, columns 0, 22 and 39; yellow corners where they meet.
         Chrome.HLine(f, 0, 0, 39);
         Chrome.HLine(f, 22, 0, 39);
@@ -870,12 +883,15 @@ public sealed class CombatScreen
             CombatArt.Draw(f, pic, px, py, Mirrored(c), clip);
         }
         if (_view.HitMarker is { } hm && _art.Sprite(CombatArt.HitMarker) is { } skull)
-        {
-            int hx = MapX + (hm.X - _view.ViewX) * Square, hy = MapY + (hm.Y - _view.ViewY) * Square;
-            // The whole picture, colour 0 included (DOSBox-X s30: the skull's three colour-0 pixels show colour 0 —
-            // grey under the combat palette — whatever lies under them; s29's "3 skull pixels").
-            CombatArt.Draw(f, skull, hx, hy, false, clip, opaque: true);
-        }
+            // On every cell of the creature's footprint (0x315FE–0x31682: 0x3073A for i = 0..3; DOSBox-X s38/s39: both
+            // cells of the wild boar's). The whole picture, colour 0 included (DOSBox-X s30: the skull's three colour-0
+            // pixels show colour 0 — grey under the combat palette — whatever lies under them; s29's "3 skull pixels").
+            // [?] A cell outside the view: the program draws at the slot's view position + the cell offset unclipped by
+            // this loop; it is always in view here (0x315CD scrolls first), the Client draws only cells in view.
+            for (int i = 0; i < 4; i++)
+                if (map.Tables.IconCell(_view.HitMarkerSize, i, out int dx, out int dy) && _view.InView(hm.X + dx, hm.Y + dy))
+                    CombatArt.Draw(f, skull, MapX + (hm.X + dx - _view.ViewX) * Square, MapY + (hm.Y + dy - _view.ViewY) * Square,
+                        false, clip, opaque: true);
         if (_view.Flash is { } fl && _art.Sprite(fl.Sprite) is { } flash)
             CombatArt.Draw(f, flash, MapX + (fl.X - _view.ViewX) * Square, MapY + (fl.Y - _view.ViewY) * Square, fl.Mirror, clip);
         // The moving icon (START 0x25C9) at its position in thirds of a square (8 px): 0x464:0xD71 draws it into the view
@@ -895,15 +911,20 @@ public sealed class CombatScreen
 
     /// <summary>
     /// A creature's icon: a player character (record 0x84 &lt; 0x80, as the menu's space key tells PCs from NPCs) gets
-    /// the composed party icon, any other creature the CPIC loaded into its icon slot (record 0xBF). [?] An NPC that
-    /// joined (ADDNPC: a slot of 0..7 and a CPIC) is not checked against DOSBox-X.
+    /// the composed party icon, any other creature the CPIC loaded into its icon slot (record 0xBF). An NPC that joined
+    /// the party (ADDNPC, NPC byte 0x84 ≥ 0x80) gets the composed icon too: the party join 0x1F42C gives it a free
+    /// slot of 0..7 and 0x1E468 builds that slot's picture from its record as for a player character (CHEAD 0xBD,
+    /// CBODY 0xBE, size 0xC0, the colours 0xC1–0xC6 through DS:3CF5; 0x1E4BE / 0x1E506, 0x1E610 / 0x1E63D). The icon
+    /// drawer only reads the slot, so a party-side creature (combat record +0x13 = 0) draws the composed icon (DOSBox-X
+    /// s39: the level 3 magic-user of ADDNPC 94).
     /// </summary>
     private CombatPicture? Icon(EclCharacter c, bool attack)
     {
         // A charmed member (0xF05B sets the NPC byte to 0xB3, the mark Animate Dead also gives a member) keeps the
         // party icon: DOSBox-X s29, Brother Sean charmed by a vampire's gaze, then casting from his own square.
         // [?] An animated member's icon is not seen.
-        if (c[CombatRules.Npc] < 0x80 || c[CombatRules.Npc] == EffectHandlers.AnimatedMember)
+        if (c[CombatRules.Npc] < 0x80 || c[CombatRules.Npc] == EffectHandlers.AnimatedMember
+            || _view.Fight is { } fight && fight.Record(c)[CombatRecord.NotParty] == 0)
             return _art.Party(c, attack);
         return _view.IconPictures.TryGetValue(c[0xBF], out int pic) ? _art.Monster(pic, attack) ?? _art.Monster(pic, false) : null;
     }
@@ -945,7 +966,10 @@ public sealed class CombatScreen
             // The HP number as the party list (START 0x1513): yellow below the maximum 0x32 (DOSBox-X s29: 185 of 200).
             string hpLabel = _text[CombatMsg.PanelHitpoints].Trim() + " ";
             Text(f, PanelCol, 3, Fit(hpLabel, 16), Chrome.Green);
-            if (hpLabel.Length < 16)
+            // Amiga: the party list's hit-point routine (hunk 13 +0x3EB8 → +0x3DD4): colour 8 below the maximum, else 10.
+            if (hpLabel.Length < 16
+                && !_font.DrawAmiga(f, (PanelCol + hpLabel.Length) * 8, 3 * 8,
+                    Fit(lines.Item3.ToString(CultureInfo.InvariantCulture), 16 - hpLabel.Length), lines.Item3 < c[0x32] ? 8 : 10))
                 Text(f, PanelCol + hpLabel.Length, 3, Fit(lines.Item3.ToString(CultureInfo.InvariantCulture), 16 - hpLabel.Length),
                     lines.Item3 < c[0x32] ? Chrome.Yellow : Chrome.Green);
             // [?] AC as 60 − record byte 0x111, as the party list (ExploreScreen); DOSBox-X: Darkstar 7, Thrender 1.
@@ -1001,7 +1025,7 @@ public sealed class CombatScreen
             {
                 // Row 23's "Range = n" is the chooser's status line (attack mode, the line got through).
                 string prompt = _text[CombatMsg.UseCursorKeys];
-                Text(f, 0, MenuRow, prompt, PromptColour);
+                Chrome.MenuPrompt(f, _font, 0, MenuRow, prompt, PromptColour);
                 int col = prompt.Length;
                 foreach (var (word, _) in CursorItems(cr))
                 {
@@ -1037,7 +1061,7 @@ public sealed class CombatScreen
     {
         int start = MenuStart(c);
         if (c.MenuPrompt is { Length: > 0 } mp)
-            Text(f, 0, MenuRow, mp, PromptColour);
+            Chrome.MenuPrompt(f, _font, 0, MenuRow, mp, PromptColour);
         int col = start;
         for (int i = 0; i < c.Items.Count; i++)
         {
@@ -1045,7 +1069,9 @@ public sealed class CombatScreen
             if (col + w.Length > 40)
                 break;
             Text(f, col, MenuRow, w[..1], Chrome.White);
-            Text(f, col + 1, MenuRow, w[1..], i == selected ? Chrome.White : Chrome.Green);
+            Text(f, col + 1, MenuRow, w[1..], i == selected && Chrome.AmigaGadget is null ? Chrome.White : Chrome.Green);
+            if (i == selected)
+                Chrome.AmigaGadget?.Entry(f, col, MenuRow, w);   // under Amiga: the pressed gadget, not a lit word
             col += w.Length + 1;
         }
     }

@@ -350,6 +350,42 @@ public class CombatScreenGameTests
     }
 
     [Fact]
+    public void A_joined_npc_is_drawn_with_the_composed_party_icon()
+    {
+        // ADDNPC (0x1F248): the NPC byte is 0x80 OR morale / 2, and the party join 0x1F42C builds its slot's picture
+        // with 0x1E468 from the record (CHEAD 0xBD, CBODY 0xBE, colours 0xC1–0xC6) as for a player character; no CPIC
+        // is loaded for it. DOSBox-X s39 (ADDNPC 94, the level 3 magic-user): drawn with that icon, the Client left the
+        // square empty. A party-side creature (combat record +0x13 = 0) with an NPC byte draws the composed icon.
+        if (Dir() is null)
+            return;
+        var r = ToFight();
+        var v = r.Player.FightView;
+        var me = v.Current!;
+        var (x, y) = ((CombatMap)v.Fight!.Map!).Position(me);
+        v.Cursor = null;
+        byte[] Cell()
+        {
+            var f = new IndexedFrame(320, 200);
+            r.Screen.Draw(f, r.Input);
+            int x0 = CombatScreen.MapX + (x - v.ViewX) * 24, y0 = CombatScreen.MapY + (y - v.ViewY) * 24;
+            var cell = new byte[24 * 24];
+            for (int j = 0; j < 24; j++)
+                for (int i = 0; i < 24; i++)
+                    cell[j * 24 + i] = f[x0 + i, y0 + j];
+            return cell;
+        }
+        var own = Cell();
+        byte npc = me[CombatRules.Npc], slot = me[0xBF];
+        me[CombatRules.Npc] = 0x80 | 50;
+        me[0xBF] = 6; // a party slot with no CPIC loaded
+        Assert.False(v.IconPictures.ContainsKey(6));
+        Assert.Equal(0, v.Fight.Record(me)[CombatRecord.NotParty]);
+        Assert.Equal(own, Cell());
+        me[CombatRules.Npc] = npc;
+        me[0xBF] = slot;
+    }
+
+    [Fact]
     public void The_downed_picture_is_drawn_on_the_ground_not_over_the_icon()
     {
         // DOSBox-X s30 (a scorpion's poisoned hit killing Rhiannon): COMSPR 11's see-through pixels show the ground,
@@ -386,6 +422,54 @@ public class CombatScreenGameTests
                     Assert.Equal(8, withIcon[j * 24 + i]);
         v.HitMarker = null;
     }
+
+    [Fact]
+    public void The_downed_picture_covers_every_cell_of_the_footprint()
+    {
+        // CreatureDowned 0x315FE–0x31682 draws COMSPR 11 on each cell 0x3073A gives for the slot's icon size (i = 0..3):
+        // DOSBox-X s38/s39, the wild boar (2 × 1) shows it on both cells.
+        if (Dir() is null)
+            return;
+        var r = ToFight();
+        var v = r.Player.FightView;
+        var me = v.Current!;
+        var map = (CombatMap)v.Fight!.Map!;
+        v.Cursor = null;
+        // A square with its right and lower neighbours in view.
+        int x = v.ViewX + 2, y = v.ViewY + 2;
+        var skull = new CombatArt(new PorGameDirectory(Dir()!)).Sprite(CombatArt.HitMarker)!;
+        Assert.Equal(24, skull.Width);
+        var f = new IndexedFrame(320, 200);
+        bool IsSkull(int cx, int cy)
+        {
+            int x0 = CombatScreen.MapX + (cx - v.ViewX) * 24, y0 = CombatScreen.MapY + (cy - v.ViewY) * 24;
+            for (int j = 0; j < 24; j++)
+                for (int i = 0; i < 24; i++)
+                    if (f[x0 + i, y0 + j] != CombatPalette(skull.Pixels[j * 24 + i]))
+                        return false;
+            return true;
+        }
+        foreach (var (size, cells) in new[] { (1, 1), (2, 2), (3, 2), (4, 4) })
+        {
+            v.HitMarker = (x, y);
+            v.HitMarkerSize = size;
+            f = new IndexedFrame(320, 200);
+            r.Screen.Draw(f, r.Input);
+            var expected = new HashSet<(int, int)>();
+            for (int i = 0; i < 4; i++)
+                if (map.Tables.IconCell(size, i, out int dx, out int dy))
+                    expected.Add((x + dx, y + dy));
+            Assert.Equal(cells, expected.Count);
+            for (int cy = y - 1; cy <= y + 2; cy++)
+                for (int cx = x - 1; cx <= x + 2; cx++)
+                    Assert.Equal(expected.Contains((cx, cy)), IsSkull(cx, cy));
+        }
+        v.HitMarker = null;
+        v.HitMarkerSize = 1;
+    }
+
+    /// <summary>The fight's palette swap (0 and 8: dark grey; see the colour-0 check above).</summary>
+    private static byte CombatPalette(byte c) => c switch { 0 => 8, 8 => 0, _ => c };
 
     [Fact]
     public void The_fight_shows_the_programs_menu_and_plays_to_the_end_on_the_screen()
@@ -562,6 +646,12 @@ public class CombatScreenGameTests
         var view = Assert.IsType<PageRequest>(r.Runner.Pending);
         Assert.Equal("VIEW:", view.Prompt);
         Assert.Equal("ITEMS", view.Entries[0]);
+        // View's keys (0x21AED, keypad flag 0): a keyboard Return gives 13, which View ignores; '.' lights the next word.
+        Key(r, Keys.Enter);
+        Assert.Same(view, r.Runner.Pending);
+        Key(r, Keys.OemPeriod);
+        Key(r, Keys.OemComma);
+        Assert.Same(view, r.Runner.Pending);
         Key(r, Keys.I);
         Assert.IsType<PageRequest>(r.Runner.Pending);
         Assert.False(v.Page!.Grey);

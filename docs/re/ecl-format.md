@@ -298,6 +298,34 @@ The sprite renderer takes a one-based frame slot. The 3D call at 0x7AA8 passes d
 pass slot 2 at 0x7AB7. The renderer at 0x2E7D6 looks up that slot in the loaded frame table. The Client uses the
 last available frame if the chosen art has fewer frames than the requested slot (s31).
 
+**The encounter draw 0x7A21** (P s39; args: a far pointer to DS:84C8, distance, close-up, sprite; callers SETUPMON
+0x1188, APPROACH 0x158C, ENCMENU 0x2D88 and its approaches 0x3033 / 0x30A7 / 0x31B4 / 0x323B / 0x32A8, all with
+that pointer). DS:84C8 = the sprite is loaded and up, DS:84C9 = a close-up is up:
+1. 84C9 = 0 and 84C8 set: the view is redrawn under the old sprite (0x7A3A → 0x2DCF4; on the overland the marker
+   too, DS:6DDC + 1).
+2. 84C9 = 0: if 84C8 = 0, the area map is turned off with a redraw when it is shown (DS:6AAC, 0x7A5B–0x7A67), the
+   sprite's frames are loaded into DS:6ABE (0x7A87), 84C8 := 1, DS:84E3 := 1; then the sprite is drawn (slot as
+   above). While 84C8 stays set the frames are not loaded again, so a later SETUPMON in the run draws the first
+   sprite (SPRITEOFF does not clear 84C8).
+3. 84C9 set and DS:84EA = $6DE1 (byte against the word; 255 = 255 for a PIC close-up): return (0x7ABC–0x7AD6).
+4. Distance 0, DS:49FA = 1, not (inside ENCMENU, DS:84E9, with the monster pictures off, DS:49F6): DS:84EA := $6DE1,
+   DS:84E0 := 1, the PIC (0x7B1B–0x7B56) or head + body (0x79E4, DS:84E1 := 0 at 0x7B77), 84C9 := 1.
+
+So with 84C9 set nothing is drawn but a close-up with another head. PICTURE v ≠ 255 sets 84C9 (0x15F3) but not 84EA,
+which only 0x7B06 writes (never cleared; 0 from the start-up's memory). 84C8 / 84C9 are cleared together (a two-byte
+fill, START 0AF8:16A8) by EXIT (0xDC6), the script init (0x76B2), PROTECT (0x3BC9), COMBAT (0x261F) and PICTURE 255
+(0x1689–0x168E, with or without its redraw), so they last one ECL run at most. **D** (s39, save A with vector 0 =
+the code, step Up): SETUPMON 1, 0, 2; SETUPMON 1, 0, 25 left PIC 2 up (the sprite at slot 1, then PIC 2, then nothing);
+PICTURE 2; SETUPMON 1, 2, 25 left PIC 2 up with no sprite; on the overland (`save-overland` 26 at 10,20 N, vector 0 =
+SETUPMON 0, 2, 0; APPROACH) the sprite went up over the tiles, the view was redrawn with the next marker frame, and
+the sprite drawn again at slot 2. Engine: `EncounterHost` draw with `EclMemory.EncounterSpriteUp` / `CloseUpUp` /
+`CloseUpHead` / `EncounterSprite` / `AreaMapShown`; the Client's `ShowEncounterSprite` draws a sprite at distance 0
+(slot 1 in 3D, slot 2 on the overland) where no close-up follows (before s39 the Client showed the close-up on the
+overland at distance 0), and an overland sprite goes over the tiles without the box (it was boxed whenever the
+stand-in text was kept). Frames: on the overland all 12 Client frames equal but for the window frame's cell (16, 16)
+(a `save-overland` artefact, geo-format.md "Row-24 messages") and the help lines; 9 of 11 and 14 of 16 in 3D (the
+rest the Client's help lines).
+
 The DOS sprite loader (0x2E170) builds the mask from source index 0 at 0x2E4CE, then remaps EGA index 13 to
 opaque black through DS:0C6C/0C7C at 0x2E508. The remap leaves the mask intact. The Client applies both when
 drawing DOS encounter sprites (s32).
@@ -571,10 +599,20 @@ roll per item (RandSeed).
   reads the font from the player's disk A (optional, like `intro`) and the pen and colours from `program`
   (`PorAmigaRunes`, module `art/amiga/protect/0/8`, category `font`); under Best / Amiga `ClientArt.Runes`
   (`RuneGlyphs`) draws PROTECT's glyphs with it, set bits only, in the text box, the picture window and elsewhere
-  (`ExploreScreen`); Original DOS, or a module without the font, keeps the DOS font's glyphs in colour 15. The text
-  stays the DOS font under every setting, and the line still ends on 0 or 255 (DOS is the rules reference). Tests:
-  `PorAmigaArtTests` (the reading, the font against DOS block 201), `AmigaRuneTests`. `[?]` Not seen in an Amiga
-  emulator; what the Amiga's CLEARBOX and EXIT window redraw fill with is not read (the Client uses DOS's).
+  (`ExploreScreen`); Original DOS, or a module without the font, keeps the DOS font's glyphs in colour 15. The line
+  still ends on 0 or 255 (DOS is the rules reference); the text around it is the Amiga text font under Amiga only
+  (docs/re/por-art-formats.md §4 "Text font"). Tests: `PorAmigaArtTests` (the reading, the font against DOS block 201),
+  `AmigaRuneTests`. `[?]` Not seen in an Amiga emulator.
+  **Amiga CLEARBOX and EXIT's redraw** (P, s39): CLEARBOX (0x3D: hunk 16 +0x4FC4 → +0x47AE) adds 1 to hunk 32 +0xB4 (the PC step `[?]`), blanks
+  (1, 1)–(15, 15) through the box blank (hunk 25 +0x197A, the copy of START 0x4047: SetAPen(0), SetDrMd(JAM1),
+  RectFill of pixels (8, 8)–(127, 127)) and sets 84DE, as on DOS. EXIT (hunk 16 +0x1AD8) with 84E2 (hunk 32 +0x2F79)
+  set draws the window (1, 1)–(15, 15), and with the 3D view's flag (hunk 32 +0x98 → +0x1CC) (3, 3)–(13, 13), through
+  the window routine (hunk 25 +0x19F4: colour 15, style 0, an empty title), which blanks (x0, y0)–(x1 + 1, y1 + 1) the
+  same way and then blits its frame over the blank's extra row and column (por-art-formats.md §4 "Window frame").
+  Pen 0 is black in start-up's colours and in palette tables 2–4, which the explore screen sets (table 0, whose entry
+  0 is not black, is the combat screen's, hunk 13 +0x5F0E, and the character screens'; the 3D view's redraw loads
+  table 3 again, hunk 7 +0x3890): the fill is the Client's colour 0 under every setting, no change. The frame is the
+  Amiga's own art, drawn under Amiga (por-art-formats.md §4 "Window frame").
   **D** (s30, DOSBox-X frame by frame, save A on disk 2 with this tool's own script: PRINTCLR, CLEARBOX,
   the three glyph lines of ECL4 block 21 copied into the script area with PRINTRET between, PRINTCLR, a one-word
   HMENU): CLEARBOX blanks cells (1, 1)–(15, 15) (the view's box too), the runes land at (2, 5), (1, 7), (1, 9), the

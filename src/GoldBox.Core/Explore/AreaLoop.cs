@@ -134,7 +134,11 @@ public sealed class AreaLoop
     public DoorMenuFlags DoorFlags { get; } = new();
 
     /// <summary>DS:6AAC: the area map is shown instead of the 3D view.</summary>
-    public bool ShowAreaMap { get; private set; }
+    public bool ShowAreaMap
+    {
+        get => Memory.AreaMapShown;
+        private set => Memory.AreaMapShown = value;
+    }
 
     /// <summary>Every VM run of the last command (for diagnostics: a fault or an unhandled opcode ends one).</summary>
     public List<EclRunResult> Runs { get; } = [];
@@ -277,6 +281,8 @@ public sealed class AreaLoop
         if (OverlandInterfacePending)
         {
             MarkerCounter = (MarkerCounter + 2) % 6;
+            Memory.MarkerFacing = Memory.Position.Facing; // drawn before the command's key sets a new facing
+            Memory.MarkerDrawnTwice = true; // frame c + 1 over frame c, until the next redraw
             MarkerSlots[0] = 0; // 0x17285–0x172D5: ICON 0, 1, 2 into the animation slots 9, 10, 11
             MarkerSlots[1] = 1;
             MarkerSlots[2] = 2;

@@ -114,8 +114,12 @@ else
         Chrome.FrameSymbols = art.Symbols;
         // The art setting (Original DOS / Best / Amiga) applies before the area entry loads its wall sets.
         clientArt = new ClientArt(content, art, palette, settings.ArtChoice);
+        Chrome.AmigaFrame = clientArt.Frame;
+        Chrome.AmigaGadget = clientArt.Gadget;
         clientArt.Changed = c =>
         {
+            Chrome.AmigaFrame = clientArt.Frame;
+            Chrome.AmigaGadget = clientArt.Gadget;
             if (c == PorArtChoice.Dos && audio?.Device != ClientSoundDevice.Amiga)
                 audio?.PlaySong(0);
             settings.ArtChoice = c;
@@ -217,14 +221,23 @@ else
             {
                 if (hf.PickSlot() is not { } slot)
                     return;
-                // 0x19D8A: a save with interface state 0 keeps the hall's menu up with its party and memory, and the
-                // script goes on at its PC after Begin (PorGame.LoadInMenu); any other leaves the menu for the game.
+                // Load copies the save over the running game (PorGame.LoadInHall). 0x19D8A: a save with interface state 0
+                // keeps the hall's menu up, and the script goes on at its PC after Begin; any other leaves the menu at
+                // once and the running script goes on at its PC in the loaded script area (DOSBox-X s39).
                 if (game is { } g && g.Memory.Party is { } party)
                 {
                     try
                     {
-                        if (g.LoadInMenu(SlotPath(slot), party))
-                            return;
+                        // A save of another area enters it afresh (user decision s39), as HallLoadException does below.
+                        switch (g.LoadInHall(SlotPath(slot), party))
+                        {
+                            case GoldBox.Data.Por.HallLoad.StayInMenu:
+                                return;
+                            case GoldBox.Data.Por.HallLoad.CarryOn:
+                                if (player.Hall is { } hallState)
+                                    hallState.LeaveAfterLoad = true;
+                                return;
+                        }
                     }
                     catch (Exception e) when (e is FormatException or IOException or System.Text.Json.JsonException)
                     {
@@ -238,6 +251,22 @@ else
             player.HallHooks.Notice = hf.TakeNotice;
             // The camp's Alter Icon runs the same icon editor 0x1D1AC on the current character.
             player.IconEditor = hf.EditIcon;
+            // The camp's, shop's, temple's and loot menu's View call the same 0x21AED: the party menu's page (drawn by
+            // the explore screen's PartyPages overlay, so only when that exists), with the game's memory for the
+            // portrait rule (disk byte and portraits flag).
+            if (menuContent is not null)
+                player.ViewPage = (c, entries) =>
+                {
+                    if (game is { } g)
+                        hf.GameMemory = g.Memory;
+                    return hf.ViewPage(c, entries);
+                };
+            if (menuContent is not null)
+            {
+                // Its Items page (0x21F32) and Drop's coin list (0x234E1), on the same overlay.
+                player.ItemsPage = (c, entries, row, name) => hf.ItemsPage(c, entries, row, name);
+                player.Coins = (c, kinds) => hf.Coins(c, kinds);
+            }
             loadSlot = (slot, started) =>
             {
                 // DS:84E1 (the picture animation's arm) is not in the save and Load (0x1F5E8) does not write it: the
@@ -341,8 +370,19 @@ IScreen? LoadInto(char slot, IScreenHost host)
     }
     return loaded is null ? null : ExploreFor(loaded, slot, host);
 }
+// One highlight cell (DS:6B2B) for every screen, the party pages over the explore screen too (View's Exit leaves the
+// shop menu on that entry): with --save it starts at the slot's place among the saves present, as the explore
+// screen's own did.
+MenuHighlight SharedHighlightFor(PorGame g, char letter)
+{
+    if (partyMenu is null)
+        sharedHighlight.Index = ExploreScreen.LoadMenuIndex(g.Content.SaveFolder, char.ToUpperInvariant(letter));
+    return sharedHighlight;
+}
 ExploreScreen ExploreFor(PorGame g, char letter, IScreenHost host) => new(g, player!, runner, host, letter, clientArt,
-    partyMenu is not null ? sharedHighlight : null)
+    // One cell DS:6B2B for every menu, the camp's icon editor (a party-menu page) too (D s39: Alter's I lights Icon,
+    // the 4th, and the editor's line opens on its 4th, Size). A --save start seeds it as the load menu would.
+    SharedHighlightFor(g, letter))
 {
     PartyPages = hallFlow is { } hf && menuContent is not null
         ? () => new PartyMenuScreen(hf, runner, host, menuContent.Font, player!.Resources, clientArt!, _ => null!)

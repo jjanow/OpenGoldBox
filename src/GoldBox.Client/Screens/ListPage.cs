@@ -433,7 +433,10 @@ public sealed class ListPage
                 continue;
             }
             bool sel = i == _row && highlight;
-            Chrome.Text(f, font, 1, first + k, Fit(r.Rows[i], 38), sel ? Chrome.White : Chrome.Green);
+            if (sel)
+                Chrome.Lit(f, font, 1, first + k, Fit(r.Rows[i], 38), Chrome.White, listRow: true);
+            else
+                Chrome.Text(f, font, 1, first + k, Fit(r.Rows[i], 38), Chrome.Green);
             if (sel)
                 Chrome.Text(f, font, 0, first + k, ">", Chrome.Yellow);
         }
@@ -450,9 +453,11 @@ public sealed class ListPage
                 continue;
             var (col, row) = cells[i];
             bool usable = UsableWord(r, i);
-            byte rest = !usable ? Chrome.Grey : i == _action ? Chrome.White : Chrome.Green;
+            byte rest = !usable ? Chrome.Grey : i == _action && Chrome.AmigaGadget is null ? Chrome.White : Chrome.Green;
             Chrome.Text(f, font, col, row, w[..1], usable ? Chrome.White : Chrome.Grey);
             Chrome.Text(f, font, col + 1, row, w[1..], rest);
+            if (i == _action && usable)
+                Chrome.AmigaGadget?.Entry(f, col, row, w);   // under Amiga: the pressed gadget, not a lit word
         }
         Chrome.Text(f, font, 0, HintRow(r), Fit(Hint(r, input), 40), Chrome.Grey);
     }
@@ -493,8 +498,10 @@ public sealed class ListPage
         for (int k = 0; k < p.Rows && _top + k < r.Rows.Count; k++)
         {
             int i = _top + k;
-            byte colour = r.Labels.Contains(i) ? s.LabelColour : i == _row && highlight ? Chrome.White : Chrome.Green;
-            Chrome.Text(f, font, 1, first + k, Fit(r.Rows[i], 38), colour);
+            if (!r.Labels.Contains(i) && i == _row && highlight)
+                Chrome.Lit(f, font, 1, first + k, Fit(r.Rows[i], 38), Chrome.White, listRow: true);
+            else
+                Chrome.Text(f, font, 1, first + k, Fit(r.Rows[i], 38), r.Labels.Contains(i) ? s.LabelColour : Chrome.Green);
         }
         if (s.Prompt is { Length: > 0 } prompt)
             Chrome.Text(f, font, 0, ActionRow, Fit(prompt, 40), LabelColour);
@@ -506,9 +513,11 @@ public sealed class ListPage
             if (w.Length == 0 || col + w.Length > 40)
                 continue;
             bool usable = UsableWord(r, i);
-            byte rest = !usable ? Chrome.Grey : i == _action ? Chrome.White : Chrome.Green;
+            byte rest = !usable ? Chrome.Grey : i == _action && Chrome.AmigaGadget is null ? Chrome.White : Chrome.Green;
             Chrome.Text(f, font, col, row, w[..1], usable ? Chrome.White : Chrome.Grey);
             Chrome.Text(f, font, col + 1, row, w[1..], rest);
+            if (i == _action && usable)
+                Chrome.AmigaGadget?.Entry(f, col, row, w);   // under Amiga: the pressed gadget, not a lit word
         }
         if (input.LastDevice != InputDevice.Keyboard)
             Chrome.Text(f, font, 0, ActionRow - 1, Fit(Hint(r, input), 40), Chrome.Grey);

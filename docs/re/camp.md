@@ -46,13 +46,57 @@ DS:49F3 := 2 (old value kept), DS:6DD8 := 0, the rest time cleared, the camp mes
 pending memorising and scribing of the whole party cleared (0x17A45). Then the menu (DS:0508 in v1.3: Save, View,
 Magic, Rest, Alter, Exit, with its prompt 0x1968C) until Exit, Escape or an interrupted rest. Extended keys (Home / End) select
 the previous / next member (0x23819). Save: the save (below), then **always** the quit question (0x19693), also after
-Escape at the slot menu. View: the character view. Magic: 0x18C22. Rest: 0x17FAB. Alter: 0x1948A. On the way out:
+Escape at the slot menu. View: the character view (0x197B3 → 0x21AED, below). Magic: 0x18C22. Rest: 0x17FAB. Alter: 0x1948A. On the way out:
 0x17A45 again, DS:6DB5 := nil, DS:49F3 restored, the position line and the text window redrawn. The routine returns
 the interrupted flag to 0x3B19.
 
 Menu lines (the menu routine, START): every capital letter or digit starts an item and is its hotkey, so a word with
 its capital in the middle has that letter as hotkey and a lower-case word joins the item before it; Escape answers 0. The Client parses the lines the same way and draws the
 hotkey letter white. The menu routine itself (0x2CC8C: keys, highlight, Enter, the extended byte) is in `shop-format.md` "The menu routine" (s15).
+
+## View from the camp, shop, temple and loot menu (0x21AED) — P, D (s39)
+
+The camp's V (0x197B3), the shop's (0x730D), the temple's (0x5341) and the loot menu's (0x65B4) are all the far call
+0085:0039, the overlay stub of 0x21AED: the same page (0x21084) and View menu as the party menu's
+(`start-menu.md` §4 View, with its keys: ',' / '.' move the lit word, Return, space, Home, End and the arrows do
+nothing, I S T D E and Escape act). 0x21AED and the Items page 0x21F32 call no member selection (no 0x23819 in unit
+0x2103A): Home / End pick members only on the venue's own menu. The page's portrait window follows 0x21530 (portraits
+on and disk byte 3), so in the city (save A, slots F / G / E of `por_test_saves.py`) there is none. The cell DS:6B2B
+is shared: the venue menu's V hotkey moves it to View's place (2nd in the shop, temple and camp, 1st in the loot
+menu), so View opens on that word (Trade, or Spells for a caster, in the shop; Items in the loot menu); View's Exit
+(4th) leaves the venue menu on its 4th entry (Appraise, Share, Rest), Escape on the word last lit. On exit (0x21D4F)
+the text box frame is redrawn (START 0x27D9) and the venue menu comes back; the camp's and the loot menu's show one
+transient frame of the menu written over View's line.
+**D** (s39, 3000 cycles; the same keys on both sides: V, '.', Return, Home, End, '.', E, V, ',', Escape, End, V,
+Escape): shop (slot F) 6 of 6 View frames equal, temple (G) 6 of 6, loot (E) 6 of 6, camp (save A, Encamp) 6 of 6;
+every other Client frame is the venue's screen differing only by the Client's help lines (and the camp fire's and the
+loot picture's phase). Client: `TradeContext.ViewPage` (`ClientPlayer.ViewPage` → `PartyMenuFlow.ViewPage`, the game's
+memory for the portrait rule), drawn by the explore screen's party-page overlay, which hands back after View
+(`SheetRequest.IsView`); our notices for commands not built go on the page's bottom line; one highlight cell for every
+screen with `--save` too (`Program.SharedHighlightFor`). Tests `VenueTests.Camp_shop_and_loot_view_use_the_programs_page`.
+
+**Items and Drop from View** (P + D, s39). Items is 0x21F32 in every venue: its page (0x221DE–0x2229B: braid rows 0, 2,
+23; the name with "'S" and the title on row 1, the heading on row 3, the list window (1,5)–(38,22)) and the item list
+routine 0x2D669 (called at 0x222C9, keypad flag 1), which stores 1 in the cell on entry (0x2D6B9). Its entries follow
+DS:49F3 (`FightItemScreens.ItemsEntries`): the camp (2) has Use, the shop and temple (1) Sell and Id, the party menu,
+hall (0) and loot (6) neither. Keys: Home / End and the keypad's 7 / 1 move the row; Down (scan code 0x50 = 'P') and
+Return (13) match no entry (R U T D H J S I, 0x222DF–0x22496), so the loop only redraws the page; ',' / '.' move the
+lit word; Escape leaves with the cell where it was (DOSBox-X: '.' to Use, Escape → View on its 2nd word, Trade).
+Drop (D) is 0x234E1: the coin list over the page (the money lines are its rows, "Select type of coin" in colour 13,
+Exit lit; 0x2D669 stores 1 again), any key but Escape / E takes the row, then the amount (input 0x24F1D) on row 24:
+the question green, a space, the digits white, no cursor, the coin rows all green; then the coin list again until
+Escape. View then comes back on Items (the cell is 1) and only the money lines are redrawn (0x21547): the page keeps
+its old encumbrance. **D** (s39, 3000 cycles): camp (save A, Encamp; V, I, Return, End, Home, keypad End, '.',
+Escape, D, Escape, D, Return, 1, Return, Escape, E) every page frame equal, 14 of 27 Client frames in all (the misses
+are the camp screen's help lines and fire phase and one Client frame between the camp menu and the page); party
+menu (`unstarted` slot C, the same keys bar the camp's) 13 of 13; shop (slot F: V, I, '.', End, Escape, D, Escape,
+E; Ready Trade Drop Halve Join Sell Id Exit) 7 of 10 (help lines twice, the same transient). Client:
+`TradeContext.ItemsPage` / `Coins` (`PartyMenuFlow.ItemsPage` / `Coins`, `CharacterPageRequest`, drawn by
+`PartyMenuScreen` with `PageChrome`, the fight's page code; `ItemsPages` builds the Items page for both); Sell and Id
+run as before, the other item commands are still our notice; keyboard Up / Down move the row (the Client's, as Left
+/ Right move the word) `[U]`. `[?]` Where Sell's and Id's questions and messages go over the Items page is not seen:
+the Client shows them in the venue's text window. Tests `PartyMenuScreenTests.View_drop_goes_through_the_coin_list`,
+`View_is_the_camp_view_menu_on_the_program_page`.
 
 ## Rest (0x17FAB → 0x24A66) — P, D
 
@@ -84,9 +128,9 @@ and hours (two digits each, with a colon between), then minutes as 10 × ten-min
 Enter = Rest. **D** (s38, 3000 cycles): Left / Right move the field on row 17 (minutes → days → hours → minutes for
 Right) and leave row 24's lit word as it is; a hotkey lights its word. The menu routine (0x2CC8C) lights an entry
 from its capital to two cells before the next capital, so "daYs" lit shows YS white (D, A green) and Rest lit shows REST and the
-D of DAYS white (the A stays green); while the rest runs row 24 keeps Rest lit. Seen on this menu only; the Client
-draws every menu line by the same rule, since one routine draws them all (the span arithmetic in 0x2CC8C not read
-`[?]`). Client: `ChoiceRequest.LeftAnswer` /
+D of DAYS white (the A stays green); while the rest runs row 24 keeps Rest lit. The span is the menu routine's for
+every line (0x2C99A / 0x2CAA9, read s39: shop-format.md "The menu routine"); besides this menu only the icon editor's
+"Parts color-1 color-2" line shows it (D s39). Client: `ChoiceRequest.LeftAnswer` /
 `RightAnswer` / `ConfirmAnswer` (Enter = Rest; a click still picks the clicked word), `ExploreScreen.DrawLine`; every
 row-24 and row-17 frame equal to DOSBox-X (tests `CampPlayTests.Rest_time_menu_left_right_…`,
 `Rest_lit_also_lights_the_D_of_days`). Y / H / M pick the word; Inc adds 1 to it (5 to the minutes word when minutes are highlighted); Dec
@@ -167,7 +211,14 @@ its row: r = 18 while DS:6DDA is set (rest), else 17 and the text box's frame is
 38, 22, style 0: the frame one cell outside the box); (1, r)–(38, 22) cleared, the name at (1, r + 1) (START 0x1816),
 the text word-wrapped into (1, r + 2)–(38, 22) in colour 10 (START 0x709:0x0768); with the pause flag PauseOnly then
 START 0x2383, which outside a fight clears (1, 18)–(38, 22). Client: `CampScreens.EffectMessage` for 0x2C540's text and
-the unaffected words. The text types out (0x77F8) only while DS:4A00 is set, which in the camp
+the unaffected words. **The camp's own member messages** go through the same routine (P s39, text and pause flag at
+each call): the refusals and the Cast / Memorize / Scribe ones (0x17CAC, 0x17D82, 0x181F2, 0x18457, pause 1; "can
+memorize:" 0x17ED5, pause 0), Order's selected message (0x19095, 0) and Drop's (0x19195 pause 0, 0x191E7 / 0x1920B /
+0x19258 pause 1). So the name is on row 18 in its colour, the text typed from row 19 while DS:4A00 stands, and the
+pause is the game-speed delay with rows 18–22 cleared after it, never a key. **D** (s39, Drop answered No at speed 4):
+"will be gone" typed under the name, the question, the relief message typed and cleared 0.9 s later; the Client
+(`CampScreens.Say` → `PanelMessage`) had printed name and text together on row 17 and waited for a key; now 31 of 31
+frames equal with the help lines masked (6 of 57 before). The text types out (0x77F8) only while DS:4A00 is set, which in the camp
 means after the start-up or a fight with no PRINT or ENCMENU since (view3d.md "Typing state"); the Client's camp prints
 through `ClientPlayer.Text`, which follows it (s29). `[?]` The other messages of a camp cast (damage through 0x2B8B,
 healing, the spells' own) are still listed in our words.
@@ -176,7 +227,15 @@ with the Client, every distinct frame): the spell list page stays up and the tex
 17 (the redraw of START 0x16EC's camp branch); the cast message shows the caster's name (cyan) and the casts word
 (green) on row 19, the spell's name on row 20, drawn at once (not typed), then the game-speed pause (0.9 s) and the
 box cleared, no key; then for each member the name on row 18 and the blessed words typed from row 19, the pause, the
-rows cleared, as read. The Client now matches those rows (`CampScreens.CastOne`, test `CampEffectMessageTests`).
+rows cleared, as read. The Client now matches those rows (`CampScreens.CastOne`, test `CampEffectMessageTests`). **Cast's target** (read s39): a
+one-member spell outside a fight (0x27AA9, target type 2) redraws the camp screen (0x27AFA, START 0x27D9: the kept
+spell page goes, the party list is drawn), then runs START's member pick 0x37E8 (00BA:2C48) on DS:6DB5, the remembered
+target (the caster the first time, 0x27AB8): each pass draws the list with the pick lit (00BA:2CA1) and the menu "Cast
+Spell on whom" with Select / Exit (00BA:2C41 / 2C19; keypad flag in the camp); End the next member, Home the one
+before, both wrapping (00BA:2D29, 2D57); E or Escape (0) clears the pick (00BA:2DD6); the loop ends on Return, Escape,
+E or S (set 00BA:2C1F); DS:5D92 does not change. **D** (s39, Brother Sean's Cure Light Wounds, End, End, S on
+Phineas): as read. Client: `CampScreens.PickTarget` (Escape is Exit there; the program's Escape clears the pick and
+goes on).
 **Read s30 (P):** after a pick Cast 0x17CD2 draws the text box's frame (03F1:0000 around (1, 17)–(38, 22), style 0:
 rows 16 and 23, columns 0 and 39) over the page, blanks its inside (03F1:0137 = START 0x4047), casts (0x27C38), then
 sets its position word to −1 (0x17D52), so the next 0x239D6 draws the window and title again and the list starts on

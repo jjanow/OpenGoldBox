@@ -77,6 +77,27 @@ PRINT, a one-word HMENU (disk 3, map 0); in the hall S wrote a hall save, a copy
 L, the copy: the menu stayed with its party and Train, and Begin printed the copy's text. Client:
 `PorGame.LoadInMenu` (the hall's party object keeps its identity, the members replaced; $6E3E comes with the memory),
 pixel-equal to DOSBox-X before and after Begin (apart from the Client's help line); that check used a step (vector 0).
+**Load of a game save in the hall (state ≠ 0), P + D (s39).** The same Load; then 0x19D91 sets DS:49F8 := 1 and
+the menu ends at once (0x19E6C). PROGRAM 0 calls START 0x3379 (0x3B95) with the save's DS:49F3 and returns: the
+running ECL run goes on at its PC in the loaded script area, with the running game's vectors DS:49E3–49EB and block
+DS:84DC; vector 4 does not run and the area is not entered again (START 0x13D calls the area loop 0x403E once a
+session; its only exit is DS:49FF). DS:49F8 stays 1 until the next script init (NEWECL), which then keeps $4A00–$4A1F
+and $6E79–$6E82. DOSBox-X (scratch saves I and J from save A, both state 2: vector 0 = PICTURE 2; PROGRAM 0; PRINT;
+a one-word HMENU, J's text changed, J's vectors 1 and 4 printing): Up in I, Remove × 6, Load J: "TEXT OF SAVE J."
+with no vector 4 text; a state there read PC $9940 (the HMENU), vectors I's ($9920, $991F, …), DS:84DC 20 and DS:49F8 1;
+after WAIT the step ran I's vector 1 (J's $991F: EXIT, no vector 1 text). State 2 (a camp save, the usual kind) drew
+case 2: the camp picture (PIC 29, animated by the HMENU since 84E0 was still set from PICTURE 2) and "CAMPING" after
+the position line, which stayed after the step (START 0x366D tests DS:49F3 = 2; nothing set DS:49F3 again). Client
+(s39): `PorGame.LoadInHall` (the copy in place, DS:49F8 set) and `HallState.LeaveAfterLoad`; the text and the run
+match (before s39 the Client loaded the save as a new entry and ran its vector 4). `[?]` Not drawn: case 2's camp
+picture and the "CAMPING" suffix for a state-2 save (the Client keeps the script's picture and its usual position line);
+a save from another area runs whatever bytes lie at the old PC in the program. **Decided (user, s39):** the Client
+does that only for a save of the running area (its $49F2, DS:84DC after a load, and its disk byte equal to the running
+script's block and disk, `PorGame.LoadInHall` → `HallLoad.CarryOn`); a save of another area is not copied in and is
+entered as a loaded game (its entry and vector 4, `HallLoad.EnterArea` → `HallLoadException`), a deliberate
+difference. Tests `SaveWriteTests.Hall_load_of_a_game_save_goes_on_in_the_running_script` /
+`Hall_load_of_a_save_from_another_area_enters_it`.
+
 A load's vector 4 can open the hall too (`--save`, the start-up menu's Load, a Load in the game): the loads hand the
 game to the Client before the entry runs (`PorGame.FromSave` / `LoadAtPartyMenu` / `Enter`, `started`), since the
 hall reads the game's memory while vector 4 is still running (s26; before, the Client crashed there).

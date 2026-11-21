@@ -52,6 +52,11 @@ public sealed class CombatView
     public int CursorSize { get; set; } = 1;
     /// <summary>The square of the downed picture (COMSPR 11, CreatureDowned 0x3154B), shown during its pause.</summary>
     public (int X, int Y)? HitMarker { get; set; }
+    /// <summary>
+    /// The downed creature's footprint (its slot's icon size DS:5F2A, read before 0x31772 takes it off the map):
+    /// 0x315FE–0x31682 draws the picture on every footprint cell (0x3073A, i = 0..3).
+    /// </summary>
+    public int HitMarkerSize { get; set; } = 1;
     /// <summary>A COMSPR picture drawn over a square (PrintNameStringAnim's frames): square, block, mirrored.</summary>
     public (int X, int Y, int Sprite, bool Mirror)? Flash { get; set; }
     /// <summary>
@@ -177,6 +182,7 @@ public sealed class CombatView
         Fight = null;
         Current = Shown = null;
         Cursor = HitMarker = null;
+        HitMarkerSize = 1;
         Flash = null;
         Flying = null;
         CursorSize = 1;
@@ -232,9 +238,13 @@ public sealed partial class CombatChooser(Func<PlayerRequest, object?> ask, Comb
         fight.TurnStarted = TurnStarted;
         fight.TurnEnded = TurnEnded;
         fight.AttackStarting = AttackStarting;
+        fight.DefenderTurned = DefenderTurned;
+        fight.AttackPanel = AttackPanel;
+        fight.AttackPosed = AttackPosed;
         fight.AttackMade = AttackMade;
         fight.State.AttackMessage = AttackMessage;
         fight.State.AttackEnd = AttackEnd;
+        fight.State.FrontEndPlaysDowned = true;
         fight.State.FleeMessage = FleeMessage;
         fight.State.Flight = Flight;
         fight.State.Posed = Posed;
@@ -259,6 +269,9 @@ public sealed partial class CombatChooser(Func<PlayerRequest, object?> ask, Comb
                 View.MovePrompt = null;
                 View.Row24Written();
             };
+            // 0xBF8A's redraw (START 0x1583 at 0xC4D7) when its readying changed anything: the panel cleared and drawn
+            // again, the weapon typed from an empty line (DOSBox-X s39: after Quick, "11 DARTS" typed again).
+            ai.PanelRedrawn = c => ShowPanel(c);
         }
         // Nothing in a fight writes DS:4A00 (the only writers are the start-up 0xE974, PRINT 0x1763 / 0x17DC, ENCMENU
         // 0x2C4F / 0x32E0 and the after-combat end 0x6BAF): the panel's texts through START 0x77F8 type out when the
@@ -302,9 +315,13 @@ public sealed partial class CombatChooser(Func<PlayerRequest, object?> ask, Comb
         fight.TurnStarted = null;
         fight.TurnEnded = null;
         fight.AttackStarting = null;
+        fight.DefenderTurned = null;
+        fight.AttackPanel = null;
+        fight.AttackPosed = null;
         fight.AttackMade = null;
         fight.State.AttackMessage = null;
         fight.State.AttackEnd = null;
+        fight.State.FrontEndPlaysDowned = false;
         fight.State.FleeMessage = null;
         fight.State.Flight = null;
         fight.State.Posed = null;
@@ -320,7 +337,10 @@ public sealed partial class CombatChooser(Func<PlayerRequest, object?> ask, Comb
             spells.Effects.Event -= EffectMessage;
         }
         if (fight.Controller is MenuController { Ai: MonsterAi ai })
+        {
             ai.Message = null;
+            ai.PanelRedrawn = null;
+        }
         _menu = null;
         _announced = null;
         _goal = null;
@@ -336,6 +356,8 @@ public sealed partial class CombatChooser(Func<PlayerRequest, object?> ask, Comb
 
     /// <summary>Where each creature stood when last seen (a dropped monster leaves the map before the message).</summary>
     private readonly Dictionary<EclCharacter, (int X, int Y)?> _lastSquare = new(ReferenceEqualityComparer.Instance);
+    /// <summary>Each creature's icon size when last seen on the map (the downed picture's footprint).</summary>
+    private readonly Dictionary<EclCharacter, int> _lastSize = new(ReferenceEqualityComparer.Instance);
 
     private void Remember()
     {
@@ -343,7 +365,10 @@ public sealed partial class CombatChooser(Func<PlayerRequest, object?> ask, Comb
             return;
         foreach (var x in f.List)
             if (Square(x) is { } p)
+            {
                 _lastSquare[x] = p;
+                _lastSize[x] = IconSize(x);
+            }
     }
 
     /// <summary>
@@ -525,6 +550,9 @@ public sealed partial class CombatChooser(Func<PlayerRequest, object?> ask, Comb
         View.Panel.ClearRect(CombatView.PanelLeft, CombatView.MessageTop, CombatView.PanelRight, CombatView.PanelBottom);
 
     /// <summary>A creature and a text in the panel from row 10 with the pause (START 0x16EC with pause on).</summary>
+    /// <summary>START 0x2EEA's words: fully healed when HP 0x11B equals the maximum 0x32 (00BA:2353), else partially.</summary>
+    private string HealedWords(EclCharacter c) => Text[c[0x11B] == c[0x32] ? CombatMsg.FullyHealed : CombatMsg.PartiallyHealed];
+
     private void Say(EclCharacter? who, string text)
     {
         View.Page = null;
@@ -535,9 +563,8 @@ public sealed partial class CombatChooser(Func<PlayerRequest, object?> ask, Comb
     // ---- Attacks (0x1407F, 0x12AF4) -----------------------------------------------------------------------------------
 
     /// <summary>
-    /// MakeAttack before its rolls (0x140F8–0x14132): the panel shows the attacker (START 0x1583), the attacker is drawn
-    /// in its attack pose (0x31232, frame 1: its cell is redrawn, a cursor box there goes) and Delay(100). An AI
-    /// creature's attack first scrolls toward the target (0xBA22: ScrollView(attacker, 2, direction to the target)).
+    /// MakeAttack's entry (0x1407F). An AI creature's attack has just scrolled toward the target (0xBA22: ScrollView(its
+    /// square, 2, direction to the target); a cell redraw there, the cursor box goes). The facings are not changed yet.
     /// </summary>
     internal void AttackStarting(EclCharacter attacker, EclCharacter defender)
     {
@@ -547,11 +574,61 @@ public sealed partial class CombatChooser(Func<PlayerRequest, object?> ask, Comb
         View.StatusLine = null;
         if (attacker[CombatRules.AutoCombat] != 0 && Square(attacker) is { } a && View.Fight?.Map is CombatMap map)
             View.Scroll(a.X, a.Y, 2, map.DirectionToward(attacker, defender));
-        ShowPanel(attacker);
-        if (Square(attacker) is { } sq && View.Cursor == sq)
-            View.Cursor = null;
-        View.Attacking.Add(attacker);
+    }
+
+    /// <summary>
+    /// The defender turns to face the attacker (0x14085–0x140E1, read s39): when any of its cells is in view (0x30E54
+    /// with 0), 0x31232 with frame 0 draws it, first scrolling the view to it (ScrollView(its square, 3)) when it is
+    /// not wholly in view. DOSBox-X s39: Darkstar's darts at the wild boar half in view — the view moves onto the boar
+    /// before Darkstar's panel types, and comes back with Darkstar's pose.
+    /// </summary>
+    private void DefenderTurned(EclCharacter defender)
+    {
+        if (AnyCellInView(defender))
+            FacingDrawn(defender, 0);
+    }
+
+    /// <summary>MakeAttack's panel (START 0x1583 at 0x140FE): the attacker still in its old facing.</summary>
+    private void AttackPanel(EclCharacter attacker) => ShowPanel(attacker);
+
+    /// <summary>
+    /// The attack pose (0x31232 with frame 1 at 0x14113, its facing now set: the cell is redrawn, a cursor box there
+    /// goes; scrolled to first when not wholly in view) and Delay(100) (0x1412E).
+    /// </summary>
+    private void AttackPosed(EclCharacter attacker)
+    {
+        FacingDrawn(attacker, 1);
         Pause(AttackPoseMs);
+    }
+
+    /// <summary>
+    /// 0x31232(creature, facing, frame): when the creature is not wholly in view (0x30E54 with 1), ScrollView(its
+    /// square, 3, none) first; then its cell is drawn with the frame (1 = the action pose).
+    /// </summary>
+    private void FacingDrawn(EclCharacter c, int frame)
+    {
+        if (Square(c) is not { } sq)
+            return;
+        if (!WhollyInView(c))
+            View.Scroll(sq.X, sq.Y, 3);
+        if (View.Cursor == sq)
+            View.Cursor = null;
+        if (frame == 1)
+            View.Attacking.Add(c);
+        else
+            View.Attacking.Remove(c);
+    }
+
+    /// <summary>0x30E54(creature, 0): it has an icon on the map and at least one footprint cell is in the view.</summary>
+    private bool AnyCellInView(EclCharacter c)
+    {
+        if (View.Fight?.Map is not CombatMap map || !map.OnMap(c))
+            return false;
+        var (x, y) = map.Position(c);
+        for (int i = 0; i < 4; i++)
+            if (map.Tables.IconCell(map.IconSize(c), i, out int dx, out int dy) && View.InView(x + dx, y + dy))
+                return true;
+        return false;
     }
 
     /// <summary>The fixed wait after the attack pose is drawn (Delay(100) at 0x1412E).</summary>
@@ -644,13 +721,22 @@ public sealed partial class CombatChooser(Func<PlayerRequest, object?> ask, Comb
     private void Downed(EclCharacter c)
     {
         var sq = Square(c) ?? (_lastSquare.TryGetValue(c, out var last) ? last : null);
+        int size = Square(c) is not null ? IconSize(c) : _lastSize.GetValueOrDefault(c, 1);
+        var sound = View.Fight?.State is { FrontEndPlaysDowned: true } st ? st.Sound : null;
+        sound?.BeginResident(); // 0x31554: set auto-stop(0)
         if (sq is { } s && !WhollyInView(c))
             View.Scroll(s.X, s.Y, 3);
         View.HitMarker = sq;
+        View.HitMarkerSize = size;
+        sound?.Cue(GoldBox.Core.Sound.SoundCue.Body); // 0x31744, the picture drawn (DOSBox-X s39: the tune starts with it)
         Pause(MessageMs);
         View.HitMarker = null;
-        // [?] DOSBox-X s29: the vampire's pose went under Thrender's downed picture (below it) and stayed under Bakshi's
-        // (beside it); this read keeps it for both when they are wholly in view (combat-menu.md "Attack pose").
+        // 0x3177B–0x3179C: after the pause and the map removal, ScrollView(view centre, 3, none): no rebuild, but the
+        // cell redraw 0x30A0F of the centre square draws the creature there standing, so an attacker on the view's
+        // centre loses its pose with the downed picture (DOSBox-X s39: the vampire at the centre over Rhiannon; beside
+        // or above the centre it kept the pose until the attack's end).
+        View.Scroll(View.ViewX + 3, View.ViewY + 3, 3);
+        sound?.EndResident(); // 0x317D6: set auto-stop(10)
     }
 
     /// <summary>0x30E54(creature, 1): it has an icon on the map and every footprint cell is in the view.</summary>
@@ -814,6 +900,10 @@ public sealed partial class CombatChooser(Func<PlayerRequest, object?> ask, Comb
                 // 0x2C7A3–0x2C804: 0x319D2(creature, 3, 0), then START 0x16EC(row 10, pause 1); the text by 0x10E.
                 StatusChangeScroll(c);
                 Say(c, t[c[FightRules.Hostile] == 1 ? CombatMsg.StatusRevivedEnemy : CombatMsg.StatusRevived]);
+                break;
+            case EffectEvent.Healed:
+                // Handlers 50 / 62 → START 0x2EEA: START 0x16EC(row 10, pause 1); in a fight (DS:49F3 = 5) no list.
+                Say(c, HealedWords(c));
                 break;
             case EffectEvent.EscapeView:
                 StatusChangeScroll(c); // 0x11534

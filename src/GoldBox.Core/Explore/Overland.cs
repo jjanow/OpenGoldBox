@@ -138,8 +138,11 @@ public static class Overland
     /// </summary>
     public static void Redrawn(EclMemory m)
     {
-        if (Shown(m))
-            m.MarkerCounter = (m.MarkerCounter + 1) % 6;
+        if (!Shown(m))
+            return;
+        m.MarkerCounter = (m.MarkerCounter + 1) % 6;
+        m.MarkerFacing = m.Position.Facing; // 0x2DC14: the marker is drawn with the facing of this moment
+        m.MarkerDrawnTwice = false;
     }
 
     /// <summary>

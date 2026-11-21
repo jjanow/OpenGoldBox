@@ -39,6 +39,7 @@ public class ModuleSchemaTests
         PcSoundDocument.RelativePath => typeof(PcSoundDocument),
         AmigaSoundDocument.RelativePath => typeof(AmigaSoundDocument),
         AmigaIconColoursDocument.RelativePath => typeof(AmigaIconColoursDocument),
+        AmigaTextPensDocument.RelativePath => typeof(AmigaTextPensDocument),
         ItemTypesDocument.RelativePath => typeof(ItemTypesDocument),
         _ when GoldBox.Data.Module.Por.PorRulesTables.Files.Any(f => f.Path == rel) =>
             GoldBox.Data.Module.Por.PorRulesTables.Files.First(f => f.Path == rel).Type,

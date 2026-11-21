@@ -61,6 +61,8 @@ public enum CombatMsg
     HandlerStronger, HandlerAirClears, HandlerNeedsGiantStrength,
     SpellReduced, SpellEffectRemoved, SpellCloudFormed, SpellBlindnessCured, SpellMagicDispelled,
     SpellCurseLifted, SpellItemUncursed, SpellLevelRestored,
+    // START 0x2EEA's healed words (HP 0x11B = 0x32 or not): handlers 50, 62 and Cure Light Wounds (s39).
+    FullyHealed, PartiallyHealed,
 }
 
 /// <summary>
@@ -209,6 +211,8 @@ public sealed class CombatText
         [CombatMsg.StatusRevivedEnemy] = "RISES AND SMIRKS",
         [CombatMsg.StatusRevived] = "STANDS AGAIN",
         [CombatMsg.StatusEscapes] = "BECOMES MIST AND FLEES",
+        [CombatMsg.FullyHealed] = "IS WHOLE AGAIN",
+        [CombatMsg.PartiallyHealed] = "FEELS BETTER",
         [CombatMsg.HandlerDiseased] = "IS SICKENED",
         [CombatMsg.HandlerRakes] = "CLAWS AGAIN",
         [CombatMsg.HandlerHeldFast] = "IS GRIPPED",

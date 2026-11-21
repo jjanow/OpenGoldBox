@@ -203,12 +203,14 @@ public static class CampScreens
     }
 
     /// <summary>A character's message (the program's PrintCreatureMessage): name and text in the text window, a key when asked.</summary>
-    private static void Say(CampContext c, EclCharacter who, string text, bool pause = true)
-    {
-        c.Dialog.Show(GameText.Cat(who.Name.ToUpperInvariant(), text.ToUpperInvariant()));
-        if (pause)
-            c.Dialog.WaitKey();
-    }
+    /// <summary>
+    /// The camp's member messages are START 0x16EC(member, text, 10, pause) (the refusals 0x17CAC, Order 0x19095, Drop
+    /// 0x19195 / 0x191E7 / 0x1920B, the scroll and memorise ones): the same layout as <see cref="EffectMessage"/> (name on
+    /// row 18, the text typed from row 19), and the pause flag is PauseOnly, the game-speed delay, not a key (D s39: Drop's
+    /// relief message cleared 0.9 s after it was typed at speed 4).
+    /// </summary>
+    private static void Say(CampContext c, EclCharacter who, string text, bool pause = true) =>
+        PanelMessage(c, who, text.ToUpperInvariant(), pause);
 
     // ---- Camp (0x196A0) ------------------------------------------------------------------------------------------
 
@@ -225,6 +227,7 @@ public static class CampScreens
         c.State.Camping = true;
         c.Dialog.Text.Clear();
         c.Trade.FrameTextBox(false); // START 0x27D9 on entry (0x196C7)
+        c.Trade.RosterDrawn(); // its case 2 draws the party list (00BA:286A; D s39: a held name shows cyan again)
         c.Dialog.Text.Put(18, 1, c.Text[Msg.MakesCamp], 10);   // column 1, row 18 (0x196A0)
         c.Spells.ResetParty(c.Party.Members);
         bool interrupted = false;
@@ -263,6 +266,10 @@ public static class CampScreens
         }
         finally
         {
+            // An interrupted rest: the area's encamp path redraws the screen (0x3B3B, START 0x27D9 with the area's state),
+            // the party list with it; a plain Exit redraws only the view (0x3B48), so a held name stays (D s39).
+            if (interrupted)
+                c.Trade.RosterDrawn();
             c.Spells.ResetParty(c.Party.Members);
             if (c.Cast is { } cast)
                 cast.Remembered = null;
@@ -612,6 +619,46 @@ public static class CampScreens
         }
     }
 
+    /// <summary>
+    /// A one-member target outside a fight (0x27AA9, target type 2): START 0x27D9 redraws the camp screen (0x27AFA: the
+    /// kept spell page goes, the party list is drawn), then START's member pick 0x37E8 (00BA:2C48) on DS:6DB5, the
+    /// remembered target (the caster the first time, 0x27AB8). Each pass draws the party list with the pick lit
+    /// (00BA:2CA1) and runs the menu "Cast Spell on whom" with Select / Exit (00BA:2C41, 2C19; keypad flag in the camp):
+    /// End the next member, Home the one before (both wrap, 00BA:2D29 / 2D57), E (or Escape: 0) clears the pick
+    /// (00BA:2DD6); Return, Escape, E and S end the loop (set 00BA:2C1F). DS:5D92 (the caster) is not changed. D s39:
+    /// Brother Sean's Cure Light Wounds, End twice from himself to Phineas, S. Client: Escape is Exit (the program's
+    /// Escape clears the pick and goes on, so only Select after it ends the same way).
+    /// </summary>
+    private static EclCharacter? PickTarget(CampContext c, EclCharacter? remembered)
+    {
+        c.Trade.ShowPageUnder(null);
+        c.Trade.FrameTextBox(false);
+        var party = c.Party;
+        var (items, keys) = ParseMenu(c.Resources.TargetMenu ?? "Select Exit");
+        var pick = remembered;
+        {
+            while (true)
+            {
+                c.Trade.RosterDrawnLit(pick);
+                int a = c.Dialog.Ask(new ChoiceRequest(null, items, false, items.Count - 1)
+                {
+                    MenuPrompt = c.Text[Msg.CastOnWhom].TrimEnd(),
+                    PartySelect = true,
+                    Hotkeys = keys,
+                }) is int x ? x : items.Count - 1;
+                int n = party.Members.Count;
+                if (a == ChoiceRequest.NextMember)
+                    pick = n == 0 ? null : party.Members[pick is null ? 0 : (party.Members.IndexOf(pick) + 1) % n];
+                else if (a == ChoiceRequest.PreviousMember)
+                    pick = n == 0 ? null : party.Members[pick is null ? n - 1 : (party.Members.IndexOf(pick) + n - 1) % n];
+                else if (a <= TradeContext.MemberPick && TradeContext.MemberPick - a < n)
+                    pick = party.Members[TradeContext.MemberPick - a]; // a click on a name (ours)
+                else
+                    return a == 0 ? pick : null;
+            }
+        }
+    }
+
     private static void CastOne(CampContext c, EclCharacter who, int spell)
     {
         c.Dialog.Text.Clear();
@@ -654,6 +701,8 @@ public static class CampScreens
         {
             if (CombatText.SpellMessage(e) is { } message)
                 shown.Message(t, c.Resources.CombatTexts[message.Text], true);
+            else if (e == EffectEvent.Healed && s == 3)
+                shown.Healed(t); // Cure Light Wounds 0x28083 → START 0x2EEA (0x280B7)
             else
                 heard.Add(t.Name.ToUpperInvariant() + ": " + e.ToString().ToUpperInvariant());
         }
@@ -679,13 +728,7 @@ public static class CampScreens
         cast.Spells.Effects.Event += OnEffect;
         try
         {
-            cast.Cast(spell, remembered =>
-            {
-                // "Cast Spell on whom" (START's member pick; [?] its first highlighted member is not matched).
-                var names = c.Party.Members.Select(m => m.Name.ToUpperInvariant()).Append("EXIT").ToList();
-                int i = c.Dialog.Ask(new ChoiceRequest(c.Text[Msg.CastOnWhom], names, true, names.Count - 1)) is int a ? a : names.Count - 1;
-                return i >= 0 && i < c.Party.Members.Count ? c.Party.Members[i] : null;
-            });
+            cast.Cast(spell, remembered => PickTarget(c, remembered));
         }
         finally
         {
@@ -720,13 +763,18 @@ public static class CampScreens
     /// <summary>START 0x2B8B copies its text into a string[40] before it looks at the fight flag (0x2B9B).</summary>
     private static string Cut40(string s) => s.Length > 40 ? s[..40] : s;
 
-    internal static void EffectMessage(CampContext c, EclCharacter who, string text)
+    internal static void EffectMessage(CampContext c, EclCharacter who, string text) => PanelMessage(c, who, text, true);
+
+    /// <summary>START 0x16EC outside a fight with DS:6DDA = 0 (00BA:1765–00BA:17DA); see <see cref="EffectMessage"/>.</summary>
+    private static void PanelMessage(CampContext c, EclCharacter who, string text, bool pause)
     {
         c.Trade.FrameTextBox(true);
         var w = c.Dialog.Text;
         w.ClearRect(TextWindow.Left, TextWindow.Top, TextWindow.Right, TextWindow.Bottom);
         w.Put(TextWindow.Top + 1, TextWindow.Left, who.Name.ToUpperInvariant(), CombatChooser.NameColour(who));
         w.PrintIn(TextWindow.Left, TextWindow.Top + 2, TextWindow.Right, TextWindow.Bottom, text, true, TextWindow.ScriptColour);
+        if (!pause)
+            return;
         int speed = c.Memory.GameSpeed;
         if (speed > 0)
             c.Dialog.Ask(new DelayRequest(TimeSpan.FromMilliseconds(225 * speed)));
@@ -833,6 +881,7 @@ public static class CampScreens
     {
         c.Dialog.Text.Clear();
         c.Trade.FrameTextBox(false);
+        c.Trade.RosterDrawn(); // START 0x27D9's case 2 draws the party list (00BA:286A)
     }
 
     /// <summary>0x17DD5: its heading and, per class with slots, its free slots of levels 1–3 (blank without a slot).</summary>
@@ -973,6 +1022,7 @@ public static class CampScreens
                         edit(who);
                     else
                         c.Dialog.Say("ICON: NOT IN THIS BUILD YET.", colour: 14);
+                    c.Trade.RosterDrawn(); // 0x19524: START 0x27D9 (case 2) draws the party list
                     break;
                 case 'P':
                     Pictures(c);
@@ -1018,6 +1068,7 @@ public static class CampScreens
                     else
                         CampParty.MoveDown(c.Party);
                 }
+                c.Trade.RosterDrawn(); // 0x1902B / 0x1904F: the party list after Home / End in either mode
                 continue;
             }
             char k = i >= 0 && i < keys.Length ? keys[i] : 'E';
@@ -1055,6 +1106,7 @@ public static class CampScreens
         {
             Say(c, who, c.Text[CampParty.LeavesWillingly(who) ? Msg.BidsFarewell : Msg.DumpedInDitch]);
             CampParty.Drop(c.Party, c.Memory);
+            c.Trade.RosterDrawn(); // 0x19234: the party list after the member left
         }
         else
             Say(c, who, c.Text[Msg.SighOfRelief]);

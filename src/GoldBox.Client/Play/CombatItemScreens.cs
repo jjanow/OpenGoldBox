@@ -35,6 +35,58 @@ public sealed class CombatPage
     public List<string> Warning { get; } = [];
 }
 
+/// <summary>The Items page of 0x21F32 (a fight's Use and every View's Items: the party menu, hall, camp, shop, temple,
+/// loot) and its words.</summary>
+public static class ItemsPages
+{
+    /// <summary>The Items menu's words (0x21F32's strings, unit 0x2103A).</summary>
+    public static string Word(CombatText text, ItemsEntry e) => e switch
+    {
+        ItemsEntry.Ready => text[CombatMsg.ItemsReady].Trim(),
+        ItemsEntry.Use => text[CombatMsg.ItemsUse].Trim(),
+        ItemsEntry.Trade => text[CombatMsg.ItemsTrade].Trim(),
+        ItemsEntry.Drop => text[CombatMsg.ItemsDrop].Trim(),
+        ItemsEntry.Halve => text[CombatMsg.ItemsHalve].Trim(),
+        ItemsEntry.Join => text[CombatMsg.ItemsJoin].Trim(),
+        ItemsEntry.Sell => text[CombatMsg.ItemsSell].Trim(),
+        ItemsEntry.Id => text[CombatMsg.ItemsId].Trim(),
+        // The list routine 0x2D669 appends " Exit" (CS:0D94 of its unit, GAME.OVR 0x2D663) when its flag [bp+0x12] is
+        // set, as the Items call (0x222B7) and the coin list (0x2369D) set it; the same word as View's.
+        _ => text[CombatMsg.ViewExit].Trim(),
+    };
+
+    /// <summary>
+    /// The Items page (0x221DE–0x2229B), measured on DOSBox-X (s15, Darkstar's darts; s39 the camp's): braid on rows 0,
+    /// 2 and 23 and columns 0 and 39; row 1 the name with "'S" in its colour (START 0x23B6) and the title (CS:0EB2)
+    /// green at column (name length + 4) (0x2220B); row 3 the heading (CS:0EB8) white; the list window (1,5)–(38,22)
+    /// (0x2229B): per item the readied word at column 2 and the item's name at column 7, the selected row white, the
+    /// others green. [?] The readied column's words are taken from the yes/no menu's; the "'S" comes from the name
+    /// routine START 0x1816 (not read).
+    /// </summary>
+    public static CombatPage Build(CombatText text, EclCharacter c, IReadOnlyList<byte[]> items, Func<byte[], string> itemName,
+        int selected, bool grey)
+    {
+        var yn = text.Words(CombatMsg.YesNo);
+        string yes = yn.ElementAtOrDefault(0) ?? "YES", no = yn.ElementAtOrDefault(1) ?? "NO";
+        var rows = items.Select(i => " " + (i[CombatRules.ItemEquipped] != 0 ? yes : no).PadRight(5) + itemName(i)).ToList();
+        var page = new CombatPage
+        {
+            FrameRows = [0, 2, 23],
+            Grey = grey,
+            Rows = rows,
+            RowCol = 1,
+            FirstRow = 5,
+            LastRow = 22,
+            Selected = Math.Clamp(selected, 0, Math.Max(0, rows.Count - 1)),
+        };
+        string name = c.Name.ToUpperInvariant();
+        page.Texts.Add((1, 1, name + "'S", CombatSheet.NameColour(c)));
+        page.Texts.Add((name.Length + 4, 1, text[CombatMsg.ItemsTitle].Trim(), 10));
+        page.Texts.Add((1, 3, text[CombatMsg.ItemsHeading].Trim(), 15));
+        return page;
+    }
+}
+
 /// <summary>
 /// The menu of a <see cref="CombatPage"/> on row 24: the prompt (colour 13, may be null) and the entries, the program's
 /// menu routine style (highlighted entry white, the others with a white hotkey). The answer is a
@@ -157,6 +209,11 @@ public sealed partial class CombatChooser
         if (e == EffectEvent.BeginsCasting)
         {
             Say(who, Text[CombatMsg.BeginsCasting]);
+            return;
+        }
+        if (e == EffectEvent.Healed && spell == 3)
+        {
+            Say(who, HealedWords(who)); // Cure Light Wounds 0x28083 → START 0x2EEA (0x280B7): no list in a fight
             return;
         }
         if (CombatText.SpellMessage(e) is not { } message)
@@ -309,50 +366,10 @@ public sealed partial class CombatChooser
 
     // ---- Items (0x21F32) --------------------------------------------------------------------------------------------
 
-    private string ItemsWord(ItemsEntry e) => e switch
-    {
-        ItemsEntry.Ready => Text[CombatMsg.ItemsReady].Trim(),
-        ItemsEntry.Use => Text[CombatMsg.ItemsUse].Trim(),
-        ItemsEntry.Trade => Text[CombatMsg.ItemsTrade].Trim(),
-        ItemsEntry.Drop => Text[CombatMsg.ItemsDrop].Trim(),
-        ItemsEntry.Halve => Text[CombatMsg.ItemsHalve].Trim(),
-        ItemsEntry.Join => Text[CombatMsg.ItemsJoin].Trim(),
-        ItemsEntry.Sell => Text[CombatMsg.ItemsSell].Trim(),
-        ItemsEntry.Id => Text[CombatMsg.ItemsId].Trim(),
-        // The list routine 0x2D669 appends " Exit" (CS:0D94 of its unit, GAME.OVR 0x2D663) when its flag [bp+0x12] is
-        // set, as the Items call (0x222B7) and the coin list (0x2369D) set it; the same word as View's.
-        _ => Text[CombatMsg.ViewExit].Trim(),
-    };
+    private string ItemsWord(ItemsEntry e) => ItemsPages.Word(Text, e);
 
-    /// <summary>
-    /// The Items page, measured on DOSBox-X (s15, Darkstar's darts): braid on rows 0, 2 and 23 and columns 0 and 39;
-    /// row 1 the name with "'S" in its colour and the title (0x21EEC) green at column (name length + 4) (0x2220B);
-    /// row 3 the heading (0x21EF2) white; the list window (1,5)–(38,22) (0x2229B): per item the readied word at
-    /// column 2 and the item's name at column 7, the selected row white, the others green.
-    /// [?] The readied column's words are taken from the yes/no menu's; the "'S" comes from the name routine
-    /// START 0x1816 (not read).
-    /// </summary>
-    private CombatPage ItemsPage(EclCharacter c, IReadOnlyList<byte[]> items)
-    {
-        var yn = Text.Words(CombatMsg.YesNo);
-        string yes = yn.ElementAtOrDefault(0) ?? "YES", no = yn.ElementAtOrDefault(1) ?? "NO";
-        var rows = items.Select(i => " " + (i[CombatRules.ItemEquipped] != 0 ? yes : no).PadRight(5) + ItemName(i)).ToList();
-        var page = new CombatPage
-        {
-            FrameRows = [0, 2, 23],
-            Grey = !_fromView,
-            Rows = rows,
-            RowCol = 1,
-            FirstRow = 5,
-            LastRow = 22,
-            Selected = Math.Clamp(_itemRow, 0, Math.Max(0, rows.Count - 1)),
-        };
-        string name = c.Name.ToUpperInvariant();
-        page.Texts.Add((1, 1, name + "'S", NameColour(c)));
-        page.Texts.Add((name.Length + 4, 1, Text[CombatMsg.ItemsTitle].Trim(), 10));
-        page.Texts.Add((1, 3, Text[CombatMsg.ItemsHeading].Trim(), 15));
-        return page;
-    }
+    private CombatPage ItemsPage(EclCharacter c, IReadOnlyList<byte[]> items) =>
+        ItemsPages.Build(Text, c, items, ItemName, _itemRow, grey: !_fromView);
 
     public ItemChoice ChooseItem(EclCharacter c, IReadOnlyList<ItemsEntry> entries, IReadOnlyList<byte[]> items)
     {

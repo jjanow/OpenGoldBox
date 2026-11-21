@@ -76,6 +76,13 @@ public sealed class MonsterAi : IFightController
     public Action<EclCharacter, byte[], bool>? ItemHandler { get; set; }
     /// <summary>0xABCF's start, also when the menu's Quick hands the turn over (row 24 and the message area cleared on screen).</summary>
     public Action<EclCharacter>? Starting { get; set; }
+    /// <summary>
+    /// 0xBF8A's end (0xC4CB–0xC4D7): when anything changed (`[bp−0x1D]`) the panel is drawn again (START 0x1583: rows
+    /// 1–21 cleared, the lines, the weapon typed). Also with nothing moved when the off-hand slot is empty and fewer
+    /// than two hands are used (the shield branch's "different item" flag stays 1). DOSBox-X s39: after the menu's Quick
+    /// and at Darkstar's and Phineas's AI turns the weapon line types again from an empty panel.
+    /// </summary>
+    public Action<EclCharacter>? PanelRedrawn { get; set; }
 
     public bool ContinueBattle() => Menu?.ContinueBattle() ?? false;
 
@@ -464,7 +471,8 @@ public sealed class MonsterAi : IFightController
             }
             if (!inReach || target is null)
                 continue;
-            rec[CombatRecord.Facing] = (byte)f.Geometry.DirectionToward(c, target); // 0x310D0 [?] drawing; MakeAttack faces anyway
+            // 0xBA22: ScrollView(its square, 2, toward the target) only (drawing; +9 is not set here: MakeAttack's 0x31232
+            // at 0x14113 faces it, after the panel, read s39).
             if (SweepAttack.Try(f, c, target)) // 0xBA3C
             {
                 f.EndActions(c);
@@ -876,7 +884,8 @@ public sealed class MonsterAi : IFightController
             changed = true;
         }
         f.RecalculateStats(c); // 0xC4C6
-        _ = changed; // START 0x1583 redraws the character when something changed
+        if (changed)
+            PanelRedrawn?.Invoke(c); // 0xC4D7: START 0x1583
     }
 
     /// <summary>

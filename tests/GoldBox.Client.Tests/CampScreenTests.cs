@@ -239,15 +239,20 @@ public class CampScreenTests
         var (t, s) = Context(new Script(
             2, 0,                       // MAGIC, CAST
             new ListAnswer(0, 1),       // spell 3 (row 0 is the heading)
-            null,                       // "casts" key
-            1,                          // Cast spell on whom: BORN
-            null,                       // the healed event's key
-            null,                       // nothing memorised now: "has no spells memorized" key
+            null,                       // "casts" pause
+            ChoiceRequest.NextMember,   // START's member pick (0x37E8) from the caster: End to BORN
+            0,                          // Select
+            null,                       // START 0x2EEA's healed words, the pause
+            null,                       // nothing memorised now: "has no spells memorized" pause
             5, 5), a, b);
         VenueScreens.Camp(Camp(t), null);
         Assert.Equal(0, a[0x17]);
         Assert.Equal(3, b[0x11B]);      // 1d8 with every draw 0 → 1
         Assert.Equal(0, s.Left);
+        var pick = s.Asked.OfType<ChoiceRequest>().First(r => r.Items.Contains("SELECT"));
+        Assert.Equal(["SELECT", "EXIT"], pick.Items);
+        Assert.True(pick.PartySelect);
+        Assert.Equal(0, t.Party.CurrentIndex);      // the caster stays current (DS:5D92 is not changed)
     }
 
     [Fact]

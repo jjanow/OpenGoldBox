@@ -160,6 +160,13 @@ public static class PorAmigaData
     public static string? RuneFont { get; } = Dir is null || Missing is not null ? null
         : PorAmigaArt.LocateRuneFont(Dir, File.ReadAllBytes(PorAmigaArt.Locate(Dir).Program))?.Path;
 
+    /// <summary>
+    /// Disk A's text font (<c>fonts/poolrad.font</c> and <c>fonts/poolrad/8</c>) in <see cref="Dir"/>, as the program
+    /// names it, or null (the importer treats it as optional).
+    /// </summary>
+    public static string? TextFont { get; } = Dir is null || Missing is not null ? null
+        : PorAmigaArt.LocateTextFont(Dir, File.ReadAllBytes(PorAmigaArt.Locate(Dir).Program))?.Path;
+
     /// <summary>The overlay can be imported: <see cref="Dir"/> holds <c>program</c> and the <c>.dax</c> files.</summary>
     public static bool Usable => Dir is not null && Missing is null;
 
@@ -177,6 +184,11 @@ public static class PorAmigaData
     public static string RuneFontSkipReason => Present
         ? $"needs the Amiga rune font: {EnvVar} ({Dir}) has no 'fonts/protect.font' with 'fonts/protect/8'; copy disk A's " +
           "'fonts' folder of Pool of Radiance next to 'program' (the overlay imports without it, so only the rune font tests skip)"
+        : SkipReason;
+
+    public static string TextFontSkipReason => Present
+        ? $"needs the Amiga text font: {EnvVar} ({Dir}) has no 'fonts/poolrad.font' with 'fonts/poolrad/8'; copy disk A's " +
+          "'fonts' folder of Pool of Radiance next to 'program' (the overlay imports without it, so only the text font tests skip)"
         : SkipReason;
 
     private static string? FindMissing()
@@ -212,6 +224,16 @@ public sealed class PorAmigaRuneFontFactAttribute : FactAttribute
     {
         if (!PorAmigaData.Present || PorAmigaData.RuneFont is null)
             Skip = PorAmigaData.RuneFontSkipReason;
+    }
+}
+
+/// <summary>A fact that also needs disk A's text font (<see cref="PorAmigaData.TextFont"/>); skipped naming the files without it.</summary>
+public sealed class PorAmigaTextFontFactAttribute : FactAttribute
+{
+    public PorAmigaTextFontFactAttribute()
+    {
+        if (!PorAmigaData.Present || PorAmigaData.TextFont is null)
+            Skip = PorAmigaData.TextFontSkipReason;
     }
 }
 

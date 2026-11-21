@@ -80,6 +80,7 @@ public sealed partial class EffectHandlers
                 {
                     F.DamageFlags = 0;
                     NonWeaponDamage(c, 1, 0, false);
+                    Emit(c, EffectEvent.HandlerDamageListed); // 0xF28A: outside a fight the party list
                 }
                 return;
             case 17: // 0xF2A9 Shield: AC byte at least 0x39 (AC 3), save + 1, no damage from Magic Missile (spell 15)
@@ -235,6 +236,7 @@ public sealed partial class EffectHandlers
                     {
                         F.DamageFlags = 0;
                         NonWeaponDamage(c, 1, 0, false);
+                        Emit(c, EffectEvent.HandlerDamageListed); // 0xFE0A: outside a fight the party list
                     }
                     else if (FindEffect(c, 0x1F) is null)
                         AddEffect(c, 0x1F, 0, 0xFF, false);
@@ -264,7 +266,7 @@ public sealed partial class EffectHandlers
                 return;
             case 50: // 0xFF56: re-added for 14400 minutes; then a 1-point heal past the rot (0x2C647 with bypass)
                 if (AddEffectIfNoLock(c, 0x32, param, 0x3840) && RestoreHitPoints(c, 1, true))
-                    Emit(c, EffectEvent.Healed); // START 0x2EEA: the healed message only
+                    Emit(c, EffectEvent.Healed); // START 0x2EEA: the healed message, then outside a fight the party list
                 return;
             case 56: // 0xFFBE: invisibility (0x19) for 1 minute, param 12
                 AddEffect(c, 0x19, 1, 0x0C, false);
@@ -309,7 +311,7 @@ public sealed partial class EffectHandlers
                 return;
             case 62: // 0x10146: re-added for 60 minutes, then a 1-point heal (0x2C647 with bypass)
                 if (AddEffectIfNoLock(c, 0x3E, param, 0x3C) && RestoreHitPoints(c, 1, true))
-                    Emit(c, EffectEvent.Healed); // START 0x2EEA: the healed message only
+                    Emit(c, EffectEvent.Healed); // START 0x2EEA: the healed message, then outside a fight the party list
                 return;
             case 64: PoisonAttack(c, 0); return;            // 0x102B8
             case 65: PoisonAttack(c, 4); return;            // 0x102CC

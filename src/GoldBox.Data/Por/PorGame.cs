@@ -210,7 +210,7 @@ public sealed class PorGame
             g.Memory.Party = party;
         sg.ApplyTo(g.Memory);
         g.LoadedInterfaceState = sg.InterfaceState;
-        g.Vm.SetCurrentScript(sg.ScriptId, sg.Disk);
+        g.Vm.SetCurrentScript(sg.CurrentBlock, sg.Disk); // DS:84DC := $49F2 (0x4070)
         g.ReloadSavedMap();
         return g;
     }
@@ -246,22 +246,48 @@ public sealed class PorGame
 
     /// <summary>
     /// The training hall's Load (0x1F5E8 from the hall menu 0x19AE0, ECL PROGRAM 0) of a save with interface state 0
-    /// (written at the party menu or in a hall): the menu stays up (0x19D8A) and the program goes on in this game. Load
-    /// copies the save's memory (the four areas with the script area, the square, location type, speed, disk byte) and
-    /// party over the running game's and re-reads the map and wall sets (<see cref="ReloadSavedMap"/>); it does not touch
-    /// the ECL PC, the vectors DS:49E3–49EB or the current block DS:84DC, and DS:49F8 stays 0. So after Begin the
-    /// running script goes on at its PC in the loaded script area (DOSBox-X s25: a hall save whose text after
-    /// PROGRAM 0 was patched printed the patched text). The party is <paramref name="party"/> (the hall's list, kept as
-    /// the same object): its members are replaced by the save's, the first current (0x1FB99). False, with nothing
-    /// changed, for a save of another interface state (the program leaves the menu: the caller loads it as a game).
+    /// (written at the party menu or in a hall): the menu stays up (0x19D8A) and the program goes on in this game (see
+    /// <see cref="LoadInHall"/>). False, with nothing changed, for a save of another interface state.
     /// </summary>
     public bool LoadInMenu(string savePath, EclParty party)
     {
         var (doc, problem) = ReadSave(Content, savePath);
+        if (Module.Por.PorEngineSave.ToSaveGame(doc).InterfaceState != 0)
+            return false;
+        ApplyInHall(doc, problem, party);
+        return true;
+    }
+
+    /// <summary>
+    /// The training hall's Load (0x1F5E8 from the hall menu 0x19AE0, ECL PROGRAM 0): Load copies the save's memory (the
+    /// four areas with the script area, the square, location type, speed, disk byte) and party over the running game's
+    /// and re-reads the map and wall sets (<see cref="ReloadSavedMap"/>); it does not touch the ECL PC, the vectors
+    /// DS:49E3–49EB or the current block DS:84DC. The party is <paramref name="party"/> (the hall's list, kept as the
+    /// same object): its members are replaced by the save's, the first current (0x1FB99). With interface state 0 the
+    /// menu stays up (0x19D8A; DOSBox-X s25: after Begin the script went on at its PC in the loaded script area). With
+    /// any other state the program sets DS:49F8 := 1 (0x19D91, so the next script init keeps $4A00–$4A1F and
+    /// $6E79–$6E82) and leaves the menu: PROGRAM 0 calls START 0x3379 (0x3B95) and returns into the running ECL run at
+    /// its old PC in the loaded script area, with the old vectors and block; nothing enters the area again (the area
+    /// loop 0x403E runs once a session). DOSBox-X s39: a step's PICTURE 2; PROGRAM 0 in save I, then Remove × 6 and Load
+    /// of save J (same code, other text, its vectors 1 and 4 printing): J's text after PROGRAM 0, no vector 4, after the
+    /// step I's vector 1 (EXIT); PC, vectors and DS:84DC 20 as before, DS:49F8 = 1.
+    /// **Decided (user, s39):** a game save from another area (its block, $49F2 → DS:84DC after a load, or its disk byte
+    /// differ from the running script's) is not copied in: the caller enters it as a new game (<see cref="HallLoad.EnterArea"/>,
+    /// its entry and vector 4), instead of the program's run of the old PC over another area's code.
+    /// </summary>
+    public HallLoad LoadInHall(string savePath, EclParty party)
+    {
+        var (doc, problem) = ReadSave(Content, savePath);
+        var sg = Module.Por.PorEngineSave.ToSaveGame(doc);
+        if (sg.InterfaceState != 0 && (sg.CurrentBlock != Vm.CurrentScript || sg.Disk != Vm.CurrentDisk))
+            return HallLoad.EnterArea;
+        return ApplyInHall(doc, problem, party) == 0 ? HallLoad.StayInMenu : HallLoad.CarryOn;
+    }
+
+    private byte ApplyInHall(Module.EngineSaveDocument doc, string? problem, EclParty party)
+    {
         var notes = Module.Por.PorEngineSave.Check(doc, Content.VmProfile, Module.Por.PorEngineSave.Identity(Content));
         var sg = Module.Por.PorEngineSave.ToSaveGame(doc);
-        if (sg.InterfaceState != 0)
-            return false;
         Vm.Diagnostics.AddRange(notes);
         if (problem is not null)
             Vm.Diagnostics.Add(problem);
@@ -271,9 +297,11 @@ public sealed class PorGame
         party.Members.AddRange(members);
         party.CurrentIndex = party.Members.Count > 0 ? 0 : -1;
         Memory.Party = party;
-        LoadedInterfaceState = 0;
+        LoadedInterfaceState = sg.InterfaceState;
+        if (sg.InterfaceState != 0)
+            Vm.LoadingSave = true; // DS:49F8 := 1 (0x19D91)
         ReloadSavedMap();
-        return true;
+        return sg.InterfaceState;
     }
 
     /// <summary>
@@ -515,4 +543,15 @@ public sealed class PorGame
         public void DamageEnd(bool partyKilled) => Target.DamageEnd(partyKilled);
         public void TextHome() => Target.TextHome();
     }
+}
+
+/// <summary>What a Load in the training hall did (<see cref="PorGame.LoadInHall"/>).</summary>
+public enum HallLoad
+{
+    /// <summary>A state-0 save copied in; the hall stays up (0x19D8A).</summary>
+    StayInMenu,
+    /// <summary>A game save of the running area copied in; the hall ends and the running script goes on at its PC.</summary>
+    CarryOn,
+    /// <summary>A game save of another area: nothing copied; the caller enters it as a loaded game (user decision s39).</summary>
+    EnterArea,
 }

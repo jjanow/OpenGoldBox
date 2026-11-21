@@ -209,6 +209,7 @@ public sealed class EclVm
         var cells = Profile.Cells;
         _gosub.Clear();
         Memory.PictureShown = false; // 0x768F (SotSB OVR 0x9237: DS:A4C8)
+        Memory.ClearEncounterDraw(); // 0x76B2: DS:84C8–84C9
         Memory.Ds84D2 = false; // 0x7699 (SotSB OVR 0x923C: DS:A4B6, A4B7)
         Memory.Ds84D3 = false;
         Array.Clear(Flags);
@@ -1076,6 +1077,7 @@ public sealed class EclVm
             {
                 // P (0x3BC3): glyph g = (VM read at a + i) + 1 as a byte, drawn while g > 1. DS:84E0 cleared (0x3BDA).
                 var a = RawWord(1);
+                Memory.ClearEncounterDraw(); // 0x3BC9: DS:84C8–84C9
                 Memory.PictureShown = false;
                 var glyphs = new List<byte>();
                 for (int i = 0; i < 256; i++)
@@ -1277,6 +1279,7 @@ public sealed class EclVm
     private void DoExit()
     {
         RestoreSelected(); // 0xDAC
+        Memory.ClearEncounterDraw(); // 0xDC6: DS:84C8–84C9
         Memory.PictureShown = false; // 0xDD7 (DS:84E1 is not touched)
         _gosub.Clear();
         StopFlag = true;

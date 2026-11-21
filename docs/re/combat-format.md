@@ -287,8 +287,29 @@ view3d.md "Typing state"). DOSBox-X: a test save whose step runs ADDNPC 73 (a gn
 with no monsters; the gnoll's line wraps after the fifth word. Then the summary (found treasure), then the loot
 screen with the gnoll in the party list (cyan). The Client's three screens equal DOSBox-X pixel for pixel apart from
 its help lines (`VenueScreens.Loot`; before s22 it printed into the text window over the loot screen).
+**Row 24 under the window** (read s39, P + D): 0x6866 → 0x695E calls only the window 03F1:02E8 (0x697F, rows 0–23),
+the lines 0709:0768 (0x69F0) and then the menu routine 03C5:002A (0x6A40); before it the after-combat step's 0x5A47
+and 0x672A call no screen unit (0709, 03F1, 0464). So row 24 keeps what the fight left there while the lines type,
+and the press-enter menu is drawn over it word by word (not cleared first). **D** (s39, `fight_save.py BASE OUT
+1C36005E00640B00020001000224 --monpatch 2:0x32=1,0x11B=1`: ADDNPC 94, the level 3 magic-user with share 7, then one
+goblin guard with 1 HP whose coins make the pool; seed 12345, every member Quick, the continue-battle question
+answered No): the continue-battle question (No lit) stayed on row 24 under the NPC's share line as it
+typed (~1.3 s) until the menu line. Client: `ClientPlayer.KeepsCombatRow24` as for the party-destroyed window; 23 of
+126 Client frames equal before, 49 after: every share-window frame (26) now equal. The other misses (3–78) were the
+fight: the joined NPC's icon, drawn on the map in DOSBox-X, was missing in the Client (fixed, combat-menu.md
+"Icons"): 155 of 159 frames equal after that fix, the misses the help line and three frames where the share
+window first shows. There the Client's first three typed states ("L", "LE", "LEV") were caught on screen and
+DOSBox-X showed none of them: its first window frame already held "LEVE", 0.68 s after the last fight frame (the
+Client: 0.43 s). Machine time between the fight's end and the window `[?]` (not read).
+An earlier set-up stopped with "UNABLE TO FIND ITEM FILE" and quit to DOS. That was the test save's fault, not a
+path to match: its hand-written TREASURE had seven 2-byte operands and a bare `FF`, so the eighth operand's type byte
+was 0xFF (an undefined type, `ecl.py`), followed by LOADMON's opcode byte, and the code after it was misread. v8 was
+then not 255, and a v8 below 128 loads `ITEM<d>.DAX` block v8, whose absence "quits to DOS" (ecl-format.md
+TREASURE; GAME.OVR string "Unable to find item file"). With well-formed operands (`por_test_saves.py` save E) TREASURE
+runs; the capture above used no TREASURE (the goblin's coins fill the pool). After a COMBAT with no monsters the Client keeps row 24 blank
+under the window (no fight row; not compared) `[?]`.
 
-**Loot menu** (0x644B), P structure: View (0x21AED), Take (0x62B6), Pool (0x25191), Share (0x252C3), D (0x27C38),
+**Loot menu** (0x644B), P structure: View (0x21AED, called at 0x65B4; `camp.md` "View"), Take (0x62B6), Pool (0x25191), Share (0x252C3), D (0x27C38),
 Exit, G / O previous / next character (0x23819); the item list comes from 0x25C07.
 Menu line (s12): with money in the pool View, Take, Pool, Share; with items only View, Take, Pool; then Detect and
 Exit when there are items and the current character has spell 5 or 11 among its memorised bytes 0x17–0x2B, else

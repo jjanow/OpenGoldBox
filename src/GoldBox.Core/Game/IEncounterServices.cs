@@ -35,6 +35,12 @@ public interface IEncounterUi
     /// <paramref name="sprite"/>) at distance 1–2, the close-up <paramref name="picture"/> at 0.
     /// </summary>
     void ShowEncounter(byte sprite, byte picture, int distance);
+    /// <summary>
+    /// The encounter draw drew the sprite (<c>SPRIT</c> block <paramref name="sprite"/>, the one whose frames are loaded)
+    /// and no close-up (0x7A98–0x7AB7): at slot <paramref name="distance"/> + 1 in the 3D view (also at distance 0, when
+    /// the close-up is not drawn), at slot 2 on the overland.
+    /// </summary>
+    void ShowEncounterSprite(byte sprite, byte picture, int distance) => ShowEncounter(sprite, picture, distance);
     /// <summary>PICTURE: a picture (<paramref name="head"/> null) or a head ($6DE1) + body composite.</summary>
     void ShowPicture(byte picture, byte? head);
     /// <summary>Back to the normal view (PICTURE 255, SPRITEOFF).</summary>

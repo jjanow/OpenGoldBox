@@ -141,7 +141,26 @@ for far calls to CS:00DC, CS:01A5, CS:017B):
   over). A step forward: two such pulses, 275 ms apart (the move's cue, the redraw, the area loop's cue). Turning
   around: nothing. A bump: **106 ms** from the first rise to the final drop = 25 tick intervals, i.e. the 26 ticks
   of the model with the count at 13. `[?]` Not measured: the onset delay after the key (the PIT applies the new
-  channel-0 divisor when the running BIOS period ends, up to 55 ms), the Tandy, the fight's sounds.
+  channel-0 divisor when the running BIOS period ends, up to 55 ms).
+- **D (s39, DOSBox-X fights, PC speaker and Tandy, each recorded from DOSBox-X's own null sink with `parec`, the
+  Client's from its own sink with `client_xvfb.sh audio`, same save and seed 12345; `fight_save.py` saves: a vampire
+  MON4 23 with every member on Quick, and ADDNPC 94 + one goblin guard; combat-format.md / combat-menu.md s39):**
+  - Heard: steps (a creature's step on the map), impact (hits), miss, the missile's tunes (darts), the body
+    (CreatureDowned). Not heard: a spell's cast tune (no member cast under Quick) `[?]`.
+  - **Pitch and shape equal** on both devices: speaker step = one 27 ms pulse; miss ~1.19 kHz (half period 18–19
+    samples at 44.1 kHz on both sides); impact ~80 ms rising 275 → 595 Hz; body 500 ms at 100–200 Hz plus its tail
+    (~0.73 s in all, ending by itself inside the 0.9 s pause at speed 4); missile ~230 Hz (speaker) / ~3 kHz (Tandy).
+    Tandy: step ~59 ms 150 → 230 Hz; miss ~105 ms noise; impact ~84 ms; body cut at the pause end (0.90–0.92 s).
+  - **Fixed**: the body tune started after the downed picture's pause (Core cued it at the map removal, after the
+    display), 0.9 s late; it now starts with the picture (0.17 s after it in DOSBox-X: the picture's drawing time),
+    §3 "Hooks". Tandy noise: the Client restarted the noise register on every write of the noise control, which the
+    driver makes every tick, so the misses were a 237 Hz buzz (FFT peak 475 Hz) where DOSBox-X plays noise; §3. Tandy
+    body: the Client let the tune run 1.37 s past the bracket's end; the bracket now closes at once (§3 "Client").
+  - **Machine time, not changed**: DOSBox-X at 3000 cycles spends drawing time the Client does not: a creature's steps
+    on the combat map come every ~220 ms (Client ~117 ms: the auto-stop wait alone), a dart's flight and so its tune
+    last 0.36–0.50 s (Client 0.18–0.34 s; the moving icon's positions are drawn ~15–30 ms apart plus a ~0.15 s end),
+    and a step → impact gap was ~0.05–0.1 s longer. Auto-stop lengths vary by a few ticks with the BIOS-chain count,
+    which follows the real time spent in the brackets.
 - Tune lengths (speaker / Tandy, driver ticks until silent, from the emulated driver): step 9: 8 / 16; impact 6:
   65 / 20; miss 8: 9 / 60; bump = impact. With auto-stop the impact and miss sounds are cut to 14–26 ticks.
 
@@ -155,8 +174,12 @@ for far calls to CS:00DC, CS:01A5, CS:017B):
 - Output: PC speaker = PIT channel 2 in mode 3 (square wave at 1,193,182 / divisor Hz; divisor 0 = 65,536) gated by
   port 61h: bits 0 and 1 set = the wave, bit 1 alone = speaker held high, else low; a DC-blocking filter follows
   `[?]` (the speaker's analogue response is not modelled). Tandy = SN76489 at 3,579,545 Hz (tone = clock / 32 / period),
-  2 dB per attenuation step, 15-bit noise register `[?]` (taps as the TI part; the Tandy 1000's exact chip variant
-  not checked).
+  2 dB per attenuation step. Noise (s39): the Tandy 1000's NCR 8496 as DOSBox-X has it (MAME's NCR8496 model, which
+  DOSBox-X uses on every machine but the PCjr): a 16-bit register (feedback into bit 15, start 0x8000), white noise
+  from bits 1 and 5 with the second inverted, output bit 0; a write of the noise control restarts it only when the
+  white/periodic bit changes (the TI part restarts on every write, which with the driver's write every tick would
+  repeat the noise each 4.22 ms); data bytes for the noise register are ignored (`TandyNoiseTests`). `[?]` The early
+  Tandy 1000's SN76496 not checked.
 - The auto-stop model: cue → start the tune, run (BIOS-chain count + 13) ticks, silence; in a resident bracket the
   tune runs until the bracket closes (`PcSoundPlayer`). Rendered, a step is one 27.4 ms pulse and a bump 104–108 ms,
   as in DOSBox-X (`SoundRenderTests`).
@@ -174,8 +197,20 @@ for far calls to CS:00DC, CS:01A5, CS:017B):
   Under Xvfb/PulseAudio (s32), a step called both cues 114 ms apart and the dedicated null-sink recording
   contained both pulses. `[?]` A resident
   bracket's length is the program's animation. The missile, spell and Hold Person flights are drawn inside it (s25,
-  `FightState.Flight`, combat-menu.md "Moving icon"), so their tune sounds for the flight; the body drawing and the
-  message pause are not yet: such a bracket stays open until its tune ends by itself or the next sound call.
+  `FightState.Flight`, combat-menu.md "Moving icon"), so their tune sounds for the flight; (s39) the downed picture too: the Client's CreatureDowned display opens the
+  bracket, cues the body once the picture is drawn, waits the pause and closes it (OVR 0x31554 / 0x31744 / 0x317D6;
+  `FightState.FrontEndPlaysDowned`, the map removal then cues nothing; a drop the Client does not draw, e.g. turn
+  undead's destroyed, still cues at the removal). A bracket that stayed open while the Client drew (15 ms or more)
+  closes at once, which silences the tune as the timer uninstall does (DOSBox-X s39, Tandy body: cut at 0.9 s); one
+  opened and closed with nothing drawn between stays open until its tune ends by itself or the next sound call.
+- **D (s39): ECL sound in a load's vector 4.** A scratch save (save A with vector 4 = SAVE 8 → $03DE, CALL $BA03,
+  SAVE 10 → $03DE, CALL $BA03, EXIT; the other vectors EXIT) loaded at the party menu (L, B) on both sides.
+  DOSBox-X (3000 cycles, PC speaker on, SDL's dummy audio driver, so nothing reaches any sink; the mixer's own WAV
+  capture, F12+W): the step tune 9 as one 27.46 ms pulse, then tune 10 (0x3ADE) 109.85 ms after the first rise
+  (the step's auto-stop: 26 ticks, the count at 13): a 27.46 ms pulse, then 10.7 / 12.2 / 10.6 ms pulses with 11.9 /
+  12.3 / 11.1 ms gaps, 96.3 ms first rise to last fall. The Client (`client_xvfb.sh audio` on its null sink, PC
+  speaker): the same pulses to 0.05 ms, the second tune 116.67 ms after the first rise, 6.8 ms later than DOSBox-X
+  `[?]` (about 1.6 driver ticks; the Client's start of the second cue after the first one's wait, not measured further).
 
 ## 4. Module (`audio/`)
 
@@ -349,9 +384,24 @@ is cut by the fight's first sound.
   party defeat (5) use these same hooks under Best / Amiga presentation or when the selected sound device is
   Amiga. Amiga effects interrupt a song until another song starts. The camp exit stops the camp song.
 
+### 5.6 FS-UAE check (s39)
+
+The camp song (1) recorded from FS-UAE (A500, PAL, Kickstart 1.3; por-art-formats.md §4 "Amiga in FS-UAE") through its
+own null sink with `parec`, against the Client's camp under `--art amiga --sound amiga` (25 s each, from the camp's
+start in the Client, some seconds in on the Amiga). A semitone-band spectrogram cross-correlates best at tempo ratio
+1.00 (0.133 against 0.06–0.07 at 0.83, 0.9, 1.1, 1.2), lag 8.7 s: the Client's 50 Hz tick is the PAL machine's rate
+(**E**; which rate the program expects is still not stated, but a PAL A500 plays it as the Client does). Differences
+**[?] not built**: FS-UAE's output is stereo (Paula channels 0 / 3 left, 1 / 2 right: L/R rms 3241 / 4392), the Client's
+mono; above 3 kHz the Amiga is 10 dB lower, above 6 kHz 25–40 dB lower (the A500's output filter, which the Client's
+`PaulaSynth` lacks); FS-UAE has strong energy at 20–60 Hz (+17 dB, a 24–25 Hz peak) the Client does not, not
+explained. Not checked in the emulator: songs 2, 3, 5, an effect cutting a song, Paula's retrigger, the hunk 32 +0x2D1
+flag.
+
 ## 6. Open `[?]`
 
-- Auto-stop length and onset in DOSBox-X (§2.4); the speaker's analogue filter; the Tandy noise register.
+- Auto-stop onset in DOSBox-X (§2.4); the speaker's analogue filter; the early Tandy 1000's SN76496; a spell's cast
+  tune and Lightning Bolt / Fireball in DOSBox-X (not captured, s39); machine-time lengths (§2.4 s39) `[U]` whether
+  to model them.
 - Amiga (§5): PAL or NTSC rate; Paula's restart and latch timing; how the flag at hunk 32 +0x2D1 can change;
   the screens of hunks 4, 16 and 19.
 - Which other SSI games share this driver and its tunes 12–20.

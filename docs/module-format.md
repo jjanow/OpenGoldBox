@@ -415,6 +415,21 @@ For FRUA designs, and later for hand-made modules that don't want bytecode.
   and pen − 16 where one is; the PNG's palette is the interface colours 16–31 from `program`, no `paletteTable`.
   Without the folder the overlay has no rune font and the Client draws the DOS runes. Engine side:
   `IPorContent.Art("PROTECT", 8, choice)`; Client `RuneGlyphs` under Best / Amiga.
+- **Text font (importer 0.7.24, s39):** with disk A's `fonts` folder the importer also reads `poolrad.font` (the font
+  start-up sets on the window for all other text; name and height from `program`, `PorAmigaText`, after checking the
+  code that draws with it) and writes `art/amiga/poolrad/0/8` (category `font`, source `poolrad.font` block 8): 256
+  items of 8 × 8 as for the rune font, 1 where a bit is set; the PNG's palette is the interface colours 16–31. With it
+  `art/amiga/text-pens.json` (`AmigaTextPensDocument`: `pens`, for each DOS text colour 0–15 the pen the program draws
+  it in; the program draws each line again in pen + 1 one pixel to the right; `highlight`, importer 0.7.27: the lit
+  entry's bar pen and its two text pens; `row24`, importer 0.7.29: row 24's colours as register, 12-bit colour pairs;
+  `source`). From importer 0.7.27 the Amiga combat art (CPIC, CHEAD, CBODY,
+  COMSPR and the ground sets) carries palette table 0, the one the combat screen loads. Engine side:
+  `IPorContent.AmigaTextPens()`; Client `AmigaText` (`TextFont.Face`) under Amiga only (docs/re/por-art-formats.md §4
+  "Text font").
+- **Window frame (importer 0.7.26, s39):** `art/amiga/frame/0/1`–`/5` (category `frame`, source `program`, palette
+  table 3): the top strip, bottom strip, left side, right side and corner the Amiga program's frame routine copies
+  around a window, read from the player's `program` after checking that routine (`PorAmigaFrame`). Not in the Best
+  mix. Client: `AmigaFrame` through `Chrome.Box` under Amiga only.
 - **Party-icon colours (importer 0.7.5):** `art/amiga/icon-colours.json` (`AmigaIconColoursDocument`: `pairs`, the six
   index-pair bytes the Amiga program's party-icon recolouring reads, hunk 31 +0x210F, taken from the player's
   `program` after checking the three routines that read them; `source`). Written only when the pairs hold the pens of
@@ -665,7 +680,7 @@ With `--amiga` (Amiga v1.0, s17): 508 Amiga pictures over 16 files (every pictur
    take only an `IPorContent`.
 2. `GoldBox.Importer` (CLI `goldbox-import por GAMEDIR OUTDIR [--amiga AMIGADIR]`): scripts, maps, records, item
    types first. Then art (DOS, then Amiga), rules tables, text, saves. **Done (s16; the Amiga overlay s17; the
-   overland `rules/overland.json` s18, importer 0.6 after the s18 merges; `audio/dos/pcsound.json` and new `PartyMsg`, `CombatMsg`, `Hall`, `End`, river texts s19, importer 0.7; the icon editor's size and hair / face words `PartyMsg.Icon*` s20, importer 0.7.1; HMENU's one-word swap `Msg.HmenuButton` / `Msg.HmenuEnter` s21, importer 0.7.2; the encounter menus, messages and parley attitudes `Msg.Encounter*`, `Msg.BothSidesWait`, `Msg.MonstersFlee`, `Msg.ParleyAttitudes` s21, importer 0.7.3; the introduction's credits `Intro.0`–`Intro.28` s22, importer 0.7.4; the Amiga party-icon colour pairs `art/amiga/icon-colours.json` s22, importer 0.7.5; the Amiga intro's credits panels `art/amiga/intro/0/2`–`/9` s24, importer 0.7.8; the Amiga players' data `audio/amiga/sound.json` s25, importer 0.7.9; the spell effect messages `EffectMsg.*` s25, importer 0.7.12; the area map refusal `Msg.NoAreaMapHere` s25, importer 0.7.13; the monster specials' messages `CombatMsg.Handler*` s27, importer 0.7.14; the status-change messages `CombatMsg.Status*`, `CombatMsg.Poisoned`, `Rots`, `Drained*` and the fight-start line `CombatMsg.BattleBegins` s29, importer 0.7.18; revive, escape and seven handler texts `CombatMsg.StatusRevived*`, `StatusEscapes`, `Handler*` s30, importer 0.7.19; the guard word `CombatMsg.Guarding` s30, importer 0.7.20; the Amiga rune font `art/amiga/protect/0/8` s38, importer 0.7.22; the scroll list title `Msg.OnScroll` s38, importer 0.7.23).** The importer and the round
+   overland `rules/overland.json` s18, importer 0.6 after the s18 merges; `audio/dos/pcsound.json` and new `PartyMsg`, `CombatMsg`, `Hall`, `End`, river texts s19, importer 0.7; the icon editor's size and hair / face words `PartyMsg.Icon*` s20, importer 0.7.1; HMENU's one-word swap `Msg.HmenuButton` / `Msg.HmenuEnter` s21, importer 0.7.2; the encounter menus, messages and parley attitudes `Msg.Encounter*`, `Msg.BothSidesWait`, `Msg.MonstersFlee`, `Msg.ParleyAttitudes` s21, importer 0.7.3; the introduction's credits `Intro.0`–`Intro.28` s22, importer 0.7.4; the Amiga party-icon colour pairs `art/amiga/icon-colours.json` s22, importer 0.7.5; the Amiga intro's credits panels `art/amiga/intro/0/2`–`/9` s24, importer 0.7.8; the Amiga players' data `audio/amiga/sound.json` s25, importer 0.7.9; the spell effect messages `EffectMsg.*` s25, importer 0.7.12; the area map refusal `Msg.NoAreaMapHere` s25, importer 0.7.13; the monster specials' messages `CombatMsg.Handler*` s27, importer 0.7.14; the status-change messages `CombatMsg.Status*`, `CombatMsg.Poisoned`, `Rots`, `Drained*` and the fight-start line `CombatMsg.BattleBegins` s29, importer 0.7.18; revive, escape and seven handler texts `CombatMsg.StatusRevived*`, `StatusEscapes`, `Handler*` s30, importer 0.7.19; the guard word `CombatMsg.Guarding` s30, importer 0.7.20; the Amiga rune font `art/amiga/protect/0/8` s38, importer 0.7.22; the scroll list title `Msg.OnScroll` s38, importer 0.7.23; the Amiga text font `art/amiga/poolrad/0/8` and `art/amiga/text-pens.json` s39, importer 0.7.24; the menu and key-prompt pens and the Amiga window frame `art/amiga/frame/0/1`–`/5` s39, importer 0.7.26).** The importer and the round
    trip live in `GoldBox.Data/Module/Por/` (the Client imports with them); the CLI stays in `GoldBox.Importer`.
 3. **Round-trip test:** for every raw resource, module → original block must be byte-identical to the DAX block. All
    existing real-data tests also pass with the Client and Core reading the module instead of the game folder.

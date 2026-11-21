@@ -16,7 +16,7 @@ SIDE is ``dosbox`` (the DOSBox-X window: 640 x 400 under a 17-pixel menu bar, ha
 960 x 600 window, divided by 3). Every grab (python-xlib ``get_image``) is reduced to 320 x 200 EGA colour indices
 (nearest of the 16 standard EGA colours); a frame is kept when it differs from the previous one, with its time.
 
-Keys (XTEST, held 0.12 s, the window focused first) are pressed only while the screen has been still for --still
+Keys (XTEST, held 0.12 s, the window focused first; the grab goes on while a key is held) are pressed only while the screen has been still for --still
 seconds (default 0.4) and the state (panel row 1 + row 24 text with the highlighted words in brackets) has passed
 through a different state since the last press, so a menu row that a pause leaves on screen never gets a second
 key. The state string is ``NAME|ROW24``; ``--step RE=KEYS`` entries are used once each, in order, when the next one
@@ -172,6 +172,19 @@ class Window:
         self._raw, self._last = raw, to_indices(np.ascontiguousarray(a))
         return self._last
 
+    def key(self, k, down):
+        """One XTEST key event (the window focused first on the press)."""
+        from Xlib import XK
+        from Xlib.ext import xtest
+        if down:
+            self.win.set_input_focus(self.X.RevertToParent, self.X.CurrentTime)
+            self.d.sync()
+        code = self.d.keysym_to_keycode(XK.string_to_keysym(k))
+        if not code:
+            raise SystemExit('unknown key %s' % k)
+        xtest.fake_input(self.d, self.X.KeyPress if down else self.X.KeyRelease, code)
+        self.d.sync()
+
     def press(self, keys):
         from Xlib import XK
         from Xlib.ext import xtest
@@ -234,7 +247,7 @@ def cmd_grab(args):
     seen_other = True
     n_press = 0
     end_at = t0 + a.seconds
-    queue, queue_at = [], 0.0  # the rest of a key list with sleep:S entries, pressed one by one between grabs
+    queue, queue_at = [], 0.0  # the rest of a key list (key down / up and sleep:S entries), sent one by one between grabs
     try:
         while time.monotonic() < end_at or queue:
             f = win.grab()
@@ -244,7 +257,7 @@ def cmd_grab(args):
                 if k.startswith('sleep:'):
                     queue_at = now + float(k[6:])
                 else:
-                    win.press([k])
+                    win.key(k.partition(':')[2], k.startswith('down:'))
                 if not queue and a.presses and n_press >= a.presses:  # the tail runs from the list's last key
                     end_at = max(end_at, time.monotonic() + a.tail)
                 continue
@@ -275,10 +288,10 @@ def cmd_grab(args):
             if a.log:
                 print('%8.2f press %s at %s' % (now - t0, ','.join(keys), state), flush=True)
             presses.append((now - t0, ','.join(keys), state))
-            if any(k.startswith('sleep:') for k in keys):
-                queue, queue_at = list(keys), now
-            else:
-                win.press(keys)
+            # Each key held 0.12 s and 0.15 s apart as press() does, with the window still grabbed meanwhile (s39: a
+            # blocking press lost the Client's frames of the first 0.27 s after the key; the Client reacts at key down).
+            queue, queue_at = [e for k in keys for e in
+                               ([k] if k.startswith('sleep:') else ['down:' + k, 'sleep:0.12', 'up:' + k, 'sleep:0.15'])], now
             n_press += 1
             pressed_state, seen_other = state, False
             if a.presses and n_press >= a.presses:

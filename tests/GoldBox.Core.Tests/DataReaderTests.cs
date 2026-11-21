@@ -70,6 +70,7 @@ public class PorSaveGameTests
         raw[PorSaveGame.OffDisk] = 2;
         void Word(int off, int cell, ushort v) => BitConverter.GetBytes(v).CopyTo(raw, off + 2 * cell);
         Word(PorSaveGame.Off4900, 0xC5, 20);          // $49C5 map id
+        Word(PorSaveGame.Off4900, 0xF2, 20);          // $49F2 the block at the last command (DS:84DC after a load)
         Word(PorSaveGame.Off4900, 0x100, 7);          // $4A00
         Word(PorSaveGame.Off6B00, 0x312, 2);          // $6E12 disk
         Word(PorSaveGame.Off9700, 0x1FF, 0x1234);     // $98FF

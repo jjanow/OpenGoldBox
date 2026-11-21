@@ -68,7 +68,7 @@ public sealed class HallView
                 int col = 0;
                 if (c.MenuPrompt is { Length: > 0 } mp)
                 {
-                    Chrome.Text(f, font, 0, BottomRow, mp, PromptColour);
+                    Chrome.MenuPrompt(f, font, 0, BottomRow, mp, PromptColour);
                     col = mp.Length + 1;
                 }
                 for (int i = 0; i < c.Items.Count; i++)

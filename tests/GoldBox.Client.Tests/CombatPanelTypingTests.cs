@@ -72,6 +72,29 @@ public class CombatPanelTypingTests
     }
 
     [Fact]
+    public void The_ais_weapon_readying_draws_the_panel_again_and_types_the_weapon()
+    {
+        // 0xBF8A's redraw (START 0x1583 at 0xC4D7, when its readying changed anything): DOSBox-X s39, after the menu's
+        // Quick the panel is cleared and "11 DARTS" types again from an empty line (the Client had kept the line).
+        var r = new Rig(typing: true);
+        var ai = new MonsterAi(new byte[40]);
+        var fight = new Fight(new EclMemory(), new EncounterState(),
+            new BaseItemTable(new byte[BaseItemTable.EntrySize * BaseItemTable.Count]), _ => 0,
+            new MenuController(r.Chooser, ai), r.Map);
+        r.View.Fight = fight;
+        r.Chooser.Attach(fight);
+        Assert.NotNull(ai.PanelRedrawn);
+        r.Me[CombatRules.AutoCombat] = 1;
+        Assert.Null(r.View.ShownLines);
+        ai.PanelRedrawn!(r.Me);
+        var typed = r.Delays.Where(d => d.Typed is not null).ToList();
+        Assert.Equal(Enumerable.Range(1, r.Cells), typed.Select(d => d.Typed!.Value));
+        Assert.Same(r.Me, r.View.ShownLines!.Value.Creature);
+        r.Chooser.Detach(fight);
+        Assert.Null(ai.PanelRedrawn);
+    }
+
+    [Fact]
     public void A_menu_driven_creatures_turn_start_does_not_type_before_its_menu()
     {
         var r = new Rig(typing: true);

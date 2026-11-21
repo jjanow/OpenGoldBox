@@ -239,6 +239,68 @@ public class CampPlayTests
     }
 
     [Fact]
+    public void The_icon_editors_line_lights_from_its_digit_hotkeys()
+    {
+        // D s39: "Parts color-1 color-2 Size Exit" (hotkeys P 1 2 S E, 0x2C99A): Parts lit runs to two cells before the
+        // 1, so COLOR of color-1 is white too; color-1 lit runs from its 1 to the C of Size − 2 (the next COLOR white).
+        var font = new TextFont(Enumerable.Repeat((byte)0xFF, 177 * 8).ToArray());
+        var (items, keys) = CampScreens.ParseMenu("Parts color-1 color-2 Size Exit");
+        Assert.Equal("P12SE", keys);
+        var f = new IndexedFrame(320, 200);
+        ExploreScreen.DrawLine(f, font, items, 0, 0, i => keys[i]);
+        Assert.Equal("fffff.fffffaf.aaaaaaf.faaa.faaa", Row(f));
+        f = new IndexedFrame(320, 200);
+        ExploreScreen.DrawLine(f, font, items, 1, 0, i => keys[i]);
+        Assert.Equal("faaaa.aaaaaaf.fffffaf.faaa.faaa", Row(f));
+
+        static string Row(IndexedFrame f) =>
+            string.Concat(Enumerable.Range(0, 31).Select(c => CellColour(f, c, 24) is var k && k == 0 ? "." : k.ToString("x")));
+    }
+
+    [Fact]
+    public void A_held_name_stays_through_steps_and_turns_until_the_camp_draws_the_list()
+    {
+        // D s39 (revive then Exit, Left, Up, Right, Up, A, A, Encamp): the light red name stays through the steps, the
+        // turns and the area map (nothing there calls 00BA:0767; here turns and the map, as a step in save A runs its
+        // script); the camp's entry (START 0x27D9 case 2) draws it cyan.
+        if (Dir() is null)
+            return;
+        var r = Start();
+        var party = r.Game.Memory.Party!;
+        var who = party.Members[^1];
+        var f = new IndexedFrame(320, 200);
+        r.Screen.Draw(f, r.Input);                                 // the area's first list
+        r.Player.HoldRosterName(who);
+        foreach (var a in new[] { GameAction.TurnLeft, GameAction.TurnAround, GameAction.AreaMap, GameAction.AreaMap, GameAction.TurnRight })
+        {
+            Press(r, a);
+            Idle(r);
+            r.Screen.Draw(f, r.Input);
+        }
+        Assert.True(r.Player.RosterNameHeld(who));
+        // LOADCHAR changes the current member without a redraw: the list keeps the player's pick, the name stays.
+        int pick = party.CurrentIndex;
+        party.Selected = party.Current;
+        party.ChangedByScript = true;
+        party.CurrentIndex = (pick + 1) % party.Members.Count;
+        r.Screen.Draw(f, r.Input);
+        Assert.True(r.Player.RosterNameHeld(who));
+        party.CurrentIndex = pick;
+        party.ChangedByScript = false;
+        Press(r, GameAction.Encamp);
+        Assert.False(r.Player.RosterNameHeld(who));
+        Press(r, GameAction.Cancel);                               // leave the camp
+        // A script switch draws the list again (0x402B).
+        r.Player.HoldRosterName(who);
+        r.Screen.Draw(f, r.Input);
+        Assert.True(r.Player.RosterNameHeld(who));
+        r.Game.Vm.SetCurrentScript(r.Game.Vm.CurrentScript + 1, r.Game.Vm.CurrentDisk);
+        r.Screen.Draw(f, r.Input);
+        Assert.False(r.Player.RosterNameHeld(who));
+        r.Runner.Dispose();
+    }
+
+    [Fact]
     public void Camp_by_mouse_rest_stop_and_place_order()
     {
         if (Dir() is null)

@@ -135,3 +135,62 @@ public class SoundRenderTests
         Assert.InRange(e - s, min, max);
     }
 }
+
+/// <summary>
+/// The Tandy noise channel as DOSBox-X plays it (its NCR 8496 model): the PoR driver writes the noise control on every
+/// tick (4.22 ms), and the shift register is reset only when the white/periodic bit changes (DOSBox-X s39: the misses'
+/// noise; with a reset on every write the Client played a 237 Hz buzz).
+/// </summary>
+public class TandyNoiseTests
+{
+    private const int Rate = 44100, Tick = Rate * 5041 / 1193182; // samples per driver tick
+
+    private static float[] Noise(Func<int, byte> controlAt)
+    {
+        var chip = new Sn76489Synth(Rate);
+        chip.Out(0xF0); // noise attenuation 0
+        var b = new float[Tick * 8];
+        for (int t = 0; t < 8; t++)
+        {
+            chip.Out(controlAt(t));
+            chip.Render(b.AsSpan(t * Tick), Tick);
+        }
+        return b;
+    }
+
+    /// <summary>Correlation of the output with itself one driver tick later (1 = repeats every tick).</summary>
+    private static double TickCorrelation(float[] b)
+    {
+        double sxy = 0, sxx = 0, syy = 0;
+        for (int k = 0; k + Tick < b.Length; k++)
+        {
+            sxy += b[k] * b[k + Tick];
+            sxx += b[k] * b[k];
+            syy += b[k + Tick] * b[k + Tick];
+        }
+        return sxy / Math.Sqrt(sxx * syy);
+    }
+
+    [Fact]
+    public void Rewriting_the_same_noise_control_every_tick_does_not_restart_the_noise()
+    {
+        Assert.InRange(TickCorrelation(Noise(_ => 0xE4)), -0.3, 0.3); // white noise, N/512, written every tick
+    }
+
+    [Fact]
+    public void Changing_the_white_noise_bit_every_tick_restarts_it_every_tick()
+    {
+        // White on even ticks, periodic on odd ones: every white tick starts from the reset register, so the white
+        // ticks repeat each other (correlated two ticks apart).
+        var b = Noise(t => t % 2 == 0 ? (byte)0xE4 : (byte)0xE0);
+        double sxy = 0, sxx = 0, syy = 0;
+        for (int k = 0; k < Tick - 2; k++)
+        {
+            sxy += b[k] * b[k + 2 * Tick];
+            sxx += b[k] * b[k];
+            syy += b[k + 2 * Tick] * b[k + 2 * Tick];
+        }
+        Assert.True(sxy / Math.Sqrt(sxx * syy) > 0.5);
+    }
+}
+

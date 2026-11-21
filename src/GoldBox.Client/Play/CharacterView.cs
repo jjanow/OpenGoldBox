@@ -8,8 +8,9 @@ namespace GoldBox.Client.Play;
 /// View (GAME.OVR 0x21AED): the character page with its menu (Items, Spells, Trade, Drop, Exit), and the items page
 /// whose menu adds Sell and Id in a shop or temple (DS:49F3 = 1; 0x22104–0x2217E). Only Sell, Id and the member
 /// selection do real work; the other item commands say they are not built yet (TODO: Ready 0x2207B, Use 0x2D669,
-/// Trade 0x23154, Drop 0x234B2, Halve, Join, Spells — not read). [?] The page layout is ours (same data; the
-/// program's character page is not decoded yet).
+/// Trade 0x23154, Drop 0x234B2, Halve, Join, Spells — not read). The character page is the program's (0x21084,
+/// <see cref="CombatSheet"/>) through <see cref="TradeContext.ViewPage"/>; our list page (<see cref="Sheet(TradeContext,
+/// EclCharacter)"/>) only when the Client has no party pages. [?] The items page is still ours, not 0x21F32's.
 /// </summary>
 public static class CharacterView
 {
@@ -28,14 +29,21 @@ public static class CharacterView
     /// </summary>
     public static void Run(TradeContext t, Venue venue, Func<EclCharacter, IReadOnlyList<ViewEntry>, int>? page = null)
     {
+        // The camp (0x197B3), shop (0x730D), temple (0x5341) and loot menu (0x65B4) all call 0x21AED: the program's
+        // page whenever the Client has it (TradeContext.ViewPage).
+        page ??= t.ViewPage;
+        // After Drop the loop redraws only the money lines (0x21547): the page keeps the other values it showed.
+        EclCharacter? shown = null;
         while (t.Current is { } c)
         {
             // The menu has only the entries 0x21AED offers (FightItemScreens.ViewEntries): DOSBox-X s24, a fighter with
             // no memorised spells gets Items, Trade, Drop, Exit, so its Exit (4th) leaves the shared highlight on the
             // shop menu's 4th entry (Appraise).
             var entries = FightItemScreens.ViewEntries(c, venue == Venue.Shop ? FightItemScreens.InShop : (byte)0);
+            var onPage = shown ?? c;
+            shown = null;
             int action = page is not null
-                ? page(c, entries)
+                ? page(onPage, entries)
                 : t.Dialog.Page(new ListRequest(Sheet(t, c), [], [.. entries.Select(Word)], entries.Count - 1)
                 {
                     PartySelect = true,
@@ -49,8 +57,12 @@ public static class CharacterView
                 case ViewEntry.Items:
                     Items(t, venue);
                     break;
+                case ViewEntry.Drop when page is not null && t.Coins is { } coins:
+                    shown = DropMoney(t, c, venue, coins, onPage);
+                    break;
                 case ViewEntry.Spells or ViewEntry.Trade or ViewEntry.Drop:
-                    NotBuilt(t, Word(entry));
+                    // Over the program's page there is no text window: the notice goes on its bottom line.
+                    NotBuilt(t, Word(entry), page is not null);
                     break;
                 default:
                     return;
@@ -60,12 +72,50 @@ public static class CharacterView
 
     private static string Word(ViewEntry e) => e.ToString().ToUpperInvariant();
 
+    /// <summary>DS:49F3 for a venue: 0 party menu / hall, 1 shop and temple, 2 camp, 6 loot.</summary>
+    public static byte Context(Venue venue) => venue switch
+    {
+        Venue.Shop => FightItemScreens.InShop,
+        Venue.Camp => 2,
+        Venue.Loot => 6,
+        _ => 0,
+    };
+
+    /// <summary>
+    /// View's Drop (0x234E1, then the money lines 0x21547): until no money is left or the player leaves the coin list, a
+    /// coin kind and an amount (at most what is held; 0x2568A: coins and weight down, the pool up in a shop or the
+    /// loot step). Returns the character as the page now shows it: <paramref name="shownBefore"/>'s bytes with the new
+    /// money words, since the loop redraws only the money lines (encumbrance and the rest keep their old values).
+    /// </summary>
+    private static EclCharacter DropMoney(TradeContext t, EclCharacter c, Venue venue,
+        Func<EclCharacter, IReadOnlyList<int>, (int Kind, ushort Amount)?> coins, EclCharacter shownBefore)
+    {
+        var shown = new EclCharacter(shownBefore.Record);
+        shown.Items.AddRange(shownBefore.Items);
+        void Money()
+        {
+            for (int i = 0; i < 2 * FightItemScreens.CoinKinds; i++)
+                shown[FightItemScreens.Money + i] = c[FightItemScreens.Money + i];
+        }
+        while (true)
+        {
+            Money();
+            var kinds = Enumerable.Range(0, FightItemScreens.CoinKinds).Where(k => FightItemScreens.Coins(c, k) != 0).ToList();
+            if (kinds.Count == 0 || coins(shown, kinds) is not { } pick || !kinds.Contains(pick.Kind))
+                break;
+            ushort amount = Math.Min(pick.Amount, FightItemScreens.Coins(c, pick.Kind));
+            FightItemScreens.DropCoins(c, pick.Kind, amount, Context(venue), t.Pool);
+        }
+        Money();
+        return shown;
+    }
+
     /// <summary>Our notice for a command not built yet: in the text window, or on the bottom line where the screen has
     /// no text window (<see cref="TradeContext.MessagesOnBottomLine"/>: the party menu).</summary>
-    private static void NotBuilt(TradeContext t, string what)
+    private static void NotBuilt(TradeContext t, string what, bool bottomLine = false)
     {
         string text = what + ": NOT IN THIS BUILD YET.";
-        if (t.MessagesOnBottomLine)
+        if (bottomLine || t.MessagesOnBottomLine)
             t.Dialog.Ask(new KeyRequest(text) { Colour = 14 });
         else
             t.Dialog.Say(text, colour: 14);
@@ -113,6 +163,11 @@ public static class CharacterView
     /// </summary>
     public static void Items(TradeContext t, Venue venue)
     {
+        if (t.ItemsPage is { } itemsPage)
+        {
+            ProgramItems(t, venue, itemsPage);
+            return;
+        }
         int selected = 0, lastAction = 0;
         while (t.Current is { } c)
         {
@@ -163,6 +218,43 @@ public static class CharacterView
                 Identify(t, c, item);
             else
                 NotBuilt(t, actions[a.Action]);
+        }
+    }
+
+    /// <summary>
+    /// 0x21F32 on the program's page (<see cref="TradeContext.ItemsPage"/>): while the character has items, the entries
+    /// of <see cref="FightItemScreens.ItemsEntries"/> for the venue's DS:49F3 (Use only in the camp, 2; Sell and Id in a
+    /// shop or temple, 1) and the list, the row kept between choices; Exit or Escape back to View. Sell and Id run; the
+    /// other commands are not built yet (our notice on the bottom line). After each choice the weight is recalculated
+    /// (START 0x1758 at 0x224AF).
+    /// </summary>
+    private static void ProgramItems(TradeContext t, Venue venue,
+        Func<EclCharacter, IReadOnlyList<ItemsEntry>, int, Func<byte[], string>, ListAnswer> itemsPage)
+    {
+        int row = 0;
+        while (t.Current is { } c && c.Items.Count > 0)
+        {
+            Carrying.RecalculateWeight(c);
+            var entries = FightItemScreens.ItemsEntries(c, Context(venue), null, t.Memory ?? new EclMemory());
+            var a = itemsPage(c, entries, row, t.ItemName);
+            if (a.Action < 0 || a.Action >= entries.Count || entries[a.Action] == ItemsEntry.Exit)
+                return;
+            row = a.Row;
+            if (a.Row < 0 || a.Row >= c.Items.Count)
+                continue;
+            var item = c.Items[a.Row];
+            switch (entries[a.Action])
+            {
+                case ItemsEntry.Sell:
+                    Sell(t, c, item);
+                    break;
+                case ItemsEntry.Id:
+                    Identify(t, c, item);
+                    break;
+                case var e:
+                    NotBuilt(t, e.ToString().ToUpperInvariant(), bottomLine: true);
+                    break;
+            }
         }
     }
 

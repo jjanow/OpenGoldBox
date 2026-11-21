@@ -254,6 +254,43 @@ public sealed class PorModule : IPorContent
         return _iconPairs;
     }
 
+    private int[]? _textPens, _textHighlight, _row24;
+
+    /// <summary><c>art/amiga/text-pens.json</c>'s row-24 colours (register, 12-bit colour pairs), or null.</summary>
+    public int[]? AmigaRow24()
+    {
+        AmigaTextPens();
+        return _row24;
+    }
+    private bool _textPensRead;
+
+    /// <summary><c>art/amiga/text-pens.json</c>'s highlight (bar, text and pass-2 pen), or null.</summary>
+    public int[]? AmigaTextHighlight()
+    {
+        AmigaTextPens();
+        return _textHighlight;
+    }
+
+    /// <summary><c>art/amiga/text-pens.json</c>'s 16 pens (registers 16–30, even), or null (no Amiga text font).</summary>
+    public int[]? AmigaTextPens()
+    {
+        if (!_textPensRead)
+        {
+            _textPensRead = true;
+            if (Modules.File(AmigaTextPensDocument.RelativePath) is { } p
+                && ModuleJson.Read<AmigaTextPensDocument>(p) is { Pens: { Length: 16 } pens } doc && pens.All(v => v is >= 16 and < 31))
+            {
+                _textPens = pens;
+                if (doc.Highlight is [>= 16 and < 32, >= 0 and < 16, >= 0 and < 16] lit)
+                    _textHighlight = lit;
+                if (doc.Row24 is { Length: > 0 } r && r.Length % 2 == 0
+                    && r.Select((v, i) => i % 2 == 0 ? v is >= 0 and < 32 : v is >= 0 and <= 0xFFF).All(b => b))
+                    _row24 = r;
+            }
+        }
+        return _textPens;
+    }
+
     private readonly Dictionary<(string, int), (ArtDocument Doc, string Path)?> _art = [];
 
     private (ArtDocument Doc, string Path)? Art(string file, int id)

@@ -60,6 +60,9 @@ public sealed class TradeContext
     /// <summary>The party list drawn again (START 0x0767): held names show their colour again.</summary>
     public Action RosterDrawn { get; init; } = () => { };
 
+    /// <summary>The party list drawn with another lit member (null: none), as START's member pick draws it (00BA:2CA1).</summary>
+    public Action<EclCharacter?> RosterDrawnLit { get; init; } = _ => { };
+
     /// <summary>
     /// The position line keeps what it showed (true) until released (false): the rest loop 0x24A66 never draws it, the
     /// camp's Rest draws it after (0x1804A; D s33: 10:50 under a handler message on the first tick, the clock at 10:55).
@@ -87,6 +90,22 @@ public sealed class TradeContext
 
     /// <summary>The screen has no text window (the party menu): our notices go on the bottom line as a key wait.</summary>
     public bool MessagesOnBottomLine { get; init; }
+
+    /// <summary>
+    /// View's page and menu as the program draws them (<see cref="PartyMenuFlow.ViewPage"/>: 0x21AED, which the camp,
+    /// shop, temple and loot menus call); null: <see cref="CharacterView"/>'s own list page.
+    /// </summary>
+    public Func<EclCharacter, IReadOnlyList<ViewEntry>, int>? ViewPage { get; init; }
+
+    /// <summary>View's Items page as the program draws it (<see cref="PartyMenuFlow.ItemsPage"/>, 0x21F32): the entry and
+    /// the row; null: our list page.</summary>
+    public Func<EclCharacter, IReadOnlyList<ItemsEntry>, int, Func<byte[], string>, ListAnswer>? ItemsPage { get; init; }
+
+    /// <summary>View's Drop (0x234E1): the coin list and the amount (<see cref="PartyMenuFlow.Coins"/>); null: not built.</summary>
+    public Func<EclCharacter, IReadOnlyList<int>, (int Kind, ushort Amount)?>? Coins { get; init; }
+
+    /// <summary>The game's memory (VM $49E5 for the Items menu's Use), when there is a game.</summary>
+    public EclMemory? Memory { get; init; }
 
     public EclCharacter? Current => Party.Current;
 

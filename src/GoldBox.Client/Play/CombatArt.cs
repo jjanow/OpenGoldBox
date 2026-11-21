@@ -81,7 +81,15 @@ public sealed class CombatArt
         Wilderness = SameOrDos(Items(Single(_dir, "WILDCOM", 1, choice, paletteBase), opaque: true), dosWild);
         var dosRare = Items(Single(_dir, "RANDCOM", 1, PorArtChoice.Dos, null), opaque: true);
         Rare = SameOrDos(Items(Single(_dir, "RANDCOM", 1, choice, paletteBase), opaque: true), dosRare);
+        AmigaGround = choice == PorArtChoice.Amiga && Single(_dir, "DUNGCOM", 1, choice, paletteBase) is (_, var b and > 0)
+            ? (byte)b : null;
     }
+
+    /// <summary>
+    /// Under the Amiga art: the screen-palette index of pen 0 of the palette the combat screen loads (table 0, hunk 13
+    /// +0x5F0E; the Amiga combat art's own run), which the combat screen's blank cells show; null otherwise.
+    /// </summary>
+    public byte? AmigaGround { get; private set; }
 
     /// <summary>The variant's ground set cut to DOS's tile count (the tile bytes number DOS's set), or DOS's when it has fewer.</summary>
     public static List<CombatPicture> SameOrDos(List<CombatPicture> chosen, List<CombatPicture> dos) =>

@@ -204,6 +204,40 @@ public class RuneTextTests
     }
 }
 
+/// <summary>A CLEARBOX blank under the view redraw (DOSBox-X s39, save A: CLEARBOX; NEWECL 20).</summary>
+public class ClearBoxRedrawTests
+{
+    [Fact]
+    public void The_view_comes_back_alone_and_its_box_stays_blank()
+    {
+        if (TestRig.PorDir() is null)
+            return;
+        var dir = new PorGameDirectory(TestRig.PorDir()!);
+        var runner = new ScriptRunner();
+        PorGame? game = null;
+        var player = TestRig.Player(runner, () => game!.Memory);
+        player.Resources = ClientResources.Load(dir);
+        game = PorGame.FromSave(dir, PorViewArt.Load(dir), dir.Find("SAVGAMA.DAT")!, new PorPlayer(player, player, player, player), 7);
+        var screen = new ExploreScreen(game, player, runner, new TestRig.NoHost());
+        var input = new ActionInput(InputBindings.Defaults());
+        var f = new IndexedFrame(320, 200);
+        screen.Draw(f, input);
+        Assert.Contains(Enumerable.Range(16, 8), x => f[x, 60] != 0); // the view's box frame in column 2
+        player.ClearBox();
+        player.SwitchRedrawn(); // 0x3FF5 → 0x2DCF4: the 3D view alone
+        Assert.False(player.ViewBlanked);
+        Assert.True(player.ViewBoxBlank);
+        f = new IndexedFrame(320, 200);
+        screen.Draw(f, input);
+        for (int y = 8; y < 128; y++)
+            for (int x = 8; x < 128; x++)
+                if (x is < 24 or >= 112 || y is < 24 or >= 112)
+                    Assert.Equal(0, f[x, y]);
+        Assert.Contains(Enumerable.Range(24, 88), x => f[x, 60] != 0); // the view itself
+        runner.Dispose();
+    }
+}
+
 /// <summary>PROTECT on row 23 (DOSBox-X s30: a PRINTCLR, six PRINTRETs, then PROTECT).</summary>
 public class RuneEdgeRowTests
 {
@@ -377,5 +411,142 @@ public class AmigaRuneTests
         AssertAmigaCell(r, with, without, 6, 23, 80);
         Assert.Contains(Enumerable.Range(0, 64), i => r.Font.Items[79][i] == 0 && without[5 * 8 + i % 8, 23 * 8 + i / 8] != 0);
         r.Runner.Dispose();
+    }
+
+    /// <summary>
+    /// The text under the Amiga art (docs/re/por-art-formats.md §4 "Text font"; P, s39): disk A's <c>poolrad.font</c>,
+    /// drawn twice as the program's string routine does, in the pen PRINT uses for DOS colour 10 (28) and in pen 29 one
+    /// pixel to the right. Best and Original DOS keep the DOS text font. Returns without the player's files.
+    /// </summary>
+    [Fact]
+    public void Text_is_drawn_in_the_amiga_text_font_and_pens_under_amiga_only()
+    {
+        if (TestRig.PorDir() is null || Module.Value is not { } module || module.AmigaTextPens() is not { } pens
+            || module.Art(GoldBox.Data.Module.Por.PorAmigaText.Container, GoldBox.Data.Module.Por.PorAmigaText.Id, PorArtChoice.Amiga)
+                is not { Variant: "amiga", Frames: [var cells] } img)
+            return;
+        Assert.Equal(28, pens[Chrome.Green]);
+        var view = PorViewArt.Load(module);
+        var palette = new ScreenPalette();
+        var art = new ClientArt(module, view, palette, PorArtChoice.Amiga);
+        Assert.True(art.AmigaTextFont);
+        int b = palette.Base(img.PaletteRgb);
+        // Pens 28 and 29 are registers 28 and 29 of the program's interface colours.
+        for (int p = 28; p <= 29; p++)
+            Assert.Equal(new Microsoft.Xna.Framework.Color(img.PaletteRgb[3 * (p - 16)], img.PaletteRgb[3 * (p - 16) + 1],
+                img.PaletteRgb[3 * (p - 16) + 2]), palette.Colours[b + p - 16]);
+        // The line's pixel x (0–15: "PA") is a set bit of its character.
+        bool Bit(int x, int y) => x is >= 0 and < 16 && cells.Items["PA"[x / 8]][y * 8 + x % 8] != 0;
+        var f = new IndexedFrame(320, 200);
+        Chrome.Text(f, view.Font, 1, 17, "PA", Chrome.Green);
+        for (int y = 0; y < 8; y++)
+            for (int x = 0; x < 24; x++)
+                // Pass 2 (pen 29) lands last, one pixel right of every set bit, the cell after the line too; pass 1
+                // (pen 28) on the other set bits; nothing elsewhere.
+                Assert.Equal(Bit(x - 1, y) ? b + 13 : Bit(x, y) ? b + 12 : 0, f[8 + x, 17 * 8 + y]);
+        Assert.Contains(Enumerable.Range(0, 64), i => Bit(i % 16, i / 16) && !Bit(i % 16 - 1, i / 16));
+        // Best and Original DOS: the DOS text font (8X8D1 block 201, 'P' is glyph 16) in EGA colour 10 again.
+        var dosFont = DaxFile.Open(new PorGameDirectory(TestRig.PorDir()!).Find("8X8D1.DAX")!).Block(201)!;
+        foreach (var choice in new[] { PorArtChoice.Best, PorArtChoice.Dos })
+        {
+            art.Set(choice);
+            Assert.False(art.AmigaTextFont);
+            f.Clear();
+            Chrome.Text(f, view.Font, 1, 17, "P", Chrome.Green);
+            for (int i = 0; i < 64; i++)
+                Assert.Equal((dosFont[16 * 8 + i / 8] & (0x80 >> (i % 8))) != 0 ? Chrome.Green : 0, f[8 + i % 8, 17 * 8 + i / 8]);
+        }
+        art.Set(PorArtChoice.Amiga);
+        Assert.True(art.AmigaTextFont);
+        // The lit entry: the pen-28 bar, the text in pens 14 and 15 of the picture half (the frame's palette run).
+        if (module.AmigaTextHighlight() is [28, 14, 15]
+            && module.Art(GoldBox.Data.Module.Por.PorAmigaFrame.Container, GoldBox.Data.Module.Por.PorAmigaFrame.FirstId, PorArtChoice.Amiga)
+                is { } frame)
+        {
+            int lo = palette.Base(frame.PaletteRgb);
+            bool PBit(int x, int y) => x is >= 0 and < 8 && y < 8 && cells.Items['P'][y * 8 + x] != 0;
+            f.Clear();
+            Chrome.Lit(f, view.Font, 1, 4, "P", Chrome.White, listRow: false);
+            for (int y = 0; y <= 8; y++)
+                for (int x = 0; x <= 8; x++)
+                    Assert.Equal(PBit(x - 1, y) ? lo + 15 : PBit(x, y) ? lo + 14 : b + 12, f[8 + x, 32 + y]);
+            Assert.Equal(0, f[8 + 9, 32]);
+
+            // The current menu entry as the pressed gadget (decided s39): its box (8 · length + 2 wide, 8 high) complemented,
+            // pen p → 31 − p in row 24's colours: the blank (pen 0) shows register 31's row-24 colour, the pen-28 letters
+            // register 3's, the pass-2 pen 29 register 2's.
+            Assert.NotNull(art.Gadget);
+            var row24 = module.AmigaRow24()!;
+            Microsoft.Xna.Framework.Color Row24(int reg)
+            {
+                int i = Array.IndexOf(row24.Where((_, k) => k % 2 == 0).ToArray(), reg);
+                var rgb = GoldBox.Data.Dax.AmigaHunks.Rgb12To24([(byte)(row24[2 * i + 1] >> 8), (byte)row24[2 * i + 1]], 1);
+                return new Microsoft.Xna.Framework.Color(rgb[0], rgb[1], rgb[2]);
+            }
+            f.Clear();
+            Chrome.Text(f, view.Font, 1, 24, "P", Chrome.Green);
+            var before = (byte[])f.Pixels.Clone();
+            art.Gadget!.Entry(f, 1, 24, "P");
+            for (int y = 0; y < 8; y++)
+                for (int x = 0; x < 11; x++)
+                {
+                    byte was = before[(192 + y) * 320 + 8 + x], now = f[8 + x, 192 + y];
+                    if (x >= 10)
+                        Assert.Equal(was, now);                       // past the box (8 + 2 pixels)
+                    else if (was == 0)
+                        Assert.Equal(Row24(31), palette.Colours[now]);
+                    else if (was == b + 12)
+                        Assert.Equal(Row24(3), palette.Colours[now]);
+                    else if (was == b + 13)
+                        Assert.Equal(Row24(2), palette.Colours[now]);
+                }
+            art.Set(PorArtChoice.Best);
+            Assert.Null(art.Gadget);
+            art.Set(PorArtChoice.Amiga);
+        }
+        else
+            Assert.Fail("the module has no highlight pens");
+    }
+
+    /// <summary>
+    /// The Amiga window frame (docs/re/por-art-formats.md §4 "Window frame"; P, s39): hunk 25 +0x16D4 copies the top
+    /// and bottom strips, the sides and the corner from their own top-left corners around the window's cells. Under the
+    /// Amiga art only. Returns without the player's files.
+    /// </summary>
+    [Fact]
+    public void Windows_are_framed_with_the_amiga_strips_under_amiga_only()
+    {
+        if (Module.Value is not { } module
+            || Enumerable.Range(0, 5).Select(i => module.Art(GoldBox.Data.Module.Por.PorAmigaFrame.Container,
+                GoldBox.Data.Module.Por.PorAmigaFrame.FirstId + i, PorArtChoice.Amiga)).ToList() is not { } imgs
+            || imgs.Any(i => i is not { Variant: "amiga" }))
+            return;
+        var palette = new ScreenPalette();
+        var art = new ClientArt(module, null, palette, PorArtChoice.Amiga);
+        Assert.NotNull(art.Frame);
+        int b = palette.Base(imgs[0]!.PaletteRgb);
+        byte Px(int piece, int x, int y) => (byte)(b + imgs[piece]!.Frames[0].Items[0][y * imgs[piece]!.Frames[0].Width + x]);
+        var f = new IndexedFrame(320, 200);
+        f.Clear(7);
+        art.Frame!.Window(f, 17, 1, 38, 15);                     // the party list's window
+        for (int x = 0; x < 22 * 8; x++)
+        {
+            Assert.Equal(Px(0, x, 3), f[17 * 8 + x, 3]);          // top strip from its own x 0
+            Assert.Equal(Px(1, x, 5), f[17 * 8 + x, 16 * 8 + 5]); // bottom strip
+        }
+        for (int y = 0; y < 15 * 8; y++)
+        {
+            Assert.Equal(Px(2, 6, y), f[16 * 8 + 6, 8 + y]);     // left side from its own row 0
+            Assert.Equal(Px(3, 1, y), f[39 * 8 + 1, 8 + y]);     // right side
+        }
+        foreach (var (cx, cy) in new[] { (16, 0), (39, 0), (16, 16), (39, 16) })
+            for (int i = 0; i < 64; i++)
+                Assert.Equal(Px(4, i % 8, i / 8), f[cx * 8 + i % 8, cy * 8 + i / 8]);
+        Assert.Equal(7, f[20 * 8, 5 * 8]);                        // the inside is not the frame's
+        foreach (var choice in new[] { PorArtChoice.Best, PorArtChoice.Dos })
+        {
+            art.Set(choice);
+            Assert.Null(art.Frame);
+        }
     }
 }

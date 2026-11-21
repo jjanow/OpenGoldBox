@@ -53,7 +53,8 @@ public sealed class PartyMenuScreen(PartyMenuFlow flow, ScriptRunner runner, ISc
     public Audio.SoundSetting? Sound { get; init; }
 
     /// <summary>The requests the overlay answers: the creation and roster pages, and the questions asked over them.</summary>
-    public static bool IsPage(PlayerRequest? r) => r is PickRequest or SheetRequest or IconRequest or ModifyRequest;
+    public static bool IsPage(PlayerRequest? r) =>
+        r is PickRequest or SheetRequest or IconRequest or ModifyRequest or CharacterPageRequest;
 
     /// <summary>The start word the controls screen edits (the hall's J, <see cref="ClientSettings.ProgramWord"/>), or null.</summary>
     public WordSetting? StartWord { get; init; }
@@ -101,7 +102,14 @@ public sealed class PartyMenuScreen(PartyMenuFlow flow, ScriptRunner runner, ISc
         {
             var r = runner.Pending;
             // The icon editor asks only icon pages: after it (the camp's Alter Icon) the next question is the caller's.
-            if (IsPage(r) || (r is TextRequest or ChoiceRequest or KeyRequest && _background is not null and not IconRequest))
+            // View's page (the camp's, shop's, temple's, loot menu's) has only our notices over it: after it the next
+            // question is the venue's.
+            // Over View's pages only our notices (a key with a bottom-line text) and the drop amount stay; Sell's and Id's
+            // questions go to the venue's text window `[?]`.
+            bool viewPages = _background is SheetRequest { IsView: true } or CharacterPageRequest;
+            if (IsPage(r)
+                || (viewPages && r is KeyRequest { Prompt.Length: > 0 } or TextRequest)
+                || (!viewPages && r is TextRequest or ChoiceRequest or KeyRequest && _background is not null and not IconRequest))
                 return false;
             _switched = true;
             host.Pop();
@@ -132,8 +140,10 @@ public sealed class PartyMenuScreen(PartyMenuFlow flow, ScriptRunner runner, ISc
         _word = 0;
         _typed = "";
         _hasClick = false;
-        if (r is PartyMenuRequest or PickRequest or SheetRequest or IconRequest or ModifyRequest)
+        if (r is PartyMenuRequest or PickRequest or SheetRequest or IconRequest or ModifyRequest or CharacterPageRequest)
             _background = r;
+        if (r is CharacterPageRequest cp)
+            _selected = cp.Page.Selected;
         if (r is DelayRequest d)
             _delayEnd = _clock.Elapsed + d.Duration;
         if (r is ListRequest l)
@@ -146,7 +156,13 @@ public sealed class PartyMenuScreen(PartyMenuFlow flow, ScriptRunner runner, ISc
         }
         _word = r switch
         {
+            // The party menu's own call of the menu routine (0x19C77) has an empty item line, so the shared cell is past
+            // its last entry and goes back to 1 (0x2CCE7): View opens on its first word each time (DOSBox-X s39: Escape
+            // with Drop lit, V again: Items lit).
+            PartyMenuRequest => flow.Highlight.Start(0),
             SheetRequest s => flow.Highlight.Start(s.Actions.Count),
+            // The list routine 0x2D669 stores 1 in the cell on entry (0x2D6B9; the flow did): its first word.
+            CharacterPageRequest => flow.Highlight.Start(0),
             IconRequest ic => flow.Highlight.Start(ic.Actions.Count),
             ModifyRequest md => flow.Highlight.Start(md.Actions.Count),
             ChoiceRequest c => flow.Highlight.Start(c.Items.Count),
@@ -225,7 +241,12 @@ public sealed class PartyMenuScreen(PartyMenuFlow flow, ScriptRunner runner, ISc
             case SheetRequest s:
                 if (s.PartySelect && input.Pressed(GameAction.PreviousMember)) return new Reply(ChoiceRequest.PreviousMember);
                 if (s.PartySelect && input.Pressed(GameAction.NextMember)) return new Reply(ChoiceRequest.NextMember);
+                // View: the program's Return gives 13, which its loop ignores (DOSBox-X s39); the pad's A takes the word.
+                if (s.IsView && input.Pressed(GameAction.Confirm) && input.NewInput is (InputDevice.Keyboard, _))
+                    return null;
                 return Words(s.Actions, s.CancelAction, input);
+            case CharacterPageRequest cp:
+                return PageKeys(cp, input);
             case IconRequest ic:
                 return Words(ic.Actions, ic.CancelAction, input, ic.Hotkeys);
             case ModifyRequest md:
@@ -250,8 +271,12 @@ public sealed class PartyMenuScreen(PartyMenuFlow flow, ScriptRunner runner, ISc
         int w = words.Count;
         if (w == 0)
             return null;
-        if (input.Pressed(GameAction.MenuLeft)) _word = (_word + w - 1) % w;
-        if (input.Pressed(GameAction.MenuRight)) _word = (_word + 1) % w;
+        // ',' / '.' move the highlight and the shared cell with it (0x2CE93 / 0x2CEB7, wrapping); Left / Right do the
+        // same (the Client's, as on every menu line). Escape then leaves the cell where it was moved.
+        if (input.Pressed(GameAction.MenuLeft) || input.NewInput is (InputDevice.Keyboard, "OemComma"))
+            flow.Highlight.Index = _word = (_word + w - 1) % w;
+        if (input.Pressed(GameAction.MenuRight) || input.NewInput is (InputDevice.Keyboard, "OemPeriod"))
+            flow.Highlight.Index = _word = (_word + 1) % w;
         if (input.Pressed(GameAction.Confirm)) return Chosen(_word);
         if (input.Pressed(GameAction.Cancel) && cancel is { } c) return new Reply(c);
         if (hotkeys is not null)
@@ -266,6 +291,48 @@ public sealed class PartyMenuScreen(PartyMenuFlow flow, ScriptRunner runner, ISc
             for (int i = 0; i < w; i++)
                 if (words[i].Length > 0 && words[i][0] == k)
                     return Chosen(i);
+        return null;
+    }
+
+    /// <summary>
+    /// The item list routine 0x2D669's keys on View's Items page and the coin list (DOSBox-X s39, the camp's Items page):
+    /// Home / End and the keypad's 7 / 1 move the row (Up / Down too, the Client's: the program reads Down's scan code
+    /// as 'P' and only redraws); ',' / '.' (and Left / Right) the lit word; a hotkey runs its word on the row; Escape
+    /// the cancel word. A keyboard Return gives 13, which 0x21F32 does not act on, but the coin list takes the row
+    /// whatever the key (0x234E1); the pad's A takes the lit word (the row on the coin list).
+    /// </summary>
+    private Reply? PageKeys(CharacterPageRequest cp, ActionInput input)
+    {
+        int n = cp.Page.Rows.Count, w = cp.Entries.Count;
+        bool keys = input.LastDevice == InputDevice.Keyboard;
+        if (n > 0 && (input.Pressed(GameAction.MenuUp) || input.Pressed(GameAction.PreviousMember) || (keys && input.Pressed(GameAction.StepUpLeft))))
+            _selected = (_selected + n - 1) % n;
+        if (n > 0 && (input.Pressed(GameAction.MenuDown) || input.Pressed(GameAction.NextMember) || (keys && input.Pressed(GameAction.StepDownLeft))))
+            _selected = (_selected + 1) % n;
+        cp.Page.Selected = _selected;
+        if (w > 0 && (input.Pressed(GameAction.MenuLeft) || input.NewInput is (InputDevice.Keyboard, "OemComma")))
+            flow.Highlight.Index = _word = (_word + w - 1) % w;
+        if (w > 0 && (input.Pressed(GameAction.MenuRight) || input.NewInput is (InputDevice.Keyboard, "OemPeriod")))
+            flow.Highlight.Index = _word = (_word + 1) % w;
+        if (input.Pressed(GameAction.Cancel))
+            return new Reply(new ListAnswer(cp.CancelEntry, _selected));
+        if (input.Pressed(GameAction.Confirm))
+        {
+            if (cp.PickRows && n > 0)
+                return new Reply(new ListAnswer(PageRequest.RowPicked, _selected));
+            if (input.NewInput is (InputDevice.Keyboard, _))
+                return null;
+            flow.Highlight.Chosen(_word);
+            return new Reply(new ListAnswer(_word, _selected));
+        }
+        if (Key(input, out var k))
+            for (int i = 0; i < w; i++)
+                if (cp.Entries[i].Length > 0 && cp.Entries[i][0] == k)
+                {
+                    flow.Highlight.Chosen(i);
+                    _word = i;
+                    return new Reply(new ListAnswer(i, _selected));
+                }
         return null;
     }
 
@@ -480,6 +547,24 @@ public sealed class PartyMenuScreen(PartyMenuFlow flow, ScriptRunner runner, ISc
                 else if (row == MenuRow && WordAt(p.Actions, col, WordsStart(p.Prompt, true)) is { } w)
                     Give(new ListAnswer(w, _selected));
                 return null;
+            case CharacterPageRequest cp:
+            {
+                if (click.Right)
+                    return GameAction.Cancel;
+                if (row == MenuRow && WordAt(cp.Entries, col, WordsStart(cp.Prompt)) is { } pw)
+                {
+                    flow.Highlight.Chosen(pw);
+                    Give(new ListAnswer(pw, _selected));
+                }
+                else if (PageChrome.RowAt(cp.Page, row) is { } pr)
+                {
+                    // A click on the selected row: the coin list takes it; the Items page runs the lit word on it.
+                    if (pr == _selected)
+                        Give(new ListAnswer(cp.PickRows ? PageRequest.RowPicked : _word, pr));
+                    cp.Page.Selected = _selected = pr;
+                }
+                return null;
+            }
             case SheetRequest s:
                 if (click.Right)
                     return s.CancelAction is not null ? GameAction.Cancel : null;
@@ -549,6 +634,7 @@ public sealed class PartyMenuScreen(PartyMenuFlow flow, ScriptRunner runner, ISc
 
     public void Draw(IndexedFrame f, ActionInput input)
     {
+        Sync(); // a request answered this frame is drawn with its own highlight at once (no frame with the old one)
         var pending = runner.Pending;
         if (pending is ListRequest list)
         {
@@ -576,6 +662,11 @@ public sealed class PartyMenuScreen(PartyMenuFlow flow, ScriptRunner runner, ISc
             case SheetRequest s:
                 DrawSheet(f, s.Character);
                 break;
+            case CharacterPageRequest cp:
+                // The list routine draws its rows again without the highlight when it returns (DOSBox-X s39: the coin
+                // rows all green while the amount is asked).
+                DrawCharacterPage(f, cp, lit: pending == cp);
+                break;
             case IconRequest ic:
                 DrawIcons(f, ic);
                 break;
@@ -599,6 +690,9 @@ public sealed class PartyMenuScreen(PartyMenuFlow flow, ScriptRunner runner, ISc
             case SheetRequest s:
                 Line(f, s.Prompt, PromptColour, s.Actions, _word);
                 break;
+            case CharacterPageRequest cp:
+                Line(f, cp.Prompt, PromptColour, cp.Entries, _word);
+                break;
             case IconRequest ic:
                 Line(f, ic.Prompt, PromptColour, ic.Actions, _word, hotkeys: ic.Hotkeys);
                 break;
@@ -608,6 +702,14 @@ public sealed class PartyMenuScreen(PartyMenuFlow flow, ScriptRunner runner, ISc
             case ChoiceRequest c:
                 Line(f, c.MenuPrompt, PromptColour, c.Items, _word);
                 break;
+            case TextRequest t when back is CharacterPageRequest { PickRows: true } && input.LastDevice == InputDevice.Keyboard:
+                // Drop's amount (input 0x24F1D; DOSBox-X s39): the question in green, a space, the digits typed in white,
+                // no cursor.
+                Chrome.Clear(f, 0, MenuRow, 40);
+                string question = Fit(t.Prompt.ToUpperInvariant() + " ", 40);
+                Chrome.Text(f, font, 0, MenuRow, question, Chrome.Green);
+                Chrome.Text(f, font, question.Length, MenuRow, Fit(_typed, 40 - question.Length), Chrome.White);
+                break;
             case TextRequest t:
                 DrawTextEntry(f, t, input);
                 break;
@@ -616,6 +718,8 @@ public sealed class PartyMenuScreen(PartyMenuFlow flow, ScriptRunner runner, ISc
                 Line(f, kp, k.Colour ?? PromptColour, [], -1);
                 break;
         }
+        if (back is IconRequest)
+            CombatScreen.SwapGrey(f); // the icon editor's palette, row 24 included (D s39)
         // J's message and Train's (START 0x7DF8 / 0x2233: bottom line, during the pause).
         if (flow.Hall.Message is { } msg)
         {
@@ -626,25 +730,19 @@ public sealed class PartyMenuScreen(PartyMenuFlow flow, ScriptRunner runner, ISc
             Chrome.Text(f, font, 0, MenuRow, Fit(p2, 40), Chrome.Yellow);
     }
 
-    /// <summary>The bottom line: a prompt in colour 13, then words (the highlighted one white, others with a white
-    /// hotkey: the first letter, or the word's character in <paramref name="hotkeys"/>).</summary>
+    /// <summary>The bottom line: a prompt in colour 13, then words drawn as the menu routine 0x2CC8C draws them
+    /// (<see cref="ExploreScreen.DrawLine"/>: the hotkey is the first letter, or the word's character in
+    /// <paramref name="hotkeys"/>; the lit entry runs from its hotkey to two cells before the next one).</summary>
     private void Line(IndexedFrame f, string? prompt, byte promptColour, IReadOnlyList<string> words, int selected,
         int? start = null, string? hotkeys = null)
     {
         Chrome.Clear(f, 0, MenuRow, 40);
         if (prompt is { Length: > 0 })
-            Chrome.Text(f, font, 0, MenuRow, Fit(prompt.ToUpperInvariant(), 40), promptColour);
-        int col = start ?? WordsStart(prompt);
-        for (int i = 0; i < words.Count; i++)
-        {
-            var w = words[i];
-            if (col + w.Length > 40)
-                break;
-            Chrome.Text(f, font, col, MenuRow, w, i == selected ? Chrome.White : Chrome.Green);
-            int k = hotkeys is not null && i < hotkeys.Length ? Math.Max(0, w.IndexOf(hotkeys[i])) : 0;
-            Chrome.Text(f, font, col + k, MenuRow, w[k..(k + 1)], Chrome.White);
-            col += w.Length + 1;
-        }
+            Chrome.MenuPrompt(f, font, 0, MenuRow, Fit(prompt.ToUpperInvariant(), 40), promptColour);
+        // D s39: the icon editor's "Parts color-1 color-2 Size Exit" (hotkeys P 1 2 S E): Parts lit shows PARTS COLOR
+        // white, the '-' green and the 1 white; color-1 lit shows its 1 and the next word's COLOR white.
+        ExploreScreen.DrawLine(f, font, words, selected, start ?? WordsStart(prompt),
+            hotkeys is null ? null : i => i < hotkeys.Length ? hotkeys[i] : words[i].Length > 0 ? words[i][0] : '\0');
     }
 
     private void DrawMenu(IndexedFrame f, PartyMenuRequest m, ActionInput input, bool active)
@@ -706,25 +804,52 @@ public sealed class PartyMenuScreen(PartyMenuFlow flow, ScriptRunner runner, ISc
         }
     }
 
+    /// <summary>
+    /// View's Items page (0x21F32, <see cref="ItemsPages"/>) on its own frame, or the coin list of drop money (0x234E1)
+    /// over the View page: the money lines' box (0x21547: columns 12–26, rows 7–14) holds the coin rows, the selected
+    /// one lit.
+    /// </summary>
+    private void DrawCharacterPage(IndexedFrame f, CharacterPageRequest cp, bool lit)
+    {
+        var p = cp.Page;
+        if (lit)
+            p.Selected = _selected;
+        if (cp.Sheet is not { } c)
+        {
+            PageChrome.DrawBody(f, font, p, lit);
+            return;
+        }
+        DrawSheet(f, c);
+        for (int r = 7; r <= 14; r++)
+            Chrome.Clear(f, 12, r, 15);
+        for (int i = 0; i < p.Rows.Count && p.FirstRow + i <= 14; i++)
+        {
+            if (lit && i == p.Selected)
+                Chrome.Lit(f, font, p.RowCol, p.FirstRow + i, p.Rows[i], Chrome.White, listRow: true);
+            else
+                Chrome.Text(f, font, p.RowCol, p.FirstRow + i, p.Rows[i], Chrome.Green);
+        }
+    }
+
     /// <summary>The item types (for the readied weapon and armour on the page), when known.</summary>
     public BaseItemTable? Items { get; init; }
 
     /// <summary>The icon editor's page: the icon before the editor (old) and now (new), ready and action frames.</summary>
     private void DrawIcons(IndexedFrame f, IconRequest ic)
     {
-        // [?] The program switches to the combat palette (grey ground); the ground here is EGA dark grey.
-        for (int y = 0; y < 192; y++)
-            for (int x = 0; x < 320; x++)
-                f[x, y] = 8;
+        // The ground is colour 0 under the combat palette (0x1D1D9 → GAME.OVR 0x3081D: EGA registers 0 and 8 swapped,
+        // restored at 0x1D8A7 after the IconOk question), so it shows dark grey, row 24 and the frame's gaps too; Draw
+        // swaps the whole frame (CombatScreen.SwapGrey). The boxes below give the colours as seen, swapped back here.
         Chrome.Box(f, 0, 0, 39, 23);
         var old = new EclCharacter(ic.OldRecord);
         // Each frame over a 24 × 24 box (DOSBox-X s19: ready on light grey with a white / black bevel, action on dark
         // grey with a light grey / black bevel; [?] the program draws icon slot 25's frames there, not decoded).
+        static byte Seen(byte c) => c switch { 0 => 8, 8 => 0, _ => c };
         void Box(int x0, int y0, byte fill, byte light)
         {
             for (int y = 0; y < 24; y++)
                 for (int x = 0; x < 24; x++)
-                    f[x0 + x, y0 + y] = x < 2 || y < 2 ? light : x >= 22 || y >= 22 ? (byte)0 : fill;
+                    f[x0 + x, y0 + y] = Seen(x < 2 || y < 2 ? light : x >= 22 || y >= 22 ? (byte)0 : fill);
         }
         void Pair(EclCharacter c, int y, string label)
         {

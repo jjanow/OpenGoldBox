@@ -29,6 +29,9 @@ public sealed class ClientArt
     /// </summary>
     public RuneGlyphs? Runes { get; private set; }
 
+    /// <summary>Whether the text is drawn in the Amiga text font (<see cref="AmigaText"/>: Amiga only, when the module has it).</summary>
+    public bool AmigaTextFont => _view?.Font.Face is not null;
+
     /// <summary>Called after a change (the Client saves the setting).</summary>
     public Action<PorArtChoice>? Changed { get; set; }
 
@@ -63,7 +66,17 @@ public sealed class ClientArt
         Pictures.UseArt(choice, Palette.Base);
         Overland.UseArt(choice, Palette.Base);
         Runes = RuneGlyphs.Load(_content, choice, Palette.Base);
+        if (_view is not null)
+            _view.Font.Face = AmigaText.Load(_content, choice, Palette.Base);
+        Frame = AmigaFrame.Load(_content, choice, Palette.Base);
+        Gadget = AmigaGadget.Load(_content, choice, Palette.Base);
     }
+
+    /// <summary>The current menu entry as the Amiga's pressed gadget (<see cref="AmigaGadget"/>: Amiga only), or null.</summary>
+    public AmigaGadget? Gadget { get; private set; }
+
+    /// <summary>The Amiga window frame under this setting (<see cref="AmigaFrame"/>: Amiga only), or null.</summary>
+    public AmigaFrame? Frame { get; private set; }
 
     /// <summary>
     /// The Amiga title painting under this setting, or null: only a variant's own title (the Amiga intro painting, module

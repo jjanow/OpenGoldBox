@@ -338,6 +338,13 @@ allowed), Drop, Halve, Join; only Use can end the turn.
 item's aim (the menu's candidate list), Target: 2d4 + 2 damage, one charge off, his +0x0A on the target, and the
 play matches to the next menu (`FightManualUseCaptureTests`).
 
+**Keys** (P, s39; the same routines as outside a fight, camp.md "Items and Drop from View" for the DOSBox-X checks):
+View's menu (0x21CD1, keypad flag 0) and the Items page (0x2D669 at 0x222C9) take a keyboard Return as 13, which
+neither loop acts on, so the Client's fight View and Items ignore it (`CombatScreen.DecidePage`; the pad's A and a
+click still take the lit word); ',' / '.' move the lit word; the coin list takes the row on Return. Drop's amount
+(0x24F1D) is drawn as DOSBox-X showed it in the camp: the question green, a space, the digits white, no cursor, the
+coin rows unlit. `[?]` Not seen in a DOSBox-X fight itself.
+
 **Checked under emulation** (`tools/scripts/por_ai_oracle.py`, `AiCastProgramTests`): Halve and Join on 160
 generated item lists match the program item for item; the item use 0x22AC4 on 120 cases (`combat-ai.md`).
 
@@ -404,7 +411,11 @@ and Speed menus, an AI attack at game speed 9). Code: `src/GoldBox.Client/Screen
   Terrain 30: Darkstar given Stinking Cloud (`CHRDATA5.SAV` 0x2B = 34) cast it on an empty 2 × 2; the four cells were
   0x1E in the arena and drew RANDCOM item 4. The same screens added terrains 26 and 27 outdoors and WILDCOM 32, 34, 36,
   38, 40, 45, 47, 56 (one picture per terrain throughout).
-- **Icons**: player characters (record 0x84 < 0x80) get the party icon, other creatures the CPIC block = their icon slot's picture (LoadCombatIcon; a joined NPC not checked `[?]`), attack pose + 128 (seen in the AI
+- **Icons**: player characters (record 0x84 < 0x80) get the party icon, other creatures the CPIC block = their icon slot's picture (LoadCombatIcon). A joined NPC (ADDNPC; NPC byte ≥ 0x80) gets the composed party icon: the party join 0x1F42C
+  gives it a free slot of 0..7 and 0x1E468 builds that slot's picture from its record as for a player character (CHEAD
+  0xBD and CBODY 0xBE at 0x1E4BE / 0x1E506, recoloured from 0xC1–0xC6 through DS:3CF5 at 0x1E58B–0x1E63D); the icon
+  drawer only reads the slot. Client: party-side creatures (combat record +0x13 = 0) use the composed icon (**D** s39,
+  ADDNPC 94 the level 3 magic-user, every fight frame equal; `A_joined_npc_is_drawn_with_the_composed_party_icon`), attack pose + 128 (seen in the AI
   burst); party members are CBODY + CHEAD (head on the top rows) recoloured by 0xC1–0xC6, + 64 for icon size 2: all six
   members of save A matched pixel for pixel (`CombatArt.Party`). Colour 0 is see-through. **Facing 4–7 mirrors the
   icon** (read s29: the icon drawer GAME.OVR 0x31F68, far 03E9:0039, copies the slot's picture mirrored through START
@@ -526,13 +537,57 @@ and Speed menus, an AI attack at game speed 9). Code: `src/GoldBox.Client/Screen
   (Darkstar, Phineas: the icon differed in ~30 frames per throw): the flight's view rebuild draws the thrower standing
   (read s38, "Attack pose" below; the Client kept the pose, fixed). **D** (s38, the same fight again: `fight_save.py
   BASE OUT 1C0B00780001007824 --mon 6 --monpatch 120:0x32=1,0x11B=1`, seed 12345, all Quick): 513 of 518 Client frames
-  equal; the dart turns (Darkstar's and Phineas's, two rounds) 158 of 160, the two misses the weapon line retyped at the
-  AI's start after Quick, where the Client shows "11 DAR" in its first frame and DOSBox-X types it from the empty line
-  (0.3 s) `[?]`; the others the help lines and two frames at the end: the boar falls dead (handler 99's revive not
-reached in this run) and DOSBox-X draws the downed picture on **both** cells of its 2 × 1 footprint where the Client
-draws it on the first only `[?]`; then the program stops with "Runtime error 204 at 00B0:013A" (an invalid pointer
-operation) over the map, where the Client asks the continue-battle question `[?]` (not looked into). The AI panel's draw-clear-draw is machine time
-  (s30, s38). Keypad 7 / 1 move list highlights (they come as the step bindings' NumPad7 / NumPad1).
+  equal (s39: the s38 notes on its misses were partly wrong, see below). **s39** (read and seen again, the same set-up;
+  `fight_frames.py grab` now keeps grabbing while a key is held: its blocking press had lost the Client's frames of the
+  first 0.27 s after each key, as the Client reacts at key down; DOSBox-X's reaction comes later):
+  - **The weapon line after Quick** (P): the AI's best weapon routine 0xBF8A ends with START 0x1583 (0xC4CB–0xC4D7)
+    whenever `[bp−0x1D]` is set: a weapon changed, the off-hand item gave way, or **no off-hand item with fewer than
+    two hands used** (the shield branch's "different item" flag `[bp−0x1C]` starts at 1 and only an off-hand item that
+    is the best shield or cursed clears it; 0xC4BC sets `[bp−0x1D]` even when nothing moves). START 0x1583 clears the
+    panel and types the weapon again. **D**: after Quick, row 24 clears, ~0.23 s later (machine time between 0xABCF's
+    start and 0xC4D7, no Delay read `[?]`) the panel is cleared and drawn again with the weapon typed from an empty line,
+    for Darkstar (darts, no off-hand: the shield branch 0xC46C–0xC4BC), Phineas (dagger unreadied → readied,
+    0xC336–0xC3C3) and Thrender (flail, no shield: the shield branch); **not** for Bakshi (two-handed sword: the chosen
+    weapon is the readied one, so 0xC32D skips the weapon branch, and START 0x1758 at 0xC3CD rebuilds 0x100 to 2, so
+    neither the > 2 nor the < 2 branch runs: no branch sets the flag, s39 follow-up), Rhiannon or Brother Sean (weapon
+    and their best shield: `[bp−0x1C]` = 0). Bakshi's typing after Quick is MakeAttack's panel (0x140FE), he being next
+    to the boar (the s39 note that 0xBF8A redrew him was wrong). Test: `BestWeaponRedrawCaptureTests` on a state of
+    this fight (`fight_boar/c17_boar_revived`). It repeats at every AI turn of such a member (step 5, and the move
+    loop's 0xBF8A). So the s29 "draw-clear-draw" of an AI panel is this redraw: machine time for a creature with no
+    weapon line (monsters), a typed line for one with a weapon. The Client did not redraw (s38's "11 DAR" first frame
+    was the grab tool's lost frames over the attack's own typing). Fixed: Core `MonsterAi.PanelRedrawn` at 0xBF8A's end,
+    the Client's `ShowPanel` (`CombatPanelTypingTests.The_ais_weapon_readying_…`, `MonsterAiTests.Readying_the_best_…`).
+    The Client clears row 24 and the panel in the same frame (DOSBox-X's 0.23 s between them is machine time).
+  - **The downed picture** (P): CreatureDowned's loop 0x315FE–0x31682 runs i = 0..3 through 0x3073A with the slot's icon
+    size DS:5F2A (read before 0x31772 takes the creature off the map), drawing COMSPR 11 at (DS:604A + dx, DS:6092 + dy)
+    × 3 for every cell of the footprint (combat-map.md: size 1 one cell, 2 two down, 3 two right, 4 a 2 × 2 block). The
+    Client drew one cell. Fixed: `CombatView.HitMarkerSize` (the size remembered with the square), drawn on each
+    `IconCell` in view (`CombatTests.The_downed_picture_covers_every_cell_…`). `[?]` a footprint cell outside the view:
+    the loop does not clip (0x315CD scrolls the creature wholly into view first), the Client draws cells in view only.
+  - **"Runtime error 204 at 00B0:013A"** is a real bug of the original, not of the test set-up: the boar's 0x5F record
+    is freed twice when it runs out while the boar is in play (spells-effects.md, handler 95, "The original crashes
+    there"); the 1-HP patch only brought the revive sooner (in s39's run of the same set-up the boar was revived and
+    carried 0x5F before it fell; s38's "revive not reached" was wrong). The
+    Client goes on to the continue-battle question: **decided (user, s39): fixed, not an option** (an original bug).
+  - **MakeAttack's drawing order** (P, s39 follow-up; 0x1407F): (1) an AI attacker has just had ScrollView(its square,
+    2, toward the target) (0xBA22: a cell redraw, no facing set — the Core had set the AI's facing there, removed);
+    (2) the defender, unless noted three times (+0x0F ≥ 3) or attacked from behind, turns to face the attacker
+    (0x14085–0x140E1: +9 set; drawn by 0x31232 with frame 0 only when one of its cells is in view, 0x30E54(defender,
+    0)); (3) the panel, START 0x1583 at 0x140FE, the attacker **still in its old facing**; (4) the attacker's facing and
+    attack pose, 0x31232(attacker, direction, frame 1) at 0x14113; (5) +0x0A := the defender (0x14118); Delay(100)
+    (0x1412E). **0x31232** (0x31232–0x3131E) first scrolls the view to the creature, ScrollView(its square, 3, none),
+    when it is not wholly in view (0x30E54 with 1). So Darkstar's darts at the boar with only the boar's right cell in
+    view move the view onto the boar (the defender's turn) before Darkstar's panel types, and Darkstar's pose brings it
+    back (s39's 6 Darkstar misses), and Thrender's panel types with Thrender in his old facing (the 4 Thrender misses:
+    the Core had turned him at 0xBA22). Fixed: Core `Fight.MakeAttack` sets the facings at their places with the hooks
+    `AttackStarting`, `DefenderTurned`, `AttackPanel`, `AttackPosed`; `MonsterAi` no longer sets +9 at 0xBA22; the
+    Client draws 0x31232 with its scroll (`CombatChooser.FacingDrawn`). Test
+    `MonsterAiTests.Make_attacks_display_hooks_come_in_the_programs_order_…`. `[?]` the cast's facing (0x27E00, also
+    0x31232 with frame 1) is not given the scroll in the Client (no capture with a caster off view).
+  - **D** (s39 follow-up, the same DOSBox-X capture, the Client recaptured with the non-blocking grab): **583 of 584**
+    Client frames equal; the one left is the continue-battle question, which DOSBox-X never reaches (its runtime error;
+    the Client goes on, decided). Before the follow-up 570 of 581, before s39's fixes 538 of 550.
+  Keypad 7 / 1 move list highlights (they come as the step bindings' NumPad7 / NumPad1).
 - **View scrolling** (read s19, 0x30F0E / 0x310D0): ScrollView(x, y, delta, dir) aims at (x, y) + one step in dir;
   the view's centre is (view x + 3, view y + 3); a point within delta of it on both axes leaves the view (delta 255:
   always rebuilt, band 0); else on each axis where the point is outside the band the centre steps to the point, x kept
@@ -560,7 +615,8 @@ operation) over the map, where the Client asks the continue-battle question `[?]
     finds a party member dying (0xA11A–0xA134; **D**: row 24, the pause, cleared). Client `Fight.PartyMemberDying`.
   - `[?]` left: an AI creature's panel is drawn, cleared and drawn again at its turn's start (~50 ms in DOSBox-X;
     the Client draws it once; machine time, s30/s38); an attacker's pose went with a downed picture once (Thrender below
-    the vampire) and stayed once (Bakshi beside it; s38: "Attack pose" below); 3 pixels of the downed picture (COMSPR 11, the skull's mouth) show the ground grey
+    the vampire) and stayed once (Bakshi beside it; settled s39: it goes when the attacker stands on the view's centre,
+    "Attack pose" below); 3 pixels of the downed picture (COMSPR 11, the skull's mouth) show the ground grey
     in DOSBox-X and black in the Client. (s30: the panel's second draw read, the skull pixels fixed; see below.)
 - **s30 DOSBox-X checks** (method of s29, now kept as `tools/scripts/fight_frames.py`, dosbox-trace-method.md "s30";
   save A on disk 2, seed 12345 on both sides; counts are Client frames equal to a DOSBox-X frame with every s30 fix in,
@@ -588,7 +644,8 @@ operation) over the map, where the Client asks the continue-battle question `[?]
     0x1583 while it is in play).
   - The **AI panel's draw-clear-draw** (s29): read — the second draw is the weapon readying 0xBF8A's START
     0x1583 at 0xC4D7, called when anything changed (`[bp−0x1D]`; always for a creature with no weapon and no
-    shield, as the orcs and spectres). In DOSBox-X at 3000 cycles the cleared panel stays ~50–70 ms (CPU time between
+    shield, as the orcs and spectres, and for one with no off-hand item using fewer than two hands; s39: for a
+    party member with a weapon it types the weapon line again, now drawn by the Client, see the s39 boar notes). In DOSBox-X at 3000 cycles the cleared panel stays ~50–70 ms (CPU time between
     the clear and the redraw; no Delay). The Client draws the panel once; the frames that differ are the in-between
     states DOSBox-X's refresh catches (panel half drawn under the old menu row). Not changed: machine time (P, s38: from the
     AI start 0xABCF to 0xC4D7 the only waits are those of a message shown (0xBB81, 0xBC97, 0xBF8A's PauseOnly) and START
@@ -598,7 +655,7 @@ operation) over the map, where the Client asks the continue-battle question `[?]
     with their pauses), the downed picture and the pause: equal frame by frame. The one miss was s29's **3 skull
     pixels**: COMSPR 11 is drawn whole, its three colour-0 pixels included (grey under the combat palette); the
     Client drew colour 0 see-through, showing what lay under it (fixed, real-data test). The attacker's pose under a
-    downed picture (s29: kept once, gone once) not seen in s30; read s38 ("Attack pose" below). Set-up note: party saves written into CHRDAT 0x6D were back to the class values in DOSBox-X's
+    downed picture (s29: kept once, gone once) not seen in s30; read s38, seen s39 ("Attack pose" below). Set-up note: party saves written into CHRDAT 0x6D were back to the class values in DOSBox-X's
     memory after Load. Load's party join at 0x1F9C9 → 0x1F42C calls the full level-stat routine at 0x1F55A → 0x2AA87,
     including the saving-throw routine 0x2ACDC. The Client applies the full routine when loading a legacy save (s32,
     `save-format.md` "How a save game ties the files together").
@@ -621,7 +678,7 @@ operation) over the map, where the Client asks the continue-battle question `[?]
     the cleared row), 0.75 s after the blank pause began; the PauseOnly at speed 3 is 675 ms (before the line), the
     rest the fight set-up's machine and disk time: no wait between the line and the combat screen (P, s38;
     combat-map.md "Start messages"). The Client guarantees a rendered frame for the battle-start line even if updates
-    catch up before drawing (s31). The measured interval is a reference observation of that machine.
+    catch up before drawing (s31). The measured interval is a reference observation of that machine; the Client does not hold it (user, s39).
 - **The panel's text** (read s19): START 0x16EC in a fight clears (23, row)–(38, 21), writes the name at (23, row)
   (START 0x23B6: out of play light red, hostile = 1 yellow, else cyan) and word-wraps the text into
   (23, row + 1)–(38, 21) in green through START 0x77F8 (the text window routine, `TextWindow`; break set DS:0D16 =
@@ -667,12 +724,32 @@ operation) over the map, where the Client asks the continue-battle question `[?]
   - **The downed picture** (CreatureDowned 0x3154B, 0x315CD–0x315ED): ScrollView(the downed creature's square, 3)
     only when it is not wholly in view (0x30E54 with 1: every footprint cell in view; false once its icon is off the
     map); a rebuild then stands the attacker. A downed creature wholly in view leaves the pose up through the downed
-    picture and its pause, until the attack's end. The hit picture START 0x2B8B uses the same test (START 0x2BD7).
+    picture and its pause. **The end of CreatureDowned** (read s39, P): after the pause, the ground over the footprint
+    (0x3175D), the icon off the map (0x31772) and the cell grid (0x31778), it calls ScrollView(view x + 3, view y + 3,
+    3, none) (0x3177B–0x3179C): the view centre is always inside the band, so no rebuild, but ScrollView's cell redraw
+    0x30A0F (0x311C4) draws the ground and the creature on the **centre square** (grid DS:60DB via 0x30BF8, frame 0 at
+    0x30AB7). So an attacker on the view's centre stands again in the frame where the downed picture goes; anywhere
+    else it keeps the pose until the attack's end 0x142C5. The hit picture START 0x2B8B uses the same test (START 0x2BD7).
   - Client: `CombatView.Scroll` drops the pose on a rebuild and for the creature on the redrawn cell; `Downed` and
-    `ShowHit` scroll when the creature is not wholly in view (`CombatPoseTests`). The s29 vampire case (Thrender below
-    it lost the pose under the downed picture, Bakshi beside it kept it) needs the squares and view of that capture to
-    tell which ScrollView ran there `[?]`: for an adjacent creature the AI's ScrollView(attacker, 2, toward the target)
-    at 0xBA22 normally leaves it in view.
+    `ShowHit` scroll when the creature is not wholly in view, and `Downed` ends with `Scroll(view centre, 3)`
+    (`CombatPoseTests`). **D** (s39, `fight_save.py BASE OUT 1C0B00170001001724 --mon 4 --hp 200`, seed 12345, every
+    party turn Done / Quit, the s29 set-up; squares from a state: view corner (25, 10), centre (28, 13)): the vampire
+    drained four members dead. At (26, 12) over Bakshi (27, 12), at (28, 12) over Thrender (28, 13, the centre square
+    itself) and over Darkstar (29, 12) it kept the pose through the downed picture and both pauses, standing at the
+    attack's end; at (28, 13), the centre, over Rhiannon (29, 14) it stood in the frame where the downed picture went.
+    In s29 the vampire was then presumably on the centre square over Thrender (that capture's squares were not kept).
+    Client against this capture: 611 of 658 frames equal before, 613 of 659 after (every fight frame but the help
+    lines). The other 45 misses are the defeat end screen (the end text, the monsters-rejoice text): DOSBox-X keeps the
+    vampire's last move line (the vampire's last move line) on row 24 under it until "PRESS ANY KEY…" replaces it;
+    the Client's end screen had row 24 empty. Read (s39, P): from 0x6AA5 the results 0x5A47 (its callees 0x557E,
+    0x58D3: runtime arithmetic, START 00B0:0048, 00BA:0442) and 0x672A (0x78:0x2A, 0x0AF8:0x0254) call none of the
+    screen units (0709, 03F1, 0464); the window 03F1:02E8 (1, 1, 38, 22) covers rows 0–23 and its text 0709:0768 the box
+    (2, 5)–(37, 22); the first write to row 24 is the key line 0709:0BF5 at 0x6BAA (START 0x7C85 clears the row). So
+    row 24 keeps whatever the fight left there (s29's run had it blank). Client: `ExploreScreen` keeps row 24 of the
+    last combat frame (the 0/8 palette swap undone) and shows it under the window while
+    `ClientPlayer.KeepsCombatRow24` (`PartyDestroyedRowTests`); **D** against this capture: 658 of 659 frames equal
+    (the help line). The NPC share window after a won fight follows the same rule (combat-format.md "NPC treasure
+    share", s39).
 - **Spell results** (read s19, non-weapon damage 0x2C22E): the takes word, n and the points-of-damage words (n = 1: its own
   string 0x2C18B), then the element by DS:6819 AND 0xF7 (1 fire, 2 cold, 4 electricity, 0x10 acid) and the magic words when
   DS:6819 AND 8 = DS:6819 (mask 0 too; 9 and 0x0C get no magic words), shown by PrintNameStringAnim START 0x2B8B
@@ -743,7 +820,15 @@ operation) over the map, where the Client asks the continue-battle question `[?]
       - The game itself: no INT 21h AX=250Bh / 350Bh and no direct word write to 0000:002C / 002E in START.EXE or
         GAME.OVR (a byte-pattern search, not a proof that nothing else sets the vector).
       So on a stock machine (no IRQ 3 driver) the original shows no flight; with an IRQ 3 driver it depends on where
-      the driver landed `[?]`. The Client keeps 0 → no flight (the stock case and DOSBox-X's).
+      the driver landed. **D** (s39, DOSBox-X, `[serial] serial2=serialmouse`, `[dos] int33=false`, FreeDOS CuteMouse
+      2.1b4 `CTMOUSE /S2` before START: "Installed at COM2 (02F8h/IRQ3)"; vector read from a state at the area menu):
+      INT 0Bh = **CC01:019A** with DOSBox-X's UMBs (the driver moves itself up; byte 0x01) and **0812:019A** with
+      `umb=false` (byte 0x12): no flight in either (stock DOSBox-X: F000:CE60, byte 0x00). With the byte written to
+      0x2F in that state (seed 12345, the vampire fight above), the vampire's weaponless attack on Bakshi showed a
+      stone flight (COMSPR 8, five frames, ~0.1 s) from its square to Bakshi's before the attack message, and since the
+      flight's ScrollView(…, 255) rebuilds the view the vampire stood under Bakshi's downed picture. So the flight
+      needs a driver whose segment's low byte is 0x2F (a matter of load order and memory layout, 1 in 256), not seen
+      with a real layout. The Client keeps 0 → no flight (the stock case and DOSBox-X's).
     - the cast 0x27E4D (cell 0x12, 4 frames, 30 ms; bracket 0x27E08–0x27E56), Hold Person's further targets 0x28745
       (same), Lightning Bolt 0x29B02 (cell 0x13, 4, 50 ms, to the cell about to be hit, **from the cell the walk
       went on from**: [bp−0x37] / [bp−0x38] are set at 0x29A68 from the line's current cell, on entry and again on

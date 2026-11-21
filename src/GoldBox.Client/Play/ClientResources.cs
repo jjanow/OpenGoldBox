@@ -24,6 +24,9 @@ public sealed class ClientResources
     public string? AlterMenu { get; init; }
     public IReadOnlyList<string>? OrderMenus { get; init; }
 
+    /// <summary>START's member pick's line (00BA:2C41 "Select" + 00BA:2C19 " Exit"), original case, or null.</summary>
+    public string? TargetMenu { get; init; }
+
     /// <summary>Spell name 1..56 (DS:2912 + 41·(id − 1)) and level heading 1..9 (DS:0A79 + 41·level), or null.</summary>
     public Func<int, string?> SpellName { get; init; } = _ => null;
     public Func<int, string?> LevelName { get; init; } = _ => null;
@@ -96,6 +99,7 @@ public sealed class ClientResources
                 : [.. Enum.GetValues<TrainingHall.Entry>().Select(e => PorTrainingTables.MenuDefault(program, e) ?? true)],
             ItemSlot = items is null ? _ => -1 : it => items[it[0x2E], BaseItemTable.Slot],
             PagePrompt = program?.PagePrompt,
+            TargetMenu = program?.Text("Pick.Select") is { } sel && program.Text("Pick.Exit") is { } ex ? sel + ex : null,
         };
     }
 }

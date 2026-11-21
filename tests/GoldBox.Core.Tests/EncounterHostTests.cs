@@ -128,6 +128,106 @@ public class EncounterHostTests
     }
 
     [Fact]
+    public void A_second_close_up_in_the_same_run_is_skipped_while_the_head_is_the_same()
+    {
+        // 0x7ABC–0x7AD6 (DOSBox-X s39, save A: SETUPMON 1, 0, 2; SETUPMON 1, 0, 25 left PIC 2 up).
+        var rig = new Rig(new EclAsm()
+            .Op(EclOpcodes.SetupMon, Imm8(4), Imm8(0), Imm8(7))
+            .Op(EclOpcodes.SetupMon, Imm8(5), Imm8(0), Imm8(8))
+            .Op(EclOpcodes.Exit));
+        rig.Memory.Write(EncounterHost.HeadPicture, 255);
+        rig.Run();
+        Assert.Equal(["ShowEncounter 4 7 0"], rig.Ui.Calls);
+        Assert.Equal(255, rig.Memory.CloseUpHead);
+        Assert.False(rig.Memory.CloseUpUp); // EXIT cleared DS:84C8–84C9 (0xDC6)
+        Assert.False(rig.Memory.EncounterSpriteUp);
+    }
+
+    [Fact]
+    public void A_close_up_with_another_head_is_drawn_again_but_no_sprite_after_one()
+    {
+        var rig = new Rig(new EclAsm()
+            .Op(EclOpcodes.SetupMon, Imm8(4), Imm8(0), Imm8(7))
+            .Op(EclOpcodes.Save, Imm8(3), Mem(EncounterHost.HeadPicture))
+            .Op(EclOpcodes.SetupMon, Imm8(4), Imm8(0), Imm8(8))
+            .Op(EclOpcodes.SetupMon, Imm8(4), Imm8(2), Imm8(8)) // a close-up is up: no sprite (0x7A2A, 0x7A4B)
+            .Op(EclOpcodes.Exit));
+        rig.Memory.Write(EncounterHost.HeadPicture, 255);
+        rig.Run();
+        Assert.Equal(["ShowEncounter 4 7 0", "ShowEncounter 4 8 0"], rig.Ui.Calls);
+        Assert.Equal(3, rig.Memory.CloseUpHead);
+    }
+
+    [Fact]
+    public void After_PICTURE_a_sprite_in_the_same_run_is_not_drawn()
+    {
+        // PICTURE sets DS:84C9 (0x15F3) but not DS:84EA (DOSBox-X s39, save A: PICTURE 2; SETUPMON 1, 2, 25 left PIC 2).
+        var rig = new Rig(new EclAsm()
+            .Op(EclOpcodes.Picture, Imm8(2))
+            .Op(EclOpcodes.SetupMon, Imm8(4), Imm8(2), Imm8(7))
+            .Op(EclOpcodes.Exit));
+        rig.Memory.Write(EncounterHost.HeadPicture, 255);
+        rig.Run();
+        Assert.Equal(["ShowPicture 2 -"], rig.Ui.Calls);
+    }
+
+    [Fact]
+    public void PICTURE_255_ends_the_skip_and_the_next_sprite_is_loaded_again()
+    {
+        var rig = new Rig(new EclAsm()
+            .Op(EclOpcodes.SetupMon, Imm8(4), Imm8(0), Imm8(7))
+            .Op(EclOpcodes.Picture, Imm8(255))
+            .Op(EclOpcodes.SetupMon, Imm8(5), Imm8(2), Imm8(8))
+            .Op(EclOpcodes.Exit));
+        rig.Memory.Write(EncounterHost.HeadPicture, 255);
+        rig.Run();
+        Assert.Equal(["ShowEncounter 4 7 0", "RestoreView", "ShowEncounter 5 8 2"], rig.Ui.Calls);
+    }
+
+    [Fact]
+    public void While_the_sprite_is_loaded_a_new_sprite_number_draws_the_first_sprite()
+    {
+        // 0x7A48–0x7A93: the frames are loaded only while DS:84C8 is clear; SPRITEOFF does not clear it.
+        var rig = new Rig(new EclAsm()
+            .Op(EclOpcodes.SetupMon, Imm8(4), Imm8(2), Imm8(7))
+            .Op(EclOpcodes.SpriteOff)
+            .Op(EclOpcodes.SetupMon, Imm8(5), Imm8(2), Imm8(8))
+            .Op(EclOpcodes.Exit));
+        rig.Run();
+        Assert.Equal(["ShowEncounter 4 7 2", "RestoreView", "ShowEncounter 4 8 2"], rig.Ui.Calls);
+    }
+
+    [Fact]
+    public void On_the_overland_approach_and_combat_redraw_the_marker()
+    {
+        // 0x7A3A (DOSBox-X s39, save-overland 26 at 10,20: SETUPMON 0, 2, 0; APPROACH drew the next marker frame under
+        // the sprite) and COMBAT's START 0x3379 (case 3, 0x2635).
+        var rig = new Rig(new EclAsm()
+            .Op(EclOpcodes.SetupMon, Imm8(4), Imm8(2), Imm8(7))
+            .Op(EclOpcodes.Approach)
+            .Op(EclOpcodes.Approach)
+            .Op(EclOpcodes.ClrMon)
+            .Op(EclOpcodes.Combat)
+            .Op(EclOpcodes.Exit), outdoors: true);
+        rig.Memory.ViewMode = 3;
+        rig.Memory.PreviousViewMode = 3;
+        rig.Run();
+        Assert.Equal(3, rig.Memory.MarkerCounter);
+        // Distance 0 on the overland: the sprite (slot 2), no close-up (0x7AE2).
+        Assert.Equal(["ShowEncounter 4 7 2", "ShowEncounter 4 7 1", "ShowEncounter 4 7 0"], rig.Ui.Calls.Take(3));
+        Assert.False(rig.Memory.PictureShown);
+    }
+
+    [Fact]
+    public void The_encounter_draw_turns_the_area_map_off()
+    {
+        var rig = new Rig(new EclAsm().Op(EclOpcodes.SetupMon, Imm8(4), Imm8(2), Imm8(7)).Op(EclOpcodes.Exit));
+        rig.Memory.AreaMapShown = true;
+        rig.Run();
+        Assert.False(rig.Memory.AreaMapShown); // 0x7A62
+    }
+
+    [Fact]
     public void Setupmon_outdoors_starts_at_the_requested_distance()
     {
         var rig = new Rig(new EclAsm().Op(EclOpcodes.SetupMon, Imm8(4), Imm8(1), Imm8(7)).Op(EclOpcodes.Exit), outdoors: true);

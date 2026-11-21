@@ -301,7 +301,7 @@ public class OverlandViewTests
             });
         Assert.True(Overland.Shown(game.Memory));
         var art = PorOverlandArt.Load(game.Content);
-        var frame = art.Render(game.Loop, game.Content.Overland()!, game.Content.OverlandColumn(game.Vm.CurrentScript)!.Value);
+        var frame = art.Render(game.Loop, game.Content.Overland()!, game.Content.OverlandColumn(game.Memory.ViewMode - Overland.FirstMode + PorOverland.FirstScript)!.Value);
         Assert.Equal(sha256, Convert.ToHexStringLower(SHA256.HashData(frame.Pixels)));
     }
 
@@ -322,7 +322,7 @@ public class OverlandViewTests
 
         var art = PorOverlandArt.Load(game.Content);
         var map = game.Content.Overland()!;
-        int column = game.Content.OverlandColumn(game.Vm.CurrentScript)!.Value;
+        int column = game.Content.OverlandColumn(game.Memory.ViewMode - Overland.FirstMode + PorOverland.FirstScript)!.Value;
         IndexedFrame Frame(int counter, IReadOnlyList<int>? slots)
         {
             var f = new IndexedFrame(Overland.ViewPixels, Overland.ViewPixels);

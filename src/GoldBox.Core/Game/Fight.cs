@@ -101,11 +101,24 @@ public sealed class Fight
     public Action<EclCharacter, EclCharacter, FightRules.AttackOutcome, int>? AttackMade { get; set; }
 
     /// <summary>
-    /// Display hook (no game state): in <see cref="MakeAttack"/> once both facings are set and +0x0A written, where the
-    /// program shows the attacker in the panel (START 0x1583 at 0x140FE), draws it in its attack pose (0x31232 with
-    /// frame 1, 0x14113) and waits Delay(100) (0x1412E), before the attacks are rolled.
+    /// Display hooks (no game state) of <see cref="MakeAttack"/>, in the program's order (read s39):
+    /// <see cref="AttackStarting"/> at its entry, before any facing changes (the screen's part of what came before: an
+    /// AI creature's ScrollView 0xBA22);
+    /// <see cref="DefenderTurned"/> when the defender turned to face the attacker (+9 set, 0x14085–0x140E1: drawn by
+    /// 0x31232 with frame 0 when any of its cells is in view, 0x30E54(defender, 0); 0x31232 first scrolls the view to it,
+    /// ScrollView(its square, 3), when it is not wholly in view);
+    /// <see cref="AttackPanel"/> where the attacker shows in the panel (START 0x1583 at 0x140FE), its facing not yet
+    /// changed;
+    /// <see cref="AttackPosed"/> once the attacker's facing is set: its attack pose (0x31232 with frame 1 at 0x14113,
+    /// with the same scroll when it is not wholly in view) and Delay(100) (0x1412E), before the attacks are rolled.
     /// </summary>
     public Action<EclCharacter, EclCharacter>? AttackStarting { get; set; }
+    /// <inheritdoc cref="AttackStarting"/>
+    public Action<EclCharacter>? DefenderTurned { get; set; }
+    /// <inheritdoc cref="AttackStarting"/>
+    public Action<EclCharacter>? AttackPanel { get; set; }
+    /// <inheritdoc cref="AttackStarting"/>
+    public Action<EclCharacter>? AttackPosed { get; set; }
 
     /// <summary>
     /// Display hook (no game state): the end of round, after each creature's end-of-round part, when 0xA806(0) finds a
@@ -331,11 +344,16 @@ public sealed class Fight
     {
         var dRec = Record(defender);
         var aRec = Record(attacker);
-        if (dRec[CombatRecord.FlankCount] < 3 && !fromBehind)
-            dRec[CombatRecord.Facing] = (byte)Geometry.DirectionToward(defender, attacker);
-        aRec[CombatRecord.Facing] = (byte)Geometry.DirectionToward(attacker, defender);
-        aRec.Other = defender;
         AttackStarting?.Invoke(attacker, defender);
+        if (dRec[CombatRecord.FlankCount] < 3 && !fromBehind)
+        {
+            dRec[CombatRecord.Facing] = (byte)Geometry.DirectionToward(defender, attacker); // 0x14085–0x140E1
+            DefenderTurned?.Invoke(defender);
+        }
+        AttackPanel?.Invoke(attacker); // 0x140FE
+        aRec[CombatRecord.Facing] = (byte)Geometry.DirectionToward(attacker, defender); // 0x14113 (0x31232)
+        AttackPosed?.Invoke(attacker);
+        aRec.Other = defender; // 0x14118
         var outcome = new FightRules.AttackOutcome(false, defender[FightRules.InPlay] == 0, true, 0, 0);
         int hpBefore = defender[FightRules.Hp];
         // The missile's flight (0x14152 → 0x14EAB, before the attacks-left test).
@@ -353,7 +371,7 @@ public sealed class Fight
             State.Current = attacker;
             outcome = FightRules.RollAttacks(attacker, defender, fromBehind, State, Items, Memory, Random, Effects, Geometry);
             if (defender[FightRules.InPlay] == 0 && Geometry is CombatMap map && map.OnMap(defender))
-                map.Downed(defender, State);
+                map.Downed(defender, State, sound: !State.FrontEndPlaysDowned);
             if (ammo is not null)
                 FightRules.DropSpentWeapon(attacker, ammo, State, Encounter, Items);
             RecalculateStats(attacker); // START 0x1758 at 0x14299: also undoes the large-creature dice of 0x13C01

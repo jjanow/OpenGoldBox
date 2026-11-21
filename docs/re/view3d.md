@@ -287,9 +287,8 @@ EXIT: (1, 17), no clear).
    (party destroyed), the shop 0x7212, the attack text 0x12AF4 and the View unit's Items 0x21F32 (its 0x21DAA,
    0x22D28 Sell, 0x22F8C Id: box (1, 21)–(38, 22), colour 14). So:
    - **NPC share** (0x695E, the line at 0x69F0): types while the flag stands. It runs before 0x6BAF, so it has the
-     value the fight began with. Client: `TradeContext.TypesInto` (the window grows as it types; row 24 stays blank
-     meanwhile, following the party-destroyed window's DOSBox-X s29 check at the same point of 0x6AA5, not a new
-     DOSBox-X check).
+     value the fight began with. Client: `TradeContext.TypesInto` (the window grows as it types; row 24 keeps the
+     fight's last line meanwhile, `ClientPlayer.KeepsCombatRow24`; **D** s39, combat-format.md "NPC treasure share").
    - **Loot**: the menu (0x659D, 0x2CC8C) never types; the Exit question's two texts (0x666C clear + colour 10,
      0x6693 colour 15, box (1, 17)–(38, 22)) type while it stands; its Yes / No is the menu helper 0x8B57 (002B:0061),
      no 0x77F8. The Take, Pool, Share, coin and item lists (0x62B6, 0x6184, 0x25191, 0x252C3, 0x25974, 0x2D669) reach
@@ -307,8 +306,10 @@ EXIT: (1, 17), no clear).
 5. After the string a cursor past x1 goes to column x0 of the next row.
 The window never scrolls. Code: `GoldBox.Client.Play.TextWindow`.
 
-CLEARBOX (0x385A) blanks the picture window (1, 1)–(15, 15), not this box; `[?]` when the 3D view is drawn there
-again is not read (the Client keeps it blank until the next command). The clear (START 0x7E63 on cells 1–15) takes
+CLEARBOX (0x385A) blanks the picture window (1, 1)–(15, 15), not this box. The next view redraw (0x2DCF4: a
+command's or a script switch's) draws the 88 × 88 view alone, so the rest of the window, the view's box among it, stays
+blank (**D** s39, geo-format.md "Script switch"; Client `ClientPlayer.ViewBoxBlank`); `[?]` every full-layout redraw
+that ends it is not listed (the Client ends it at the camp, shop, temple, fight and hall, and at EXIT after a PROTECT). The clear (START 0x7E63 on cells 1–15) takes
 the view's own box (cells 2 and 14) too, which EXIT draws again only after a PROTECT went into the window
 (ecl-format.md "PROTECT"); since s29 the Client blanks all of cells 1–15 in the 3D view as well (before: the 88 × 88
 view only) and draws PROTECT's runes there. **D** (s30): DOSBox-X blanks the same cells and the Client's frame is equal
@@ -423,6 +424,47 @@ switches skips the step, so the line keeps the old square until the next command
 "15,4 E", New Phlan → slums "0,4 W"; the overland entry the same). The party list (START 0x1307) is likewise drawn only
 at such points: LOADCHAR's current member does not show until a redraw (Client: the player's pick stays marked).
 
+**Where the party list is drawn while exploring (P s39, D s39).** The list routine is START 00BA:0767 (linear
+0x1307); the screen set-up START 00BA:27D9 (0x3379) draws it in its cases 2 (camp, 0x286A), 3 and 4 (overland and
+3D, 0x28AE / 0x288C) and 6 (loot, 0x28EA), not in 0 or 1. Their callers while exploring:
+- the area's entry and a script switch: LOADFILES + LOADPIECES once both ran after an entry (0x1B1A / 0x1B27), else
+  the loop's 0x40BE; a NEWECL switch's end 0x402B (0x3EFA, after the new script's init and vector);
+- a member picked with Home / End, at the command line (0x17254 / 0x17261, overland 0x173D0) or in a menu that takes
+  them (HMENU's wrapper 0x8BCE / 0x8BDB, the camp 0x1976F, Magic 0x18C92, Alter 0x194EF, Order 0x1902B): 0x23819, then
+  the list;
+- ECL: DAMAGE after each line (0x96DD), LOADCHAR only when it removes an NPC (bit 0x80 with DS:84D2 / 84D3, 0x10E7),
+  ADDNPC (0x3940), COMBAT's redraw (0x2635); the temple 0x5280 and the shop 0x7212 on entry (0x5298, 0x722B) and at
+  the end of every pass of their menu, a pick and the exit pass too (0x5497, 0x745A); the heal list 0x4F4E after its redraw (0x51A0 / 0x51AD);
+  the treasure Take 0x62B6 and the loot menu 0x644B only after a Home / End pick (0x6361, 0x66FA / 0x6717);
+- the area's Cast when a list or a spell was shown (0x17D96), View (0x21D4F), Encamp's entry (0x196C7, case 2) and its
+  exit only after an interrupted rest (0x3B3B; a plain Exit redraws the view alone, 0x3B48); in the camp the rest's heal
+  with anyone healed (0x246CB), Order (0x1904F), Drop (0x19234) and Icon (0x19524);
+- StatusDone's end (0xECB3 → 0xED5D); the effect handlers 15 (0xF246) and 44 (0xFDC3), called through the handler
+  table on the clock's effect timeout: after their 1-point non-weapon damage (0x2C22E) they draw the list when
+  DS:49F3 ≠ 5 (0xF28A / 0xF299, 0xFE0A / 0xFE19); START 0x2EEA (00BA:234A), the healed message (START 0x16EC) then
+  the list outside a fight (00BA:239E / 00BA:23AE), called by handlers 50 (0xFF56) and 62 (0x10146) and the Cure Light
+  Wounds routine 0x28083 (spells-effects.md). Client (s39): Core raises `EffectEvent.HandlerDamageListed` after
+  handlers 15 / 44's damage and `Healed` from handlers 50 / 62 and Cure Light Wounds; `OutsideEffectMessages` shows
+  the healed words and releases a held name at both.
+
+**The list's values (s39).** The program's list shows names, colours, AC and HP as they were at its last drawing;
+memory changes in between (a heal before its message, damage before its list call) show only at the next of the
+points above. Client: `ClientPlayer.ReleaseRosterNames` copies the members' records at each of those points and
+`Chrome.PartyList` draws the copies (`RosterAsDrawn`); a member that joined since is drawn from memory. START's member
+pick draws the list with its pick lit and DS:5D92 unchanged (00BA:2CA1), which stays until the next drawing
+(`ReleaseRosterNamesLit`). DOSBox-X runs: rest with revive, handler 62 and 15 136 of 136; camp Cure Light Wounds 43 of
+43; revive / step / turn / re-encamp / icon editor 85 of 86 (one row-24 transition frame); Drop's yes/no 35 of 42 (the
+misses: the program shows the first 4–5 characters of a typed message at once, the Client types them one by one `[?]`).
+Not drawn: a step (0x16D58, the move 0x17438), a turn (0x2ED72 + 0x2EEF4), the area map toggle (0x2EEF4), Search and
+Look (flags and the clock 0x241A1), the view's rebuild 0x2DCF4, PRINT and PICTURE: none of them reaches 0x0767 or
+0x3379 through direct calls (call graph read from each; indirect handler calls are not followed `[?]`). **D** (s39, the
+s38 revive save; revive in the camp's rest, Exit, Left, Up, Right, Up, A, A, Encamp): Darkstar's name stays light red
+through the exit, both turns, both steps and the area map on and off, and comes back cyan on Encamp's first frame of
+the list. Client: `ClientPlayer.ReleaseRosterNames` at these points (camp entry and interrupted exit, Order, Drop, Icon,
+the shop's and temple's passes, DAMAGE, an area or script change, a change of the party's size (LOADCHAR's NPC
+removal, ADDNPC), a pick shown on the list; LOADCHAR's change of the current member no longer releases it, and a hold
+remembers the member the list shows); ADDNPC itself is not applied in the Client.
+
 **Frames (s21, START 0x3F10 via the window routine 03F1:02E8):** 8 × 8 symbols 0x114 + 3 · style + piece, piece 0 the
 corners, 1 the left / right columns, 2 the top / bottom rows; symbols 276… are 8X8D1 block 202 tiles 20… Every window
 seen uses style 0 (styles 1–3 are tiles 23–30 `[?]` where used).
@@ -444,7 +486,10 @@ Views: block 6 map 6 at 1,8 N and 5,8 E (hedges); block 4 map 4 at 14,10 N and 8
 block 3 map 3 at 1,9 W and map 5 at 13,7 E; the hedge maze (block 5) on map 3 at 8,8 N, 4 at 6,10 S, 5 at 5,6 E and
 6 at 9,7 W; the inner tower (block 7, map 7, sky 8) at 2,5 S, 7,9 N and 10,5 W. 0 differing pixels in all 14,
 pinned in `OtherAreaViewTests.Valjevo_views_match_dosbox` (through `PorArea` and `PorGame`; no diagnostic). Nothing
-needed fixing. `[?]` A save made in the hedge maze holds map 3–6 in $49C5, and the VM takes its current script number from
-$49C5 (`PorSaveGame.ScriptId`), so after such a load the Client counts block 3–6 as current while block 5's code runs;
-the views do not depend on it, but code that reads the current block (DS:84DC; NEWECL's $49F2 write, then a vector
-4's `COMPARE [$49F2]`) could differ. What the program's Load sets DS:84DC to is not read.
+needed fixing. A save made in the hedge maze holds map 3–6 in $49C5 and block 5 in $49F2. **P + D (s39):** Load
+(0x1F5E8) does not write DS:84DC; the area entry after it sets DS:84DC := low byte of $49F2 (0x4067–0x4070), the
+block current at the last command read (written back at 0x40D6 / 0x40FA; NEWECL first stores the old block there,
+0x1926). So such a save runs as block 5. DOSBox-X: after loading `save-overland` saves ($49C5 26, save A's $49F2 20)
+the state read DS:84DC = 20. Engine since s39: `PorSaveGame.CurrentBlock` ($49F2) is the VM's current block after a
+load (before: $49C5); the tests and `overland-compare` that took the overland's column from it take it from the view
+mode now.

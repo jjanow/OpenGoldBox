@@ -87,14 +87,13 @@ public class CampEffectMessageTests
         var s = new Script(w,
             2, 0,                 // MAGIC, CAST
             new ListAnswer(0, 1), // spell 5 (row 0 is the heading)
-            null,                 // nothing memorised now: message key
-            5, 5);
+            5, 5);                // (nothing memorised now: START 0x16EC with the pause, 0x17D82: a delay, no key)
         var c = Camp(s, w, a, speed: 2);
         VenueScreens.Camp(c, null);
         Assert.Equal(0, s.Left);
         // The cast message (DOSBox-X s29): name and the casts word on row 19, the spell on row 20, the game-speed
         // pause and no key; then the effect message.
-        Assert.Equal(2, s.Delays.Count);
+        Assert.Equal(3, s.Delays.Count);                     // the cast, the effect, "no spells memorised"
         var cast = s.Delays[0];
         Assert.Equal(TimeSpan.FromMilliseconds(450), cast.Wait);
         Assert.StartsWith("ANNA ", cast.Rows[2].Trim());
@@ -113,7 +112,7 @@ public class CampEffectMessageTests
     public void Speed_0_does_not_wait()
     {
         var w = new TextWindow();
-        var s = new Script(w, 2, 0, new ListAnswer(0, 1), null, 5, 5);
+        var s = new Script(w, 2, 0, new ListAnswer(0, 1), 5, 5);
         VenueScreens.Camp(Camp(s, w, Member(), speed: 0), null);
         Assert.Equal(0, s.Left);
         Assert.Empty(s.Delays);
@@ -128,7 +127,7 @@ public class CampEffectMessageTests
         ListRequest? under = null;
         var seenUnder = new List<ListRequest?>();
         var lists = new List<ListRequest>();
-        var s = new Script(w, 2, 0, new ListAnswer(0, 1), null, 5, 5);
+        var s = new Script(w, 2, 0, new ListAnswer(0, 1), 5, 5);
         var c = Camp(s, w, Member(), speed: 2, pageUnder: p => under = p);
         var t = c.Trade;
         var dialog = new Dialog(r =>
@@ -153,10 +152,36 @@ public class CampEffectMessageTests
         };
         VenueScreens.Camp(camp, null);
         Assert.Equal(0, s.Left);
-        Assert.Equal(2, seenUnder.Count);
-        Assert.All(seenUnder, p => Assert.Same(lists[0], p)); // the cast message and the effect message over the page
+        Assert.Equal(3, seenUnder.Count);
+        Assert.All(seenUnder.Take(2), p => Assert.Same(lists[0], p)); // the cast message and the effect message over the page
         Assert.Null(under);
         Assert.NotNull(lists[0].Paging);
         Assert.Equal(SpellLists.FirstRow, lists[0].FirstRow);
+    }
+
+    [Fact]
+    public void Drops_messages_are_the_panel_layout_and_its_pause_is_the_game_speed_delay()
+    {
+        // START 0x16EC from Drop (0x19195 pause 0, 0x19258 pause 1; D s39): the name on row 18, the text from row 19,
+        // the relief message cleared after DS:49E2 × 225 ms with no key.
+        var w = new TextWindow();
+        var a = Member();
+        var s = new Script(w,
+            4, 1,                 // ALTER, DROP
+            1,                    // drop from party? NO
+            5, 5);                // EXIT, EXIT
+        var c = Camp(s, w, a, speed: 4);
+        var b = Member();
+        b.Name = "Ben";
+        c.Party.Members.Add(b);
+        VenueScreens.Camp(c, null);
+        Assert.Equal(0, s.Left);
+        var d = Assert.Single(s.Delays);
+        Assert.Equal(TimeSpan.FromMilliseconds(900), d.Wait);
+        Assert.Equal("", d.Rows[0].Trim());
+        Assert.Equal("ANNA", d.Rows[1].Trim());
+        Assert.Equal(11, d.NameColour);
+        Assert.NotEqual("", d.Rows[2].Trim());
+        Assert.Equal(2, c.Party.Members.Count);
     }
 }

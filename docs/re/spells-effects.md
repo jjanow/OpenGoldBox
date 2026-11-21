@@ -115,7 +115,20 @@ Team counts are not touched (the next count does it). Callers, texts and display
 **Healing** (0x2C647, creature, amount, bypass): only for status 0, 1, 4, 5 (set at CS:0x173D). Below full HP with
 bypass: healed. Otherwise rot (0x32) blocks it, and so does bypass at full HP. HP + amount (byte), at most 0x32; an
 out-of-play creature that is dying becomes unconscious, and an unconscious one outside a fight runs handler 0x4E
-(removed, no record). START 0x2EEA after a heal is only the "healed" message.
+(removed, no record). START 0x2EEA (00BA:234A, after the heals of handlers 50 and 62 and Cure Light Wounds 0x28083):
+the fully-healed words when HP 0x11B equals the maximum 0x32 (00BA:2353), else the partially-healed words (START
+strings 00BA:2326 / 00BA:2336), through START 0x16EC with the pause flag, then outside a fight (DS:49F3 ≠ 5) the
+party list (00BA:23AE). **D** (s39, a test save: Rhiannon at 2 of 7 HP carrying 0x3E for 6 minutes with the removal
+call, Thrender carrying 0x0F for 11 minutes, Darkstar revived by 0x4E; camp Rest 15 minutes): the revive, then
+Rhiannon's name and "partially healed" typed, the pause, the list drawn again (Rhiannon 3 HP, Darkstar back to cyan),
+then Thrender's 1 point of damage from magic and the list again (10 HP); then Brother Sean's Cure Light Wounds on
+Phineas (5 of 6): his name and "fully healed", the pause, the list (Phineas 6 in green). Client:
+`OutsideEffectMessages.Healed` (texts `CombatMsg.FullyHealed` / `PartiallyHealed`, importer 0.7.27); the rest run
+has 136 of 136 frames equal (help lines and camp picture masked) since the party list shows the values of its last
+drawing (view3d.md "Where the party list is drawn"), and the Cure Light Wounds run (Magic, Cast, the spell, START's
+member pick End, End, S) 43 of 43 with the program's pick (camp.md "Cast's target"). In a fight START 0x2EEA prints
+through START 0x16EC from row 10 with the pause and draws no list (DS:49F3 = 5): Client `CombatChooser.HealedWords`
+for handlers 50 / 62 and Cure Light Wounds (not taken in DOSBox-X in a fight `[?]`).
 
 **Terrain** (0x2B9D1, end of round after class 0x13, per creature in play): the terrain of its own square (0x313F3,
 direction 8) = 0x1E (stinking cloud) and none of 0x1E, 0x1F, 0x20, 0x6F, 0x7D: save vs. type 0 (no modifier); saved
@@ -439,8 +452,10 @@ View redraws the screen and the name comes back cyan. Client: the revive outside
 the rest's heal message with anyone healed (0x2463D) or another current member (Home / End at the camp menu, D s38)
 draws the list again; with the help lines and the camp picture masked,
 the revive then View run 20 of 21 Client frames equal (the miss: the Client's own View page) and the revive then Home /
-End run 42 of 42. Which other
-points redraw the list while exploring (a step, a turn) is not checked `[?]`. While Rest is lit row 24 also lights the
+End run 42 of 42. **D** (s39): steps, turns and the area map keep the light red name; Encamp's entry draws it cyan;
+every point that draws the list while exploring is in view3d.md "Where the party list is drawn" (the Client releases
+the name there: revive, Exit, Left, Up, Right, Up, A, A, Encamp, Alter, Icon run 75 of 79 Client frames equal with
+the help lines and the camp picture masked, 60 of 77 before; the misses are the icon editor's ground). While Rest is lit row 24 also lights the
 D of daYs: camp.md "Rest-time menu".
 `[?]` A creature dropped twice in one call chain (0xECB3's end inside 0x2BEF4 of an attack): 0x3154B's early exit
 (0x31571–0x315A3 compares the body entry DS:70C7 × 7 + DS:66D6 eight times) not settled; the Client shows the downed
@@ -517,6 +532,25 @@ monsters: dosbox-trace-method.md "Monsters of another disk"):
   chain is the boar's: downed (trigger 0x0D) → 99 puts it back with 6 HP and its revive message, adds 0x5F and drops
   0x63; when 0x5F ends (a minute passing at the end of a round) 95 kills it (0xECB3, its text). Outside a fight 95 cannot
   run (monsters leave with the fight). Core test: `HandlerMessageTests.A_wild_boar_gets_back_up_once_…`.
+  **The original crashes there** (read and seen s39, P + D): the clock's effect walk 0x23DCC removes the expired 0x5F
+  record through 0x2AF10 **with its record pointer** (call at 0x23FCA). Its byte 4 is set (99 added it with removal
+  on), so 0x2AF10 runs handler 95 **before** unlinking (0x2AF8B). 95 clears byte 4 and kills the boar: 0xECB3 (status
+  6) → the dropped-creature removal 0x2BEF4, whose list DS:0C14 holds 95 (seen in a state's DS), so 0x2AF10(nil, 95)
+  finds the same record (byte 4 now 0: no handler), unlinks it and frees it. Back in the outer 0x2AF10 the list head
+  is now nil, the predecessor walk (0x2AFBD–0x2AFFD) stops at once and 0x2AFFF–0x2B011 writes the record's next pointer
+  through nil + 5 (0000:0005, in the interrupt table), then FreeMem(record, 9) (lcall 0AF8:0254, START's System unit;
+  carry → AX 0xCC) frees it a second time: **Turbo Pascal runtime error 204 (invalid pointer operation) at 00B0:013A**,
+  the return address after that call (stub 0xB0 = GAME.OVR unit 0x2AEEA, offset 0x13A = 0x2B024), and the game exits
+  to DOS. Reach: any wild boar revived by 99 that is still in play at the end of the round in which its 0x5F
+  (1d4 + 1 minutes, one minute per round) runs out; a boar killed again before that loses 0x5F through 0x2BEF4's
+  nil path and the fight ends normally. **D** (s39, seed 12345, all Quick): MON6 120 patched to 1 HP (s38's set-up)
+  revived and was killed by its 0x5F → the error over the map; the stock boar (18 HP, `fight_save.py … --mon 6` with no
+  patch) was knocked out, revived with 6 HP and killed by Thrender's next blow → the continue-battle question as
+  usual; from a state taken just after that revive with every member's 0x10F cleared (the player taking the party
+  off Quick; it does not touch the effect list) and every member on Done / Quit, the boar's 0x5F ran out two rounds
+  later → the same runtime error. Core unlinks first and then calls the handler (`FightRules.RemoveFirstEffect`, above),
+  so the Client kills the boar and goes on to the continue-battle question. **Decided (user, s39): fixed, not an
+  option** — an original bug; the Client goes on (PLAN.md decisions).
 
 **Routines**:
 

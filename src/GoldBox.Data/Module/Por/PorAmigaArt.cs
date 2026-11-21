@@ -17,6 +17,10 @@ public sealed class PorAmigaReport
     public bool Sound { get; set; }
     /// <summary>The rune font was imported (disk A's <c>fonts</c> folder was found; it is optional; <see cref="PorAmigaRunes"/>).</summary>
     public bool RuneFont { get; set; }
+    /// <summary>The text font and its pens were imported (disk A's <c>fonts</c> folder; optional; <see cref="PorAmigaText"/>).</summary>
+    public bool TextFont { get; set; }
+    /// <summary>The window frame's images were read from <c>program</c> (<see cref="PorAmigaFrame"/>).</summary>
+    public bool Frame { get; set; }
     /// <summary>Blocks left out on purpose (placeholders, incomplete sprites), as "file id".</summary>
     public List<string> Skipped { get; } = [];
     /// <summary>Blocks that are not pictures in a picture file, as "file id" (kept out of the overlay).</summary>
@@ -48,8 +52,10 @@ public static class PorAmigaArt
     /// The picture files of the overlay: which palette table the program sets before it draws them, the width of the
     /// tiles packed side by side in one item (0 = none), and the art category <c>module.json</c>'s
     /// <c>art.defaults</c> uses. Tables from docs/re/por-art-formats.md §4: PIC → 4 (FINAL block 2 → 4, the other
-    /// FINAL blocks → 3); SPRIT, the 3D view and combat module → 3. [?] HEAD/BODY/ICON → 2 (only table 2 gives skin
-    /// tones; no call site found); CPIC/CHEAD/CBODY/COMSPR and the combat grounds → 3 like the rest of combat.
+    /// FINAL blocks → 3); SPRIT and the 3D view → 3. [?] HEAD/BODY/ICON → 2 (only table 2 gives skin tones; no call
+    /// site found). CPIC/CHEAD/CBODY/COMSPR and the combat grounds → 0: the combat screen's set-up loads table 0 after
+    /// its two windows (hunk 13 +0x5F0E, s39), and nothing in the fight loads another; tables 0 and 3 differ only in
+    /// entry 0 (table 0's is not black: the combat screen's dark ground, as DOS's swapped colour 0).
     /// </summary>
     private static readonly Dictionary<string, (int Table, int TileWidth, string Category)> Files = new(StringComparer.Ordinal)
     {
@@ -59,16 +65,16 @@ public static class PorAmigaArt
         ["body"] = (2, 0, "portrait"),
         ["sprit"] = (3, 0, "sprite"),
         ["8x8d"] = (3, 8, "wall"),
-        ["cpic"] = (3, 0, "icon"),
-        ["chead"] = (3, 0, "icon"),
-        ["cbody"] = (3, 0, "icon"),
-        ["comspr"] = (3, 0, "icon"),
+        ["cpic"] = (0, 0, "icon"),
+        ["chead"] = (0, 0, "icon"),
+        ["cbody"] = (0, 0, "icon"),
+        ["comspr"] = (0, 0, "icon"),
         ["icon"] = (2, 0, "icon"),
-        ["sqrpaci"] = (3, 24, "combatGround"),
-        ["bacpac"] = (3, 24, "combatGround"),
-        ["dungcom"] = (3, 24, "combatGround"),
-        ["randcom"] = (3, 24, "combatGround"),
-        ["wildcom"] = (3, 24, "combatGround"),
+        ["sqrpaci"] = (0, 24, "combatGround"),
+        ["bacpac"] = (0, 24, "combatGround"),
+        ["dungcom"] = (0, 24, "combatGround"),
+        ["randcom"] = (0, 24, "combatGround"),
+        ["wildcom"] = (0, 24, "combatGround"),
     };
 
     /// <summary>
@@ -237,6 +243,8 @@ public static class PorAmigaArt
     public static string? Category(string container) =>
         container.Equals(IntroContainer, StringComparison.OrdinalIgnoreCase) ? TitleCategory
         : container.Equals(PorAmigaRunes.Container, StringComparison.OrdinalIgnoreCase) ? PorAmigaRunes.Category
+        : container.Equals(PorAmigaText.Container, StringComparison.OrdinalIgnoreCase) ? PorAmigaText.Category
+        : container.Equals(PorAmigaFrame.Container, StringComparison.OrdinalIgnoreCase) ? PorAmigaFrame.Category
         : Files.TryGetValue(container.ToLowerInvariant(), out var f) ? f.Category : null;
 
     /// <summary>The categories and the variant the "Best" mix uses for each (PLAN §4.3: Amiga, decided s5; DOS fills the gaps).</summary>
@@ -291,6 +299,8 @@ public static class PorAmigaArt
             files.Add(intro);
         if (LocateRuneFont(amigaDir, File.ReadAllBytes(program)) is { } font)
             files.Add(font.Path);
+        if (LocateTextFont(amigaDir, File.ReadAllBytes(program)) is { } text)
+            files.Add(text.Path);
         return [.. files.Distinct().Order(StringComparer.Ordinal)];
     }
 
@@ -301,6 +311,27 @@ public static class PorAmigaArt
     public static (string Path, PorAmigaRunes.Setup Setup)? LocateRuneFont(string amigaDir, byte[] program) =>
         PorAmigaRunes.Read(program) is { } setup && PorAmigaRunes.LocateFont(amigaDir, setup.FontName, setup.YSize) is { } path
             ? (path, setup) : null;
+
+    /// <summary>
+    /// The text font the program opens (<see cref="PorAmigaText"/>) under <paramref name="amigaDir"/>, with the program's
+    /// set-up for it, or null (no fonts folder from disk A, or a program not laid out so).
+    /// </summary>
+    public static (string Path, PorAmigaText.Setup Setup)? LocateTextFont(string amigaDir, byte[] program) =>
+        PorAmigaText.Read(program) is { } setup && PorAmigaRunes.LocateFont(amigaDir, setup.FontName, setup.YSize) is { } path
+            ? (path, setup) : null;
+
+    /// <summary>The text font's cells (<see cref="PorAmigaText.Cells"/>), or null when the font cannot be drawn so.</summary>
+    public static byte[][]? TextFontCells(string fontPath)
+    {
+        try
+        {
+            return PorAmigaText.Cells(AmigaDiskFont.Parse(File.ReadAllBytes(fontPath)));
+        }
+        catch (DaxFormatException)
+        {
+            return null;
+        }
+    }
 
     /// <summary>The rune font's cells and palette (<see cref="PorAmigaRunes.Cells"/>), or null when the font cannot be drawn so.</summary>
     public static (byte[][] Cells, byte[] Palette)? RuneFont(string fontPath, PorAmigaRunes.Setup setup)
@@ -409,6 +440,25 @@ public static class PorAmigaArt
                 [DaxPicture.Create(PorAmigaRunes.Cell, PorAmigaRunes.Cell, 0, 0, cells)], false, rgb, null, 0);
             report.RuneFont = true;
         }
+        // The text font and its pens (docs/re/por-art-formats.md §4 "Text font"), from disk A's fonts folder when present.
+        if (LocateTextFont(amigaDir, programBytes) is var (textPath, text) && TextFontCells(textPath) is { } textCells)
+        {
+            report.Inputs.Add(new ModuleInput { File = $"amiga/fonts/{PorAmigaText.Container}/{text.YSize}", Sha256 = Sha256(File.ReadAllBytes(textPath)) });
+            Write(moduleRoot, PorAmigaText.Container, PorAmigaText.Id,
+                [DaxPicture.Create(PorAmigaRunes.Cell, PorAmigaRunes.Cell, 0, 0, textCells)], false, text.InterfaceRgb, null, 0);
+            ModuleJson.Write(Path.Combine(moduleRoot, AmigaTextPensDocument.RelativePath.Replace('/', Path.DirectorySeparatorChar)),
+                new AmigaTextPensDocument { Pens = text.Pens, Highlight = text.Highlight, Row24 = text.Row24, Source = new SourceRef { Container = "program" } });
+            report.TextFont = true;
+        }
+        // The window frame (docs/re/por-art-formats.md §4 "Window frame"), from the program's own bitmaps.
+        if (PorAmigaFrame.Read(programBytes) is { } frame)
+        {
+            for (int i = 0; i < frame.Length; i++)
+                Write(moduleRoot, PorAmigaFrame.Container, PorAmigaFrame.FirstId + i,
+                    [DaxPicture.Create(frame[i].Width, frame[i].Height, 0, 0, [frame[i].Pixels])], false,
+                    palettes[PorAmigaFrame.PaletteTable], PorAmigaFrame.PaletteTable, 0);
+            report.Frame = true;
+        }
         return report;
     }
 
@@ -461,7 +511,8 @@ public static class PorAmigaArt
             PaletteTable = table,
             Source = new SourceRef
             {
-                Container = container == IntroContainer ? container : container == PorAmigaRunes.Container ? container + ".font" : container + ".dax",
+                Container = container == IntroContainer ? container : container is PorAmigaRunes.Container or PorAmigaText.Container ? container + ".font"
+                    : container == PorAmigaFrame.Container ? "program" : container + ".dax",
                 Block = id,
             },
         });
@@ -522,6 +573,28 @@ public static class PorAmigaArt
             else if (font.Items.Count != cells.Length || !font.Items.Select((px, i) => px.AsSpan().SequenceEqual(cells[i])).All(b => b)
                 || !img.PaletteRgb.AsSpan(0, rgb.Length).SequenceEqual(rgb))
                 r.Mismatches.Add("amiga rune font: cells or colours differ from the font file and the program");
+        }
+        if (LocateTextFont(amigaDir, File.ReadAllBytes(programPath)) is var (textPath, text) && TextFontCells(textPath) is { } textCells)
+        {
+            r.Count("AMIGA TEXT FONT");
+            if (module.Art(PorAmigaText.Container, PorAmigaText.Id, GoldBox.Data.Por.PorArtChoice.Amiga) is not { Variant: Variant, Frames: [var font] } img)
+                r.Mismatches.Add("amiga text font: missing in the module");
+            else if (font.Items.Count != textCells.Length || !font.Items.Select((px, i) => px.AsSpan().SequenceEqual(textCells[i])).All(b => b)
+                || !img.PaletteRgb.AsSpan(0, text.InterfaceRgb.Length).SequenceEqual(text.InterfaceRgb))
+                r.Mismatches.Add("amiga text font: cells or colours differ from the font file and the program");
+            if (module.AmigaTextPens() is not { } pens || !pens.AsSpan().SequenceEqual(text.Pens)
+                || module.AmigaTextHighlight() is not { } lit || !lit.AsSpan().SequenceEqual(text.Highlight)
+                || module.AmigaRow24() is not { } row24 || !row24.AsSpan().SequenceEqual(text.Row24))
+                r.Mismatches.Add("amiga text pens: missing in the module or not the program's");
+        }
+        if (PorAmigaFrame.Read(File.ReadAllBytes(programPath)) is { } frame)
+        {
+            r.Count("AMIGA FRAME");
+            for (int i = 0; i < frame.Length; i++)
+                if (module.Art(PorAmigaFrame.Container, PorAmigaFrame.FirstId + i, GoldBox.Data.Por.PorArtChoice.Amiga) is not
+                        { Variant: Variant, Frames: [{ Items: [var px] } fi] }
+                    || fi.Width != frame[i].Width || fi.Height != frame[i].Height || !px.AsSpan().SequenceEqual(frame[i].Pixels))
+                    r.Mismatches.Add($"amiga frame piece {i}: missing in the module or not the program's image");
         }
         if (LocateIntro(amigaDir) is { } introPath)
         {

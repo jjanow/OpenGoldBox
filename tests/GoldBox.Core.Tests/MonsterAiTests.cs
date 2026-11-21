@@ -141,6 +141,47 @@ public class MonsterAiTests
     }
 
     [Fact]
+    public void Make_attacks_display_hooks_come_in_the_programs_order_with_the_facings_of_each_moment()
+    {
+        // MakeAttack 0x1407F (read s39): entry; the defender turns (+9, 0x14085–0x140E1); the panel (0x140FE) with the
+        // attacker's old facing; the attacker faces the defender and poses (0x31232 at 0x14113); +0x0A (0x14118).
+        var a = Creature(0);
+        var d = Creature(1);
+        var (fight, map) = Setup(new Script(19, 2), a, d);
+        map.Place(a, 5, 5);
+        map.Place(d, 4, 5);
+        fight.Record(a)[CombatRecord.Facing] = 2;
+        fight.Record(d)[CombatRecord.Facing] = 6;
+        var log = new List<string>();
+        string F(EclCharacter c) => fight.Record(c)[CombatRecord.Facing].ToString();
+        fight.AttackStarting = (x, y) => log.Add($"start a{F(a)} d{F(d)}");
+        fight.DefenderTurned = x => log.Add($"turn d{F(d)}");
+        fight.AttackPanel = x => log.Add($"panel a{F(a)} other {(fight.Record(a).Other is null ? "none" : "set")}");
+        fight.AttackPosed = x => log.Add($"pose a{F(a)}");
+        fight.MakeAttack(a, d);
+        Assert.Equal(["start a2 d6", "turn d2", "panel a2 other none", "pose a6"], log);
+        Assert.Same(d, fight.Record(a).Other);
+
+        // From behind (or a defender already noted three times) it does not turn: no hook.
+        log.Clear();
+        fight.Record(d)[CombatRecord.Facing] = 6;
+        fight.MakeAttack(a, d, fromBehind: true);
+        Assert.DoesNotContain(log, l => l.StartsWith("turn"));
+    }
+
+    [Fact]
+    public void Readying_the_best_weapon_redraws_the_panel_when_anything_changed()
+    {
+        // 0xBF8A's end (0xC4CB–0xC4D7): START 0x1583 when [bp−0x1D] is set; with no weapon readied the readying branch
+        // always sets it (DOSBox-X s39: the panel cleared and the weapon typed again at the AI's start after Quick).
+        var gob = Creature(1);
+        var (fight, _) = Setup(new Script(), gob);
+        var redrawn = new List<EclCharacter>();
+        new MonsterAi(Steps) { PanelRedrawn = redrawn.Add }.EquipWeapon(fight, gob);
+        Assert.Equal([gob], redrawn);
+    }
+
+    [Fact]
     public void Adjacent_enemy_is_attacked_with_the_program_draw_order()
     {
         // 1d8, 1d4 (opening), 1d7 (items), 1d7 (spells), 1d2 (target search among 2), 1d1 (adjacent pick), 1d20, 1d4.

@@ -13,8 +13,10 @@ namespace GoldBox.Client.Audio;
 /// <item>Auto-stop cues (step, impact, miss, bump): game logic waits for the driver to finish while the UI thread
 /// continues to service the sound output.</item>
 /// <item>Resident brackets: the program's bracket lasts as long as its animation (a missile's or spell's flight, the
-/// body drawing, the message pause), which the Client does not draw yet. `[?]` Until it does, a bracket stays open
-/// until its tune ends by itself or the next sound call outside a bracket.</item>
+/// downed picture and its pause), and set auto-stop(10) at its end uninstalls the timer, which silences the tune
+/// (DOSBox-X s39, Tandy: the body tune cut at the picture's pause end, 0.92 s, where it would run 1.37 s). A bracket
+/// the Client drew an animation in (open for a while) closes at once; one opened and closed with nothing drawn
+/// between (a drop the Client does not draw) stays open until its tune ends or the next sound call.</item>
 /// </list>
 /// </summary>
 public sealed class ClientAudio : ISoundSink, IDisposable
@@ -31,6 +33,10 @@ public sealed class ClientAudio : ISoundSink, IDisposable
     private readonly byte[] _bytes = new byte[Chunk * 2];
     private readonly int _uiThread;
     private bool _resident, _closing;
+    private TimeSpan _openedAt;
+
+    /// <summary>A bracket open at least this long had an animation drawn inside it (frames are 16.7 ms).</summary>
+    private static readonly TimeSpan DrawnBracket = TimeSpan.FromMilliseconds(15);
 
     private ClientAudio(PorSound? sound, ClientSoundDevice? device, AmigaMusic? music, DynamicSoundEffectInstance output,
         int uiThread)
@@ -189,6 +195,7 @@ public sealed class ClientAudio : ISoundSink, IDisposable
             if (_player is null || _resident)
                 return; // a new bracket right after a deferred one: the timer stays
             _resident = true;
+            _openedAt = Clock.Elapsed;
             _player.BeginResident();
         }
     }
@@ -198,7 +205,12 @@ public sealed class ClientAudio : ISoundSink, IDisposable
         Log(")");
         lock (_lock)
             if (_resident)
-                _closing = true;
+            {
+                if (Clock.Elapsed - _openedAt >= DrawnBracket)
+                    CloseBracket(); // the timer uninstall silences the tune (CS:1391)
+                else
+                    _closing = true;
+            }
     }
 
     private void CloseBracket()

@@ -32,6 +32,15 @@ public sealed class PorSaveGame
     /// <summary>Current map / ECL script id (VM $49C5).</summary>
     public int ScriptId => Area4900[0x49C5 - 0x4900] & 0xFF;
 
+    /// <summary>
+    /// The ECL block the loaded game runs as, DS:84DC: the area entry after a Load sets it from the low byte of $49F2
+    /// (0x4067–0x4070), the block current at the last command read (written back at 0x40D6 / 0x40FA; NEWECL writes the
+    /// old block there first, 0x1926). Load itself does not write DS:84DC. So a save made in the Valjevo hedge maze
+    /// (maps 3–6 in $49C5) runs as block 5. DOSBox-X s39: `save-overland` saves ($49C5 26, save A's $49F2 20) read
+    /// DS:84DC = 20 after the load.
+    /// </summary>
+    public int CurrentBlock => Area4900[0x49F2 - 0x4900] & 0xFF;
+
     public PorSaveGame(byte[] data)
     {
         if (data.Length != Size)
@@ -151,13 +160,13 @@ public sealed class PorSaveGame
 
     /// <summary>
     /// Restores the VM from this save: memory as <see cref="ApplyTo(EclMemory)"/>, the script area as saved (its
-    /// vectors re-read), current script = $49C5 on disk byte 0. No $4A00 reset (the area comes from the save).
+    /// vectors re-read), current block = $49F2 (<see cref="CurrentBlock"/>) on disk byte 0. No $4A00 reset (the area comes from the save).
     /// </summary>
     public void ApplyTo(EclVm vm)
     {
         ApplyTo(vm.Memory);
         vm.ReadVectors();
-        vm.SetCurrentScript(ScriptId, Disk);
+        vm.SetCurrentScript(CurrentBlock, Disk);
     }
 
     /// <summary>
@@ -168,7 +177,7 @@ public sealed class PorSaveGame
     public EclRunResult LoadGame(EclVm vm, int maxSteps = 100_000)
     {
         ApplyTo(vm.Memory);
-        vm.SetCurrentScript(ScriptId, Disk);
+        vm.SetCurrentScript(CurrentBlock, Disk);
         return vm.RunLoadedGame(maxSteps);
     }
 

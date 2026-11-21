@@ -60,6 +60,13 @@ public sealed class FightState
     /// <summary>The program's sound calls in a fight (docs/re/sound.md §2.4); none by default.</summary>
     public Sound.ISoundSink Sound { get; set; } = GoldBox.Core.Sound.NoSound.Instance;
 
+    /// <summary>
+    /// The front end draws CreatureDowned (0x3154B) after an attack's drop and the effect engine's drops and plays its
+    /// sound there: the bracket opened at 0x31554, the body cue at 0x31744 once the picture is drawn, the pause, closed at
+    /// 0x317D6. The map removal then makes no sound of its own (<see cref="CombatMap.Downed"/>).
+    /// </summary>
+    public bool FrontEndPlaysDowned { get; set; }
+
     /// <summary>The combat record of a creature (created on first use, zeroed, as 0xD8B2 does at the fight start).</summary>
     public CombatRecord Record(EclCharacter c)
     {

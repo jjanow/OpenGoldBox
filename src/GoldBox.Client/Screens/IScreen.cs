@@ -45,6 +45,20 @@ public static class Chrome
     public static void Text(IndexedFrame f, TextFont font, int col, int row, string text, byte colour) =>
         font.Draw(f, col * 8, row * 8, text, colour);
 
+    /// <summary>The menu routine's prompt on the bottom row: the Amiga way under its text font (<see cref="TextFont.DrawMenuPrompt"/>).</summary>
+    public static void MenuPrompt(IndexedFrame f, TextFont font, int col, int row, string text, byte colour) =>
+        font.DrawMenuPrompt(f, col * 8, row * 8, text, colour);
+
+    /// <summary>
+    /// A lit entry: the Amiga highlight under its text font (a party member, or a list row with <paramref name="listRow"/>),
+    /// else the text in <paramref name="colour"/> (DOS: the program's lit colour, white).
+    /// </summary>
+    public static void Lit(IndexedFrame f, TextFont font, int col, int row, string text, byte colour, bool listRow)
+    {
+        if (!font.DrawLit(f, col * 8, row * 8, text, listRow))
+            Text(f, font, col, row, text, colour);
+    }
+
     /// <summary>Blank <paramref name="cells"/> cells from (col, row).</summary>
     public static void Clear(IndexedFrame f, int col, int row, int cells)
     {
@@ -81,8 +95,30 @@ public static class Chrome
     }
 
     /// <summary>A corner cell (also the joints where dividers meet a frame).</summary>
-    public static void BraidCell(IndexedFrame f, int col, int row, bool corner) =>
+    public static void BraidCell(IndexedFrame f, int col, int row, bool corner)
+    {
+        if (AmigaFrame is { } a)
+        {
+            if (corner)
+                a.Corner(f, col, row);
+            else
+                a.HLine(f, row, col, col);
+            return;
+        }
         FrameCell(f, col, row, corner ? FramePiece.Corner : FramePiece.Horizontal);
+    }
+
+    /// <summary>
+    /// The Amiga window frame (<see cref="Play.AmigaFrame"/>), or null for the 8X8D symbols. Set by the Client from its
+    /// art setting (Amiga only); tests leave it null.
+    /// </summary>
+    public static Play.AmigaFrame? AmigaFrame { get; set; }
+
+    /// <summary>
+    /// The current menu entry as the Amiga's pressed gadget (<see cref="Play.AmigaGadget"/>), or null for the lit
+    /// colours. Set by the Client from its art setting (Amiga only); tests leave it null.
+    /// </summary>
+    public static Play.AmigaGadget? AmigaGadget { get; set; }
 
     // Without the art: the old stand-in in the same colours.
     private static byte StandIn(int x, int y, FramePiece piece) => piece == FramePiece.Corner
@@ -97,7 +133,8 @@ public static class Chrome
     /// <paramref name="hide"/> answers true are left out (their rows close up).
     /// </summary>
     public static void PartyList(IndexedFrame f, TextFont font, EclParty? party, int col, int? highlighted = null,
-        Func<EclCharacter, bool>? hide = null, Func<EclCharacter, bool>? heldOutOfPlay = null)
+        Func<EclCharacter, bool>? hide = null, Func<EclCharacter, bool>? heldOutOfPlay = null,
+        Func<EclCharacter, EclCharacter>? asDrawn = null)
     {
         Text(f, font, col, 2, "NAME", White);
         TextRight(f, font, 34, 2, "AC", White);
@@ -106,32 +143,58 @@ public static class Chrome
             return;
         for (int i = 0, row = 4; i < party.Members.Count && row < 12; i++)
         {
-            var m = party.Members[i];
-            if (hide?.Invoke(m) == true)
+            var live = party.Members[i];
+            if (hide?.Invoke(live) == true)
                 continue;
+            var m = asDrawn?.Invoke(live) ?? live; // the values the list last drew
             var name = m.Name.Length > 15 ? m.Name[..15] : m.Name;
-            byte nameColour = i == (highlighted ?? party.CurrentIndex) ? White : m[0x10D] == 0 || heldOutOfPlay?.Invoke(m) == true ? LightRed : m[0x10E] == 1 ? Yellow : Cyan;
-            Text(f, font, col, row, name.ToUpperInvariant(), nameColour);
+            bool lit = i == (highlighted ?? party.CurrentIndex);
+            byte nameColour = lit ? White : m[0x10D] == 0 || heldOutOfPlay?.Invoke(live) == true ? LightRed : m[0x10E] == 1 ? Yellow : Cyan;
+            if (font.Face?.Lit is not null)
+                Clear(f, col, row, 39 - col);   // the Amiga blanks each member's row first (hunk 13 +0x3B18)
+            if (lit)
+                Lit(f, font, col, row, name.ToUpperInvariant(), nameColour, listRow: false);
+            else
+                Text(f, font, col, row, name.ToUpperInvariant(), nameColour);
             TextRight(f, font, 34, row, (60 - m[0x111]).ToString(CultureInfo.InvariantCulture), Green);
-            TextRight(f, font, 38, row, m[0x11B].ToString(CultureInfo.InvariantCulture), m[0x11B] < m[0x32] ? Yellow : Green);
+            var hp = m[0x11B].ToString(CultureInfo.InvariantCulture);
+            // Amiga (hunk 13 +0x3DF6–0x3E0A): hit points below the maximum in colour 8, else 10 (pens 24 / 26), not
+            // the DOS colours' usual pens.
+            if (!font.DrawAmiga(f, (38 - hp.Length + 1) * 8, row * 8, hp, m[0x11B] < m[0x32] ? 8 : 10))
+                TextRight(f, font, 38, row, hp, m[0x11B] < m[0x32] ? Yellow : Green);
             row++;
         }
     }
 
     public static void HLine(IndexedFrame f, int row, int col0, int col1)
     {
+        if (AmigaFrame is { } a)
+        {
+            a.HLine(f, row, col0, col1);
+            return;
+        }
         for (int c = col0; c <= col1; c++)
             FrameCell(f, c, row, FramePiece.Horizontal);
     }
 
     public static void VLine(IndexedFrame f, int col, int row0, int row1)
     {
+        if (AmigaFrame is { } a)
+        {
+            a.VLine(f, col, row0, row1);
+            return;
+        }
         for (int r = row0; r <= row1; r++)
             FrameCell(f, col, r, FramePiece.Vertical);
     }
 
     public static void Box(IndexedFrame f, int col0, int row0, int col1, int row1)
     {
+        if (AmigaFrame is { } a)
+        {
+            a.Window(f, col0 + 1, row0 + 1, col1 - 1, row1 - 1); // the window inside the frame (hunk 25 +0x16D4)
+            return;
+        }
         HLine(f, row0, col0, col1);
         HLine(f, row1, col0, col1);
         VLine(f, col0, row0, row1);

@@ -171,7 +171,17 @@ public sealed class PorOverlandArt
         int c = loop.MarkerCounter;
         if (!loop.OverlandInterfacePending)
         {
-            Draw(f, x, y, m, map, column, c + 5, loop.MarkerSlots);
+            // The last redraw's marker, with the facing it was drawn with (EclMemory.MarkerFacing: a river's message
+            // comes before the step's redraw, so the old facing stays up meanwhile).
+            if (!m.MarkerDrawnTwice)
+            {
+                Draw(f, x, y, m, map, column, c + 5, loop.MarkerSlots, m.MarkerFacing);
+                return;
+            }
+            // The interface's composite (EclMemory.MarkerDrawnTwice): frame c − 2 with the tiles, c − 1 over it.
+            Draw(f, x, y, m, map, column, c + 4, facing: m.MarkerFacing);
+            var (qx, qy) = Overland.Position(m);
+            DrawMarker(f, x, y, Overland.MarkerCell(column, qx, qy), c + 5, m.MarkerFacing ?? m.Position.Facing);
             return;
         }
         // The interface loads the animation slots afresh first (0x17285).
@@ -182,12 +192,12 @@ public sealed class PorOverlandArt
 
     /// <summary>Draws the party's view now at (x, y) (see <see cref="Render"/>).</summary>
     public void Draw(IndexedFrame f, int x, int y, Core.Ecl.EclMemory m, OverlandMap map, int column, int counter,
-        IReadOnlyList<int>? slots = null)
+        IReadOnlyList<int>? slots = null, byte? facing = null)
     {
         var (px, py) = Overland.Position(m);
         var (left, top) = Overland.ViewOrigin(column, px, py);
         Draw(f, x, y, Overland.ComposeView(map, left, top, m.Read), Overland.MarkerCell(column, px, py), counter,
-            m.Position.Facing, slots: slots);
+            facing ?? m.Position.Facing, slots: slots);
     }
 
     /// <summary>Draws a picture's opaque pixels, mirrored when asked, clipped to the view at (x0, y0).</summary>

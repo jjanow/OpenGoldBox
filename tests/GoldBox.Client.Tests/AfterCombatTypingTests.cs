@@ -35,10 +35,11 @@ public class AfterCombatTypingTests
         {
             seen.Add(p);
             if (p is DelayRequest { Chained: true })
-                rowBlank?.Add(player.WindowAfterFight && player.Window is not null);
+                rowBlank?.Add(player.WindowAfterFight && player.KeepsCombatRow24 && player.Window is not null);
             runner.Answer(p is ChoiceRequest c ? c.Items.Count - 1 : null);
         }
         Assert.False(runner.Busy);
+        Assert.False(player.KeepsCombatRow24); // the window gone: the area screen's row 24 again
         return seen;
     }
 
@@ -59,8 +60,8 @@ public class AfterCombatTypingTests
         var rowBlank = new List<bool>();
         var typed = Run(typing: true, Share, rowBlank).OfType<DelayRequest>().Where(d => d.Chained).ToList();
         Assert.NotEmpty(typed);
-        // While it types, the window is up with row 24 blank (WindowAfterFight: as the party-destroyed window at the
-        // same point of 0x6AA5), not the area command line.
+        // While it types, the window is up with the fight's last row 24 (KeepsCombatRow24: 0x695E writes nothing on
+        // row 24 before its menu 03C5:002A; DOSBox-X s39: "CONTINUE BATTLE:YES NO" kept), not the area command line.
         Assert.All(rowBlank, Assert.True);
         Assert.All(typed, d => Assert.Equal(TimeSpan.FromMilliseconds(20), d.Duration)); // DS:49E2 × 10 ms
         Assert.Equal(0, Typed(Run(typing: false, Share)));

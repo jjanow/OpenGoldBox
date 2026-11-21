@@ -510,6 +510,10 @@ public static class PorTextCatalog
         ["CombatMsg.PanelAc"] = 0x1575,
         ["CombatMsg.PanelHelpless"] = 0x1578,
         ["CombatMsg.Guarding"] = 0x321D, // START 0x3226's message (s30)
+        ["CombatMsg.FullyHealed"] = 0x2EC6, // START 0x2EEA (00BA:234A) at 00BA:2326 (s39)
+        ["CombatMsg.PartiallyHealed"] = 0x2ED6, // at 00BA:2336
+        ["Pick.Select"] = 0x37E1, // START's member pick 0x37E8 (00BA:2C48): its item and its Exit (00BA:2C41 / 2C19, s39)
+        ["Pick.Exit"] = 0x37B9,
     };
 
     /// <summary>A Pascal string of printable characters at an offset of the unpacked START.EXE image, or null.</summary>

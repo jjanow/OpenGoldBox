@@ -300,19 +300,24 @@ public class PorAmigaArtTests(ITestOutputHelper output)
     {
         var root = Path.Combine(Imported.Value.Dir, "art", "amiga");
         var files = Directory.EnumerateFiles(root, "*.json", SearchOption.AllDirectories)
-            .Where(p => !p.EndsWith(Path.GetFileName(AmigaIconColoursDocument.RelativePath), StringComparison.Ordinal)).ToList();
+            .Where(p => !p.EndsWith(Path.GetFileName(AmigaIconColoursDocument.RelativePath), StringComparison.Ordinal)
+                && !p.EndsWith(Path.GetFileName(AmigaTextPensDocument.RelativePath), StringComparison.Ordinal)).ToList();
         bool title = Imported.Value.Report.Amiga!.Title;
         Assert.Equal(PorAmigaArt.LocateIntro(PorAmigaData.Dir!) is not null, title);
         Assert.Equal(title ? PorAmigaArt.PanelCount : 0, Imported.Value.Report.Amiga!.IntroPanels);
         bool runes = Imported.Value.Report.Amiga!.RuneFont;
         Assert.Equal(PorAmigaData.RuneFont is not null, runes);
-        Assert.Equal(508 + (title ? 1 + PorAmigaArt.PanelCount : 0) + (runes ? 1 : 0), files.Count);
+        bool text = Imported.Value.Report.Amiga!.TextFont;
+        Assert.Equal(PorAmigaData.TextFont is not null, text);
+        Assert.True(Imported.Value.Report.Amiga!.Frame);
+        Assert.Equal(508 + (title ? 1 + PorAmigaArt.PanelCount : 0) + (runes ? 1 : 0) + (text ? 1 : 0) + 5, files.Count);
         foreach (var path in files)
         {
             var doc = (ArtDocument)System.Text.Json.JsonSerializer.Deserialize(File.ReadAllText(path), typeof(ArtDocument), ModuleSchemas.Strict)!;
             // The title painting carries the intro's own palette, the rune font the interface colours 16–31, not one
             // of the program's five tables.
-            Assert.Equal(doc.Source!.Container is not (PorAmigaArt.IntroContainer or PorAmigaRunes.Container + ".font"),
+            Assert.Equal(doc.Source!.Container is not (PorAmigaArt.IntroContainer or PorAmigaRunes.Container + ".font"
+                    or PorAmigaText.Container + ".font"),
                 doc.PaletteTable is not null);
             Assert.NotNull(doc.Frames);
         }
@@ -497,5 +502,158 @@ public class PorAmigaArtTests(ITestOutputHelper output)
         var differ = Enumerable.Range(65, 75).Where(g => Enumerable.Range(0, 64)
             .Any(i => (cells.Items[g][i] != 0) != ((dos[g * 8 + i / 8] & (0x80 >> (i % 8))) != 0))).ToList();
         Assert.Equal([75, 79, 80, 117], differ);
+    }
+
+    // ---- the text font (docs/re/por-art-formats.md §4 "Text font", PorAmigaText) ----
+
+    [PorAmigaFact]
+    public void The_program_opens_the_text_font_and_draws_dos_colours_in_its_own_pens()
+    {
+        var program = File.ReadAllBytes(PorAmigaArt.Locate(PorAmigaData.Dir!).Program);
+        var s = PorAmigaText.Read(program)!;
+        Assert.Equal(("poolrad.font", 8), (s.FontName, s.YSize));
+        // Read from call sites: PRINT (DOS 10), the party list's names (DOS 11, 12, 14), the menu routine's prompt,
+        // words and hotkeys and row 24's key prompt (DOS 13, 10, 15); colours 0–9 take the glyph routine's rule [?].
+        Assert.Equal([10, 11, 12, 13, 14, 15], PorAmigaText.ReadColours);
+        Assert.Equal((28, 28, 24, 26, 18, 16), (s.Pens[10], s.Pens[11], s.Pens[12], s.Pens[13], s.Pens[14], s.Pens[15]));
+        // Row 24's copper list (hunk 1 +0x2A0–0x336) changes registers 1–3, 14, 15 and 31 below line 192: no text pen or
+        // its pass-2 pen is one of them, so the Client's row 24 needs no colours of its own.
+        Assert.DoesNotContain(s.Pens, p => p is >= 30 || p < 16);
+        // The highlight (lit party member hunk 13 +0x3B64, lit list row +0x3146): a pen-28 bar, the text in pens 14, 15.
+        Assert.Equal([28, 14, 15], s.Highlight);
+        // Row 24's colours: the copper list's six moves (registers 1, 31, 2, 3, 14, 15), each colour the word its pea
+        // pushes (hunk 1 +0x2A4, +0x2BA, …).
+        var h1 = AmigaHunks.Parse(program)[1].DataOffset!.Value;
+        Assert.Equal([1, 31, 2, 3, 14, 15], s.Row24.Where((_, i) => i % 2 == 0));
+        Assert.Equal(new[] { 0x2A4, 0x2BA, 0x2D0, 0x2E6, 0x300, 0x316 }.Select(at => (program[h1 + at + 2] << 8) | program[h1 + at + 3]),
+            s.Row24.Where((_, i) => i % 2 == 1));
+        var litDisagree = (byte[])program.Clone();
+        litDisagree[AmigaHunks.Parse(program)[13].DataOffset!.Value + 0x3219] = 0x0D;
+        Assert.Null(PorAmigaText.Read(litDisagree));
+        // Two sites of one DOS colour that disagree: nothing is taken (the key prompt's 13 against the menu's).
+        var disagree = (byte[])program.Clone();
+        disagree[AmigaHunks.Parse(program)[19].DataOffset!.Value + 0x103B] = 0x1C;
+        Assert.Null(PorAmigaText.Read(disagree));
+        foreach (int c in Enumerable.Range(0, 16).Except(PorAmigaText.ReadColours))
+            Assert.Equal(PorAmigaRunes.ScreenPen(c), s.Pens[c]);
+        var hunks = AmigaHunks.Parse(program);
+        Assert.Equal(AmigaHunks.Rgb12To24(program.AsSpan(hunks[2].DataOffset!.Value + 32), 16), s.InterfaceRgb);
+        // An odd pen (pass 2 would leave the interface pairs) or a moved routine: nothing is taken.
+        var odd = (byte[])program.Clone();
+        odd[hunks[13].DataOffset!.Value + 0x4B05] = 0x13;
+        Assert.Null(PorAmigaText.Read(odd));
+        var moved = (byte[])program.Clone();
+        moved[hunks[25].DataOffset!.Value + 0xCB9] = 0;      // the string routine's JAM2
+        Assert.Null(PorAmigaText.Read(moved));
+        Assert.Null(PorAmigaText.Read(new byte[64]));
+    }
+
+    [PorAmigaTextFontFact]                                        // skipped, naming the files, without disk A's fonts
+    public void The_text_font_and_its_pens_reach_the_module()
+    {
+        var (dir, report) = Imported.Value;
+        Assert.True(report.Amiga!.TextFont);
+        var module = PorModule.Open(dir);
+        var r = PorAmigaArt.Check(PorAmigaData.Dir!, module);
+        Assert.Empty(r.Mismatches);
+        Assert.Equal(1, r.Checked["AMIGA TEXT FONT"]);
+        var setup = PorAmigaText.Read(File.ReadAllBytes(PorAmigaArt.Locate(PorAmigaData.Dir!).Program))!;
+        Assert.Equal(setup.Pens, module.AmigaTextPens());
+        foreach (var choice in new[] { PorArtChoice.Best, PorArtChoice.Amiga })
+            Assert.Equal(setup.InterfaceRgb, module.Art(PorAmigaText.Container, PorAmigaText.Id, choice)!.PaletteRgb);
+        Assert.Null(module.Art(PorAmigaText.Container, PorAmigaText.Id, PorArtChoice.Dos));
+        var cells = module.Art(PorAmigaText.Container, PorAmigaText.Id, PorArtChoice.Amiga)!.Frames.Single();
+        Assert.Equal((8, 8, 256), (cells.Width, cells.Height, cells.Items.Count));
+        Assert.All(cells.Items, c => Assert.All(c, v => Assert.True(v is 0 or PorAmigaText.SetBit)));
+        Assert.Contains(ModuleManifest.Load(dir).Source!.Inputs, i => i.File == "amiga/fonts/poolrad/8");
+        // A typeface of its own: no letter is the DOS text font's (8X8D1 block 201, A–Z at glyphs 1–26); of the digits
+        // (glyphs 48–57) only 0, 2, 5, 6, 8 and 9 are; the space and the characters past 127 are blank.
+        var dos = module.ArtData("8X8D1", 201)!;
+        bool Same(int ch, int glyph) => Enumerable.Range(0, 64)
+            .All(i => (cells.Items[ch][i] != 0) == ((dos[glyph * 8 + i / 8] & (0x80 >> (i % 8))) != 0));
+        Assert.DoesNotContain(Enumerable.Range('A', 26), ch => Same(ch, ch - 0x40));
+        Assert.Equal("025689", string.Concat(Enumerable.Range('0', 10).Where(ch => Same(ch, ch)).Select(ch => (char)ch)));
+        Assert.All(cells.Items[' '], v => Assert.Equal(0, v));
+        Assert.All(Enumerable.Range(128, 128), ch => Assert.All(cells.Items[ch], v => Assert.Equal(0, v)));
+    }
+
+    // ---- CLEARBOX and EXIT's window redraw (docs/re/ecl-format.md "PROTECT", Amiga) ----
+
+    /// <summary>
+    /// CLEARBOX (ECL 0x3D: hunk 16 +0x4FC4 → +0x47AE) blanks cells (1, 1)–(15, 15) through the box blank (hunk 25
+    /// +0x197A: SetAPen 0, SetDrMd JAM1, RectFill); EXIT with 84E2 set (hunk 16 +0x1AD8) draws the windows (1, 1)–(15, 15)
+    /// and (3, 3)–(13, 13) through the window routine (hunk 25 +0x19F4), which blanks the same way before its frame. Pen 0
+    /// is black in start-up's colours (hunk 2) and in the palette tables the explore screen sets (2–4: hunk 22 +0x172,
+    /// +0x19E, +0x1CA), so the Client's colour-0 blank is the Amiga's too. Table 0 (entry 0 not black) is the combat
+    /// screen's (its set-up, hunk 13 +0x5F0E) and the character screens' (hunk 10); the 3D view's redraw loads table 3 again (hunk 7 +0x3890).
+    /// </summary>
+    [PorAmigaFact]
+    public void Clearbox_and_exit_blank_in_pen_0_which_is_black()
+    {
+        var program = File.ReadAllBytes(PorAmigaArt.Locate(PorAmigaData.Dir!).Program);
+        var hunks = AmigaHunks.Parse(program);
+        void Code(int h, int at, string hex) =>
+            Assert.Equal(hex, Convert.ToHexString(program.AsSpan(hunks[h].DataOffset!.Value + at, hex.Length / 2)).ToLowerInvariant());
+        Code(16, 0x4FBA, "b08166066100fc46");                // 0x3C → PROTECT, else …
+        Code(16, 0x4FC4, "6100f7e8");                        // … 0x3D → CLEARBOX (+0x47AE)
+        Code(16, 0x47C6, "700f2f002f0072012f012f014eba0d76"); // (1, 1, 15, 15) → the box blank (stub +0x554A)
+        Code(16, 0x47DA, "13fc0001");                        // 84DE := 1
+        Code(25, 0x1998, "42a7");                            // SetAPen(rp, 0) …
+        Code(25, 0x19A4, "4297");                            // … SetDrMd(rp, 0)
+        Code(25, 0x19E6, "4eba2f34");                        // RectFill (stub +0x491C)
+        Code(25, 0x1A3A, "6100ff3e");                        // the window routine blanks first
+        Code(16, 0x1AE2, "4a39");                            // EXIT: 84E2 set →
+        Code(16, 0x1B00, "4eba3ade");                        // window (1, 1)–(15, 15)
+        Code(16, 0x1B2C, "4eba3ab2");                        // window (3, 3)–(13, 13)
+        Assert.Equal(new byte[3], AmigaHunks.Rgb12To24(program.AsSpan(hunks[2].DataOffset!.Value), 1));
+        var tables = PorAmigaArt.Palettes(program);
+        foreach (int t in new[] { 2, 3, 4 })
+            Assert.Equal(new byte[3], tables[t][..3]);
+        Assert.NotEqual(new byte[3], tables[0][..3]);
+        // Table 0 is the combat screen's: its set-up draws the two windows, then loads table 0 (hunk 13 +0x5EB0–0x5F0E,
+        // through the stub at +0x6412 to hunk 22 +0x11C); it differs from table 3 in entry 0 only, the dark ground.
+        Code(13, 0x5EF4, "4eba0540");
+        Code(13, 0x5F0E, "4eba0502");
+        Code(13, 0x6412, "4ef9");
+        Assert.Equal(tables[3][3..], tables[0][3..]);
+        foreach (var f in new[] { "cpic", "chead", "cbody", "comspr", "sqrpaci", "bacpac", "dungcom", "randcom", "wildcom" })
+            Assert.Equal(0, PorAmigaArt.TableFor(f, 1));
+    }
+
+    // ---- the window frame (docs/re/por-art-formats.md §4 "Window frame", PorAmigaFrame) ----
+
+    [PorAmigaFact]
+    public void The_window_frame_is_the_program_s_five_images_and_reaches_the_module()
+    {
+        var program = File.ReadAllBytes(PorAmigaArt.Locate(PorAmigaData.Dir!).Program);
+        var images = PorAmigaFrame.Read(program)!;
+        // Top and bottom strips 320 × 8, the sides the 8 blitted columns of 16 × 190, the corner 8 × 8.
+        Assert.Equal([(320, 8), (320, 8), (8, 190), (8, 190), (8, 8)], images.Select(i => (i.Width, i.Height)));
+        // Pens 0 and 12–15 only, black and the same four greys in start-up's colours and every palette table.
+        Assert.All(images, i => Assert.All(i.Pixels, v => Assert.True(v is 0 or >= 12 and <= 15)));
+        var hunks = AmigaHunks.Parse(program);
+        var start = AmigaHunks.Rgb12To24(program.AsSpan(hunks[2].DataOffset!.Value), 16);
+        foreach (var table in PorAmigaArt.Palettes(program)[1..])
+            foreach (int pen in new[] { 0, 12, 13, 14, 15 })
+                Assert.Equal(start.AsSpan(3 * pen, 3).ToArray(), table.AsSpan(3 * pen, 3).ToArray());
+        var moved = (byte[])program.Clone();
+        moved[hunks[25].DataOffset!.Value + 0x172D] = 0xEE;   // the blit's minterm
+        Assert.Null(PorAmigaFrame.Read(moved));
+        Assert.Null(PorAmigaFrame.Read(new byte[64]));
+
+        var (dir, report) = Imported.Value;
+        Assert.True(report.Amiga!.Frame);
+        var module = PorModule.Open(dir);
+        var r = PorAmigaArt.Check(PorAmigaData.Dir!, module);
+        Assert.Empty(r.Mismatches);
+        Assert.Equal(1, r.Checked["AMIGA FRAME"]);
+        for (int i = 0; i < 5; i++)
+        {
+            var img = module.Art(PorAmigaFrame.Container, PorAmigaFrame.FirstId + i, PorArtChoice.Amiga)!;
+            Assert.Equal(PorAmigaArt.Palettes(program)[PorAmigaFrame.PaletteTable], img.PaletteRgb);
+            // Not in the Best mix (decided s39: Amiga only), not DOS.
+            Assert.Null(module.Art(PorAmigaFrame.Container, PorAmigaFrame.FirstId + i, PorArtChoice.Best));
+            Assert.Null(module.Art(PorAmigaFrame.Container, PorAmigaFrame.FirstId + i, PorArtChoice.Dos));
+        }
     }
 }

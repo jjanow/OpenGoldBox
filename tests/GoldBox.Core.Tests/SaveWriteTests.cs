@@ -186,6 +186,78 @@ public class SaveWriteTests
         }
     }
 
+    /// <summary>
+    /// The training hall's Load of a camp save (state 2, DOSBox-X s39): the same copy over the running game, then the
+    /// menu ends and the running script goes on at its PC in the loaded script area, with the old vectors and block and
+    /// DS:49F8 set.
+    /// </summary>
+    [PorFact]
+    public void Hall_load_of_a_game_save_goes_on_in_the_running_script()
+    {
+        var content = PorData.Open();
+        var bytes = (byte[])File.ReadAllBytes(content.Find("SAVGAMA.DAT")!).Clone();
+        bytes[PorSaveGame.OffScript + 0x700] = 0x5A;
+        var tmp = Directory.CreateTempSubdirectory("goldbox-save-");
+        try
+        {
+            var path = Path.Combine(tmp.FullName, "a.json");
+            GoldBox.Data.Module.Por.PorEngineSave.Write(path, GoldBox.Data.Module.Por.PorEngineSave.FromFolders(bytes,
+                "SAVGAMA.DAT", GoldBox.Data.Module.Por.PorEngineSave.Identity(content), content.LoadBlock, [content.Root]));
+            var player = new PorPlayer(new ScriptedEclHost { StopWhenInputMissing = true },
+                new ScriptedEncounterUi { StopWhenInputMissing = true }, new RecordingCombatRunner(), new ScriptedAreaUi());
+            var g = PorGame.Enter(content, PorViewArt.Load(content), 20, 15, 4, 6, player, 1);
+            var party = new GoldBox.Core.Ecl.EclParty();
+            g.Memory.Party = party;
+            ushort pc = g.Vm.Pc;
+            var vectors = g.Vm.Vectors.ToArray();
+            int block = g.Vm.CurrentScript;
+            Assert.False(g.Vm.LoadingSave);
+            Assert.Equal(HallLoad.CarryOn, g.LoadInHall(path, party));
+            Assert.Same(party, g.Memory.Party);
+            Assert.Equal(6, party.Members.Count);
+            Assert.Equal(0x5A, g.Memory.ScriptArea[0x700]);
+            Assert.Equal(pc, g.Vm.Pc);
+            Assert.Equal(vectors, g.Vm.Vectors);
+            Assert.Equal(block, g.Vm.CurrentScript);
+            Assert.True(g.Vm.LoadingSave);
+        }
+        finally
+        {
+            tmp.Delete(recursive: true);
+        }
+    }
+
+    /// <summary>User decision (s39): a game save of another area (block $49F2 or disk other than the running script's) is
+    /// not copied in; the Client enters it as a loaded game.</summary>
+    [PorFact]
+    public void Hall_load_of_a_save_from_another_area_enters_it()
+    {
+        var content = PorData.Open();
+        var bytes = (byte[])File.ReadAllBytes(content.Find("SAVGAMA.DAT")!).Clone();
+        bytes[PorSaveGame.Off4900 + 2 * (0x49F2 - 0x4900)] = 21; // another block than the running 20
+        var tmp = Directory.CreateTempSubdirectory("goldbox-save-");
+        try
+        {
+            var path = Path.Combine(tmp.FullName, "a.json");
+            GoldBox.Data.Module.Por.PorEngineSave.Write(path, GoldBox.Data.Module.Por.PorEngineSave.FromFolders(bytes,
+                "SAVGAMA.DAT", GoldBox.Data.Module.Por.PorEngineSave.Identity(content), content.LoadBlock, [content.Root]));
+            var player = new PorPlayer(new ScriptedEclHost { StopWhenInputMissing = true },
+                new ScriptedEncounterUi { StopWhenInputMissing = true }, new RecordingCombatRunner(), new ScriptedAreaUi());
+            var g = PorGame.Enter(content, PorViewArt.Load(content), 20, 15, 4, 6, player, 1);
+            var party = new GoldBox.Core.Ecl.EclParty();
+            g.Memory.Party = party;
+            var area = g.Memory.ScriptArea.ToArray();
+            Assert.Equal(HallLoad.EnterArea, g.LoadInHall(path, party));
+            Assert.Empty(party.Members);
+            Assert.Equal(area, g.Memory.ScriptArea.ToArray());
+            Assert.False(g.Vm.LoadingSave);
+        }
+        finally
+        {
+            tmp.Delete(recursive: true);
+        }
+    }
+
     [PorFact]
     public void Shipped_save_a_round_trips()
     {

@@ -62,6 +62,18 @@ public interface IPorContent : IEclScriptSource, IAreaMapSource
     byte[]? AmigaIconPairs() => null;
 
     /// <summary>
+    /// The pens the Amiga program draws each DOS text colour 0–15 in with its text font (pass 2 takes the next pen;
+    /// <see cref="Module.AmigaTextPensDocument"/>), or null without the Amiga text font.
+    /// </summary>
+    int[]? AmigaTextPens() => null;
+
+    /// <summary>The Amiga highlight's pens (bar 16–31, then the text's two pens 0–15), or null.</summary>
+    int[]? AmigaTextHighlight() => null;
+
+    /// <summary>The Amiga's row-24 colours (register, 12-bit colour pairs; its copper list from line 192), or null.</summary>
+    int[]? AmigaRow24() => null;
+
+    /// <summary>
     /// Whether off-map squares read 0 instead of wrapping while area script <paramref name="script"/> runs: the
     /// program's rule for the folder (GAME.OVR 0x2EC5D: scripts 0 and 10), the area's <c>noWrapOffMap</c> in a module.
     /// </summary>

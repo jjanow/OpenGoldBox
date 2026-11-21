@@ -70,21 +70,58 @@ public sealed class EncounterHost : IEclHost
         Draw();
     }
 
+    /// <summary>
+    /// The encounter draw 0x7A21 (docs/re/ecl-format.md "Encounters", the draw), with its state bytes DS:84C8 (sprite
+    /// up) and DS:84C9 (close-up up), <see cref="EclMemory.EncounterSpriteUp"/> / <see cref="EclMemory.CloseUpUp"/>:
+    /// <list type="number">
+    /// <item>No close-up up: with the sprite up the view is redrawn under it first (0x7A3A → 0x2DCF4; on the overland
+    /// the marker too, DS:6DDC + 1); without it the area map is turned off with a redraw (0x7A5B–0x7A67), the sprite's
+    /// frames are loaded (DS:84C8 and DS:84E3 := 1), and the sprite is drawn at distance + 1 in the 3D view, at slot 2
+    /// elsewhere (0x7A98–0x7AB7). While DS:84C8 stays set the frames are not loaded again: the first sprite is drawn.</item>
+    /// <item>A close-up up and $6DE1 = DS:84EA (the head it was drawn with; 255 = 255 for a PIC): nothing more (0x7ABC–
+    /// 0x7AD6). So a second close-up in the same run, or one after PICTURE (which sets DS:84C9 but not 84EA), keeps the
+    /// picture up; with DS:84C9 set no sprite is drawn either.</item>
+    /// <item>The close-up at distance 0 in the 3D view (DS:49FA = 1), not inside ENCMENU (DS:84E9) with the monster
+    /// pictures off (DS:49F6): DS:84EA := $6DE1, DS:84E0 := 1, the PIC or head + body (which clears DS:84E1), DS:84C9 := 1
+    /// (0x7AFD–0x7B77).</item>
+    /// </list>
+    /// </summary>
     private void Draw()
     {
-        State.SpriteShown = true;
-        ushort distance = Memory.Read(Distance);
-        // 0x7AD9–0x7B77: the close-up at distance 0 in the 3D view (DS:49FA = 1), not inside ENCMENU (DS:84E9) with the
-        // monster pictures off (DS:49F6), sets DS:84E0; with a head ($6DE1 ≠ 255) the head + body loader 0x79E4 and
-        // 0x7B77 clear DS:84E1. [?] Not modelled: the skip when the close-up is already up with the same head (DS:84C9
-        // and DS:84EA = $6DE1, 0x7ABC–0x7AD6).
-        if (distance == 0 && Memory.ViewMode == 1 && !(State.InEncounterMenu && !CampSettings.MonsterPictures(Memory)))
+        var m = Memory;
+        ushort distance = m.Read(Distance);
+        bool closeUpWasUp = m.CloseUpUp;
+        if (!closeUpWasUp)
         {
-            Memory.PictureShown = true;
-            if (Memory.Read(HeadPicture) != 255)
-                Memory.PictureArmed = false;
+            if (m.EncounterSpriteUp)
+                Explore.Overland.Redrawn(m); // 0x7A3A: the view (and the overland marker) under the old sprite
+            else
+            {
+                if (m.AreaMapShown)
+                {
+                    m.AreaMapShown = false; // 0x7A62
+                    Explore.Overland.Redrawn(m); // 0x7A67
+                }
+                m.EncounterSpriteUp = true; // 0x7A8F
+                m.EncounterSprite = State.Sprite; // 0x7A87: the frames DS:6ABE now hold
+                State.SpriteShown = true; // DS:84E3 (0x7A93)
+            }
         }
-        Ui.ShowEncounter(State.Sprite, State.Picture, distance);
+        ushort head = m.Read(HeadPicture);
+        bool sameCloseUp = closeUpWasUp && head == m.CloseUpHead;
+        bool closeUp = !sameCloseUp && distance == 0 && m.ViewMode == 1
+                       && !(State.InEncounterMenu && !CampSettings.MonsterPictures(m));
+        if (closeUp)
+        {
+            m.CloseUpHead = (byte)head; // 0x7B06
+            m.PictureShown = true; // 0x7B09
+            if (head != 255)
+                m.PictureArmed = false; // the head + body loader 0x79E4 (0x79E7, again at 0x7B77)
+            m.CloseUpUp = true; // 0x7B3E / 0x7B72
+            Ui.ShowEncounter(State.Sprite, State.Picture, 0);
+        }
+        else if (!closeUpWasUp)
+            Ui.ShowEncounterSprite(m.EncounterSprite, State.Picture, distance);
     }
 
     private void CloseIn()
@@ -233,7 +270,11 @@ public sealed class EncounterHost : IEclHost
         }
         Memory.Write(SearchMode, (ushort)(Memory.Read(SearchMode) & 1));
         State.SpriteShown = false;
+        Memory.ClearEncounterDraw(); // 0x261F: DS:84C8–84C9
         Memory.PictureShown = false; // 0x2630
+        // 0x2635: START 0x3379 with DS:49F3 = 4 (3D) or 3 (0x25F7–0x2605): cases 3 and 4 redraw the view (0x2DCF4), on
+        // the overland the marker too.
+        Explore.Overland.Redrawn(Memory);
     }
 
     /// <summary>
@@ -482,6 +523,7 @@ public sealed class EncounterHost : IEclHost
         byte v = (byte)picture;
         if (v != 255)
         {
+            Memory.CloseUpUp = true; // 0x15F3 (DS:84EA is not written)
             Memory.PictureShown = true; // 0x15F8
             ushort head = Memory.Read(HeadPicture);
             if (head != 255)
@@ -491,11 +533,13 @@ public sealed class EncounterHost : IEclHost
         }
         // 0x1659–0x1684: only in the 3D view or with DS:49F9 > 1 (not right after a switch from the 3D view to the
         // overland), and only while a picture or the sprite is up: the view is redrawn, both flags cleared and the
-        // animation armed (DS:84E1 := 1). Otherwise nothing changes.
+        // animation armed (DS:84E1 := 1). Otherwise only DS:84C8–84C9 are cleared.
+        Memory.ClearEncounterDraw(); // 0x1689–0x168E, after the redraw branch or without it
         if (Memory.PreviousViewMode <= 1 && Memory.ViewMode != 1)
             return;
         if (!Memory.PictureShown && !State.SpriteShown)
             return;
+        Explore.Overland.Redrawn(Memory); // 0x1675: the redraw 0x2DCF4 (on the overland, DS:6DDC + 1)
         Ui.RestoreView();
         Memory.PictureShown = false;
         State.SpriteShown = false;

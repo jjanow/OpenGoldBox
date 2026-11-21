@@ -21,6 +21,32 @@ public sealed record AmigaIconColoursDocument
     public SourceRef? Source { get; init; }
 }
 
+/// <summary>
+/// <c>art/amiga/text-pens.json</c> (docs/module-format.md §10, docs/re/por-art-formats.md §4 "Text font"): for each DOS
+/// text colour 0–15, the screen pen the Amiga program draws that text in with its text font (<c>art/amiga/poolrad/0/8</c>);
+/// the second pass, one pixel to the right, takes the next pen. Pens are registers 16–31 (the font PNG's palette).
+/// Read from the player's <c>program</c> at import (<see cref="Por.PorAmigaText"/>).
+/// </summary>
+public sealed record AmigaTextPensDocument
+{
+    public const string RelativePath = "art/amiga/text-pens.json";
+
+    public required int[] Pens { get; init; }
+
+    /// <summary>
+    /// The highlight of a lit party member or list row: the bar's pen (16–31), then the text's pen and its pass-2 pen
+    /// (0–15, the picture half: the font PNG's palette does not hold them). Null in a module from before s39's follow-up.
+    /// </summary>
+    public int[]? Highlight { get; init; }
+
+    /// <summary>
+    /// Row 24's own colours (the Amiga's copper list changes some registers from screen line 192 on): register (0–31),
+    /// 12-bit colour, register, colour, … Null in a module from before importer 0.7.29.
+    /// </summary>
+    public int[]? Row24 { get; init; }
+    public SourceRef? Source { get; init; }
+}
+
 /// <summary>Where an imported resource came from (container file and block id).</summary>
 public sealed record SourceRef
 {

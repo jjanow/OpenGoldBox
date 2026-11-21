@@ -33,11 +33,13 @@ public static class OverlandUi
     /// 3D view: the window (cells 1–15) black, the 3D view's box at cells 2–14 and the picture at pixel (24, 24)
     /// (DOSBox-X, s19: ECL7 block 26's north edge of the city, CLEARBOX / CALL $0806 / PICTURE 40 / PRINTCLR / HMENU).
     /// A sprite (SPRIT, an encounter's monsters) is drawn over the overland tiles with no box (DOSBox-X: giant snakes
-    /// at 0,0 of block 25). [?] Which of CLEARBOX, CALL $0806 and PICTURE draws the box is not read.
+    /// at 0,0 of block 25; s39: SETUPMON and APPROACH at 10,20 of block 26). The stand-in text (<see cref="ClientPlayer.ViewOverlay"/>,
+    /// kept beside every encounter picture for missing art) boxes only with no picture. [?] Which of CLEARBOX, CALL
+    /// $0806 and PICTURE draws the box is not read.
     /// </summary>
     public static bool Boxed(ClientPlayer player) =>
-        player.ViewBlanked || player.ViewOverlay is not null
-        || player.ViewPicture is { Kind: not ViewPictureKind.Sprite };
+        player.ViewBlanked || player.ViewPicture is { Kind: not ViewPictureKind.Sprite }
+        || (player.ViewPicture is null && player.ViewOverlay is not null);
 
     /// <summary>Blanks the overland window (cells 1–15).</summary>
     public static void Blank(IndexedFrame f) => f.FillRect(ViewX, ViewY, Overland.ViewPixels, Overland.ViewPixels, 0);

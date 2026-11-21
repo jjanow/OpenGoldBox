@@ -48,7 +48,8 @@ public class VenueTests
         return r;
     }
 
-    private static (TradeContext T, Script S) Context(Script s, EclParty party, List<byte[]>? treasure = null, uint[]? pool = null) =>
+    private static (TradeContext T, Script S) Context(Script s, EclParty party, List<byte[]>? treasure = null, uint[]? pool = null,
+        Action? rosterDrawn = null, Func<EclCharacter, IReadOnlyList<ViewEntry>, int>? viewPage = null) =>
         (new TradeContext
         {
             Dialog = new Dialog(s.Ask, new TextWindow()),
@@ -59,6 +60,8 @@ public class VenueTests
             Random = n => n - 1,
             Word = w => w == 7 ? "SWORD" : null,
             ShowWindow = w => { if (w is not null) s.Windows.Add(w); },
+            RosterDrawn = rosterDrawn ?? (() => { }),
+            ViewPage = viewPage,
         }, s);
 
     private static EclParty Party(params EclCharacter[] members)
@@ -191,6 +194,22 @@ public class VenueTests
         Assert.Equal(9, c[0x11B]);                       // 1 + 1d8 (8 with Random(8) = 7)
         Assert.Equal(0, c.Word(Money.Platinum));         // 3 gold left: 0 pp, 3 gp
         Assert.Equal(3, c.Word(Money.Gold));
+        Assert.Equal(0, s.Left);
+    }
+
+    [Fact]
+    public void Shop_and_temple_draw_the_party_list_on_entry_and_after_every_pass()
+    {
+        // P s39: 0x722B / 0x5298 on entry, 0x745A / 0x5497 at the end of every pass of the menu loop (before the exit
+        // test): a held light red name shows its colour again there.
+        int drawn = 0;
+        var (t, s) = Context(new Script(-2, 4), Party(Member("ANNA"), Member("BEN")), rosterDrawn: () => drawn++); // Home, EXIT
+        VenueScreens.Shop(t);
+        Assert.Equal(3, drawn);                                        // entry, the pick's pass, the exit pass
+        drawn = 0;
+        (t, s) = Context(new Script(4), Party(Member("ANNA")), rosterDrawn: () => drawn++); // EXIT at once
+        VenueScreens.Temple(t);
+        Assert.Equal(2, drawn);                                        // entry, then the exit pass
         Assert.Equal(0, s.Left);
     }
 
@@ -344,6 +363,48 @@ public class VenueTests
         (t, s) = Context(new Script(new ListAnswer(4, 0)), Party(c));
         CharacterView.Run(t, Venue.Shop);
         Assert.Equal(["ITEMS", "SPELLS", "TRADE", "DROP", "EXIT"], s.Asked.OfType<ListRequest>().Single().Actions);
+    }
+
+    /// <summary>
+    /// The camp (0x197B3), shop (0x730D), temple (0x5341) and loot menu (0x65B4) all call 0x21AED: with the program's
+    /// page at hand their View asks it (DOSBox-X s39: the same page and words as the party menu's, no member switch
+    /// inside View), Items still opens the items page, and a command not built yet is said on the page's bottom line
+    /// (no text window over the page).
+    /// </summary>
+    [Fact]
+    public void Camp_shop_and_loot_view_use_the_programs_page()
+    {
+        var c = Member("ANNA", pp: 2);
+        c.Items.Add(Item(30, 5));
+        c[0x17] = 5;
+        var pages = new List<IReadOnlyList<ViewEntry>>();
+        var answers = new Queue<int>([1, 0, 4]);          // SPELLS (not built), ITEMS, EXIT
+        var (t, s) = Context(new Script(
+            null,                       // the SPELLS notice's key
+            new ListAnswer(8, 0)),      // EXIT the items page (shop: … SELL ID EXIT)
+            Party(c), viewPage: (who, entries) =>
+            {
+                Assert.Same(c, who);
+                pages.Add(entries);
+                return answers.Dequeue();
+            });
+        CharacterView.Run(t, Venue.Shop);
+        Assert.Equal(3, pages.Count);
+        Assert.Equal([ViewEntry.Items, ViewEntry.Spells, ViewEntry.Trade, ViewEntry.Drop, ViewEntry.Exit], pages[0]);
+        var note = Assert.IsType<KeyRequest>(s.Asked[0]);
+        Assert.Equal("SPELLS: NOT IN THIS BUILD YET.", note.Prompt);
+        Assert.IsType<ListRequest>(s.Asked[1]);
+        Assert.Equal(0, s.Left);
+
+        // The loot menu's View and the camp's V reach the same page.
+        int asked = 0;
+        (t, s) = Context(new Script(), Party(c), viewPage: (_, e) => { asked++; return e.Count - 1; });
+        CharacterView.Run(t, Venue.Loot);
+        Assert.Equal(1, asked);
+        (t, s) = Context(new Script(1, 5), Party(c), viewPage: (_, e) => { asked++; return e.Count - 1; });  // VIEW, EXIT
+        Assert.False(VenueScreens.Camp(CampScreenTests.Camp(t), null));
+        Assert.Equal(2, asked);
+        Assert.Equal(0, s.Left);
     }
 
     [Fact]

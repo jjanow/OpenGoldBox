@@ -26,6 +26,7 @@ public static class VenueScreens
         Array.Clear(t.Pool);
         while (true)
         {
+            t.RosterDrawn(); // 0x722B / 0x745A: the party list on entry and after every pass of the menu (a pick too)
             bool money = t.PoolHasMoney;
             string[] menu = money
                 ? ["BUY", "VIEW", "TAKE", "POOL", "SHARE", "APPRAISE", "EXIT"]
@@ -43,7 +44,10 @@ public static class VenueScreens
                 case "APPRAISE": MoneyScreens.Appraise(t); break;
                 default:
                     if (!MoneyScreens.StayForMoney(t, Msg.ShopMoneyLeft, Msg.ShopGoBack))
+                    {
+                        t.RosterDrawn(); // the pass's list comes before the exit test
                         return;
+                    }
                     break;
             }
         }
@@ -115,6 +119,7 @@ public static class VenueScreens
         Array.Clear(t.Pool);
         while (true)
         {
+            t.RosterDrawn(); // 0x5298 / 0x5497: the party list on entry and after every pass of the menu (a pick too)
             bool money = t.PoolHasMoney;
             string[] menu = money
                 ? ["HEAL", "VIEW", "TAKE", "POOL", "SHARE", "APPRAISE", "EXIT"]
@@ -132,7 +137,10 @@ public static class VenueScreens
                 case "APPRAISE": MoneyScreens.Appraise(t); break;
                 default:
                     if (!MoneyScreens.StayForMoney(t, Msg.TempleMoneyLeft, Msg.TempleGoBack))
+                    {
+                        t.RosterDrawn(); // the pass's list comes before the exit test
                         return;
+                    }
                     break;
             }
         }

@@ -364,4 +364,86 @@ public class SymbolAndWallTests
         Assert.Equal(32, font.GlyphOf(' '));
         Assert.Equal(-1, font.GlyphOf('~'));
     }
+
+    /// <summary>
+    /// The Amiga text face (docs/re/por-art-formats.md §4 "Text font"): the whole line in the pen at x, then in the next
+    /// pen one pixel to the right over it, set bits only; characters by their own code (no upper-casing); the second pass
+    /// reaches into the cell after the line; colours past the table and raw glyphs keep the font's own drawing.
+    /// </summary>
+    [Fact]
+    public void The_two_pass_face_draws_the_line_then_its_shadow_one_pixel_right()
+    {
+        var own = new byte[177 * 8];
+        own[1 * 8] = 0xFF;                                      // own glyph 1 ('A'): top row full
+        own[5 * 8] = 0x81;                                      // own glyph 5 (a raw rune): its corners
+        var glyphs = new byte[256 * 8];
+        glyphs['A' * 8 + 2] = 0x81;                             // face 'A': row 2, left and right pixel
+        glyphs['a' * 8 + 3] = 0x40;                             // face 'a': its own glyph, row 3
+        glyphs['B' * 8 + 2] = 0x80;                             // face 'B': row 2, left pixel
+        var pens = Enumerable.Range(0, 16).Select(c => (byte)(100 + 2 * c)).ToArray();
+        var font = new TextFont(own) { Face = new TextFont.TwoPassFace(glyphs, pens, [.. pens.Select(p => (byte)(p + 1))]) };
+        var f = new IndexedFrame(64, 16);
+        font.Draw(f, 8, 0, "AB", 3);
+        Assert.Equal(106, f[8, 2]);                             // 'A' left pixel: pass 1 only
+        Assert.Equal(107, f[9, 2]);                             // pass 2 one to the right
+        // 'A''s right pixel (x 15) is drawn in pass 1, then 'B''s pass 1 at x 16; pass 2 of 'A' lands on 16, after it.
+        Assert.Equal(106, f[15, 2]);
+        Assert.Equal(107, f[16, 2]);
+        Assert.Equal(107, f[17, 2]);                            // 'B''s own shadow
+        Assert.Equal(0, f[8, 0]);                               // not the font's own glyph 1
+        // No background: the other pixels are left; with one, pass 1 fills them, pass 2 still lands on top.
+        f.Clear(9);
+        font.Draw(f, 0, 0, "a", 0);
+        Assert.Equal((9, 100, 101), (f[0, 3], f[1, 3], f[2, 3]));
+        f.Clear(9);
+        font.Draw(f, 0, 8, "A", 0, background: 4);
+        Assert.Equal((100, 101, 4, 100, 101), (f[0, 10], f[1, 10], f[2, 10], f[7, 10], f[8, 10]));
+        Assert.Equal(9, f[9, 10]);
+        // Colour 16 and up, and raw glyphs, keep the font's own glyphs.
+        f.Clear(0);
+        font.Draw(f, 0, 0, "A", 20);
+        Assert.Equal(20, f[0, 0]);
+        font.Draw(f, 16, 0, TextFont.RawGlyph(5).ToString(), 15);
+        Assert.Equal((15, 15, 0), (f[16, 0], f[23, 0], f[24, 0]));
+        // No highlight in the face: DrawLit draws nothing and says so.
+        Assert.False(font.DrawLit(f, 0, 0, "A", listRow: false));
+        // The menu prompt: the pass-2 pen at x + 3 first, then the pen at x + 4.
+        f.Clear(0);
+        font.DrawMenuPrompt(f, 0, 0, "B", 3);
+        Assert.Equal((0, 107, 106), (f[2, 2], f[3, 2], f[4, 2]));
+    }
+
+    /// <summary>
+    /// The Amiga highlight (hunk 13 +0x3B64 / +0x3146): a party member's bar from x to x + 8 · length and y to y + 8, a list
+    /// row's from x + 1 to x + 8 · length − 1 and y to y + 6; the text over it in the text pen, then the pass-2 pen one
+    /// pixel right; leading blanks skipped.
+    /// </summary>
+    [Fact]
+    public void The_amiga_highlight_draws_a_bar_and_the_text_in_two_pens()
+    {
+        var glyphs = new byte[256 * 8];
+        glyphs['A' * 8 + 2] = 0x80;
+        var pens = Enumerable.Range(0, 16).Select(c => (byte)(100 + 2 * c)).ToArray();
+        var font = new TextFont(new byte[177 * 8])
+        {
+            Face = new TextFont.TwoPassFace(glyphs, pens, [.. pens.Select(p => (byte)(p + 1))]) { Lit = new(50, 60, 61) },
+        };
+        var f = new IndexedFrame(64, 24);
+        Assert.True(font.DrawLit(f, 8, 0, " A", listRow: false));   // the blank skipped: the bar starts at x 16
+        Assert.Equal((0, 50, 50, 50, 0), (f[15, 0], f[16, 0], f[24, 0], f[24, 8], f[25, 0]));
+        Assert.Equal((60, 61, 50), (f[16, 2], f[17, 2], f[18, 2]));
+        f.Clear(0);
+        Assert.True(font.DrawLit(f, 8, 0, "A", listRow: true));
+        Assert.Equal((0, 50, 50, 0, 50, 0), (f[8, 0], f[9, 0], f[15, 6], f[16, 0], f[9, 6], f[9, 7]));
+        Assert.Equal((60, 61), (f[8, 2], f[9, 2]));
+        // A colour argument the program passes itself (the hit points' 8 / 10): below 16 the glyph routine's pen rule.
+        Assert.False(font.DrawAmiga(f, 0, 0, "A", 8));        // no interface base: the caller draws its own colour
+        font.Face = font.Face! with { InterfaceBase = 200 };
+        f.Clear(0);
+        Assert.True(font.DrawAmiga(f, 0, 0, "A", 8));         // colour 8 → pen 24 (index 208), pass 2 pen 25
+        Assert.Equal((208, 209), (f[0, 2], f[1, 2]));
+        f.Clear(0);
+        font.DrawAmiga(f, 0, 0, "A", 11);                     // 11 → pen 26
+        Assert.Equal((210, 211), (f[0, 2], f[1, 2]));
+    }
 }

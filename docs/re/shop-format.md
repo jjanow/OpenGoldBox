@@ -73,7 +73,7 @@ characters with the value right-aligned at the end (the list's text; s12).
    (START 0x1758). The shop's item stays: stock never runs out.
 3. Then the payer pays (character first) as above. Else a "not enough money" message.
 
-**View → items** (0x21AED, P where marked). In a shop (DS:49F3 = 1) the items menu adds **Sell** and **Id**
+**View → items** (0x21AED, P where marked; the shop calls it at 0x730D, the temple at 0x5341: page and keys in `camp.md` "View", s39). In a shop (DS:49F3 = 1) the items menu adds **Sell** and **Id**
 (strings at unit 0x2103A + 0xEA8 / 0xEAE; 0x22104–0x2217E). Sell is added for a member with 0x84 < 0x80, and for
 others only when in play = 0 or status = 1 — the same gate as Trade in View (0x21BFE) and in the items menu
 (0x22034): an NPC's goods can be traded or sold only once it is out of play or animated (status 1). Settled s15
@@ -179,3 +179,26 @@ returns it; a zero-prefixed key returns its scan code (extended = 1 only with th
 flag a digit that is no hotkey (or a backslash) returns a cursor-pad scan code (1 End, 2 Down, 3 PgDn, 4 Left, 5 ' ', 6 Right, 7 Home,
 8 Up, 9 PgUp, backslash 0x37; table DS:288C) with extended = 1; other keys are ignored. The extended byte is also
 stored in DS:6B2C. This is the "output byte" the shop's G / O test does not look at.
+
+**Entries and the lit span (P s39, D s39).** One routine draws every horizontal menu line (36 far callers, START
+0x38A5, and the item list 0x2D8AC and yes/no 0x2D9EA in its own unit), so the rule is the same for all of them.
+0x2C99A splits the item line: every character in the set at 0x2C97A (the digits and the capitals) starts an entry
+and is its hotkey; an entry ends two cells before the next one starts (position − 2), the last one at the line's
+length. 0x2CAA9 draws the prompt's length + i − 1 for the i-th character on row 24: inside the highlighted entry's span
+in [bp+0x0E] (when non-zero), else any capital or digit (set 0x2CA89, the same) in [bp+0x0E], else in [bp+0x10]; the
+row is then blanked from the line's end to column 39. So a lit entry runs from its capital to two cells before the
+next capital; where every word starts with its capital and one space separates the words, that is the whole word. Only two lines in PoR v1.3 have a hotkey that is not the first character of its word (every
+length-prefixed string in START.EXE and GAME.OVR scanned, the DS lines and the ECL HMENU words too): the rest-time menu
+"Rest   daYs …" (camp.md "Rest-time menu": Rest lit also lights the D) and the icon editor's main line "Parts color-1
+color-2 Size Exit" (DS:07BF + 41, hotkeys P 1 2 S E): Parts lit lights PARTS and the COLOR of color-1 (the '-' green,
+the 1 white as a capital/digit); color-1 lit lights its 1 and the COLOR of color-2 (its "color-" before the 1 green);
+color-2 lit only its 2. **D** (s39, camp Alter → Icon, '.' three times): exactly these cells; the area, camp, Alter,
+rest-time and yes/no lines (Drop's question: No lit on entry, '.' lights Yes) light whole words, as predicted. The Client drew one frame of
+the previous highlight (Yes) before the yes/no routine's No (0x2D9B9); `ExploreScreen.Draw` now takes a request's
+opening highlight before drawing it (s39). The
+fight's and the shop's lines are predicted the same and were matched as whole frames in earlier captures (shop s22 /
+s24, fight s29–s38), not taken again in s39. HMENU (0x1E17) builds its
+line as "~WORD ~WORD … ~WORD", and 0x8A40 lower-cases every capital, then deletes each '~' and upper-cases the
+character after it, so each choice has one capital (its first letter; a choice of several words
+is one entry); no v1.3 HMENU word holds a digit. A one-choice HMENU passes 15 for both colours (all white). Client:
+`ExploreScreen.DrawLine` (also behind the party-menu pages' `PartyMenuScreen.Line`, so the camp's icon editor).

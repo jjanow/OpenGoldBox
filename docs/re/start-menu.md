@@ -278,14 +278,21 @@ hall's classes and Train is offered.
 
 Cancelling any list leaves Create at once (0x1B84D), without a character.
 
-**Icon editor 0x1D1AC** (combat palette, grey ground): OLD at row 6 and NEW at row 12 (column 8), the ready and action
+**Icon editor 0x1D1AC** (combat palette 0x3081D, grey ground): OLD at row 6 and NEW at row 12 (column 8), the ready and action
 frames at x 32 and 104 over bevelled boxes (icon slot 25's frames `[?]`), labels at rows 10 and 16 (`PartyMsg.IconOld`,
 `IconNew`, `IconFrames`). Read s20, Core `IconEditor`, matched on 600 emulated cases (`por_icon_oracle.py`: random walks
 through the menus with Keep, Exit, Escape and No; `IconEditorProgramTests`).
 
 - **State byte [bp-8]**; each state's menu is the line DS:07BF + 41·state (string[40]) given to the menu routine
   0x2CC8C (no prompt, colours 13/10/15), which answers a word's hotkey (its first capital letter or digit, so the two
-  colour words answer 1 and 2) or 0 for Escape. The exit test is the set {0, E} at CS:37F6 (0x1D7C7).
+  colour words answer 1 and 2) or 0 for Escape. The exit test is the set {0, E} at CS:37F6 (0x1D7C7). The main line's
+  lit spans follow the routine's rule (shop-format.md "The menu routine": Parts lit also lights the COLOR of color-1).
+  **D** (s39, camp Alter → I → '.' × 3): the line opens on the shared highlight (Alter's I left it on the 4th, so Size
+  is lit; the Client now shares the one cell with a `--save` start too), and every lit cell matches the rule. The
+  grey ground is the combat palette: 0x1D1D9 calls GAME.OVR 0x3081D (EGA registers 0 and 8 swapped, combat-menu.md
+  "Palette"), restored at 0x1D8A7 after the IconOk question, so row 24, the frame's gaps and the ground are colour 0
+  shown dark grey and the icons' colour 8 shows black. Client (s39): the page is drawn in the program's colours and the
+  whole frame swapped (`CombatScreen.SwapGrey`); the revive / Alter / Icon run then has 79 of 79 frames equal.
 - **1 main**: P → 2; 1 → 3 on the low nibbles ([bp-0x17] := 0), 2 → 3 on the high nibbles ([bp-0x17] := 1); S → 4.
   With 1 or 2 the colour line's characters 13..16 (Pascal Delete / Insert, 0x1D3BD–0x1D3D4) are replaced by
   `PartyMsg.IconHair` (low) or `PartyMsg.IconFace` (high). [bp-0x1a] (the menu Step returns to) := 1.
@@ -340,6 +347,26 @@ through the menus with Keep, Exit, Escape and No; `IconEditorProgramTests`).
   switch, venue `Venue.PartyMenu` (no Use); the training hall's View goes through the same (`HallHooks.View`). The
   entries' screens are the camp's as built (Spells, money Trade / Drop and the item commands other than Sell / Id are
   not built yet: our notice on the bottom line).
+  **Keys** (P + D, s39): View calls the menu routine at 0x21CD1 with colours 13 / 10 / 15 and keypad flag 0, so
+  Return returns 13 and space ' ' (0x2CE81, 0x2CEFB), which the loop ignores (exit set CS:0A4C = {0, E}, redraw set
+  CS:0A93 = {I, S, T}; D redraws only the money lines, 0x21547); extended keys are swallowed (0x2CE4F without the
+  keypad flag: no Home / End, no arrows); ',' / '.' move the highlight and the shared cell DS:6B2B, wrapping. The
+  party menu's own menu call (0x19C77, item line DS:05F0 empty, keypad flag 1) leaves the cell past its last entry,
+  so 0x2CCE7 puts it back to 1: View from the party menu always opens on its first word. **D** (s39, the `unstarted`
+  slot C fixture, a dwarf fighter: Items Trade Drop Exit): View opens with Items lit; '.' '.' ',' → Trade, Drop,
+  Trade; Return, Right, Left, Home, End, space changed nothing; '.' → Drop; Escape; V again → Items lit; the lit word
+  white from its first to its last letter, the others green with a white hotkey, the words right after "View:"
+  (column 5). Exit leaves one transient frame (~9 ms) where the party menu's prompt is written over View's line
+  before the menu is redrawn (not reproduced). Client: every one of its 11 frames equal to a DOSBox-X frame (the
+  page, each highlight, the menu after Escape and after E); `PartyMenuScreen` takes ',' / '.' (the cell follows,
+  so Escape keeps the move) and resets the cell when the party menu comes up; a keyboard Return does nothing in
+  View (`SheetRequest.IsView`), the pad's A and a click take the highlighted word, and Left / Right move it like
+  ',' / '.' (the Client's, as on every menu line; the program ignores the arrows here). Tests
+  `PartyMenuScreenTests.View_keys_are_the_programs`. **D** (s39, the training hall, slot C of `por_test_saves.py`,
+  save A's party): V, '.', '.', Escape, V → Items lit again (the hall runs the same 0x19AE0); I, Escape → View back on
+  Items (0x2D669 stored 1); Client 8 of 9 frames equal (the miss: our Items page then; since s39 the program's,
+  camp.md "Items and Drop from View", party menu 13 of 13). View's Drop goes through the coin list, so View comes back
+  on Items (s39).
 - **Train**: the training hall's (training.md). Save: section 5a.
 
 ### Modify (0x1BA1E)
@@ -483,14 +510,12 @@ before it uses them (`PorProgramData.CreationTables`). `[?]` Not decoded into a 
 ## 7. Open `[?]`
 
 - Home / End wrapping on the party menu; the drop message's line and how long it stays.
-- The icon editor's frame boxes (icon slot 25) and its palette are drawn as seen, not decoded. The camp's Alter Icon
+- The icon editor's frame boxes (icon slot 25) are drawn as seen, not decoded. The camp's Alter Icon
   runs the same routine (camp.md "Alter").
 - File names of roster characters (8.3 clean-up); the save's deletion of the members' roster files (camp.md).
 - Load at the party menu of a state-0 save: what the program's re-read of map $49C5 = 0 and wall set 0 gives.
-- View (0x21AED) elsewhere in the Client: the camp's, shop's and loot's View still draw our page
-  (`CharacterView.Sheet`) and take Home / End inside View, which the program's loop does not (see §4 View); the party
-  menu and the hall use the program's page. Not in DOSBox-X yet: View's words and highlight at the party menu pixel
-  for pixel.
+- View's Items commands other than Sell / Id (Ready, Use, Trade, Drop, Halve, Join) and View's Spells and Trade outside
+  a fight are still our notice (the pages are the program's since s39, camp.md "View").
 
 ## 8. After the game loop: the party destroyed (0x403E, START 0x013D) — P, D
 
@@ -515,7 +540,8 @@ v1.3 does **not** go back to the party menu: the program ends (D, s22: both path
     (column (1 + 38 − length) div 2 = 15), the message through the text routine in the box (2, 5)–(37, 22), colour
     10, cleared first, so it starts at column 2, row 5 and wraps at column 37 (two rows); the key line on row 24 in
     colour 13 (0709:0BF5 = START 0x7C85: row 24 cleared, the text at column 0, then a key). The Client's screen
-    equals it pixel for pixel (`ClientPlayer.PartyDestroyed`).
+    equals it pixel for pixel (`ClientPlayer.PartyDestroyed`). Row 24 is not written before the key line: it keeps
+    what the fight left there (**D** s39, a vampire's move line under the typed text; combat-menu.md "Attack pose").
   - **ECL DAMAGE** (0x3728–0x3740: set to 1, cleared when any member has in play 0x10D ≠ 0): 0x375A–0x37BB the same
     kind of window and two lines (unit 0xD46 CS 0x272D, 0x2736), a Delay(3000) (0A40:029C), then the handler's usual
     end from 0x37C0 (DS:5D92 restored, a press-a-key line CS 0x2752 and wait).

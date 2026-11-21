@@ -402,7 +402,7 @@ Checked against DOSBox-X (PoR v1.3, EGA, save A put on the overland with `goldbo
   a load goes on from the session's value. The marker routine runs from the redraw 0x2DCF4 (near call 0x2DE20, only
   in modes 2–4 with $49E6 = 0) and from the interface (START 0x3710). Callers of 0x2DCF4: the area loop (0x3FF5 the
   script switch, 0x40C8 the first pass, 0x414C Search/Look, 0x41D8 the step), Encamp (0x3B48), SPRITEOFF (0x37F6),
-  CALL $2C90 (0x3A7E), the encounter draw (0x7A3A / 0x7A67), PICTURE (0x1675, mode 1 only) and START 0x3379 (the
+  CALL $2C90 (0x3A7E), the encounter draw (0x7A3A / 0x7A67), PICTURE 255 (0x1675) and START 0x3379 (the
   interface draw by DS:49F3: cases 3 and 4 redraw, 0x341F / 0x3441) and 0x36FE (0x370B). START 0x3379 is called by
   LOADFILES / LOADPIECES (0x1B1A, once both have run since the area loop started and DS:4432 is still set), the
   first pass (0x40BE), Encamp after an interrupted rest (0x3B3B) and many menus (shops, camp, items).
@@ -418,11 +418,32 @@ Checked against DOSBox-X (PoR v1.3, EGA, save A put on the overland with `goldbo
     command draws no interface. The same redraw draws the new area's view over whatever the old script left in the
     window: CITY at Phlan's north edge (block 14's vector 4 loads files) shows Phlan's 3D view at once, not the
     site's picture or CLEARBOX blank (Client: `EclVm.ScriptSwitchRedrawn` → `ClientPlayer.SwitchRedrawn`; the live
-    vpad run of s25 had found the window black until the next command).
-  - Engine: `EclMemory.MarkerCounter` and `Overland.Redrawn` on the loop's redraws, the switch, CALL $2C90 and
-    SPRITEOFF; `PorGame` loads take the session's counter (`markerCounter`, the Client passes its game's) and add
-    the first pass's draws. Not modelled: the encounter draw's redraws (0x7A3A / 0x7A67) and START 0x3379 called by
-    menus while the overland is shown `[?]` (their frames are only seen if no later redraw comes first).
+    vpad run of s25 had found the window black until the next command). A 3D → 3D switch (DS:49F9 = DS:49FA = 1)
+    always redraws. **D** (s39, save A with vector 0 = PICTURE 2; NEWECL 20, then CLEARBOX; NEWECL 20): NEWECL's load
+    (0x1996 → 0x7814) clears row 24 (0x2CFCA), shows "Loading...Please Wait" there for the disk's time and clears it;
+    then the 3D view replaces the picture before block 20's vectors type their text under a blank row 24. After
+    CLEARBOX the redraw draws the 88 × 88 view alone (0x2DCF4): the rest of cells 1–15, the view's box among them,
+    stays blank, still after the text and two turns. Client (s39): row 24 blank after a NEWECL until the next menu or
+    command line (`ClientPlayer.BottomRowClears`; the loading line itself is disk time, not shown), the box ring kept
+    blank (`ClientPlayer.ViewBoxBlank`, ended by the screens that draw the whole layout: camp, shop, temple, fight,
+    hall, and EXIT's window redraw after a PROTECT). Frames: 54 of 85 (picture) and 67 of 85 (CLEARBOX) equal; the
+    rest are later than DOSBox-X's grab ended (the Client has no disk time, ~1.2 s ahead) and the help lines.
+  - **Every redraw counts** (P + D, s39): the marker routine runs inside 0x2DCF4 whatever called it, so the
+    encounter draw's redraws (0x7A3A with the sprite up, 0x7A67 turning the area map off; ecl-format.md "The
+    encounter draw 0x7A21"), PICTURE 255's (0x1675: it runs when DS:49F9 > 1 or DS:49FA = 1, so on the overland after
+    the first command too) and START 0x3379 cases 3 and 4 (0x28A1 / 0x287F) advance DS:6DDC. On the overland DS:49F3
+    is 3 outside the camp (the camp sets 2, 0x196AC, and puts the old value back, 0x197F2), so these 3379 callers
+    redraw there: COMBAT's end (0x2635, after DS:49F3 := 3 or 4 at 0x25F7–0x2605: every fight, shop, temple or
+    after-combat step), View's exit (0x21D4F), Cast (0x17D96) and its target pick (0x27AA9), Trade (0x22781, 0x231A4).
+    The camp's own menus (Memorize 0x182E1, Scribe 0x1865F, Display 0x18BF9, Alter 0x19524) run at DS:49F3 = 2 (case
+    2: the camp picture, no 0x2DCF4). **D** (`save-overland` 26 at 8,19 N): V then Escape drew the next marker frame
+    at View's exit (the view back with its window frame, case 3); `save-overland` 26 at 10,20 N with vector 0 =
+    SETUPMON 0, 2, 0; APPROACH: the view redrawn with the next frame under the sprite at APPROACH.
+  - Engine: `EclMemory.MarkerCounter` and `Overland.Redrawn` on the loop's redraws, the switch, CALL $2C90,
+    SPRITEOFF, PICTURE 255, the encounter draw and COMBAT's end (s39); `PorGame` loads take the session's counter
+    (`markerCounter`, the Client passes its game's) and add the first pass's draws. The Client's command line has no
+    View or Cast yet (the words are shown, the keys not taken), so their redraws have no place to go `[?]`; Trade
+    likewise.
   The draw (0x2DC18–0x2DC30) takes icon slot 9 + counter / 2, frame counter % 2; the interface load puts ICON 0, 1, 2
   into slots 9, 10, 11 (0x17285–0x172D5, each slot block b and b + 128). The camp's Alter Icon on the overland ends by
   loading ICON 0 into slot 11 (and 1 into slot 12; icon editor 0x1D84A, start-menu.md §3), so until the next interface
@@ -446,8 +467,17 @@ Checked against DOSBox-X (PoR v1.3, EGA, save A put on the overland with `goldbo
   $49FB ≠ 0, cs:0x97B, 3D branch only: the overland line has no A), so the river is the overland's only one; the
   other six are outside exploring (0xCEE, and 0x1BA59, 0x1C359, 0x1C393, 0x1C651, 0x1C67F in the party menu /
   training units: training.md, start-menu.md). The overland command branch (0x17277–0x173E7) calls neither 0x7DF8
-  nor 0x2233. In the program the message comes before the step's redraw (0x41D8), so the view still shows the
-  marker of the old facing meanwhile; the Client draws the new facing `[?]` (not checked in DOSBox-X). Client:
+  nor 0x2233. In the program the arrow sets the facing DS:6AAF in the command routine (0x17397–0x173D4) and the
+  message comes inside the step, before the step's redraw (0x41D8), so the view still shows the marker drawn with the
+  old facing meanwhile (the marker routine reads DS:6AAF when it draws, 0x2DC14). **D** (s39, `save-overland` 26 at
+  8,19 N, Left into the river at 7,19, speed 4): the north marker (unmirrored) stays through the message, the step's
+  redraw then draws the west one (mirrored, next frame). Client: `EclMemory.MarkerFacing` (set at every marker draw,
+  `Overland.Redrawn`, and by the interface) is the facing the view draws; the interface's composite (frame c + 1 drawn
+  alone over frame c, START 0x36FE / 0x3710) stays on screen until the next redraw (`EclMemory.MarkerDrawnTwice`; the
+  Client drew frame c + 1 alone after the first command before s39). Frames: 2 of 2 equal during and after the
+  message but for cell (16, 16): a `save-overland` save keeps save A's $49F2 = 20, so its load draws the 3D layout's
+  window frame (START 0x3379 case 4, 0x272A with 1), whose plain piece there the overland interface does not redraw
+  (the Client draws the overland's junction; a save made on the overland loads at state 3 and draws none). Client:
   `ClientPlayer.Flash` (a `DelayRequest` with the row-24 line in colour 14), the texts `Msg.RiverBlocks` /
   `Msg.NoAreaMapHere` read from GAME.OVR.
 - **Position line** (START 0x34C2): x = $49C3 + 13 in mode 3, + 26 in mode 4 (immediates), y = $49C4.

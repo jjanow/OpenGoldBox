@@ -86,7 +86,7 @@ public sealed class FightKit
         {
             Moves = new FightMoves(map),
         };
-        effects.LeaveMap = map.Remove;
+        effects.LeaveMap = c => map.Remove(c, shown: true);
         fight.Recalculate = c => StatRecalc.Recalculate(c, Items);
         effects.Recalculate = fight.Recalculate;
         fight.Spells = new FightSpells(Spells, effects, random);

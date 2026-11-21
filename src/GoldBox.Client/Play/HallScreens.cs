@@ -25,6 +25,8 @@ public sealed class HallState
 {
     public List<(int Col, int Row, string Text, byte Colour)>? Page { get; set; }
     public (string Text, byte Colour)? Message { get; set; }
+    /// <summary>Load brought a save of interface state ≠ 0: the menu ends at once (0x19D91 → 0x19E6C), as Begin does.</summary>
+    public bool LeaveAfterLoad { get; set; }
 }
 
 /// <summary>The hall's and the end game's own texts (catalogue keys <c>Hall.*</c> / <c>End.*</c>), with our wording when
@@ -143,6 +145,8 @@ public static class HallScreens
                         // 0x1CC10 takes one off). Load brings the save's own $6E3E with its memory.
                         int before = party.Members.Count;
                         run();
+                        if (entry == TrainingHall.Entry.Load && hall.LeaveAfterLoad)
+                            return;
                         int delta = camp.Party.Members.Count - before;
                         if (delta != 0 && entry != TrainingHall.Entry.Load)
                             h.Memory.Write(EclPartyRules.PartySizeCell,
@@ -494,10 +498,10 @@ public sealed class HallTrainer
 
 /// <summary>
 /// The entries this screen does not run itself, by the program's routine: Create 0x19EEB, Drop 0x1B8B6, Modify
-/// 0x1BA1E, Add 0x1C9EC, Remove 0x1E684 + 0x1CC10, Load 0x1F5E8. Null = a notice. Load of a save with interface state
-/// 0 keeps the hall up with the save's party and memory (<see cref="Data.Por.PorGame.LoadInMenu"/>); any other ends the
-/// hall and the game with <see cref="HallLoadException"/>: the program leaves the menu (0x19D91) and runs the game loop
-/// on the loaded state.
+/// 0x1BA1E, Add 0x1C9EC, Remove 0x1E684 + 0x1CC10, Load 0x1F5E8. Null = a notice. Load copies the save over the
+/// running game (<see cref="Data.Por.PorGame.LoadInHall"/>): with interface state 0 the hall stays up with the save's
+/// party; with any other it ends (<see cref="HallState.LeaveAfterLoad"/>, 0x19D91) and the running script goes on at
+/// its PC in the loaded script area. <see cref="HallLoadException"/> is left for a hall without a game.
 /// </summary>
 public sealed class HallHooks
 {

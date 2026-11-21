@@ -38,6 +38,27 @@ public sealed record SheetRequest(EclCharacter Character, IReadOnlyList<string> 
     public string? Prompt { get; init; }
     public int? CancelAction { get; init; }
     public bool PartySelect { get; init; }
+
+    /// <summary>
+    /// View's menu (0x21AED's call of the menu routine 0x2CC8C at 0x21CD1, keypad flag 0): Return gives 13, which the
+    /// loop takes for nothing, so a keyboard Return does nothing (the pad's A and a click take the highlighted word);
+    /// the camp, shop, temple and loot open it over their own screens, and it ends when the page does.
+    /// </summary>
+    public bool IsView { get; init; }
+}
+
+/// <summary>
+/// A page View opens through the item list routine 0x2D669: the Items page (0x21F32) or the coin list of drop money
+/// (0x234E1). <see cref="Page"/> holds its texts and rows; <see cref="Sheet"/>, when set, is the character whose View
+/// page stays under the list (the coin list: the money lines are the rows). The answer is a <see cref="ListAnswer"/>:
+/// the entry and the selected row, or <see cref="PageRequest.RowPicked"/> when <see cref="PickRows"/> and a row was taken.
+/// </summary>
+public sealed record CharacterPageRequest(CombatPage Page, IReadOnlyList<string> Entries, string? Prompt, int CancelEntry)
+    : PlayerRequest
+{
+    public EclCharacter? Sheet { get; init; }
+    /// <summary>The coin list: any key takes the row (0x234E1 takes it whatever the key), so Return picks it.</summary>
+    public bool PickRows { get; init; }
 }
 
 /// <summary>The icon editor's page (0x1D1AC): the old and the new combat icon, ready and action frames.</summary>
@@ -450,18 +471,82 @@ public sealed class PartyMenuFlow(Func<PlayerRequest, object?> ask, PartyMenuTex
             IsScroll = Resources?.IsScroll ?? (_ => false),
             Halt = Halt,
             MessagesOnBottomLine = true,
+            ItemsPage = (c, entries, row, name) => ItemsPage(c, entries, row, name),
+            Coins = Coins,
+            Memory = GameMemory ?? _loaded?.Memory,
         };
-        CharacterView.Run(t, Venue.PartyMenu, Page);
-
-        int Page(EclCharacter c, IReadOnlyList<ViewEntry> entries) =>
-            ask(new SheetRequest(c, [.. entries.Select(texts.ViewWord)])
-            {
-                Prompt = texts.ViewPrompt,
-                // 0x21AED's loop takes I, S, T, D and Exit only: no member selection (no 0x23819 call) in View.
-                PartySelect = false,
-                CancelAction = entries.Count - 1,
-            }) is int a ? a : entries.Count - 1;
+        CharacterView.Run(t, Venue.PartyMenu, ViewPage);
     }
+
+    private CombatText CombatTexts => Resources?.CombatTexts ?? new CombatText();
+
+    private string ItemName(byte[] item) =>
+        ItemNames.Compose(item, Resources?.ItemWord ?? (_ => null), Party.Members.Any(m => m.HasEffect(5))).Trim().ToUpperInvariant();
+
+    /// <summary>
+    /// View's Items (0x21F32): its page (<see cref="ItemsPages"/>, black outside a fight) with the list routine 0x2D669,
+    /// which puts the shared cell on the first entry on entry (0x2D6B9). The entry picked and the row it applies to.
+    /// </summary>
+    public ListAnswer ItemsPage(EclCharacter c, IReadOnlyList<ItemsEntry> entries, int row, Func<byte[], string>? itemName = null)
+    {
+        var text = CombatTexts;
+        var page = ItemsPages.Build(text, c, c.Items, itemName ?? ItemName, row, grey: false);
+        Highlight.ItemList();
+        int exit = entries.Count - 1;
+        return ask(new CharacterPageRequest(page, [.. entries.Select(e => ItemsPages.Word(text, e))], null, exit))
+            as ListAnswer ?? new ListAnswer(exit, row);
+    }
+
+    /// <summary>
+    /// Drop money's coin pick and amount (0x234E1): the coin list over View's page (the money lines are its rows, the
+    /// coin-type prompt in colour 13, then Exit; 0x2D669 stores 1 in the cell), then the amount (input 0x24F1D) on row
+    /// 24. Null when the player leaves the list. [?] The input routine is not read: an unreadable answer drops nothing.
+    /// </summary>
+    public (int Kind, ushort Amount)? Coins(EclCharacter c, IReadOnlyList<int> kinds)
+    {
+        var text = CombatTexts;
+        var r = Resources ?? new ClientResources();
+        var order = CombatSheet.MoneyKinds(c).Where(kinds.Contains).ToList();
+        int width = order.Count == 0 ? 0 : order.Max(k => CombatSheet.CoinName(r, k).Length);
+        var page = new CombatPage
+        {
+            FrameRows = [0, 23],
+            Rows = [.. order.Select(k => CombatSheet.CoinName(r, k).PadLeft(width) + " " +
+                                         FightItemScreens.Coins(c, k).ToString(System.Globalization.CultureInfo.InvariantCulture))],
+            RowCol = CombatSheet.MoneyNameEnd + 1 - width,
+            FirstRow = CombatSheet.MoneyFirstRow,
+            LastRow = Math.Max(CombatSheet.MoneyFirstRow, CombatSheet.MoneyFirstRow + order.Count - 1),
+        };
+        Highlight.ItemList();
+        var a = ask(new CharacterPageRequest(page, [text[CombatMsg.ViewExit].Trim()], text[CombatMsg.SelectCoin].Trim() + " ", 0)
+        {
+            Sheet = c,
+            PickRows = true,
+        }) as ListAnswer;
+        if (a is null || a.Action != PageRequest.RowPicked || a.Row < 0 || a.Row >= order.Count)
+            return null;
+        int kind = order[a.Row];
+        string prompt = GameText.Cat(GameText.Cat(text[CombatMsg.HowMuch], CombatSheet.CoinName(r, kind)), text[CombatMsg.WillYouDrop]).TrimEnd();
+        var typed = ask(new TextRequest(prompt, true, 5)) as string;
+        ushort amount = ushort.TryParse(typed, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var n) ? n : (ushort)0;
+        return (kind, amount);
+    }
+
+    /// <summary>
+    /// View's page (0x21084) and menu (prompt 0x21AC7 "View:", the words 0x21AA6–0x21AC2) on <paramref name="c"/>: the
+    /// entry picked, or the last (Exit) on Escape. The camp (0x197B3), shop (0x730D), temple (0x5341) and loot menu
+    /// (0x65B4) call the same 0x21AED (stub 0085:0039), so their View asks this page too
+    /// (<see cref="TradeContext.ViewPage"/>).
+    /// </summary>
+    public int ViewPage(EclCharacter c, IReadOnlyList<ViewEntry> entries) =>
+        ask(new SheetRequest(c, [.. entries.Select(texts.ViewWord)])
+        {
+            Prompt = texts.ViewPrompt,
+            // 0x21AED's loop takes I, S, T, D and Exit only: no member selection (no 0x23819 call) in View.
+            PartySelect = false,
+            CancelAction = entries.Count - 1,
+            IsView = true,
+        }) is int a ? a : entries.Count - 1;
 
     /// <summary>Remove: SaveChar (0x1E684) of the current character, then 0x1CC10.</summary>
     public void Remove()

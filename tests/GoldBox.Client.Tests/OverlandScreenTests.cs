@@ -157,6 +157,63 @@ public class OverlandScreenTests
     }
 
     [Fact]
+    public void The_old_facings_marker_stays_up_while_the_river_message_shows()
+    {
+        if (Dir() is null)
+            return;
+        // DOSBox-X (s39, 26 at 8,19 N, Left into the river at 7,19): during the row-24 message the marker is still the
+        // north one (unmirrored); the step's redraw after it draws the west one (mirrored, the next frame).
+        var r = Start(26, 8, 19);
+        r.Game.Memory.GameSpeed = 4;
+        var before = View(r);
+        Press(r, GameAction.TurnLeft);
+        Assert.IsType<DelayRequest>(r.Runner.Pending);
+        Assert.Equal(Facing.West, r.Game.Memory.Position.Facing);
+        Assert.Equal(before, View(r));
+        r.Runner.Answer(null);
+        Settle(r);
+        Assert.Equal((8, 19), Where(r));
+        var after = View(r);
+        Assert.NotEqual(before, after);
+        // Only the marker's square (2, 2) changed.
+        for (int y = 0; y < Overland.ViewPixels; y++)
+            for (int x = 0; x < Overland.ViewPixels; x++)
+                if (x is < 48 or >= 72 || y is < 48 or >= 72)
+                    Assert.Equal(before[y * Overland.ViewPixels + x], after[y * Overland.ViewPixels + x]);
+        r.Runner.Dispose();
+    }
+
+    [Fact]
+    public void A_sprite_goes_over_the_tiles_without_the_box_and_a_picture_in_the_box()
+    {
+        if (Dir() is null)
+            return;
+        // DOSBox-X s39 (26 at 10,20: SETUPMON 0, 2, 0; APPROACH): the sprite over the tiles. The stand-in text kept beside
+        // it (for missing art) boxed it before s39.
+        var r = Start();
+        r.Player.ShowEncounter(0, 0, 2);
+        Assert.NotNull(r.Player.ViewOverlay);
+        Assert.False(OverlandUi.Boxed(r.Player));
+        r.Player.ShowEncounterSprite(0, 0, 0); // distance 0 on the overland: the sprite, no close-up (0x7AE2)
+        Assert.Equal(ViewPictureKind.Sprite, r.Player.ViewPicture?.Kind);
+        Assert.False(OverlandUi.Boxed(r.Player));
+        r.Player.ShowPicture(2, null);
+        Assert.True(OverlandUi.Boxed(r.Player));
+        r.Runner.Dispose();
+    }
+
+    private static byte[] View(Rig r)
+    {
+        var f = new IndexedFrame(320, 200);
+        r.Screen.Draw(f, r.Input);
+        var view = new byte[Overland.ViewPixels * Overland.ViewPixels];
+        for (int y = 0; y < Overland.ViewPixels; y++)
+            for (int x = 0; x < Overland.ViewPixels; x++)
+                view[y * Overland.ViewPixels + x] = f[OverlandUi.ViewX + x, OverlandUi.ViewY + y];
+        return view;
+    }
+
+    [Fact]
     public void Speed_0_shows_no_river_message()
     {
         if (Dir() is null)

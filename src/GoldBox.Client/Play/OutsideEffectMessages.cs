@@ -74,8 +74,20 @@ public sealed class OutsideEffectMessages(TextWindow window, Func<PlayerRequest,
             case EffectEvent.Escapes: Message(c, t[CombatMsg.StatusEscapes], true); return true;
             case EffectEvent.AirClears: BottomLine(t[CombatMsg.HandlerAirClears]); return true;
             case EffectEvent.NeedsGiantStrength: BottomLine(t[CombatMsg.HandlerNeedsGiantStrength]); return true;
+            // START 0x2EEA (00BA:234A): the healed words by HP 0x11B = 0x32, START 0x16EC with the pause, then outside a
+            // fight the party list (00BA:23AE). Handlers 50 / 62 and Cure Light Wounds (0x28083).
+            case EffectEvent.Healed: Healed(c); return true;
+            // Handlers 15 / 44 after their damage: the party list (0xF299 / 0xFE19), no text.
+            case EffectEvent.HandlerDamageListed: listDrawn?.Invoke(); return true;
         }
         return false;
+    }
+
+    /// <summary>START 0x2EEA outside a fight: "fully" when HP 0x11B equals the maximum 0x32 (00BA:2353), else "partially".</summary>
+    public void Healed(EclCharacter c)
+    {
+        Message(c, texts[c[0x11B] == c[0x32] ? CombatMsg.FullyHealed : CombatMsg.PartiallyHealed], true);
+        listDrawn?.Invoke();
     }
 
     /// <summary>START 0x16EC's out-of-fight branch (0x22F7–0x237D).</summary>

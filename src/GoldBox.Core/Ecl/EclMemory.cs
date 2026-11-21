@@ -84,6 +84,23 @@ public sealed class EclMemory
     public int MarkerCounter { get; set; }
 
     /// <summary>
+    /// The facing the overland marker was last drawn with (the marker routine 0x2DB87 reads DS:6AAF at 0x2DC14 when it
+    /// draws). The screen keeps that drawing until the next redraw: the overland arrows set DS:6AAF in the command
+    /// routine (0x17397…), and a river's row-24 message (0x16FEE, inside the step) comes before the step's redraw
+    /// (0x41D8), so the old facing's marker stays up while it is shown (DOSBox-X s39). Null: none drawn yet (the live
+    /// facing is drawn). Not saved; display bookkeeping.
+    /// </summary>
+    public byte? MarkerFacing { get; set; }
+
+    /// <summary>
+    /// The overland interface (START 0x36FE, at the first command read in modes 2–4 with DS:49F9 &lt; 2) drew the view
+    /// with marker frame c and then frame c + 1 alone over it (0x3710); the screen keeps that composite until the next
+    /// redraw (DOSBox-X s39: unchanged through a river's message after the load). Cleared by every overland redraw
+    /// (<see cref="Explore.Overland.Redrawn"/>). Not saved; display bookkeeping.
+    /// </summary>
+    public bool MarkerDrawnTwice { get; set; }
+
+    /// <summary>
     /// DS:4431: LOADFILES or LOADPIECES ran (handler 0x19BA sets it at 0x19C8) since the last NEWECL (cleared at
     /// 0x19AA) or area entry (0x4053). The script switch 0x3EFA uses it to decide the redraw after vector 4.
     /// </summary>
@@ -107,6 +124,44 @@ public sealed class EclMemory
     /// data (past the EXE's image, no clear in the start-up code): 0 in DOSBox-X (s24). Not saved.
     /// </summary>
     public bool PictureArmed { get; set; }
+
+    /// <summary>
+    /// DS:84C8 / DS:84C9, the encounter draw's two state bytes (the far pointer every caller of 0x7A21 passes: SETUPMON
+    /// 0x1188, APPROACH 0x158C, ENCMENU 0x2D88 and its approaches 0x3033–0x32A8): 84C8 the sprite is loaded and up
+    /// (set at 0x7A8F when the sprite's frames are loaded), 84C9 a close-up is up (0x7B3E / 0x7B72, and PICTURE v ≠ 255
+    /// at 0x15F3). Both cleared (a two-byte fill, START 0AF8:16A8) by EXIT (0xDC6), the script init (0x76B2), PROTECT
+    /// (0x3BC9), COMBAT (0x261F) and PICTURE 255 (0x1689–0x168E, whether it redraws or not); not by SPRITEOFF or CALL
+    /// $2C90. So they last one ECL run at most. Not saved; display bookkeeping.
+    /// </summary>
+    public bool EncounterSpriteUp { get; set; }
+
+    /// <summary>DS:84C9, a close-up is up (see <see cref="EncounterSpriteUp"/>).</summary>
+    public bool CloseUpUp { get; set; }
+
+    /// <summary>
+    /// DS:84EA, $6DE1 (the head) as the last encounter close-up drew it (0x7B06); nothing else writes it (not PICTURE, not
+    /// the start-up: 0 from the program's uninitialised data in DOSBox-X). With <see cref="CloseUpUp"/> set and $6DE1
+    /// equal to it, the encounter draw draws nothing at all (0x7ABC–0x7AD6). Not saved.
+    /// </summary>
+    public byte CloseUpHead { get; set; }
+
+    /// <summary>The SPRIT block whose frames the encounter draw loaded when it set <see cref="EncounterSpriteUp"/> (0x7A87):
+    /// while that is set it draws these frames again, whatever sprite the opcode names. Not saved.</summary>
+    public byte EncounterSprite { get; set; }
+
+    /// <summary>The fills of DS:84C8–84C9 (see <see cref="EncounterSpriteUp"/>).</summary>
+    public void ClearEncounterDraw()
+    {
+        EncounterSpriteUp = false;
+        CloseUpUp = false;
+    }
+
+    /// <summary>
+    /// DS:6AAC, the area map is shown instead of the 3D view: the A command toggles it (0x170BF–0x170C9), the start-up
+    /// clears it (0xE9B9), the redraw 0x2DCF4 turns it off where $49FB ≠ 0 (0x2DD9F), and the encounter draw turns it
+    /// off and redraws before it loads a sprite (0x7A5B–0x7A67). Not saved.
+    /// </summary>
+    public bool AreaMapShown { get; set; }
 
     /// <summary>
     /// The view's redraw flags besides the picture's and sprite's (DS:84E0 <see cref="PictureShown"/> / 84E3, <see cref="Game.EncounterState"/>):

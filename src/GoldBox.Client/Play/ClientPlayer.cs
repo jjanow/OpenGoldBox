@@ -71,6 +71,15 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
     /// <summary>CLEARBOX blanked the picture window (1,1)–(15,15) until the next command, or the script switch's redraw (0x3FF5, <see cref="SwitchRedrawn"/>).</summary>
     public bool ViewBlanked { get; set; }
 
+    /// <summary>
+    /// After a CLEARBOX blank the view redraw 0x2DCF4 (a script switch's, 0x3FF5, or a command's) draws the 88 × 88 3D
+    /// view alone: the rest of cells (1, 1)–(15, 15), the view's box among them, stays blank (DOSBox-X s39: CLEARBOX;
+    /// NEWECL 20 from save A, still blank after the new script's text and two turns). The screens that draw the whole
+    /// layout again (camp, shop, temple, fight, hall: START 0x3379 → 0x272A) end it. [?] Other full redraws (View, a
+    /// load's entry) are not followed.
+    /// </summary>
+    public bool ViewBoxBlank { get; set; }
+
     private Dialog? _dialog;
     private Dialog Dialog => _dialog ??= new Dialog(runner.Ask, Text);
 
@@ -198,6 +207,7 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
         if (_glyphsInWindow)
         {
             ViewGlyphs = [];
+            ViewBoxBlank = false; // the view's box is drawn again with the window (view3d.md "CLEARBOX")
             // The window (1, 1)–(15, 15) is drawn with its frame, cells 0–16 of rows 0 and 16 and columns 0 and 16.
             ScreenGlyphs = [.. ScreenGlyphs.Where(g => g.Col > 16 || g.Row > 16)];
         }
@@ -397,7 +407,16 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
     {
         Log.Add($"NEWECL {script}");
         _glyphsInWindow = false; // the script init clears DS:84E2 (0x7696)
+        // NEWECL's script load (0x1996 → 0x7814) clears row 24 (0x2CFCA), shows "Loading...Please Wait" there for the
+        // disk's time (not shown: machine time) and clears it again; the row stays blank until the next menu or command
+        // line (DOSBox-X s39: PICTURE; NEWECL 20 from save A, the new script's text typed under a blank row 24).
+        Interlocked.Increment(ref _bottomRowClears);
+        BottomRowDrawn();
     }
+
+    /// <summary>How often NEWECL cleared row 24 (<see cref="ScriptChanging"/>); the explore screen drops the line it keeps.</summary>
+    public int BottomRowClears => Volatile.Read(ref _bottomRowClears);
+    private int _bottomRowClears;
 
     /// <summary>PROGRAM: 0 training hall (0x19AE0), 8 end game (0x20941), 9 camp (0x3B56: the camp menu, then the run ends).</summary>
     public void Program(ushort program)
@@ -525,6 +544,22 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
             };
     }
 
+    /// <summary>The encounter draw's sprite without a close-up (0x7A98–0x7AB7), at distance 0 too.</summary>
+    public void ShowEncounterSprite(byte sprite, byte picture, int distance)
+    {
+        if (distance > 0)
+        {
+            ShowEncounter(sprite, picture, distance);
+            return;
+        }
+        ViewBlanked = false;
+        ViewOverlay = ["MONSTER", $"SPRITE {sprite}", $"DISTANCE {distance}", "", "(ART NOT", "FOUND)"];
+        ViewPicture = new ViewPicture(ViewPictureKind.Sprite, sprite, null, 0, memory().Disk)
+        {
+            OnOverland = memory().ViewMode != 1,
+        };
+    }
+
     public void ShowPicture(byte picture, byte? head)
     {
         ViewBlanked = false; // a picture after CLEARBOX shows (DOSBox-X, s19: CLEARBOX, CALL $0806, PICTURE 40)
@@ -559,6 +594,8 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
     /// </summary>
     public void ViewDrawn()
     {
+        if (ViewBlanked && !GoldBox.Core.Explore.Overland.Shown(memory()))
+            ViewBoxBlank = true;
         ViewBlanked = false;
         ViewOverlay = null;
     }
@@ -668,6 +705,7 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
         string title = t[Msg.EndTitle];
         box.Put(1, Math.Max(1, (1 + 38 - title.Length) / 2), title, 15);
         WindowAfterFight = true;
+        KeepsCombatRow24 = true;
         TypesInto(box); // before 0x6BAF: typed when DS:4A00 was set as the fight began
         try
         {
@@ -679,6 +717,7 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
         {
             Window = null;
             WindowAfterFight = false;
+            KeepsCombatRow24 = false;
         }
     }
 
@@ -710,6 +749,7 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
         // 0x96D0: cells (17, 1)–(38, 15) are blanked before the party list is drawn again, so the position line on
         // row 15 is gone until the next redraw point (DOSBox-X s22).
         PositionLineErased = true;
+        ReleaseRosterNames(); // 0x96DD: START 0x0767 after each line
     }
 
     /// <summary>
@@ -785,10 +825,21 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
     public bool PositionLineHeld { get; set; }
 
     /// <summary>
-    /// The window came up over the combat screen (the party-destroyed page): row 24 shows nothing while its text types
-    /// (DOSBox-X s29), unlike the DAMAGE wipe's window over the area screen, whose command line stays.
+    /// The window came up over the combat screen (the party-destroyed page, the NPC share): no area command line on row
+    /// 24 while its text types, unlike the DAMAGE wipe's window over the area screen, whose command line stays. The
+    /// party-destroyed page shows the fight's last row 24 there (<see cref="KeepsCombatRow24"/>; blank in s29's run).
     /// </summary>
     public bool WindowAfterFight { get; set; }
+
+    /// <summary>
+    /// The party-destroyed or NPC share window is up: row 24 keeps what the combat screen last showed there until the
+    /// key line or menu.
+    /// From the party's defeat (0x6AA5: the results 0x5A47 and 0x672A call no screen unit, 0709 / 03F1 / 0464) to the window
+    /// (03F1:02E8 over rows 0–23), its text (0709:0768 in (2, 5)–(37, 22)) and the key line (0709:0BF5 at 0x6BAA),
+    /// nothing writes row 24 (DOSBox-X s39: the vampire's "MOVE/ATTACK, MOVE LEFT = 11" under the typed text; s29's run
+    /// left the row blank because the fight had).
+    /// </summary>
+    public bool KeepsCombatRow24 { get; private set; }
 
     /// <summary>The interface state the screens are in (DS:49F3: 1 shop/temple, 2 camp, 6 loot), null while exploring.</summary>
     public Venue? Interface { get; private set; }
@@ -806,13 +857,15 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
             {
                 Window = w;
                 if (w is null)
-                    WindowAfterFight = false;
+                    WindowAfterFight = KeepsCombatRow24 = false;
             },
             TypesInto = box =>
             {
-                // The NPC share window comes at the same point of 0x6AA5 as the party-destroyed one (after the removal,
-                // before 0x6BAF): row 24 shows nothing while it types (as DOSBox-X showed for that one, s29).
+                // The NPC share window (0x6866 → 0x695E) comes after the removal 0x672A like the party-destroyed one:
+                // only the window 03F1:02E8, its lines 0709:0768 and then the menu routine 03C5:002A (row 24), so row
+                // 24 keeps the fight's last line while the lines type (DOSBox-X s39: "CONTINUE BATTLE:YES NO").
                 WindowAfterFight = true;
+                KeepsCombatRow24 = true;
                 TypesInto(box);
             },
             ShowPageUnder = p => (PageUnder, PageUnderBox) = (p, true),
@@ -820,6 +873,7 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
             FrameTextBox = on => TextBoxFramed = on,
             HoldRosterName = HoldRosterName,
             RosterDrawn = ReleaseRosterNames,
+            RosterDrawnLit = ReleaseRosterNamesLit,
             HoldPositionLine = on => PositionLineHeld = on,
             Text = Resources.Texts,
             Party = party,
@@ -830,8 +884,23 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
             IsScroll = Resources.IsScroll,
             TempleNames = Resources.TempleNames,
             Halt = Halt,
+            ViewPage = ViewPage,
+            ItemsPage = ItemsPage,
+            Coins = Coins,
+            Memory = memory(),
         };
     }
+
+    /// <summary>View's Items page and Drop's coin list (0x21F32, 0x234E1; the party menu's, <see cref="PartyMenuFlow"/>),
+    /// set with <see cref="ViewPage"/>.</summary>
+    public Func<EclCharacter, IReadOnlyList<ItemsEntry>, int, Func<byte[], string>, ListAnswer>? ItemsPage { get; set; }
+    public Func<EclCharacter, IReadOnlyList<int>, (int Kind, ushort Amount)?>? Coins { get; set; }
+
+    /// <summary>
+    /// View's page and menu as the program draws them (0x21AED; the party menu's, <see cref="PartyMenuFlow.ViewPage"/>),
+    /// for the camp's, shop's, temple's and loot menu's View; null: <see cref="CharacterView"/>'s own page.
+    /// </summary>
+    public Func<EclCharacter, IReadOnlyList<ViewEntry>, int>? ViewPage { get; set; }
 
     /// <summary>The run-time error the original program would have quit to DOS with; the game is over (null = running).</summary>
     public ProgramHaltException? Halted { get; set; }
@@ -940,24 +1009,70 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
     }
 
     private readonly HashSet<EclCharacter> _rosterHeld = [];
-    private EclCharacter? _rosterHeldCurrent;
+    private EclCharacter? _rosterDrawnCurrent;
+    private Dictionary<EclCharacter, EclCharacter>? _rosterDrawn;
+
+    /// <summary>The member the list shows as current: the player's pick while a script's LOADCHAR has changed DS:5D92.</summary>
+    private EclCharacter? ShownCurrent() =>
+        memory().Party is { } p && p.ChangedByScript && p.Selected is { } pick ? pick : memory().Party?.Current;
 
     /// <summary>A member the party list still shows out of play (light red) until it is drawn again (<see cref="TradeContext.HoldRosterName"/>).</summary>
     public void HoldRosterName(EclCharacter c)
     {
         lock (_rosterHeld)
-        {
-            if (_rosterHeld.Count == 0)
-                _rosterHeldCurrent = memory().Party?.Current;
             _rosterHeld.Add(c);
+    }
+
+    /// <summary>
+    /// The party list is drawn again (START 0x0767 / 0x1307, or the screen redrawn after a full-screen page): held names
+    /// show their colour again, and the list's values (names, colours, AC, HP) are taken from memory now and shown as
+    /// drawn until the next redraw point (D s39: a heal's new HP shows only when the list is drawn after its message).
+    /// </summary>
+    public void ReleaseRosterNames() => DrawRoster(false, null);
+
+    /// <summary>The party list drawn with <paramref name="lit"/> as its lit member (none for null) instead of the current
+    /// one: START's member pick 0x37E8 passes its pick to 00BA:0767 (00BA:2CA1); DS:5D92 does not change.</summary>
+    public void ReleaseRosterNamesLit(EclCharacter? lit) => DrawRoster(true, lit);
+
+    /// <summary>The lit member of the last list drawn by the member pick, while that drawing is on screen.</summary>
+    public bool RosterLitOverride(out EclCharacter? lit)
+    {
+        lock (_rosterHeld)
+        {
+            lit = _rosterLit;
+            return _rosterLitSet;
         }
     }
 
-    /// <summary>The party list is drawn again (START 0x0767 / 0x1307, or the screen redrawn after a full-screen page).</summary>
-    public void ReleaseRosterNames()
+    private EclCharacter? _rosterLit;
+    private bool _rosterLitSet;
+
+    private void DrawRoster(bool litSet, EclCharacter? lit)
     {
+        Dictionary<EclCharacter, EclCharacter>? drawn = null;
+        EclCharacter? current = null;
+        try
+        {
+            if (memory().Party is { } p)
+            {
+                drawn = new Dictionary<EclCharacter, EclCharacter>(ReferenceEqualityComparer.Instance);
+                foreach (var m in p.Members.ToArray())
+                    drawn[m] = new EclCharacter(m.Record, m.Record.Length);
+                current = ShownCurrent();
+            }
+        }
+        catch (InvalidOperationException)
+        {
+            return; // the list changed while it was copied: the next redraw point takes it
+        }
         lock (_rosterHeld)
+        {
             _rosterHeld.Clear();
+            _rosterDrawn = drawn;
+            _rosterDrawnCurrent = current;
+            _rosterLitSet = litSet;
+            _rosterLit = lit;
+        }
     }
 
     public bool RosterNameHeld(EclCharacter c)
@@ -966,12 +1081,21 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
             return _rosterHeld.Count > 0 && _rosterHeld.Contains(c);
     }
 
+    /// <summary>A member as the party list last drew it (itself before the first redraw point, or when it joined since).</summary>
+    public EclCharacter RosterAsDrawn(EclCharacter c)
+    {
+        lock (_rosterHeld)
+            return _rosterDrawn is { } d && d.TryGetValue(c, out var shown) ? shown : c;
+    }
+
     /// <summary>Another current member: picking one redraws the party list (0x23819; D s38: Home at the camp menu).</summary>
     public void ReleaseRosterNamesIfPicked(EclCharacter? current)
     {
+        bool picked;
         lock (_rosterHeld)
-            if (_rosterHeld.Count > 0 && !ReferenceEquals(current, _rosterHeldCurrent))
-                _rosterHeld.Clear();
+            picked = _rosterDrawn is null || !ReferenceEquals(current, _rosterDrawnCurrent);
+        if (picked)
+            ReleaseRosterNames();
     }
 
     /// <summary>Where the camp's Save writes (the player's save folder; the game folder is never written).</summary>

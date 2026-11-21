@@ -146,13 +146,18 @@ public sealed class CombatMap : IFightMap, IFightAuraRange, IFightTerrain, IFigh
     /// The routine first tests body entry DS:70C7 (a drawing loop index) instead of each entry, and leaves when that one
     /// holds this creature; not modelled.
     /// </summary>
-    public void Downed(EclCharacter c, FightState fight)
+    public void Downed(EclCharacter c, FightState fight, bool sound = true)
     {
         // Sound (docs/re/sound.md §2.4): resident bracket 0x31554 … 0x317D6 with the body cue at 0x31744 for every
-        // creature; the program's drawing and message pause inside the bracket (its length) are the front end's.
-        fight.Sound.BeginResident();
-        fight.Sound.Cue(Sound.SoundCue.Body);
-        fight.Sound.EndResident();
+        // creature; the program's drawing and message pause inside the bracket (its length) are the front end's. A
+        // front end that draws the downed picture plays the bracket there (FightState.FrontEndPlaysDowned): DOSBox-X
+        // s39 starts the body tune with the picture, not after its pause.
+        if (sound)
+        {
+            fight.Sound.BeginResident();
+            fight.Sound.Cue(Sound.SoundCue.Body);
+            fight.Sound.EndResident();
+        }
         int slot = Slot(c);
         var rec = fight.Record(c);
         if (rec[CombatRecord.NotParty] == 0)
@@ -567,10 +572,15 @@ public sealed class CombatMap : IFightMap, IFightAuraRange, IFightTerrain, IFigh
 
     /// <summary>0x3154B: <see cref="Downed"/> (needs <see cref="State"/> for the body and the record; without it only
     /// the icon leaves the map).</summary>
-    public void Remove(EclCharacter c)
+    public void Remove(EclCharacter c) => Remove(c, false);
+
+    /// <summary>As <see cref="Remove(EclCharacter)"/>; <paramref name="shown"/>: a path whose CreatureDowned display the
+    /// front end draws (the effect engine's drops), so the body sound is the front end's when
+    /// <see cref="FightState.FrontEndPlaysDowned"/>.</summary>
+    public void Remove(EclCharacter c, bool shown)
     {
         if (State is { } s)
-            Downed(c, s);
+            Downed(c, s, sound: !(shown && s.FrontEndPlaysDowned));
         else
             TakeOff(c);
     }
