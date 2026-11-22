@@ -293,7 +293,9 @@ area loop 0x403E (checks at 0x4118–0x423B), which clears it on exit (0x4245); 
   prompt. The longest v1.3 VMENU needs 5 rows with its prompt, so no v1.3 script pages it, but the routine does
   (**P + D s44**): 0x8C5B calls 0x2D669 once (no loop of its own) and VMENU stores the **position** it leaves through
   002B:0052 (0x1DA6), whatever the key. 0x2D669 (combat-menu.md "Spell lists' Next / Prev") with R = 22 − DS:5E25 rows
-  and no headings: the top 0 on entry (position 0), the cell DS:6B2B := 1; row 24 is the menu line, empty word +
+  and no headings: the top 0 on entry (position 0; the word is the list routine's global DS:6B29, so a VMENU leaves
+  it 0, or where its Next / Prev left it, for the next list: DOSBox-X s45, por-art-formats.md "Creation's list
+  labels"), the cell DS:6B2B := 1; row 24 is the menu line, empty word +
   " Next" while N − R > top + " Prev" while top > 0 (no Exit), so the words from column 1, the lit one white, the
   other's capital white and the rest green; nothing when the list fits. Inside the routine's own loop: Home / End (keypad
   7 / 1) move the highlight inside the window, wrapping there; N / P (hotkeys only while shown) and PgDn / PgUp (only
@@ -307,8 +309,22 @@ area loop 0x403E (checks at 0x4118–0x423B), which clears it on exit (0x4245); 
   the routine's words as the spell lists'), `ExploreScreen.ListAnswer` / `DrawVertical` (the window math shared with
   the list pages, `ListWindowSteps`; Up / Down as Home / End and the pad's shoulders paging, as the spell lists, user
   s30; a click on a row picks it, on Next / Prev pages, a right click is Escape: ours). The Client's first-letter
-  hotkeys on the rows are gone (the routine has none). Tests `VmenuPagingWhoTests`. The Amiga's VMENU list and WHO
-  pick are not read nor seen in FS-UAE `[?]`: the Client pages and picks there as on DOS.
+  hotkeys on the rows are gone (the routine has none). Tests `VmenuPagingWhoTests`. **Amiga** (P + FS-UAE s45):
+  VMENU's handler hunk 16 +0x2AE2 prints the prompt in (1, 17)–(38, 22) in pen 28 (hunk 16 +0x2B84–0x2B9E), copies
+  the choices and calls hunk 4 +0x1A4C (the copy of 0x8C5B) → the list routine hunk 13 +0x2B76 with pens 26 / 28 / 16,
+  the window from the cursor row + 1 (hunk 32 +0x2D0) to row 22, columns 1–38, no Exit; then it stores the position
+  (hunk 16 +0x2C3E) whatever the key, as DOS. The list routine's keys (hunk 13 +0x2E88–0x2F44): keypad 8 / 2 move the
+  highlight (wrapping in the window; DOS keypad 7 / 1), keypad 9 / 3 page while Prev / Next show (DOS PgUp / PgDn),
+  N / P page, Escape (and E only as an Exit word's hotkey) returns no entry, a click on a row lights it and a second
+  click picks it. FS-UAE (disk A's save A, a step's VMENU as the DOS tests): nine entries under "PICK ONE:", rows
+  18–22, "NEXT" from column 1 (N in pen 16, the rest 28), the lit row the list routine's bar; keypad 2 × 4 → ECHO,
+  once more back on ALPHA, keypad 8 → ECHO; keypad 3 → ECHO–INDIA with INDIA lit, "PREV"; keypad 9 back; A and E
+  nothing; P → ALPHA–ECHO with BRAVO lit; Escape → the PRINT showed 1. Seven entries under the two-row prompt: rows
+  19–22; keypad 2, keypad 3 → DELTA–GOLF, ECHO lit. WHO: the box blanked, row 24 "WHO GOES:" and Select, the member
+  pick with keypad 1 (next member; the first two presses → the third member lit, as DOS's End), keypad 2 and E
+  nothing, Return ends it with that member kept lit. Client `--art amiga` (DOS test saves alike): rows 16–23 equal
+  pixel for pixel in every state compared once the lit row is drawn as the bar (`Chrome.Lit`, s45; it was white text),
+  row 24 equal but the Client's pressed gadget on the current word.
 
 ### Encounters (program read 2026-11-17)
 

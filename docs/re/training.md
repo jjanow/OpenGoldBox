@@ -208,8 +208,22 @@ the $4AFF rule predicts; the picture is drawn over the party menu's screen there
     START 0x3379 case 6 loaded and showed the chest (held for its delays: the press-enter menu had cleared the cell).
   - The fight: the fight start 0xE402 frees the frame table first (0xE40D, the same free as the command line's
     0x17746), so the combat menu with $4AFF set drew nothing (captures equal, no picture); the battle line came over
-    the party menu page with the picture, as before vector 4's pair (s42). A fight in which no player menu runs (all
-    on Quick) leaves $4AFF set for the summary's press-enter menu, which then finds the table empty: P only, not seen.
+    the party menu page with the picture, as before vector 4's pair (s42).
+  - A fight with no player menu (s45, P + D): a won round still asks "continue battle" (the yes/no 0x2D9A0 from
+    0xA1A5) whenever the party side is left, the enemy side is empty and DS:49F4 = 0 (0xA178–0xA18B). DS:49F4 is
+    cleared at start-up (0xE99E) and no other instruction in GAME.OVR or START.EXE names it; VM $49F4 is a cell of the
+    $4900 area (writer 0x8161: far pointer DS:49D2 + 2 × address + 0x6E00), not DS:49F4, so a script SAVE to it changes
+    nothing (seen). That question is a menu and clears $4AFF, so the summary's press-enter menu after a won fight
+    never has it set. Only a fight that ends with no party member left standing and at least one fled (DS:443B; e.g.
+    the forced flee +0x10, combat-ai.md "Morale") skips the question and reaches the summary with $4AFF set, and the table is empty there (freed at
+    0xE40D): nothing drawn. **D** (DOSBox-X v1.3, 3000 cycles; save A from `fight_save.py BASE OUT
+    0E000209000101F4491C0B00780001007824 --mon 6 --monpatch 120:0x32=1,0x11B=1 --char N:0x10F=1` for all six, its
+    code moved to vector 4: PICTURE 2, SAVE 1 → $49F4, CLRMON, LOADMON 120, 1, 120, COMBAT; loaded from the start-up
+    menu): no player menu ran; the question came with no picture, No, the summary window with no picture (still).
+    With the question patched out (0xA18B `jne` → `jmp` on a scratch GAME.OVR) the same fight went straight to the
+    summary: the same screen, still for 3 s (0 differing pixels). Client (Xvfb, DOS art, the same folder): the
+    question and the summary, the summary frame equal to DOSBox-X's (0 differing pixels; the question frame differs
+    only by the fight's last positions and panel, a different random fight).
   - VMENU: the list over the party menu page and PICTURE 2 at cell (3, 3) on every pass.
   Client: `ClientPlayer.MenuAsked` sets `VenuePictureOver` for a shop's or temple's menu (drawn in the box instead of
   the blank, `ExploreScreen`; cleared by `TradeContext.VenueRedrawn` at the loops' START 0x3379 points) and
@@ -218,7 +232,9 @@ the $4AFF rule predicts; the picture is drawn over the party menu's screen there
   and fight end `PartyMenuUnder` (the Client drew the party menu page under the shop's menu and the summary before,
   and the chest over it). On Xvfb with DOS art: the shop, temple and summary screens equal DOSBox-X's but the Client's
   help lines, every row of the picture one of the same two frames (which one is left after Pool depends on the pass
-  the key ends); VMENU and the fight as DOSBox-X. Tests `MenuPictureTests`.
+  the key ends); VMENU and the fight as DOSBox-X. Tests `MenuPictureTests` (s45:
+  `A_won_fight_asks_to_continue_and_that_menu_clears_the_flag_before_the_summary`, the real fight menu with all six
+  on Quick).
 - **A turn draws the view.** After Load D's case 2 (blank box), V and Escape (box blank again), Left drew the 3D view
   in the box, CAMPING kept: a turn (0x2ED72 + 0x2EEF4) and the area map toggle (0x2EEF4) draw the view over a
   picture or blank. Client: `AreaLoop.ViewDrawn` → `ClientPlayer.ViewDrawn` (the CLEARBOX ring stays blank as after

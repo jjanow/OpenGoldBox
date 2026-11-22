@@ -412,8 +412,9 @@ Menu DS:055A (Order, Drop, Speed, Icon, Pics, Exit), prompt 0x19441; extended ke
   until the overland is entered again (**D**, s25; geo-format.md "Marker"). Client: `AreaLoop.IconEditorDone` after
   the camp's editor, matched to DOSBox-X.
 - **Pics**: monsters on/off, portraits on/off, Exit (0x19449–0x19485); M and P toggle the two flags (saved as $49FF bit 1 and bit 0).
-  The words carry two spaces after them, drawn as they are by the menu routine (the Client keeps them, s44; not checked
-  in DOSBox-X `[?]`). The Amiga's own line, rest-time menu and rest messages: por-art-formats.md "Camp rest and Pics".
+  The words carry two spaces after them, drawn as they are by the menu routine (the Client keeps them, s44). **D**
+  (s45, DOSBox-X v1.3, save A, Encamp, Alter, Pics, then M): row 24 "MONSTERS ON  PORTRAITS ON  EXIT" and after M
+  "MONSTERS OFF  PORTRAITS ON  EXIT" equal the Client's (Xvfb, DOS art) pixel for pixel (0 differing, colours 0, 10, 15). The Amiga's own line, rest-time menu and rest messages: por-art-formats.md "Camp rest and Pics".
 
 ## Save (0x1FD3E) — P
 

@@ -136,7 +136,7 @@ public sealed partial class CombatChooser
         AmigaView.Case(ItemNames.Compose(item, Resources().ItemWord, Detect).Trim());
 
     private string SpellLabel(int spell) =>
-        (SpellName(spell) ?? "SPELL " + spell.ToString(CultureInfo.InvariantCulture)).ToUpperInvariant();
+        AmigaView.Case(SpellName(spell) ?? "SPELL " + spell.ToString(CultureInfo.InvariantCulture));   // the Amiga draws the stored case
 
     /// <summary>
     /// The memorised list (0x239D6 kind 0, as the camp's: camp.md "Spell lists"): each slot 0x17–0x2B with a byte
@@ -159,7 +159,7 @@ public sealed partial class CombatChooser
             if (level != last)
             {
                 labels.Add(rows.Count);
-                rows.Add((Resources().LevelName(level) ?? "LEVEL " + level.ToString(CultureInfo.InvariantCulture)).ToUpperInvariant());
+                rows.Add(AmigaView.Case(Resources().LevelName(level) ?? "LEVEL " + level.ToString(CultureInfo.InvariantCulture)));
                 ids.Add(0);
                 last = level;
             }
@@ -585,7 +585,7 @@ public sealed partial class CombatChooser
             if (r.HeadingLevel is { } l)
             {
                 labels.Add(rows.Count);
-                rows.Add((Resources().LevelName(l) ?? "LEVEL " + l.ToString(CultureInfo.InvariantCulture)).ToUpperInvariant());
+                rows.Add(AmigaView.Case(Resources().LevelName(l) ?? "LEVEL " + l.ToString(CultureInfo.InvariantCulture)));
                 ids.Add(0);
             }
             rows.Add((r.Pending ? " *" : "  ") + SpellLabel(r.Spell));

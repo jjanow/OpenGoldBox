@@ -18,6 +18,12 @@ namespace GoldBox.Client.Play;
 /// Characters are drawn as the glyph routine (START 0x726F) does: upper case. While DS:4A00 is set the program types
 /// the text out: after each character's glyph (spaces included) Delay(DS:49E2 × 10) ms (0x777B–0x778D); the owner
 /// sets <see cref="Typed"/> for that time (PRINT / PRINTCLR, the fight's panel).
+/// <para>Draw order and routine (the Amiga's, s45; docs/re/por-art-formats.md "Text routines"): the Amiga's print
+/// (hunk 25 +0x10EC) draws each character through the glyph routine (hunk 25 +0xA4E, count 1: pass 1 then pass 2, JAM1),
+/// one cell at a time; a fixed-cell string (<see cref="Put"/>, DOS's string at a column and row) goes through the string
+/// routine (hunk 25 +0xC3C: the whole string in pass 1, JAM2, then in pass 2). Each cell keeps the number of the draw
+/// that made it and whether that draw was a whole string (<see cref="Runs"/>), so a drawer can repeat the program's
+/// order: under the Amiga font a glyph's pass-2 pixel one to the right survives only when no later pass 1 covers it.</para>
 /// </summary>
 public sealed class TextWindow
 {
@@ -29,6 +35,11 @@ public sealed class TextWindow
 
     private readonly char[,] _chars;
     private readonly byte[,] _colours;
+    // The draw that made each cell (0: none), and whether it was a whole string (Put) rather than one glyph (print).
+    private readonly int[,] _draws;
+    private readonly bool[,] _whole;
+    private readonly (int Draw, bool Whole)[] _overhangDraw;
+    private int _lastDraw;
     private readonly int _left, _top, _right, _bottom;
 
     /// <summary>The script text box (<see cref="Left"/>, <see cref="Top"/>)–(<see cref="Right"/>, <see cref="Bottom"/>).</summary>
@@ -47,6 +58,9 @@ public sealed class TextWindow
         _chars = new char[bottom - top + 1, right - left + 1];
         _colours = new byte[bottom - top + 1, right - left + 1];
         _overhang = new (char, byte)[bottom - top + 1];
+        _draws = new int[bottom - top + 1, right - left + 1];
+        _whole = new bool[bottom - top + 1, right - left + 1];
+        _overhangDraw = new (int, bool)[bottom - top + 1];
         Column = left;
         Row = top;
     }
@@ -116,6 +130,9 @@ public sealed class TextWindow
         Array.Clear(_chars);
         Array.Clear(_colours);
         Array.Clear(_overhang);
+        Array.Clear(_draws);
+        Array.Clear(_whole);
+        Array.Clear(_overhangDraw);
         Home();
     }
 
@@ -134,15 +151,21 @@ public sealed class TextWindow
     {
         if (row < _top || row > _bottom)
             return;
+        int draw = ++_lastDraw;
         for (int i = 0; i < text.Length; i++)
         {
             int c = col + i;
             if (c == _right + 1 && c <= 39)
+            {
                 _overhang[row - _top] = (Glyph(text[i], AmigaView.On), colour);
+                _overhangDraw[row - _top] = (draw, true);
+            }
             if (c < _left || c > _right)
                 continue;
             _chars[row - _top, c - _left] = text[i];
             _colours[row - _top, c - _left] = colour;
+            _draws[row - _top, c - _left] = draw;
+            _whole[row - _top, c - _left] = true;
         }
     }
 
@@ -153,10 +176,14 @@ public sealed class TextWindow
         Row = row;
     }
 
-    /// <summary>The box's cells as window lines (runs of one colour per row), for a full-screen window.</summary>
+    /// <summary>
+    /// The box's cells as window lines, for a full-screen window: each whole string (<see cref="Put"/>) as one line,
+    /// the printed cells as runs of one colour per row with <see cref="WindowLine.Glyphs"/> set (drawn glyph by glyph
+    /// under the Amiga font), in the order they were drawn.
+    /// </summary>
     public IReadOnlyList<WindowLine> WindowLines()
     {
-        var lines = new List<WindowLine>();
+        var lines = new List<(int Draw, WindowLine Line)>();
         for (int r = _top; r <= _bottom; r++)
         {
             int c = _left;
@@ -168,17 +195,63 @@ public sealed class TextWindow
                     c++;
                     continue;
                 }
+                var (draw, whole) = DrawOf(r, c);
                 int start = c;
                 var sb = new System.Text.StringBuilder();
-                while (c <= _right && Cell(r, c) is var (ch2, col2) && (ch2 == '\0' || col2 == colour))
-                {
-                    sb.Append(ch2 == '\0' ? ' ' : ch2);
-                    c++;
-                }
-                lines.Add(new WindowLine(start, r, sb.ToString().TrimEnd(), colour));
+                if (whole)
+                    while (c <= _right && Cell(r, c).Char != '\0' && DrawOf(r, c) == (draw, true))
+                        sb.Append(Cell(r, c++).Char);
+                else
+                    while (c <= _right && Cell(r, c) is var (ch2, col2) && (ch2 == '\0' || col2 == colour && !DrawOf(r, c).Whole))
+                    {
+                        sb.Append(ch2 == '\0' ? ' ' : ch2);
+                        c++;
+                    }
+                lines.Add((draw, new WindowLine(start, r, sb.ToString().TrimEnd(), colour) { Glyphs = !whole }));
             }
         }
-        return lines;
+        return [.. lines.OrderBy(l => l.Draw).Select(l => l.Line)];
+    }
+
+    /// <summary>The draw that made a cell (0 for a blank one) and whether it was a whole string.</summary>
+    private (int Draw, bool Whole) DrawOf(int row, int col) => col == _right + 1
+        ? _overhangDraw[row - _top]
+        : (_draws[row - _top, col - _left], _whole[row - _top, col - _left]);
+
+    /// <summary>
+    /// The cells of rows <paramref name="top"/>–<paramref name="bottom"/> (and the overhang column) as the draws that
+    /// made them, in the order they were made: a whole string (<see cref="Put"/>) as one run of the cells it still
+    /// holds on a row, each printed character as a run of one. Blank cells are left out.
+    /// </summary>
+    public IReadOnlyList<TextRun> Runs(int top, int bottom)
+    {
+        var runs = new List<(int Draw, TextRun Run)>();
+        for (int r = Math.Max(top, _top); r <= Math.Min(bottom, _bottom); r++)
+        {
+            int c = _left;
+            while (c <= _right + 1)
+            {
+                var (ch, colour) = Cell(r, c);
+                if (ch == '\0')
+                {
+                    c++;
+                    continue;
+                }
+                var (draw, whole) = DrawOf(r, c);
+                int start = c;
+                var sb = new System.Text.StringBuilder().Append(ch);
+                c++;
+                if (whole)
+                    while (c <= _right + 1 && Cell(r, c) is var (ch2, col2) && ch2 != '\0' && col2 == colour
+                           && DrawOf(r, c) == (draw, true))
+                    {
+                        sb.Append(ch2);
+                        c++;
+                    }
+                runs.Add((draw, new TextRun(start, r, sb.ToString(), colour, whole)));
+            }
+        }
+        return [.. runs.OrderBy(x => x.Draw).Select(x => x.Run)];
     }
 
     /// <summary>Blanks one row of the box.</summary>
@@ -193,6 +266,8 @@ public sealed class TextWindow
             {
                 _chars[r - _top, c - _left] = '\0';
                 _colours[r - _top, c - _left] = 0;
+                _draws[r - _top, c - _left] = 0;
+                _whole[r - _top, c - _left] = false;
             }
     }
 
@@ -216,6 +291,11 @@ public sealed class TextWindow
     /// </summary>
     public void PrintIn(int left, int top, int right, int bottom, string text, bool clear, byte colour)
     {
+        if (Amiga ?? (AmigaPrint && AmigaView.On))
+        {
+            PrintAmiga(left, top, right, bottom, text, clear, colour);
+            return;
+        }
         if (Column < left || Column > right || Row < top || Row > bottom)
         {
             Column = left;
@@ -271,6 +351,67 @@ public sealed class TextWindow
         }
     }
 
+    /// <summary>Which machine's print <see cref="PrintIn"/> follows when set (tests); null = the Amiga's for a window
+    /// with <see cref="AmigaPrint"/> (the default) under the Amiga pages (<see cref="AmigaView.On"/>), else DOS's.</summary>
+    public bool? Amiga { get; set; }
+
+    /// <summary>
+    /// This window follows the Amiga's print under the Amiga pages (<see cref="PrintAmiga"/>): every text window does,
+    /// since the program has one print for all of them (hunk 25 +0x10EC: PRINT / PRINTCLR, venues, DAMAGE, the fight's
+    /// panel). Seen in FS-UAE s45 in the fight's panel and a paged PRINTCLR (rows 17–22 equal); false keeps DOS's cut.
+    /// </summary>
+    public bool AmigaPrint { get; init; } = true;
+
+    /// <summary>
+    /// The Amiga's print (hunk 25 +0x10EC–0x12A6, read s45; a C port of START 0x77F8 with its own word cut): with
+    /// "clear" the box is blanked and the cursor goes to its top-left corner (no check of a cursor outside the box). Each
+    /// word runs up to and including the first space or delimiter, or the string's terminating NUL, and every one of
+    /// those characters counts, the NUL too: a word goes to the next row (column left, nothing skipped) when the cursor
+    /// column plus that count passes right + 1, so a line's last word needs one cell more than on DOS (FS-UAE s45:
+    /// "Hitting for 12" / "points of" / "damage" in the fight panel, columns 23–38). Past the bottom row the cursor goes
+    /// back to the top, the page prompt waits (<see cref="Pause"/>) and the box is blanked; then the word is printed,
+    /// its space or delimiter included. Nothing moves the cursor after the text. [?] The per-word wait (hunk 25 +0x1286:
+    /// speed byte hunk 32 +0xA8 × 2) is not modelled; the owner's <see cref="Typed"/> runs per character.
+    /// </summary>
+    private void PrintAmiga(int left, int top, int right, int bottom, string text, bool clear, byte colour)
+    {
+        if (clear)
+        {
+            ClearRect(left, top, right, bottom);
+            Column = left;
+            Row = top;
+        }
+        int pos = 0;
+        char c;
+        do
+        {
+            int start = pos, count = Column;
+            do
+            {
+                c = pos < text.Length ? text[pos] : '\0';
+                pos++;
+                count++;
+            }
+            while (c != '\0' && c != ' ' && !IsDelimiter(c));
+            int end = c == '\0' ? pos - 1 : pos;   // exclusive; the NUL is not drawn
+            if (count > right + 1)
+            {
+                Row++;
+                Column = left;
+            }
+            if (Row > bottom)
+            {
+                Row = top;
+                Column = left;
+                Pause?.Invoke();
+                ClearRect(left, top, right, bottom);
+            }
+            if (end > start)
+                Put(text, start + 1, end, colour);
+        }
+        while (c != '\0');
+    }
+
     /// <summary>Characters p..i at the cursor, one cell each (0x7737); returns i + 1.</summary>
     private int Put(string text, int p, int i, byte colour)
     {
@@ -283,6 +424,8 @@ public sealed class TextWindow
             {
                 _chars[r, c] = Glyph(text[p - 1], AmigaView.On);
                 _colours[r, c] = colour;
+                _draws[r, c] = ++_lastDraw;
+                _whole[r, c] = false;
             }
             Column++;
             Typed?.Invoke();
@@ -292,10 +435,18 @@ public sealed class TextWindow
 
     /// <summary>
     /// The character a text-window cell keeps: DOS's print (START 0x7737) upper-cases it; the Amiga's (hunk 25 +0x10EC,
-    /// the words copied as stored, then the string routine) keeps the byte, so a lower-case letter shows its own glyph.
+    /// the words copied as stored, then each byte through the glyph routine) keeps it, so a lower-case letter shows its
+    /// own glyph.
     /// </summary>
     public static char Glyph(char c, bool amiga) => amiga ? c : char.ToUpperInvariant(c);
 
     /// <summary>The delimiter set of the word cut (START.EXE DS:0D16, a set constant for characters 0x20–0x3F).</summary>
     public static bool IsDelimiter(char c) => c is '!' or ',' or '-' or '.' or ':' or ';' or '?';
 }
+
+/// <summary>
+/// One draw of a text window's cells (<see cref="TextWindow.Runs"/>): a whole string of the string routine
+/// (<paramref name="Whole"/>) or one printed glyph, at a cell, in a colour (0–15 a DOS colour, 16–31 an Amiga pen).
+/// </summary>
+public sealed record TextRun(int Column, int Row, string Text, byte Colour, bool Whole);
+

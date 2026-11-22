@@ -239,7 +239,8 @@ public class CombatScreenGameTests
 {
     private static string? Dir() => TestRig.PorDir();
 
-    private sealed record Rig(ExploreScreen Screen, PorGame Game, ScriptRunner Runner, ActionInput Input, ClientPlayer Player);
+    private sealed record Rig(ExploreScreen Screen, PorGame Game, ScriptRunner Runner, ActionInput Input, ClientPlayer Player,
+        MenuHighlight Highlight);
 
     private static Rig Start(uint seed)
     {
@@ -253,7 +254,9 @@ public class CombatScreenGameTests
         game = PorGame.FromSave(dir, art, dir.Find("SAVGAMA.DAT")!,
             new PorPlayer(player, player, player, player, FightMenu: player.Chooser, QuickFight: true), seed);
         var input = new ActionInput(InputBindings.Defaults());
-        return new Rig(new ExploreScreen(game, player, runner, new TestRig.NoHost()), game, runner, input, player);
+        var highlight = new MenuHighlight { Index = ExploreScreen.LoadMenuIndex(game.Content.SaveFolder, 'A') };
+        return new Rig(new ExploreScreen(game, player, runner, new TestRig.NoHost(), highlight: highlight), game, runner, input,
+            player, highlight);
     }
 
     private static void Press(Rig r, GameAction a)
@@ -684,6 +687,39 @@ public class CombatScreenGameTests
         r.Runner.Dispose();
     }
 
+    [Fact]
+    public void The_fights_item_and_coin_lists_enter_the_list_routines_global_top()
+    {
+        // Read s45: Use's Items page (0x21F32, position 0 on entry, 0x21F5F) and View's coin list (0x234E1, position 0,
+        // 0x2365B) call 0x2D669, whose entry takes the global top DS:6B29 to the position at most (0x2D766).
+        if (Dir() is null)
+            return;
+        var r = ToFight();
+        var me = r.Player.FightView.Current!;
+        r.Highlight.ListTop = MenuHighlight.DosListTop;
+        Key(r, Keys.U);
+        Assert.IsType<PageRequest>(r.Runner.Pending);
+        Idle(r);
+        Assert.Equal(0, r.Highlight.ListTop);
+        Key(r, Keys.E);
+        Assert.True(AtMainMenu(r));
+        Key(r, Keys.V);
+        r.Highlight.ListTop = MenuHighlight.DosListTop;
+        Key(r, Keys.I);                                  // View's Items
+        Idle(r);
+        Assert.Equal(0, r.Highlight.ListTop);
+        Press(r, GameAction.Cancel);
+        if (FightItemScreens.ViewEntries(me, FightItemScreens.InFight).Contains(ViewEntry.Drop))
+        {
+            r.Highlight.ListTop = MenuHighlight.DosListTop;
+            Key(r, Keys.D);
+            Assert.True(Assert.IsType<PageRequest>(r.Runner.Pending).PickRows);
+            Idle(r);
+            Assert.Equal(0, r.Highlight.ListTop);
+        }
+        r.Runner.Dispose();
+    }
+
     /// <summary>An empty frame: the screen syncs to the request now pending (as the next drawn frame would).</summary>
     private static void Idle(Rig r)
     {
@@ -865,10 +901,13 @@ public class CombatScreenGameTests
 
         // Use, U on the scroll: its spell list (0x239D6 → 0x2D669: the cell to its first entry, Cast), Return casts.
         Key(r, Keys.U);
+        Idle(r);
+        r.Highlight.ListTop = MenuHighlight.DosListTop;
         Key(r, Keys.U);
         Assert.IsType<ListRequest>(r.Runner.Pending);
         Idle(r);
         Assert.Equal(0, r.Screen.MenuHighlight);
+        Assert.Equal(0, r.Highlight.ListTop);            // the spell list's entry (0x270A2: position 0) moved the shared top (s45)
         Press(r, GameAction.Confirm);
         // The aim (no item message for a scroll): on the combat map, the Items page gone; the menu opens on the cell
         // the spell list left (Cast, the 1st entry): Next.

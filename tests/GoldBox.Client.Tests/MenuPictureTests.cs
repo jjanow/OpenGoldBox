@@ -33,7 +33,7 @@ public class MenuPictureTests
     };
 
     /// <summary>Save A with vectors 0–3 → EXIT and vector 4 = <paramref name="code"/>, written as SAVGAMB.DAT into <paramref name="folder"/>.</summary>
-    private static string WriteSave(PorGameDirectory dir, DirectoryInfo folder, byte[] code)
+    private static string WriteSave(PorGameDirectory dir, DirectoryInfo folder, byte[] code, bool quick = false)
     {
         var bytes = File.ReadAllBytes(dir.Find("SAVGAMA.DAT")!);
         var area = new List<byte>();
@@ -46,14 +46,24 @@ public class MenuPictureTests
         Array.Clear(bytes, PorSaveGame.OffScript, 7680);
         area.CopyTo(bytes, PorSaveGame.OffScript);
         foreach (var f in Directory.GetFiles(dir.Root, "CHRDATA*"))
-            File.Copy(f, Path.Combine(folder.FullName, Path.GetFileName(f)));
+        {
+            var copy = Path.Combine(folder.FullName, Path.GetFileName(f));
+            File.Copy(f, copy);
+            if (quick && copy.EndsWith(".SAV", StringComparison.OrdinalIgnoreCase))
+            {
+                var record = File.ReadAllBytes(copy);
+                record[0x10F] = 1;                           // computer-controlled (Quick) from the fight's start
+                File.WriteAllBytes(copy, record);
+            }
+        }
         var path = Path.Combine(folder.FullName, "SAVGAMB.DAT");
         File.WriteAllBytes(path, bytes);
         return path;
     }
 
     /// <summary>The party menu's Load of the test save (its page up, <see cref="ClientPlayer.PartyMenuUnder"/>), run to the first request.</summary>
-    private static Rig Load(PorGameDirectory dir, string path, bool menuAnimates = true, bool quickFight = false)
+    private static Rig Load(PorGameDirectory dir, string path, bool menuAnimates = true, bool quickFight = false,
+        bool fightMenu = false)
     {
         var runner = new ScriptRunner();
         PorGame? game = null;
@@ -63,7 +73,7 @@ public class MenuPictureTests
         runner.Answered = player.MenuEnded; // as Program.cs
         runner.Asking = player.MenuAsked;
         player.PartyMenuUnder = true;
-        var who = new PorPlayer(player, player, player, player, QuickFight: quickFight);
+        var who = new PorPlayer(player, player, player, player, FightMenu: fightMenu ? player.Chooser : null, QuickFight: quickFight);
         runner.Start(() => game = PorGame.LoadAtPartyMenu(dir, PorViewArt.Load(dir), path, who, 1, started: g =>
         {
             game = g;
@@ -110,7 +120,7 @@ public class MenuPictureTests
         return n;
     }
 
-    private static void Run(string kind, Action<PorGameDirectory, string> test)
+    private static void Run(string kind, Action<PorGameDirectory, string> test, bool quick = false)
     {
         if (TestRig.PorDir() is not { } d)
             return;
@@ -118,7 +128,7 @@ public class MenuPictureTests
         var folder = Directory.CreateTempSubdirectory("menu-picture-");
         try
         {
-            test(dir, WriteSave(dir, folder, Code(kind)));
+            test(dir, WriteSave(dir, folder, Code(kind), quick));
         }
         finally
         {
@@ -198,9 +208,10 @@ public class MenuPictureTests
     public void A_fight_from_a_loaded_entry_frees_the_picture() =>
         Run("fight", (dir, path) =>
         {
-            // 0xE40D: the fight start frees the frame table (DOSBox-X s44: the combat menu without PICTURE 2). A fight
-            // in which no player menu runs (every member on Quick here) leaves $4AFF set for the summary's press-enter
-            // menu, which then has no picture to draw (P).
+            // 0xE40D: the fight start frees the frame table (DOSBox-X s44: the combat menu without PICTURE 2). With no
+            // fight menu nothing asks "continue battle", so $4AFF is still set at the summary's press-enter menu, which
+            // has no picture to draw. In v1.3 only a fight whose party side empties by fleeing gets there (P); DOSBox-X
+            // s45 with the question patched out of a scratch GAME.OVR: the summary stood still, no picture.
             var r = Load(dir, path, quickFight: true);
             for (int guard = 0; r.Runner.Pending is not (null or KeyRequest { AsMenu: true }) && guard < 5000; guard++)
                 r.Runner.Answer(null);
@@ -211,4 +222,30 @@ public class MenuPictureTests
             Assert.Equal(ViewPictureKind.Picture, r.Player.ViewPicture?.Kind); // still PICTURE 2 to the Client, but freed
             r.Runner.Dispose();
         });
+
+    [Fact]
+    public void A_won_fight_asks_to_continue_and_that_menu_clears_the_flag_before_the_summary() =>
+        Run("fight", (dir, path) =>
+        {
+            // A won round asks "continue battle" (yes/no 0x2D9A0 from 0xA1A5) unless DS:49F4, which only the start-up
+            // clears (0xE99E) and nothing sets; that menu clears $4AFF. DOSBox-X s45 (all six on Quick, so no player
+            // menu): the question with no picture (the table freed at 0xE40D), No, the summary with no picture.
+            var r = Load(dir, path, quickFight: true, fightMenu: true);
+            for (int guard = 0; r.Runner.Pending is not (null or ChoiceRequest) && guard < 5000; guard++)
+                r.Runner.Answer(null);
+            var question = Assert.IsType<ChoiceRequest>(r.Runner.Pending);
+            Assert.Equal(new CombatText()[CombatMsg.ContinueBattle].TrimEnd(), question.MenuPrompt); // the rig's text
+            Assert.Equal(2, question.Items.Count);
+            Assert.Equal(1, question.Selected);                  // opens on No
+            Assert.False(question.EveryPass);
+            Assert.True(r.Game.Memory.MenuAnimates);             // the first menu since the Load
+            r.Runner.Answer(1);                                  // No
+            for (int guard = 0; r.Runner.Pending is not (null or KeyRequest { AsMenu: true }) && guard < 5000; guard++)
+                r.Runner.Answer(null);
+            var key = Assert.IsType<KeyRequest>(r.Runner.Pending);
+            Assert.False(r.Game.Memory.MenuAnimates);
+            Assert.False(key.EveryPass);
+            Assert.False(r.Player.PartyMenuUnder);
+            r.Runner.Dispose();
+        }, quick: true);
 }

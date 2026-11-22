@@ -93,7 +93,7 @@ public static class SpellLists
         var lines = new List<WindowLine>
         {
             new(1, 18, AmigaView.Case(who.Name), CombatChooser.NameColour(who)),
-            new(1, 19, AmigaView.Case(text[Msg.CanMemorise].Trim())),
+            new(1, 19, AmigaView.Case(text[Msg.CanMemorise].Trim())) { Glyphs = true }, // printed (Amiga hunk 13 +0x4A70 → the text routine)
         };
         int row = 20;
         for (int cls = 0; cls <= 1; cls++)

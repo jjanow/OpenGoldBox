@@ -25,7 +25,11 @@ public class CampPlayTests
         public void SaveBindings() { }
     }
 
-    private sealed record Rig(ExploreScreen Screen, PorGame Game, ScriptRunner Runner, ActionInput Input, ClientPlayer Player);
+    private sealed record Rig(ExploreScreen Screen, PorGame Game, ScriptRunner Runner, ActionInput Input, ClientPlayer Player)
+    {
+        /// <summary>The screen's shared cells (DS:6B2B, the list top DS:6B29), when the rig passed them.</summary>
+        public MenuHighlight? Highlight { get; init; }
+    }
 
     private static Rig Start(string? save = null, string? saveDir = null)
     {
@@ -37,7 +41,11 @@ public class CampPlayTests
         game = PorGame.FromSave(dir, art, save ?? dir.Find("SAVGAMA.DAT")!, new PorPlayer(player, player, player, player), 7);
         player.SaveFolder = saveDir;
         var input = new ActionInput(InputBindings.Defaults());
-        return new Rig(new ExploreScreen(game, player, runner, new NoHost()), game, runner, input, player);
+        var highlight = new MenuHighlight { Index = ExploreScreen.LoadMenuIndex(game.Content.SaveFolder, 'A') };
+        return new Rig(new ExploreScreen(game, player, runner, new NoHost(), highlight: highlight), game, runner, input, player)
+        {
+            Highlight = highlight,
+        };
     }
 
     private static void Press(Rig r, GameAction a)
@@ -468,8 +476,11 @@ public class CampPlayTests
         var r = Start();
         Press(r, GameAction.Encamp);
         Key(r, Keys.M);                                        // Magic
+        r.Highlight!.ListTop = MenuHighlight.DosListTop;
         Key(r, Keys.D);                                        // Display
         var page = Assert.IsType<ListRequest>(r.Runner.Pending);
+        Key(r, Keys.None);
+        Assert.Equal(0, r.Highlight.ListTop);                  // position 0: the list routine's global top to 0 (s45)
         Assert.True(page.Spell!.CentredTitle);
         Assert.Equal((byte)11, page.Spell.LabelColour);
         Assert.Equal(4, page.FirstRow);

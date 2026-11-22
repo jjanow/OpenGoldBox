@@ -272,6 +272,13 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
     /// <summary>Something else was drawn on the bottom row since the last page prompt.</summary>
     public void ForgetPagePrompt() => _pagePrompted = false;
 
+    /// <summary>
+    /// The text window's page prompt is still on the bottom row: its key wait (START 0x7A12, Amiga hunk 25 +0x1200) does
+    /// not blank the row afterwards, so the prompt stays under the text that follows until a menu, key line or the
+    /// command line draws there (DOSBox-X s22: the DAMAGE wipe's pause; FS-UAE s45: the party-killed window typed over it).
+    /// </summary>
+    public bool PagePromptStands => _pagePrompted;
+
     /// <summary>The position line was blanked by a DAMAGE line and not drawn again yet.</summary>
     public bool PositionLineErased { get; set; }
 
@@ -767,6 +774,8 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
         // At distance 0 the close-up: PIC when $6DE1 = 255, else head $6DE1 + body (ecl-format.md "SETUPMON"; DOSBox-X
         // s19: the new game's guide is a portrait).
         ushort head = memory().Read(GoldBox.Core.Game.EncounterHost.HeadPicture);
+        if (distance == 0 && head != 255)
+            VenuePortrait = ((byte)head, picture); // the close-up's head + body through 0x79E4 (0x7B77)
         ViewPicture = distance == 0
             ? head != 255
                 ? new ViewPicture(ViewPictureKind.Portrait, picture, head, 0, memory().Disk)
@@ -800,7 +809,19 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
         ViewPicture = head is { } hd
             ? new ViewPicture(ViewPictureKind.Portrait, picture, hd, 0, memory().Disk)
             : new ViewPicture(ViewPictureKind.Picture, picture, null, 0, memory().Disk);
+        if (head is { } last)
+            VenuePortrait = (last, picture); // the head + body loader 0x79E4 (0x79EF / 0x79F5)
     }
+
+    /// <summary>
+    /// The head and body the head + body loader was last given (GAME.OVR 0x79E4 writes DS:49FD / 49FE; Amiga hunk 4
+    /// +0x5DC writes hunk 32 +0xC4 / +0xC5): a PICTURE with $6DE1 ≠ 255 and a portrait close-up. The shop and temple
+    /// screen draws them in the view box (START 0x3379 case 1, <see cref="ViewPictures.DrawVenuePortrait"/>). Not
+    /// saved. Start value 0, 0: the Amiga's are in its zeroed BSS hunk 32, so a fresh session's shop shows head 0
+    /// alone (body.dax has no block 0; FS-UAE s45, block 26's overland); DOS's are uninitialised data `[?]` (DOSBox-X
+    /// s22's slums shop on disk 2, whose HEAD2 has no block 0, showed an empty box).
+    /// </summary>
+    public (byte Head, byte Body) VenuePortrait { get; private set; }
 
     /// <summary>How often CALL $2C90 redrew the view and the position line (0x3A83); the explore screen follows it.</summary>
     public int PositionLineDraws => _positionLineDraws;
@@ -991,7 +1012,8 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
             });
         }
         Text.MoveTo(TextWindow.Right, Text.Row);
-        Text.Print(line, clear, colour: 15);
+        // The Amiga prints the line with pen 24 (hunk 4 +0x238A), not colour 15's usual pen 30 (s45; red c00/800 in FS-UAE).
+        Text.Print(line, clear, colour: AmigaView.CallPen(GoldBox.Data.Module.Por.PorAmigaText.DamageLinePen) is int pen and >= 16 and <= 31 ? (byte)pen : (byte)15);
         // 0x96D0: cells (17, 1)–(38, 15) are blanked before the party list is drawn again, so the position line on
         // row 15 is gone until the next redraw point (DOSBox-X s22).
         PositionLineErased = true;

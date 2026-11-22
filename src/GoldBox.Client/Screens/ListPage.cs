@@ -53,6 +53,14 @@ public sealed class ListPage
     private static int HintRow(ListRequest r) => TwoLines(r) ? ActionRow - 2 : ActionRow - 1;
     private static int LastListRow(ListRequest r) => HintRow(r) - 1;
 
+    /// <summary>
+    /// The program's shared cells (<see cref="MenuHighlight"/>), set by the screen: a list routine page (every page but a
+    /// <see cref="ListRequest.SharedHighlight"/> one) enters its global window top on entry (<see cref="MenuHighlight.ListEntered"/>:
+    /// with paging the window starts there, not at <see cref="ListRequest.Top"/>) and Next / Prev leave it there
+    /// (<see cref="MenuHighlight.ListPaged"/>). Null: the request's own top (tests).
+    /// </summary>
+    public MenuHighlight? Shared { get; set; }
+
     private ListRequest? _shown;
     private int _row, _top, _action;
     private ListAnswer? _clicked;
@@ -146,6 +154,7 @@ public sealed class ListPage
     private void Page(ListRequest r, bool down)
     {
         (_row, _top) = ListWindowSteps.Page(_row, _top, r.Paging!.Rows, r.Rows.Count, down);
+        Shared?.ListPaged(_top);
         SkipWindowLabels(r, down);
         Remenu(r);
     }
@@ -162,9 +171,10 @@ public sealed class ListPage
             // 0x2D766–0x2D7A1: the top no further down than the highlight and not past the list; then the highlight one
             // row down and up again (inside the window) and past labels upwards.
             _row = Math.Max(0, r.Selected);
-            _top = Math.Max(0, r.Top);
-            if (_top > _row) _top = _row;
-            if (_top > r.Rows.Count) _top = 0;
+            if (Shared is not null && !r.SharedHighlight && r.Rows.Count > 0)
+                _top = Shared.ListEntered(_row, r.Rows.Count);
+            else
+                _top = MenuHighlight.EnterList(Math.Max(0, r.Top), _row, r.Rows.Count);
             if (r.Rows.Count > 0)
             {
                 _row++;
@@ -175,6 +185,10 @@ public sealed class ListPage
             Remenu(r);
             return;
         }
+        // The item lists without paging (View's Items under a venue, the shop's and temple's lists) still enter the
+        // routine's global top at their position; their window is the Client's scrolling list.
+        if (!r.SharedHighlight)
+            Shared?.ListEntered(Math.Max(0, r.Selected), r.Rows.Count);
         _row = Math.Clamp(r.Selected, 0, Math.Max(0, r.Rows.Count - 1));
         _row = SkipLabels(r, _row, 1);
         _action = Math.Clamp(r.SelectedAction, 0, Math.Max(0, r.Actions.Count - 1));
@@ -468,7 +482,10 @@ public sealed class ListPage
         {
             Chrome.Box(f, 0, 16, 39, 23);
             foreach (var l in box)
-                Chrome.Text(f, font, l.Column, l.Row, Fit(l.Text, Math.Max(0, 39 - l.Column)), l.Colour);
+                if (l.Glyphs)   // printed (the text routine): glyph by glyph under the Amiga font
+                    Chrome.Glyphs(f, font, l.Column, l.Row, Fit(l.Text, Math.Max(0, 39 - l.Column)), l.Colour);
+                else
+                    Chrome.Text(f, font, l.Column, l.Row, Fit(l.Text, Math.Max(0, 39 - l.Column)), l.Colour);
         }
         for (int k = 0; k < p.Rows && _top + k < r.Rows.Count; k++)
         {

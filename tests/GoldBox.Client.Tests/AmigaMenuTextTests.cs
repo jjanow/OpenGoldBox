@@ -194,6 +194,29 @@ public class AmigaMenuTextTests
     }
 
     [Fact]
+    public void Creation_names_matching_a_developer_block_show_its_lines_on_row_24()
+    {
+        // s45 (hunk 10 +0x2148–0x2330): strcmp per block, in order; a name in two blocks shows both.
+        var k = PorAmigaText.DeveloperKey;
+        var strings = new Dictionary<string, string>
+        {
+            [k + 0] = "ALPHA", [k + "0.0"] = "lorem ipsum dolor", [k + "0.1"] = "sit amet", [k + "0.2"] = "consectetur",
+            [k + 1] = "BETA", [k + "1.0"] = "one",
+            [k + 2] = "ALPHA", [k + "2.0"] = "again",
+        };
+        var alpha = AmigaView.DeveloperBlocks("ALPHA", amiga: true, strings);
+        Assert.Equal(2, alpha.Count);
+        Assert.Equal(["lorem ipsum dolor", "sit amet", "consectetur"], alpha[0]);
+        Assert.Equal(["again"], alpha[1]);
+        Assert.Equal([["one"]], AmigaView.DeveloperBlocks("BETA", amiga: true, strings));
+        Assert.Empty(AmigaView.DeveloperBlocks("Beta", amiga: true, strings));    // case exact
+        Assert.Empty(AmigaView.DeveloperBlocks("BETA ", amiga: true, strings));   // length exact
+        Assert.Empty(AmigaView.DeveloperBlocks("BET", amiga: true, strings));
+        Assert.Empty(AmigaView.DeveloperBlocks("BETA", amiga: false, strings));   // DOS: none
+        Assert.Equal(TimeSpan.FromSeconds(2), AmigaView.DeveloperHold);         // Delay(100)
+    }
+
+    [Fact]
     public void The_party_killed_window_holds_three_seconds_on_DOS_only()
     {
         // DOS Delay(3000) (GAME.OVR 0x375A–0x37E4); the Amiga (hunk 16 +0x4674–0x46DC) starts song 5 and waits for the key.

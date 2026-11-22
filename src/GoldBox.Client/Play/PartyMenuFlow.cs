@@ -371,11 +371,26 @@ public sealed class PartyMenuFlow(Func<PlayerRequest, object?> ask, PartyMenuTex
 
         // The Amiga asks through its requester with MaxChars 15 (hunk 10 +0x2114: 14 characters, DOS 15) and keeps the
         // name as typed (strncpy, hunk 10 +0x212E; DOS upper-cases it). AmigaView.CreationName.
-        string name;
+        string name, typed;
         do
-            name = (ask(new TextRequest(texts.CharacterName, false, AmigaView.NameLength(AmigaView.On))) as string ?? "").Trim();
+        {
+            typed = ask(new TextRequest(texts.CharacterName, false, AmigaView.NameLength(AmigaView.On))) as string ?? "";
+            name = typed.Trim();
+        }
         while (name.Length == 0);
         cc.SetName(AmigaView.CreationName(name, AmigaView.On));
+        // The Amiga then compares the name with its developer names (hunk 10 +0x2148–0x2330): each match's lines on
+        // row 24, each held Delay(100), the row blanked after the block (AmigaView.DeveloperBlocks). DOS has none.
+        if (AmigaView.CallPen(GoldBox.Data.Module.Por.PorAmigaText.DeveloperPen) is int devPen)
+            foreach (var block in AmigaView.DeveloperBlocks(typed, AmigaView.On, AmigaView.Strings))
+            {
+                for (int j = 0; j < block.Count; j++)
+                {
+                    DeveloperRow = (block.GetRange(0, j + 1), devPen);
+                    ask(new DelayRequest(AmigaView.DeveloperHold));
+                }
+                DeveloperRow = null;
+            }
         PlaySong?.Invoke(3);
         Portrait(c);
         EditIcon(c);
@@ -525,6 +540,9 @@ public sealed class PartyMenuFlow(Func<PlayerRequest, object?> ask, PartyMenuTex
         var text = CombatTexts;
         var page = ItemsPages.Build(text, c, c.Items, itemName ?? ItemName, row, grey: false);
         Highlight.ItemList();
+        // 0x2D766 with the position word (0 on entry, 0x21F5F; then the row, kept through 0x21F32's loop): the list
+        // routine's global top goes to the row at most, so after View's Items a Create shows its list labels.
+        Highlight.ListEntered(page.Selected, page.Rows.Count);
         int exit = entries.Count - 1;
         return ask(new CharacterPageRequest(page, [.. entries.Select(e => ItemsPages.Word(text, e))], null, exit))
             as ListAnswer ?? new ListAnswer(exit, row);
@@ -545,6 +563,10 @@ public sealed class PartyMenuFlow(Func<PlayerRequest, object?> ask, PartyMenuTex
     /// drawn over the page, and the overlay stays up for the command's yes/no and row-24 messages. Null otherwise.
     /// </summary>
     public TextWindow? TextOverPage { get; set; }
+
+    /// <summary>Creation's developer lines drawn on row 24 so far in their block, in order, and the program's pen
+    /// (<see cref="AmigaView.DeveloperBlocks"/>), during their pauses; null otherwise.</summary>
+    public (List<string> Lines, int Pen)? DeveloperRow { get; private set; }
 
     /// <summary>
     /// Drop money's coin pick and amount (0x234E1): the coin list over View's page (the money lines are its rows, the
@@ -568,6 +590,7 @@ public sealed class PartyMenuFlow(Func<PlayerRequest, object?> ask, PartyMenuTex
             LastRow = Math.Max(CombatSheet.MoneyFirstRow, CombatSheet.MoneyFirstRow + order.Count - 1),
         };
         Highlight.ItemList();
+        Highlight.ListEntered(0, order.Count); // the position word 0 before the call (Drop 0x2365B, the money Trade 0x2335A)
         var a = ask(new CharacterPageRequest(page, [text[CombatMsg.ViewExit].Trim()], (words?.Title ?? text[CombatMsg.SelectCoin]).Trim() + " ", 0)
         {
             Sheet = c,

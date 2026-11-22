@@ -41,7 +41,7 @@ public sealed class MenuHighlight
 
     /// <summary>
     /// The item list routine's window top (DOS DS:6B29, Amiga hunk 32 +0x17D6): one global word beside the cell, kept
-    /// from list to list. Start-up sets it to 1 on DOS (0xE9DA) and to 0 on the Amiga (hunk 25 +0x1540), so a list
+    /// from list to list. Start-up sets it to 1 on DOS (0xE9DA, in start-up 0xE600, run once) and to 0 on the Amiga (hunk 25 +0x1540), so a list
     /// whose entry 0 is a label (creation's "Pick …" lists, position 1) hides that label on DOS until a list has taken
     /// the top to 0 (DOSBox-X s44: fresh start, the race list from row 2 with no label; after camp Display, position
     /// 0, the label on row 2 and the races from row 3) and shows it on the Amiga from the start (FS-UAE s43).
@@ -53,13 +53,25 @@ public sealed class MenuHighlight
 
     /// <summary>
     /// The list routine's entry (DOS 0x2D766–0x2D792, Amiga hunk 13 +0x2C74–0x2CA4): the top goes up to the caller's
-    /// position when below it, and to 0 when past the entry count (labels included). Returns the new top.
-    /// `[?]` The Client carries it through the creation lists, Add's roster list (position 0, 0x1CA19) and the
-    /// explore screen's item lists only: the party menu's View pages (Items, the coin list), VMENU, the fight's lists
-    /// and every Next / Prev paging (the spell lists keep their own top, combat-menu.md "Spell lists' Next / Prev") do
-    /// not move it yet.
+    /// position when below it, and to 0 when past the entry count (labels included). Returns the new top. An empty list
+    /// leaves it (0x2D696–0x2D6B6 returns before the cell and the top). Read s45: the start-up, this entry and the
+    /// paging (DOS 0x2D502, Amiga hunk 13 +0x340E: <see cref="ListPaged"/>) are the only writers of the word in either
+    /// program, so every call of the routine moves it: the creation lists (position 1), Add's roster (0, 0x1CA19), View's
+    /// Items (0 on entry, 0x21F5F, then the row kept), the coin lists of Drop and the money Trade (0, 0x2365B / 0x2335A),
+    /// VMENU (0, 0x1D51), the spell lists (0x270A2: −1 → 0, then kept by Memorize / Scribe / Learn), camp Display (0) and
+    /// the venues' lists. The Client calls this from the list pages' hosts (<see cref="GoldBox.Client.Screens.ListPage"/>,
+    /// the explore, combat and party-menu screens) and the party-menu flow.
+    /// `[?]` Lists the Client draws as its own scrolling list do not page the word when longer than the program's
+    /// window: the shop's Buy (rows 4–22) and the loot take (4–22), Take's kinds (2–8), Add's roster (2–22); the
+    /// temple's heal list (4–15) passes an unset position word (0x50E7) and is left out.
     /// </summary>
-    public int ListEntered(int position, int count) => ListTop = EnterList(ListTop, position, count);
+    public int ListEntered(int position, int count) => count <= 0 ? ListTop : ListTop = EnterList(ListTop, position, count);
+
+    /// <summary>
+    /// Next / Prev moved the window (0x2D502 / hunk 13 +0x340E: top + R, at most N − R; top − R, at least 0): the word
+    /// keeps the new top for the next list, whatever key then ends this one.
+    /// </summary>
+    public void ListPaged(int top) => ListTop = top;
 
     /// <summary><see cref="ListEntered"/>'s rule on a given top.</summary>
     public static int EnterList(int top, int position, int count)

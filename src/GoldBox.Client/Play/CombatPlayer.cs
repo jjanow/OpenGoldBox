@@ -70,7 +70,7 @@ public sealed class CombatView
     /// The status panel's text area (columns 23–38, rows 1–21) with the program's text cursor (DS:5E24 / DS:5E25):
     /// the messages START 0x16EC and 0x77F8 write from row 10 down. The creature's lines (rows 1–7) are drawn live.
     /// </summary>
-    public TextWindow Panel { get; } = new(PanelLeft, 1, PanelRight, PanelBottom);
+    public TextWindow Panel { get; } = new(PanelLeft, 1, PanelRight, PanelBottom);   // the Amiga's word wrap under Amiga (s45, TextWindow.AmigaPrint)
     public const int PanelLeft = 23, PanelRight = 38, PanelBottom = 21, MessageTop = 10;
     /// <summary>
     /// The panel's name colour and HP as START 0x1583 last drew them for <see cref="Shown"/>: the program does not redraw
@@ -521,7 +521,8 @@ public sealed partial class CombatChooser(Func<PlayerRequest, object?> ask, Comb
             Frame();
     }
 
-    private static string Name(EclCharacter c) => c.Name.ToUpperInvariant();
+    /// <summary>A creature's name in a fight message: DOS upper case; the Amiga's name routine (hunk 13 +0x4AD4) draws it as stored.</summary>
+    private static string Name(EclCharacter c) => AmigaView.Case(c.Name);
 
     /// <summary>
     /// The colour of a creature's name (START 0x23B6, read s19): out of play (0x10D = 0) light red, hostile (0x10E = 1)

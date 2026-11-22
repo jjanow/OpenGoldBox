@@ -175,6 +175,9 @@ public static class VenueScreens
     public static void HealList(TradeContext t)
     {
         var names = (t.TempleNames ?? OurCures).Select(n => AmigaView.Case(n)).ToList();
+        // `[?]` The program's list (0x2D669 at 0x50E7, rows 4–15) passes the position word [bp−0xC] of 0x4F4E, which
+        // nothing stores before the first call (stack residue, read s45): how it moves the list routine's global top
+        // (MenuHighlight.ListTop) is unknown, so this list leaves the Client's top as it was.
         while (t.Current is { } c)
         {
             string who = AmigaView.Case(c.Name);

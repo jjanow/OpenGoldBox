@@ -573,6 +573,19 @@ public class PorAmigaArtTests(ITestOutputHelper output)
             Assert.EndsWith(" ", c.Strings[k]);
         }
         Assert.DoesNotContain(' ', c.Strings[PorAmigaText.PicsExitKey]);
+        // s45: creation's developer names (hunk 10 +0x2148–0x2330): seven strcmp blocks, upper-case names that fit the
+        // 14-character requester, 3, 1, 1, 2, 2, 1, 1 lines in pen 28, the second name again in the seventh block.
+        Assert.Equal(28, c.Pens[PorAmigaText.DeveloperPen]);
+        var names = Enumerable.Range(0, 8).Select(i => c.Strings.GetValueOrDefault(PorAmigaText.DeveloperKey + i)).ToList();
+        Assert.Null(names[7]);
+        Assert.All(names.Take(7), n => Assert.Matches("^[A-Z0-9]{1,14}$", n!));
+        Assert.Equal(names[1], names[6]);
+        Assert.Equal(6, names.Take(7).Distinct().Count());
+        var lineCounts = Enumerable.Range(0, 7).Select(i => Enumerable.Range(0, 5)
+            .Count(j => c.Strings.ContainsKey(PorAmigaText.DeveloperKey + i + "." + j))).ToArray();
+        Assert.Equal([3, 1, 1, 2, 2, 1, 1], lineCounts);
+        Assert.All(c.Strings.Where(kv => kv.Key.StartsWith(PorAmigaText.DeveloperKey, StringComparison.Ordinal)),
+            kv => Assert.InRange(kv.Value.Length, 1, 39));
         Assert.Equal((4, 16, 28), (c.Pens[PorAmigaText.PortraitPromptPen], c.Pens[PorAmigaText.PortraitWordsPen],
             c.Pens[PorAmigaText.PortraitCapitalsPen]));
         Assert.Equal(13, c.Strings[PorAmigaText.PagePromptKey].Length);

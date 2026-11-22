@@ -305,17 +305,32 @@ public sealed class CombatText
     /// <summary>How many of the effect messages came from the game files.</summary>
     public int EffectsFromGame => _effects.Count;
 
-    /// <summary>An effect message (0x2C540's text) by its key (Core <see cref="EffectTexts"/>), upper case: the
-    /// program's from the game files, else our wording (the key itself for an unknown key).</summary>
-    public string Effect(string key) =>
-        (_effects.TryGetValue(key, out var s) ? s : EffectTable.TryGetValue(key, out var t) ? t : key).ToUpperInvariant();
+    /// <summary>An effect message (0x2C540's text) by its key (Core <see cref="EffectTexts"/>) as the screen draws it
+    /// (<see cref="Show"/>'s rule): the program's from the game files, else our wording (the key itself for an unknown key).</summary>
+    public string Effect(string key) => Effect(key, AmigaView.On);
+
+    /// <summary><see cref="Effect(string)"/> for one machine: DOS upper case, the Amiga the program's own case.</summary>
+    public string Effect(string key, bool amiga) =>
+        GameText.Cased(_effects.TryGetValue(key, out var s) ? s : EffectTable.TryGetValue(key, out var t) ? t : key, amiga);
 
     /// <summary>How many of the texts came from the game files.</summary>
     public int FromGame => _texts.Count;
 
-    /// <summary>The text, upper case as the font draws it (spaces kept: the program's strings carry their own).</summary>
-    public string this[CombatMsg id] =>
-        (_texts.TryGetValue(id, out var s) ? s : Table.TryGetValue(id, out var t) ? t : StartTable[id]).ToUpperInvariant();
+    /// <summary>The text as the screen draws it (spaces kept: the program's strings carry their own): DOS upper case,
+    /// under the Amiga pages the program's own case (<see cref="Show"/>).</summary>
+    public string this[CombatMsg id] => Show(id, AmigaView.On);
+
+    /// <summary>
+    /// A fight text as one machine draws it. DOS upper-cases every character (glyph UpCase(c) mod 64); the Amiga draws the
+    /// bytes as stored (the creature message routine hunk 13 +0x4970 and the attack line hunk 4 +0x27F0 print through
+    /// the text window's print hunk 25 +0x10EC), and its fight texts are DOS's byte for byte (s45: each a C string in
+    /// <c>program</c>; the attack lines' at hunk 5 +0x86–0x12A, the AI's and the fight menus' at hunk 2 +0x124–0x286, the
+    /// specials' in hunk 8, the spells' in hunk 23), but for three the program holds no text: Alt-M's refusal and
+    /// Alt-X's message (its magic toggle, hunk 1 +0x1D5A, has no refusal; no Alt-X text) and handler 77's hold (its
+    /// handler 77, hunk 7 +0x1A6C, only prints hunk 8 +0x210, "not affected"). Those keep DOS's bytes in their stored
+    /// case [?].
+    /// </summary>
+    public string Show(CombatMsg id, bool amiga) => GameText.Cased(Raw(id), amiga);
 
     /// <summary>A text in the program's own case (the Amiga draws its bytes as they are; <see cref="AmigaView.Case"/>).</summary>
     public string Raw(CombatMsg id) => _texts.TryGetValue(id, out var s) ? s : Table.TryGetValue(id, out var t) ? t : StartTable[id];

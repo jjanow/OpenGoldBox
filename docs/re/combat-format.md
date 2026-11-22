@@ -188,7 +188,9 @@ points, below); for every
 creature effects with trigger 0x13 (0x2B1E4) and 0x2B9D1 `[?]`; a creature with status 5 (dying) adds 1 to combat
 record +0x0E and becomes dead (6) when that exceeds 9; a message when a party member is dying (0xA806); team counts
 again; the fight is done when either count is 0. When the party side is left and the enemy side is empty and DS:49F4
-= 0, a yes/no question offers to go on fighting (yes = not done).
+= 0, a yes/no question offers to go on fighting (yes = not done). DS:49F4 is cleared at start-up (0xE99E) and never
+set (no other instruction names it; VM $49F4 is a different cell), so every won fight asks (s45, D: also with the
+whole party on Quick; training.md "The picture under $4AFF on other pages").
 
 DOSBox (`combat_win`, the Slums goblin fight from save A, 4 rounds): the clock moved 4 minutes ($49C7 4 → 8), as
 one minute per round gives.
@@ -339,7 +341,8 @@ yes/no routine 0x2D9A0 (opens on No).
 ## Shop (0x7212) — P
 
 **Screen (D, s22):** the shop and the temple run in interface state 1; their redraw (START 0x3379 case 1: 0x32CA(1),
-the frames and the inner view box, then 03D0:003E with DS:49FD / 49FE and 03D0:0039 (3, 3, 1)) leaves the **view box
+the frames and the inner view box, then 03D0:003E with DS:49FD / 49FE and 03D0:0039 (3, 3, 1): the head + body last
+given to 0x79E4, view3d.md "The shop and temple box", none here) leaves the **view box
 empty** and draws **no position line**; the party list is there, the text box empty, the menu on row 24. A PICTURE
 before CLRMON (as the New Phlan shop's script, ECL3 block 0 $A248) is not shown. Leaving with Exit: the 3D view and
 the position line come back with the step, and the command line opens on the shared cell left by the shop menu

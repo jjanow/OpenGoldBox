@@ -326,6 +326,33 @@ public static class AmigaView
     public static string CreationName(string typed, bool amiga) => amiga ? typed : typed.ToUpperInvariant();
 
     /// <summary>
+    /// Creation's developer lines (hunk 10 +0x2148–0x2330, <see cref="GoldBox.Data.Module.Por.PorAmigaText.DeveloperKey"/>):
+    /// for each block of the program whose name equals the typed name byte for byte (strcmp: case and length exact), in
+    /// the program's order, its lines. Each is drawn at (0, 24) over the one before it (the string routine's JAM2 pass
+    /// covers only its own cells, so a longer line's tail stays: FS-UAE s45) and held <see cref="DeveloperHold"/>; row 24
+    /// is blanked after each block. Empty off the Amiga pages, for any other name, or when the module holds no blocks;
+    /// DOS (0x1B7BE–0x1B80F) goes from the name to the portrait.
+    /// </summary>
+    public static List<List<string>> DeveloperBlocks(string typed, bool amiga, IReadOnlyDictionary<string, string> strings)
+    {
+        var blocks = new List<List<string>>();
+        const string Key = GoldBox.Data.Module.Por.PorAmigaText.DeveloperKey;
+        for (int i = 0; amiga && strings.TryGetValue(Key + i, out var name); i++)
+        {
+            if (!string.Equals(name, typed, StringComparison.Ordinal))
+                continue;
+            var lines = new List<string>();
+            for (int j = 0; strings.TryGetValue(Key + i + "." + j, out var line); j++)
+                lines.Add(line);
+            blocks.Add(lines);
+        }
+        return blocks;
+    }
+
+    /// <summary>How long each developer line stays (Delay(100): AmigaDOS ticks of 1/50 s, not scaled by the game speed).</summary>
+    public static TimeSpan DeveloperHold => TimeSpan.FromSeconds(GoldBox.Data.Module.Por.PorAmigaText.DeveloperTicks / 50.0);
+
+    /// <summary>
     /// The page's texts as the Amiga draws them: the DOS layout of <see cref="CombatSheet.Build"/> with the name on
     /// <see cref="NameRow"/>, and the hit points taken out into <paramref name="amiga"/> with their Amiga colour
     /// (for <see cref="GoldBox.Core.Explore.TextFont.DrawAmiga"/>). Unchanged when the Amiga pages are off.

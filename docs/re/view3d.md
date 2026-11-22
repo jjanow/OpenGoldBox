@@ -292,6 +292,35 @@ Code: `GoldBox.Core.Explore.AreaLoop` (one command at a time), `GameClock`, `Are
   before s44 it kept the tiles around the box and drew no box for the shop. `ExploreScreen.OverlandBoxed` (the camp,
   `Venue.Shop`, `Venue.Loot`). Tests `EntryScreenTests.A_shop_or_temple_on_the_overland_brings_the_joint_back_for_good`,
   `The_loot_menu_on_the_overland_shows_the_chest_in_the_box_and_the_joint_stays`.
+- **The same on the Amiga** (P + FS-UAE s45; `program` read, FS-UAE on disk A's save A put on block 26's overland at 10,20 N
+  as `save-overland` does, vector 0 the same run-once test code, the Client `--art amiga` on the DOS test saves). The
+  Amiga frames the screen as whole windows (por-art-formats.md §4 "Window frame"), so the "joint" is which window is
+  drawn last over a shared cell. The overland interface (hunk 13 +0x5E80, the copy of START 0x36FE: $ba := 3, then
+  hunk 25 +0x1D4E, the copy of 0x2E03F) draws the windows (1, 1)–(15, 15), (17, 1)–(38, 15) and (1, 17)–(38, 22) in
+  that order: column 16 is the party window's left side, row 0 over columns 17–38 that window's top, (16, 16) the
+  text box's top edge. The 3D layout (hunk 13 +0x5A82, the copy of 0x32CA) draws (1, 1)–(38, 22), (1, 17)–(38, 22),
+  (1, 1)–(15, 15) and with its flag the box (3, 3)–(13, 13); hunk 13 +0x5B16 (the copy of START 0x3379) uses it in
+  cases 1, 2, 4 and 6 (with the box) and 3 (without), as DOS. (Hunk 25 +0x3918, a four-window layout with the party
+  window, has no caller.) Seen: after the Load the overland with the three windows; the shop (step) with the 3D
+  layout, a blank window, the box; Exit, the overland with the 3D layout kept (a random encounter followed in
+  FS-UAE, so the next step was not compared); a TREASURE-only COMBAT's summary window, then the loot menu with the
+  3D layout and the chest in the box (both equal to the Client but the help lines and the pressed gadget). Client before s45: the 3D layout's frames on the overland too (column
+  16, row 0 over the party list and (16, 16) differed); now `ExploreScreen` draws the three windows under Amiga
+  while the interface layout stands (`overlandLayout`). Equal to FS-UAE but the party, the marker's frame (the
+  session's marker counter, geo-format.md "Marker counter"; the Amiga's after its Load not followed `[?]`), the help
+  lines and the pressed gadget.
+- **The shop and temple box shows the last head + body** (P s45, DOS and Amiga; FS-UAE s45). START 0x3379 case 1 draws the
+  layout with the box, then loads and draws the head and body last given to the head + body loader (0x33BA–0x33D0:
+  DS:49FD / 49FE → 03D0:003E, then 03D0:0039 at (3, 3)); only GAME.OVR 0x79E4 writes them (0x79EF / 0x79F5: PICTURE
+  with $6DE1 ≠ 255, a portrait close-up). The Amiga is the same (hunk 13 +0x5B5C–0x5B8A with hunk 32 +0xC4 / +0xC5,
+  written only by hunk 4 +0x5DC). A part is loaded only when not 0xFF and present in the file (0x2E6A7; hunk 19
+  +0x1592); DOS opens the current disk's HEAD / BODY, the Amiga its one head.dax / body.dax. Start values: the
+  Amiga's hunk 32 is BSS (zero), so a fresh session's shop or temple shows head 0 (head.dax has it, body.dax has no
+  block 0: the head alone). FS-UAE: the overland shop showed that head in the box. DOS's DS:49FD / 49FE are
+  uninitialised data `[?]`; HEAD3 and HEAD4 have a block 0, HEAD2 (the slums, DOSBox-X s22's shop) has none. Not
+  seen after a portrait `[?]` (the rule says the shop then shows that portrait). Client: `ClientPlayer.VenuePortrait`
+  (start 0, 0), `ViewPictures.DrawVenuePortrait` (each part the art has; the Amiga art any disk), drawn in the
+  Shop venue's blank box; FS-UAE's box equal pixel for pixel.
 - **Camp menu 0x196A0** (s12): DS:49F3 = 2 (saved and restored), a camp message in the text box, then the menu
   routine with a "Camp:" prompt and the DS menu line (v1.3 DS:0508; six words: save, view, magic, rest, alter,
   exit) until E (or key 0). S saves (0x1FD3E) and asks whether to quit, V views (0x21AED), M magic (0x18C22), R rest

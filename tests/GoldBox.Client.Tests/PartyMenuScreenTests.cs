@@ -872,6 +872,35 @@ public class PartyMenuScreenTests
         Assert.IsType<PartyMenuRequest>(r.Runner.Pending);
     }
 
+    [Fact]
+    public void Views_items_and_coin_lists_take_the_list_top_to_0_so_create_shows_its_labels()
+    {
+        // Read s45: View's Items (0x21F32: position 0 on entry, 0x21F5F) and the coin list of Drop (0x2365B) call the
+        // list routine 0x2D669, whose entry takes the global top DS:6B29 from the start-up's 1 to 0 (0x2D766); a later
+        // Create then shows "Pick Race" (por-art-formats.md "Creation's list labels").
+        if (Dir() is null)
+            return;
+        using var r = WithTwoFighters();
+        Assert.Equal(MenuHighlight.DosListTop, r.Flow.Highlight.ListTop);
+        r.Key(Keys.V);
+        Assert.Equal(1, r.Flow.Highlight.ListTop);         // View's page is the menu routine's: no list
+        r.Key(Keys.I);
+        Assert.IsType<CharacterPageRequest>(r.Runner.Pending);
+        Assert.Equal(0, r.Flow.Highlight.ListTop);
+        r.Key(Keys.Escape);
+        r.Flow.Highlight.ListTop = MenuHighlight.DosListTop;
+        r.Key(Keys.D);
+        Assert.True(Assert.IsType<CharacterPageRequest>(r.Runner.Pending).PickRows);
+        Assert.Equal(0, r.Flow.Highlight.ListTop);
+        r.Key(Keys.Escape);
+        r.Key(Keys.E);
+        Assert.IsType<PartyMenuRequest>(r.Runner.Pending);
+        r.Key(Keys.C);
+        var race = Assert.IsType<PickRequest>(r.Runner.Pending);
+        Assert.False(string.IsNullOrEmpty(race.Title));
+        Assert.Equal(3, race.FirstRow);
+    }
+
     /// <summary>
     /// View's Drop (0x234E1, DOSBox-X s39 in the camp): the coin list over the page (prompt, Exit lit; Return takes the
     /// row), the amount typed, the coin list again until Escape; View then opens on Items (0x2D669 stored 1 in the
@@ -1188,9 +1217,12 @@ public class PartyMenuScreenTests
         r.Key(Keys.J);
         WaitPause(r);
         r.Key(Keys.T);
+        r.Flow.Highlight.ListTop = MenuHighlight.DosListTop;
         r.Key(Keys.Y);
         WaitPause(r);
         Assert.IsType<ListRequest>(r.Runner.Pending);
+        r.Key(Keys.None);
+        Assert.Equal(0, r.Flow.Highlight.ListTop); // Learn's list (position −1 → 0) moved the shared top (s45)
         r.Key(Keys.Enter);                       // the highlighted row: the last spell
         Assert.IsType<PartyMenuRequest>(r.Runner.Pending);
         Assert.Equal(2, hero[TrainingHall.MageLevel]);

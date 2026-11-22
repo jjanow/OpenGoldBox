@@ -31,7 +31,7 @@ public sealed class PartyMenuScreen(PartyMenuFlow flow, ScriptRunner runner, ISc
     private readonly System.Diagnostics.Stopwatch _clock = System.Diagnostics.Stopwatch.StartNew();
     private TimeSpan _delayEnd;
     /// <summary>Train's Learn list (a full-screen list page).</summary>
-    private readonly ListPage _list = new();
+    private readonly ListPage _list = new() { Shared = flow.Highlight }; // the list routine's global top (MenuHighlight.ListTop)
     private int _selected, _word;
     private string _typed = "";
     private bool _switched;
@@ -787,13 +787,8 @@ public sealed class PartyMenuScreen(PartyMenuFlow flow, ScriptRunner runner, ISc
             // Sell's and Id's text (0x22D28, 0x22F8C, 0x21DAA: START 0x77F8 in the box (1, 21)–(38, 22), colour 14)
             // straight over the page, no frame; their row-24 messages (START 0x2233) during the pause.
             for (int row = 21; row <= 22; row++)
-                for (int col = 1; col <= 38; col++)
-                {
-                    var (ch, colour) = box.Cell(row, col);
-                    Chrome.Clear(f, col, row, 1);
-                    if (ch is not '\0' and not ' ')
-                        Chrome.Text(f, font, col, row, ch.ToString(), colour);
-                }
+                Chrome.Clear(f, 1, row, 38);
+            Chrome.TextRuns(f, font, box.Runs(21, 22));
             if (pending is DelayRequest { BottomLine: { } bl })
             {
                 Chrome.Clear(f, 0, MenuRow, 40);
@@ -805,6 +800,19 @@ public sealed class PartyMenuScreen(PartyMenuFlow flow, ScriptRunner runner, ISc
                 // Row 24 keeps the page's menu with the chosen entry lit while the text types and pauses (DOSBox-X
                 // s41: the page menu with Id lit under Id's offer).
                 Line(f, itemsPage.Prompt, PromptColour, itemsPage.Entries, flow.Highlight.Index);
+        }
+        if (pending is DelayRequest && flow.DeveloperRow is var (devLines, devPen))
+        {
+            // Creation's developer lines under the Amiga (hunk 10 +0x2148–0x2330): each through the string routine at
+            // (0, 24) in the program's pen, over the one before it: its JAM2 pass blanks its own cells only, then the
+            // two passes (a longer line's tail and the pixel its last glyph's second pass put past it stay; FS-UAE s45).
+            Chrome.Clear(f, 0, MenuRow, 40);
+            foreach (var line in devLines)
+            {
+                string t = Fit(line, 39);
+                Chrome.Clear(f, 0, MenuRow, t.Length);
+                font.DrawAmiga(f, 0, MenuRow * 8, t, devPen);
+            }
         }
         if (back is IconRequest)
             CombatScreen.SwapGrey(f); // the icon editor's palette, row 24 included (D s39)

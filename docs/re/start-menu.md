@@ -252,7 +252,8 @@ hall's classes and Train is offered.
    Random(256), the first draw.
 2. **Race** list (vertical menu 0x2D669, exit word only; each creation list's entry 0 is its label, "Pick Race" …,
    shown only when the list routine's top DS:6B29 is 0: not after start-up (1), but after a list at position 0 such
-   as camp Display, DOSBox-X s44; por-art-formats.md "Creation's list labels"): race names DS:0F03 + 10·code for codes 1..5 and 7 (half-orc,
+   as camp Display, DOSBox-X s44, or any other list that leaves the top at 0: View's Items or coin list, VMENU
+   without paging, DOSBox-X s45; a Next left before keeps it hidden; por-art-formats.md "Creation's list labels"): race names DS:0F03 + 10·code for codes 1..5 and 7 (half-orc,
    6, is skipped; the sixth line is human). Race byte 0x2E; icon size 0xC0 := 1 for dwarf, gnome, halfling, else 2;
    permanent effects added (0x2BD3C, time 0, value 0xFF): halfling 0x5A 0x61; dwarf 0x5A 0x61 0x1A 0x2F; gnome 0x61 0x12
    0x2F 0x30; elf 0x6B; half-elf 0x7C; human none. The effects go to the character's `.spc` file.
@@ -565,7 +566,11 @@ v1.3 does **not** go back to the party menu: the program ends (D, s22: both path
     calibrated by a loop: at `cycles=max` it took about 0.3 s); then the white line (colour 15) and a key. The line
     messages before it and the closing key line of every DAMAGE: ecl-format.md "DAMAGE". With a single line (five members already
     dead: they get no line) there is no page prompt and row 24 keeps the command line through the pause. Client:
-    `DamageEnd`, equal pixel for pixel in both cases.
+    `DamageEnd`, equal pixel for pixel in both cases. The page prompt's key wait (START 0x7A12 → 0x7C85: the row
+    blanked, the line, a key) leaves its line on row 24, so it stands under the sixth line and the window's message
+    while they are typed, as through the pause; the Client drew the command line or nothing there until s45
+    (`ClientPlayer.PagePromptStands`; seen on the Amiga, whose copy hunk 25 +0xE78 is the same, FS-UAE s45,
+    por-art-formats.md "Party-killed window"; not grabbed in DOSBox-X while typing `[?]`).
 - So after either screen and its key the ECL run stops, 0x403E returns and the program exits to DOS (D). Starting again
   means running the program again; the party is gone with the program's memory, the roster and save files on disk are
   as they were. A return to the party menu is an engine option (off = quit, as the original): Client

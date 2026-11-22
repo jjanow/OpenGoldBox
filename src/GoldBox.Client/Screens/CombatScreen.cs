@@ -51,12 +51,20 @@ public sealed class CombatScreen
         _runner = runner;
         _text = text;
         _itemWord = itemWord;
+        _list.Shared = _highlight;
     }
 
     public bool Active => _view.Active;
 
-    /// <summary>The program's shared menu highlight (DS:6B2B), the same cell the area and camp menus use.</summary>
-    public MenuHighlight Highlight { get; init; } = new();
+    /// <summary>The program's shared menu highlight (DS:6B2B), the same cell the area and camp menus use; its list
+    /// top is the one the list pages enter and page (<see cref="ListPage.Shared"/>).</summary>
+    public MenuHighlight Highlight
+    {
+        get => _highlight;
+        init => _list.Shared = _highlight = value;
+    }
+
+    private readonly MenuHighlight _highlight = new();
 
     /// <summary>A fault of the logic, for the caller's report.</summary>
     public Action<Exception>? Report { get; init; }
@@ -248,7 +256,13 @@ public sealed class CombatScreen
                 break;
             case PageRequest pr:
                 if (!pr.SharedHighlight)
+                {
                     Highlight.ItemList();
+                    // 0x2D766: the Items page (position 0 on entry, 0x21F5F, then the row kept) and the coin list (0,
+                    // 0x2365B) enter the routine's global window top.
+                    if (_view.Page is { } entered)
+                        Highlight.ListEntered(entered.Selected, entered.Rows.Count);
+                }
                 _selected = Highlight.Start(pr.Entries.Count);
                 break;
             case KeyRequest { AsMenu: true } km:
@@ -1040,7 +1054,7 @@ public sealed class CombatScreen
         if (PanelCreature() is { } c)
         {
             var lines = _view.ShownLines is { } sl && ReferenceEquals(sl.Creature, c) ? sl : (c, CombatChooser.NameColour(c), (int)c[FightRules.Hp]);
-            Text(f, PanelCol, 1, Fit(c.Name.ToUpperInvariant(), 16), lines.Item2);
+            Text(f, PanelCol, 1, Fit(AmigaView.Case(c.Name), 16), lines.Item2);   // the Amiga draws the name as stored
             // The HP number as the party list (START 0x1513): yellow below the maximum 0x32 (DOSBox-X s29: 185 of 200).
             string hpLabel = _text[CombatMsg.PanelHitpoints].Trim() + " ";
             Text(f, PanelCol, 3, Fit(hpLabel, 16), Chrome.Green);

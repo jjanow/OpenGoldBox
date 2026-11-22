@@ -240,7 +240,7 @@ public static class PorAmigaText
     /// The Amiga-only call-site facts read s43 (docs/re/por-art-formats.md §4 "Text font"): pens a few callers pass
     /// where DOS passes another colour, and strings the Amiga words otherwise than DOS.
     /// </summary>
-    /// <param name="Pens">By name: <see cref="KeyPagePen"/>, <see cref="KeyDamagePen"/>, <see cref="PortraitPromptPen"/>,
+    /// <param name="Pens">By name: <see cref="KeyPagePen"/>, <see cref="KeyDamagePen"/>, <see cref="DamageLinePen"/>, <see cref="PortraitPromptPen"/>,
     /// <see cref="PortraitWordsPen"/>, <see cref="PortraitCapitalsPen"/>.</param>
     /// <param name="Strings">By name: <see cref="PagePromptKey"/>, <see cref="ViewRenameKey"/>, <see cref="PartyMenuKey"/> + 0–10,
     /// <see cref="ShopMoneyLeftKey"/>, <see cref="TempleMoneyLeftKey"/>, the camp lines
@@ -254,6 +254,10 @@ public static class PorAmigaText
     /// <summary>DAMAGE's press-enter key waits (hunk 16 +0x46D2–0x46DC after the party-killed window, hunk 4
     /// +0x2364–0x236E before a hit line when the box is full: pen 28; DOS 0x34BB / 0x959F: colour 15).</summary>
     public const string KeyDamagePen = "keyDamage";
+    /// <summary>DAMAGE's hit / dies line (hunk 4 +0x2384–0x239E: the text window's print, hunk 25 +0x10EC, in the box
+    /// (1, 17)–(38, 22) with pen 24; DOS 0x959F: colour 15, white, whose usual pen would be 30). Read s45, not seen in
+    /// FS-UAE [?].</summary>
+    public const string DamageLinePen = "damageLine";
 
     /// <summary>Creation's portrait menu (hunk 10 +0x3778–0x3790, the menu routine hunk 19 +0x4DD6):
     /// prompt pen 4 (the prompt is empty), other letters 16, capitals 28: the reverse of every other menu (28 / 16).</summary>
@@ -315,6 +319,93 @@ public static class PorAmigaText
     /// <summary>The prefix of the strings that are whole camp lines, not words for the menu spelling table.</summary>
     public const string CampLinePrefix = "Camp.";
 
+    /// <summary>
+    /// Creation's developer names (s45; hunk 10 +0x2148–0x2330, between the name requester and the 0xFF spaces): seven
+    /// blocks, each <c>strcmp(name, typed)</c> (stub +0x6D46 → hunk 0 +0x7D8: byte for byte, case and length exact) and,
+    /// on a match, one or more lines each drawn by the string routine (stub +0x6D28 → hunk 25 +0xC3C) at column 0, row
+    /// 24 in pen 28 and held <c>Delay(100)</c> (stub +0x6E60 → hunk 36 +0: dos.library Delay, 2 s, not scaled by the
+    /// game speed), then row 24 blanked (stub +0x6E42 → hunk 19 +0x58A8: the clear of (0, 24)–(39, 24)). Lines of one
+    /// block are not blanked between them, so a shorter line leaves the tail of a longer one. A name may come in two
+    /// blocks (both run, in order). Keys: <see cref="DeveloperKey"/> + block (the name), + block + "." + line; the pen
+    /// under <see cref="DeveloperPen"/>. The block count, names and lines come from the player's program; none is here.
+    /// </summary>
+    public const string DeveloperKey = "Creation.Developer.", DeveloperPen = "creationDeveloper";
+
+    /// <summary>The ticks each developer line is held (the <c>Delay</c> argument, checked in every block; 50 a second).</summary>
+    public const int DeveloperTicks = 100;
+
+    /// <summary>The developer blocks read from the code (hunk 10 +0x2148 up to the 0xFF-space loop at +0x2332), or null.</summary>
+    private static (int Pen, List<(string Name, List<string> Lines)> Blocks)? ReadDevelopers(byte[] program,
+        IReadOnlyList<AmigaHunk> hunks, HashSet<AmigaReloc> relocs)
+    {
+        const int Hunk = 10, Start = 0x2148, End = 0x2332;
+        if (hunks.Count <= Hunk || hunks[Hunk].DataOffset is not { } b0 || hunks[Hunk].Size < End + 4)
+            return null;
+        var code = new ReadOnlyMemory<byte>(program, b0, hunks[Hunk].Size);
+        // The end: moveq #0, d7 (the 0xFF-space loop's counter).
+        if (BinaryPrimitives.ReadUInt16BigEndian(code.Span[End..]) != 0x7E00)
+            return null;
+        int W(int at) => at >= 0 && at + 2 <= code.Length ? BinaryPrimitives.ReadUInt16BigEndian(code.Span[at..]) : -1;
+        // The target (hunk, offset) of a relocated long at hunk 10 +at, or null.
+        (int Hunk, int At)? Ptr(int h, int at)
+        {
+            foreach (var r in relocs)
+                if (r.Hunk == h && r.Offset == at && hunks[h].DataOffset is { } hb)
+                    return (r.Target, (int)BinaryPrimitives.ReadUInt32BigEndian(program.AsSpan(hb + at)));
+            return null;
+        }
+        // jsr d16(pc) at +at to a stub "jmp target.l" whose long is relocated to (hunk, offset).
+        bool Calls(int at, int hunk, int offset)
+        {
+            if (W(at) != 0x4EBA)
+                return false;
+            int stub = at + 2 + (short)W(at + 2);
+            return stub >= 0 && stub + 6 <= code.Length && W(stub) == 0x4EF9 && Ptr(Hunk, stub + 2) == (hunk, offset);
+        }
+        string? Text(int at)
+        {
+            if (W(at) != 0x4879 || Ptr(Hunk, at + 2) is not var (h, o) || hunks[h].DataOffset is not { } hb || o < 0 || o >= hunks[h].Size)
+                return null;
+            var s = program.AsSpan(hb + o, hunks[h].Size - o);
+            int z = s.IndexOf((byte)0);
+            if (z <= 0 || s[..z].IndexOfAnyExceptInRange((byte)0x20, (byte)0x7E) >= 0)
+                return null;
+            return Encoding.Latin1.GetString(s[..z]);
+        }
+        int pen = -1;
+        var blocks = new List<(string, List<string>)>();
+        int p = Start;
+        while (p < End)
+        {
+            // move.l a3, -(a7); pea name.l; jsr strcmp; addq.w #8, a7; tst.l d0; bne.b next
+            if (W(p) != 0x2F0B || Text(p + 2) is not { } name || !Calls(p + 8, 0, 0x7D8)
+                || W(p + 12) != 0x504F || W(p + 14) != 0x4A80 || (W(p + 16) & 0xFF00) != 0x6600 || (W(p + 16) & 0xFF) == 0)
+                return null;
+            int next = p + 18 + (sbyte)(W(p + 16) & 0xFF);
+            int q = p + 18;
+            var lines = new List<string>();
+            // pea line.l; pea pen.w; pea row.w; clr.l -(a7); jsr string; pea ticks.w; jsr Delay
+            while (W(q) == 0x4879)
+            {
+                if (Text(q) is not { } line || W(q + 6) != 0x4878 || W(q + 10) != 0x4878 || W(q + 12) != 24
+                    || W(q + 14) != 0x42A7 || !Calls(q + 16, 25, 0xC3C)
+                    || W(q + 20) != 0x4878 || W(q + 22) != DeveloperTicks || !Calls(q + 24, 36, 0))
+                    return null;
+                if (pen >= 0 && W(q + 8) != pen)
+                    return null;
+                pen = W(q + 8);
+                lines.Add(line);
+                q += 28;
+            }
+            // jsr the row-24 blank; lea n(a7), a7
+            if (lines.Count == 0 || !Calls(q, 19, 0x58A8) || W(q + 4) != 0x4FEF || q + 8 != next)
+                return null;
+            blocks.Add((name, lines));
+            p = next;
+        }
+        return p == End && pen is >= 16 and <= 30 ? (pen, blocks) : null;
+    }
+
     /// <summary>The byte that joins two words of one menu entry in the Amiga's Pics line (drawn blank).</summary>
     public const char JoinedSpace = '\u00FF';
 
@@ -332,6 +423,11 @@ public static class PorAmigaText
         (4, 0x236A, "4878"),               // … pea pen.w, …
         (4, 0x236E, "4eba3774"),           // … jsr the stub at +0x5AE4 …
         (4, 0x5AE4, "4ef9"),               // … jmp hunk 25 +0xE78
+        (4, 0x2384, "486dff002f00"),       // DAMAGE's line: pea the line, push the clear flag, …
+        (4, 0x238A, "4878"),               // … pea pen.w, …
+        (4, 0x238E, "48780016487800264878001148780001"),   // … the box (1, 17)–(38, 22), …
+        (4, 0x239E, "4eba3696"),           // … jsr the stub at +0x5A36 …
+        (4, 0x5A36, "4ef9"),               // … jmp the text window's print (hunk 25 +0x10EC)
         (10, 0x3778, "4878"),              // portrait menu: pea capitals.w, …
         (10, 0x377C, "4878"),              // … pea others.w, …
         (10, 0x3780, "4878"),              // … pea prompt.w, …
@@ -388,6 +484,7 @@ public static class PorAmigaText
     [
         (16, 0x563C, 25, 0xE78),
         (4, 0x5AE6, 25, 0xE78),
+        (4, 0x5A38, 25, 0x10EC),
         (10, 0x6EEC, 19, 0x4DD6),
         (16, 0x56B4, 4, 0x1910),
         (4, 0x5ACE, 19, 0x4DD6),
@@ -447,6 +544,7 @@ public static class PorAmigaText
             {
                 [KeyPagePen] = Word(25, 0x1208),
                 [KeyDamagePen] = Word(16, 0x46DA),
+                [DamageLinePen] = Word(4, 0x238C),
                 [PortraitCapitalsPen] = Word(10, 0x377A),
                 [PortraitWordsPen] = Word(10, 0x377E),
                 [PortraitPromptPen] = Word(10, 0x3782),
@@ -490,6 +588,17 @@ public static class PorAmigaText
                 if (CString(Pointer(1, at), 60) is not { Length: > 0 } line)
                     return null;
                 strings[key] = line;
+            }
+            // Creation's developer names (s45): left out when the code is not laid out so (nothing else depends on them).
+            if (ReadDevelopers(program, hunks, relocs) is var (devPen, blocks))
+            {
+                pens[DeveloperPen] = devPen;
+                for (int i = 0; i < blocks.Count; i++)
+                {
+                    strings[DeveloperKey + i] = blocks[i].Name;
+                    for (int j = 0; j < blocks[i].Lines.Count; j++)
+                        strings[DeveloperKey + i + "." + j] = blocks[i].Lines[j];
+                }
             }
             return new Calls(pens, strings);
         }

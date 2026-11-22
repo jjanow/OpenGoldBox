@@ -143,7 +143,12 @@ public sealed record KeyRequest(string? Prompt = null) : PlayerRequest
 }
 
 /// <summary>A cell of a full-screen window (START 03F1:02E8 with 1, 1, 38, 22): text at a column and row, in a colour.</summary>
-public sealed record WindowLine(int Column, int Row, string Text, byte Colour = 10);
+public sealed record WindowLine(int Column, int Row, string Text, byte Colour = 10)
+{
+    /// <summary>Printed text (the text routine, <see cref="TextWindow.WindowLines"/>): the Amiga draws it glyph by glyph
+    /// (hunk 25 +0x10EC → +0xA4E), not as one string; false for a string drawn whole (the string routine).</summary>
+    public bool Glyphs { get; init; }
+}
 
 /// <summary>A row of a full-screen list: its text and colour (selectable rows are drawn by the screen in its colours).</summary>
 public sealed record ListLine(string Text, byte Colour = 10, int Column = 1);
@@ -181,7 +186,9 @@ public sealed record ListRequest(IReadOnlyList<ListLine> Lines, IReadOnlyList<st
     /// <summary>The list routine 0x2D669's window and its Next / Prev words (null: the Client's scrolling list).</summary>
     public ListPaging? Paging { get; init; }
 
-    /// <summary>With <see cref="Paging"/>: the window's first row on entry (DS:6B29, kept by a caller that keeps its row).</summary>
+    /// <summary>With <see cref="Paging"/>: the window's first row on entry (DS:6B29, kept by a caller that keeps its row).
+    /// The screens use the shared word instead (<see cref="MenuHighlight.ListTop"/>, <see cref="GoldBox.Client.Screens.ListPage.Shared"/>),
+    /// which is the program's: this value serves a page without it.</summary>
     public int Top { get; init; }
 
     /// <summary>With <see cref="Paging"/>: the spell list's own screen (0x239D6 / 0x270A2), drawn instead of <see cref="Lines"/>.</summary>

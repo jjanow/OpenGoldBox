@@ -496,7 +496,8 @@ and Speed menus, an AI attack at game speed 9). Code: `src/GoldBox.Client/Screen
   −1 once, 0x18404), the hall's Learn 0x1C32D (4, 4; −1 once at 0x1C8EB, the loop back to 0x1C8F0 keeps it).
   **0x2D669** (rows R = y1 − y0 + 1: 18, Memorize 11; N = the entries, headings included; L = the leading entries
   with +0x29 ≠ 0, the headings at the head; the window's top DS:6B29 is one global word, 1 after the start-up,
-  0xE9DA): on entry the top goes up to the position when below it, to 0 when past N; the position + 1, then one row
+  0xE9DA, written only here and by the paging: every list, the fight's Items, coin and spell lists too, leaves it for
+  the next, por-art-formats.md "Creation's list labels", s45): on entry the top goes up to the position when below it, to 0 when past N; the position + 1, then one row
   up (0x2D594(0): below the top → top + R − 1; past N − 1 → N − 1) and past headings upwards (0x2D3D2(0), at most R
   steps, same wrapping). So a list whose row 0 is a heading starts on the window's last row, or the list's (the hall's
   Learn: DOSBox-X showed the last row highlighted). Each pass: the menu line is the caller's word, then " Next" when

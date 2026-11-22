@@ -87,6 +87,7 @@ public sealed class ExploreScreen : IScreen
         ClientArt? art = null, MenuHighlight? highlight = null)
     {
         _highlight = highlight ?? new MenuHighlight { Index = LoadMenuIndex(game.Content.SaveFolder, char.ToUpperInvariant(lastLetter)) };
+        _list.Shared = _highlight; // the list pages enter and page the list routine's global top (MenuHighlight.ListTop)
         _game = game;
         _player = player;
         game.Loop.Redrawn += () =>
@@ -484,7 +485,8 @@ public sealed class ExploreScreen : IScreen
 
     // ---- VMENU's list routine 0x2D669 (ChoiceRequest.ListRow; P s30, D s44) --------------------------------------
 
-    /// <summary>The list window's first entry (DS:6B29): 0 when VMENU opens (its position 0, 0x2D766), moved only by Next / Prev.</summary>
+    /// <summary>The list window's first entry (DS:6B29, the shared <see cref="MenuHighlight.ListTop"/>): 0 when VMENU
+    /// opens (its position 0, 0x2D766), moved only by Next / Prev, which leave it in the shared word.</summary>
     private int _listTop;
 
     /// <summary>The lit word of the list's menu line (the shared cell; 0x2D6B9 stores 1 on entry).</summary>
@@ -512,6 +514,7 @@ public sealed class ExploreScreen : IScreen
     private void PageList(ChoiceRequest c, bool down)
     {
         (_selected, _listTop) = ListWindowSteps.Page(_selected, _listTop, ListWindow(c).Rows, c.Items.Count, down);
+        _highlight.ListPaged(_listTop); // 0x2D502: the global word, kept for the next list
         _listWord = ListWord(c);
     }
 
@@ -732,7 +735,11 @@ public sealed class ExploreScreen : IScreen
         // Row 24 is drawn again by a menu (0x2CC8C fills the row), a message, a prompt or the command line once the run
         // ends: PROTECT's glyphs there are gone (P, s30).
         if (request is ChoiceRequest or KeyRequest or TextRequest or DelayRequest { BottomLine: not null })
+        {
             _player.BottomRowDrawn();
+            if (request is not KeyRequest { PagePrompt: true })
+                _player.ForgetPagePrompt(); // the page prompt left on row 24 is drawn over
+        }
         _selected = 0;
         _typed = "";
         _hasClickAnswer = false;
@@ -748,7 +755,9 @@ public sealed class ExploreScreen : IScreen
             case ChoiceRequest v:
                 _highlight.ItemList();
                 _selected = Math.Clamp(v.Selected, 0, Math.Max(0, v.Items.Count - 1));
-                (_listTop, _listWord, _listPageClick) = (0, 0, null);
+                // 0x2D766 with VMENU's position 0 (0x1D51): the global top to 0 (an empty list leaves it).
+                _listTop = v.ListRow is not null && v.Items.Count > 0 ? _highlight.ListEntered(0, v.Items.Count) : 0;
+                (_listWord, _listPageClick) = (0, null);
                 break;
             case KeyRequest { AsMenu: true } km:
                 _highlight.Start(km.MenuEntries);
@@ -758,12 +767,7 @@ public sealed class ExploreScreen : IScreen
                 if (l.SharedHighlight)
                     _list.SetAction(l, _highlight.Start(l.Actions.Count));
                 else
-                {
-                    _highlight.Index = _list.SelectedAction;
-                    // The list routine's entry moves its global window top (MenuHighlight.ListTop): camp Display
-                    // (position 0) takes it to 0, so a later creation list shows its label (DOSBox-X s44).
-                    _highlight.ListEntered(l.Selected, l.Rows.Count);
-                }
+                    _highlight.Index = _list.SelectedAction; // _list.Sync entered the list routine's global top (ListPage.Shared)
                 break;
         }
 
@@ -1021,7 +1025,10 @@ public sealed class ExploreScreen : IScreen
             // A full-screen window (START 03F1:02E8 with 1, 1, 38, 22) and the bottom line.
             Chrome.Box(f, 0, 0, 39, 23);
             foreach (var line in window)
-                Chrome.Text(f, font, line.Column, line.Row, Fit(line.Text, 39 - line.Column), line.Colour);
+                if (line.Glyphs)
+                    Chrome.Glyphs(f, font, line.Column, line.Row, Fit(line.Text, 39 - line.Column), line.Colour);
+                else
+                    Chrome.Text(f, font, line.Column, line.Row, Fit(line.Text, 39 - line.Column), line.Colour);
             // The press-enter menu with $4AFF set draws the loaded frames at cell (3, 3) over the window (KeyRequest.EveryPass).
             if (pending is KeyRequest { EveryPass: true } && ShownPicture is { } overWindow)
                 _art.Pictures.Draw(f, ViewX, ViewY, overWindow, _anim.Frame);
@@ -1029,6 +1036,8 @@ public sealed class ExploreScreen : IScreen
                 DrawKeyLine(f, font, wk, input);
             else if (pending is DelayRequest { BottomLine: not null } windowDelay)
                 DrawBottomLine(f, font, windowDelay);
+            else if (pending is DelayRequest or null && _player.PagePromptStands)
+                DrawKeyLine(f, font, StalePagePrompt, input); // the wipe's message typed over the page prompt (FS-UAE s45)
             else if (_player.KeepsCombatRow24 && _combatRow24 is { } row24 && row24.Length == f.Width * 8)
                 Array.Copy(row24, 0, f.Pixels, MenuRow * 8 * f.Width, row24.Length); // the fight's last row 24 (DOSBox-X s39)
             else if (pending is DelayRequest && !_player.WindowAfterFight)
@@ -1050,10 +1059,23 @@ public sealed class ExploreScreen : IScreen
             // (s39, the explore and camp screens after a load): the full window (1, 1)–(38, 22), the text box's
             // (1, 17)–(38, 22), the view's (1, 1)–(15, 15) and its box (3, 3)–(13, 13): rows 0, 16 and 23 are strips from
             // column 1, column 16 the view window's right side, the corners at (16, 0) and (16, 16) the view window's
-            // (por-art-formats.md §4 "Window frame").
-            Chrome.Box(f, 0, 0, 39, 23);
-            Chrome.Box(f, 0, 16, 39, 23);
-            Chrome.Box(f, 0, 0, 16, 16);
+            // (por-art-formats.md §4 "Window frame"). That is the 3D layout (hunk 13 +0x5A82, the copy of START 0x32CA,
+            // also under the overland's venues). The overland interface (hunk 13 +0x5E80 → hunk 25 +0x1D4E, the copy of
+            // 0x2E03F) draws three windows instead: the view's (1, 1)–(15, 15), the party list's (17, 1)–(38, 15) and the
+            // text box's (1, 17)–(38, 22), so column 16 is the party window's left side, row 0 over it that window's top
+            // and (16, 16) the text box's top edge (FS-UAE s45, block 26's overland after a Load).
+            if (overlandLayout)
+            {
+                Chrome.Box(f, 0, 0, 16, 16);
+                Chrome.Box(f, 16, 0, 39, 16);
+                Chrome.Box(f, 0, 16, 39, 23);
+            }
+            else
+            {
+                Chrome.Box(f, 0, 0, 39, 23);
+                Chrome.Box(f, 0, 16, 39, 23);
+                Chrome.Box(f, 0, 0, 16, 16);
+            }
             if (viewBox)
                 Chrome.Box(f, 2, 2, 14, 14);
         }
@@ -1113,6 +1135,9 @@ public sealed class ExploreScreen : IScreen
             DrawLine(f, font, h.Items, _selected, start, h.HotkeyOf, h.Columns, h.ScriptText, Pens(h));
             (_keptMenu, _keptSelected, _keptMenuDrawn) = (h, _selected, true);
         }
+        else if (pending is DelayRequest { BottomLine: null } or null && _runner.Busy && _player.PagePromptStands)
+            // The text after a page prompt is typed with the prompt still on row 24 (its key wait does not blank it).
+            DrawKeyLine(f, font, StalePagePrompt, input);
         else if (pending is DelayRequest { BottomLine: null } keptDelay && (keptDelay.KeepCommandLine || _player.Camping)
             && keptMenuWasDrawn && _keptMenu is { } kept && !AmigaView.On)
             // typing keeps the row; in the camp a message's pause does too (D s33: the rest-time menu under the revive text).
@@ -1241,6 +1266,9 @@ public sealed class ExploreScreen : IScreen
         }
     }
 
+    /// <summary>The text window's page prompt as its key wait drew it, left on row 24 (<see cref="ClientPlayer.PagePromptStands"/>).</summary>
+    private static readonly KeyRequest StalePagePrompt = new() { PagePrompt = true };
+
     private void DrawBottomLine(IndexedFrame f, TextFont font, DelayRequest delay)
     {
         if (delay.BottomLine is not { } line)
@@ -1265,35 +1293,16 @@ public sealed class ExploreScreen : IScreen
     /// <summary>The menu routine's prompt colour and the page prompt's (0x2CC8C / START 0x7C85: 13).</summary>
     private const byte MenuPromptColour = 13;
 
-    /// <summary>The script text window's cells (rows 17-22) as the program's text routine left them.</summary>
+    /// <summary>The script text window's cells (rows 17-22) as the program's routines left them, in their draw order
+    /// (<see cref="Chrome.TextRuns"/>: whole strings and printed glyphs as the Amiga draws them).</summary>
     private void DrawTextWindow(IndexedFrame f, TextFont font)
     {
         var t = _player.Text;
         for (int r = TextWindow.Top; r <= TextWindow.Bottom; r++)
-            for (int c = TextWindow.Left; c <= TextWindow.Right + 1; c++)
-            {
-                var (ch, colour) = t.Cell(r, c);
-                if (ch == default || _art.Runes?.Draw(f, c, r, ch) == true) // PROTECT's glyphs in the Amiga rune font
-                    continue;
-                if (c > TextWindow.Right)
-                    Chrome.Clear(f, c, r, 1); // a glyph cell is drawn whole: over the frame its background is black
-                // 16–31: an Amiga caller's own pen (only set under the Amiga pages): the run of cells in that pen drawn as
-                // one string, pass 1 then pass 2, so each glyph's pass-2 spill stays over the next glyph (FS-UAE s44).
-                if (colour is >= 16 and <= 31)
-                {
-                    int end = c;
-                    var run = new System.Text.StringBuilder();
-                    while (end <= TextWindow.Right + 1 && t.Cell(r, end) is var (rc, rp) && rc != default && rp == colour)
-                        run.Append(t.Cell(r, end++).Char);
-                    if (run.Length > 0 && font.DrawAmiga(f, c * 8, r * 8, run.ToString(), colour))
-                    {
-                        c = end - 1;
-                        continue;
-                    }
-                    colour = Chrome.White;
-                }
-                Chrome.Text(f, font, c, r, ch.ToString(), colour);
-            }
+            if (t.Cell(r, TextWindow.Right + 1).Char != default)
+                Chrome.Clear(f, TextWindow.Right + 1, r, 1); // a glyph cell is drawn whole: over the frame its background is black
+        Chrome.TextRuns(f, font, t.Runs(TextWindow.Top, TextWindow.Bottom),
+            (c, r, ch) => _art.Runes?.Draw(f, c, r, ch) == true); // PROTECT's glyphs in the Amiga rune font
     }
 
     /// <summary>A key wait's line: the program's prompt for the keyboard, the button or click for pad and mouse.</summary>
@@ -1466,9 +1475,9 @@ public sealed class ExploreScreen : IScreen
         {
             // CLEARBOX blanked cells 1–15 (OverlandUi.Blank above)
         }
-        // Shop/temple (START 0x3379 case 1): an empty view box, also after a PICTURE before CLRMON (DOSBox-X s22) and
-        // with the picture still armed (no CLRMON; DOSBox-X s24: empty on entry and after View → Exit, the 3D view back
-        // on leaving).
+        // Shop/temple (START 0x3379 case 1): the view box blanked, a PICTURE's PIC not shown, also before CLRMON
+        // (DOSBox-X s22) and with the picture still armed (no CLRMON; DOSBox-X s24: empty on entry and after View →
+        // Exit, the 3D view back on leaving); only the loader's last head + body (ClientPlayer.VenuePortrait).
         else if (_player.Interface == Venue.Shop && _player.VenuePictureOver && ShownPicture is { } venuePicture
             && _art.Pictures.Draw(f, ViewX, ViewY, venuePicture, _anim.Frame))
         {
@@ -1479,6 +1488,9 @@ public sealed class ExploreScreen : IScreen
             for (int y = 0; y < 88; y++)
                 for (int x = 0; x < 88; x++)
                     f[ViewX + x, ViewY + y] = 0;
+            // ... and the last head + body given to the loader (DS:49FD / 49FE), the parts the files have.
+            var (head, body) = _player.VenuePortrait;
+            _art.Pictures.DrawVenuePortrait(f, ViewX, ViewY, head, body, _game.Memory.Disk);
         }
         else if (_player.ViewBlanked)
         {
@@ -1619,8 +1631,12 @@ public sealed class ExploreScreen : IScreen
             {
                 int i = from + r;
                 Chrome.Clear(f, TextWindow.Left, first + r, TextWindow.Right - TextWindow.Left + 1);
-                Chrome.Text(f, font, TextWindow.Left, first + r, Fit(c.Items[i], TextWindow.Right - TextWindow.Left + 1),
-                    i == _selected ? Chrome.White : Chrome.Green);
+                string row = Fit(c.Items[i], TextWindow.Right - TextWindow.Left + 1);
+                // The lit row: DOS white; the Amiga list routine's bar (hunk 13 +0x2B76 through hunk 4 +0x1A4C, FS-UAE s45).
+                if (i == _selected)
+                    Chrome.Lit(f, font, TextWindow.Left, first + r, row, Chrome.White, listRow: true);
+                else
+                    Chrome.Text(f, font, TextWindow.Left, first + r, row, Chrome.Green);
             }
             // Row 24: the menu line " Next" / " Prev" through 0x2CC8C from column 0, so the words from column 1; the row
             // is blanked past the line (DOSBox-X s44).

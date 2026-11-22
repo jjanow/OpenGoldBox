@@ -135,6 +135,8 @@ public class SpellPageLayoutTests
         var box = SpellLists.SlotBox(who, new GameText(), (level, cls) => level == 1 ? 3 : 2);
         Assert.Equal((1, 18), (box[0].Column, box[0].Row));
         Assert.Equal((1, 19), (box[1].Column, box[1].Row));
+        // s45: the words are printed (the text routine, glyph by glyph on the Amiga); name and class lines are strings.
+        Assert.Equal((false, true, false), (box[0].Glyphs, box[1].Glyphs, box[2].Glyphs));
         Assert.Equal(20, box[2].Row);                       // the only class with slots, on row 20
         Assert.True(box[2].Text.Length >= 18);              // right-aligned in 18 as the cleric line's own spaces do
         Assert.Contains(box, l => (l.Column, l.Row, l.Text) == (20, 20, "3"));

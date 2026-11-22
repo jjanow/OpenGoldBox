@@ -16,7 +16,8 @@ namespace GoldBox.Client.Tests;
 /// </summary>
 public class VmenuPagingWhoTests
 {
-    private sealed record Rig(ExploreScreen Screen, PorGame Game, ScriptRunner Runner, ActionInput Input, ClientPlayer Player);
+    private sealed record Rig(ExploreScreen Screen, PorGame Game, ScriptRunner Runner, ActionInput Input, ClientPlayer Player,
+        MenuHighlight Highlight);
 
     private static readonly string[] Nine = ["ALPHA", "BRAVO", "CHARLIE", "DELTA", "ECHO", "FOXTROT", "GOLF", "HOTEL", "INDIA"];
 
@@ -41,7 +42,9 @@ public class VmenuPagingWhoTests
             new PorPlayer(player, player, player, player), 7);
         var art = new ClientArt(dir, game.Art, new ScreenPalette(), PorArtChoice.Dos);
         var input = new ActionInput(InputBindings.Defaults());
-        return new Rig(new ExploreScreen(game, player, runner, new TestRig.NoHost(), 'A', art), game, runner, input, player);
+        var highlight = new MenuHighlight { Index = ExploreScreen.LoadMenuIndex(game.Content.SaveFolder, 'A') };
+        return new Rig(new ExploreScreen(game, player, runner, new TestRig.NoHost(), 'A', art, highlight), game, runner, input,
+            player, highlight);
     }
 
     private static void Key(Rig r, Keys k)
@@ -118,6 +121,32 @@ public class VmenuPagingWhoTests
         Key(r, Keys.Escape);
         Assert.Null(r.Runner.Pending);
         Assert.Equal(1, pick);
+        r.Runner.Dispose();
+    }
+
+    [Fact]
+    public void Vmenu_enters_the_list_routines_global_top_and_its_paging_leaves_it()
+    {
+        // Read s45: VMENU calls 0x2D669 with the position 0 (0x1D51), so its entry takes the global top DS:6B29 to 0
+        // (0x2D766); N / PgUp move the word itself (0x2D502), which keeps it after the menu, Escape included.
+        if (Dir() is not { } dir)
+            return;
+        var r = Start(dir);
+        Assert.Equal(MenuHighlight.DosListTop, r.Highlight.ListTop);
+        r.Runner.Start(() => r.Player.VerticalMenu("PICK ONE:", Nine));
+        Assert.IsType<ChoiceRequest>(r.Runner.Pending);
+        Key(r, Keys.None);
+        Assert.Equal(0, r.Highlight.ListTop);
+        Key(r, Keys.N);
+        Assert.Equal(4, r.Highlight.ListTop);              // min(0 + 5, 9 − 5)
+        Key(r, Keys.Escape);
+        Assert.Null(r.Runner.Pending);
+        Assert.Equal(4, r.Highlight.ListTop);
+        Assert.Equal(1, MenuHighlight.EnterList(r.Highlight.ListTop, 1, 7)); // a creation list then hides its label
+        r.Runner.Start(() => r.Player.VerticalMenu("PICK:", Nine[..3]));
+        Key(r, Keys.None);
+        Assert.Equal(0, r.Highlight.ListTop);
+        Key(r, Keys.Enter);
         r.Runner.Dispose();
     }
 

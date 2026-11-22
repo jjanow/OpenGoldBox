@@ -116,6 +116,32 @@ public sealed class TextFont
     }
 
     /// <summary>
+    /// The Amiga string routine (hunk 25 +0xC3C): the whole string in pass 1 in JAM2 (unset bits of each 8 × 8 cell in
+    /// <paramref name="background"/>, the rastport's background pen, which the program never sets `[?]`), then pass 2
+    /// one pixel right in JAM1. <paramref name="colour"/> below 16 is a DOS colour (the face's pens), 16–31 an
+    /// interface pen. False without a face that knows the colour (nothing drawn).
+    /// </summary>
+    public bool DrawString(IndexedFrame f, int x, int y, string text, int colour, byte background)
+    {
+        if (Face is not { } face)
+            return false;
+        if (colour < 16 && colour < face.Pens.Length)
+        {
+            DrawTwoPass(face, f, x, y, text, (byte)colour, background);
+            return true;
+        }
+        if (colour is < 16 or > 30 || face.InterfaceBase < 0)
+            return false;
+        for (int i = 0; i < text.Length; i++)
+            for (int r = 0; r < 8; r++)
+                for (int c = 0; c < 8; c++)
+                    Put(f, x + 8 * i + c, y + r, background);
+        Pass(face, f, x, y, text, (byte)(face.InterfaceBase + colour - 16));
+        Pass(face, f, x + 1, y, text, (byte)(face.InterfaceBase + colour - 15));
+        return true;
+    }
+
+    /// <summary>
     /// Draws <paramref name="text"/> once in the palette index <paramref name="pen"/>, set bits only, with the face's
     /// glyphs (an Intuition text drawn in one pass, e.g. a string gadget's); false without a face.
     /// </summary>

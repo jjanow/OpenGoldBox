@@ -45,6 +45,49 @@ public static class Chrome
     public static void Text(IndexedFrame f, TextFont font, int col, int row, string text, byte colour) =>
         font.Draw(f, col * 8, row * 8, text, colour);
 
+    /// <summary>
+    /// A text window's draws (<see cref="Play.TextWindow.Runs"/>) in the order the program made them. Under the Amiga
+    /// font a whole string goes through the string routine (<see cref="TextFont.DrawString"/>: pass 1 over the whole
+    /// string, JAM2, then pass 2) and a printed character through the glyph routine (its two passes, JAM1), so a glyph's
+    /// pass-2 pixel one to the right stays only when no later pass 1 covers it (s45). Colours 16–31 are Amiga pens
+    /// (white without the Amiga font). DOS draws every cell in one pass, so the order does not matter there.
+    /// <paramref name="special"/> draws a cell itself (PROTECT's runes) and says so.
+    /// </summary>
+    public static void TextRuns(IndexedFrame f, TextFont font, IEnumerable<Play.TextRun> runs,
+        Func<int, int, char, bool>? special = null)
+    {
+        foreach (var run in runs)
+        {
+            if (run.Text.Length == 1 && special?.Invoke(run.Column, run.Row, run.Text[0]) == true)
+                continue;
+            if (run.Whole && font.DrawString(f, run.Column * 8, run.Row * 8, run.Text, run.Colour, 0))
+                continue;
+            Glyphs(f, font, run.Column, run.Row, run.Text, run.Colour);
+        }
+    }
+
+    /// <summary>
+    /// Printed text glyph by glyph, as the Amiga's text routine draws it (hunk 25 +0x10EC → the glyph routine +0xA4E,
+    /// both passes of one character before the next); colours 16–31 are Amiga pens (white without the Amiga font).
+    /// Under the DOS font the same as <see cref="Text"/>.
+    /// </summary>
+    public static void Glyphs(IndexedFrame f, TextFont font, int col, int row, string text, byte colour)
+    {
+        if (font.Face is null)
+        {
+            Text(f, font, col, row, text, colour is >= 16 and <= 31 ? White : colour);
+            return;
+        }
+        for (int i = 0; i < text.Length; i++)
+        {
+            string ch = text[i].ToString();
+            if (colour < 16)
+                Text(f, font, col + i, row, ch, colour);
+            else if (!font.DrawAmiga(f, (col + i) * 8, row * 8, ch, colour))
+                Text(f, font, col + i, row, ch, White);
+        }
+    }
+
     /// <summary>The menu routine's prompt on the bottom row: the Amiga way under its text font (<see cref="TextFont.DrawMenuPrompt"/>).</summary>
     public static void MenuPrompt(IndexedFrame f, TextFont font, int col, int row, string text, byte colour) =>
         font.DrawMenuPrompt(f, col * 8, row * 8, text, colour);

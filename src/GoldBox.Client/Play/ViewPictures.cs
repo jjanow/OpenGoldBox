@@ -149,6 +149,41 @@ public sealed class ViewPictures
                 Blit(f, x, y, bd.X * 8, HeadRows, bd, Base(body), transparent: false);
                 return true;
             }
+            default:
+                return DrawSprite(f, x, y, v);
+        }
+    }
+
+    /// <summary>
+    /// The shop and temple screen's portrait (START 0x3379 case 1, 0x33BA–0x33D0; Amiga hunk 13 +0x5B5C–0x5B8A): the
+    /// head and body last given to the head + body loader (DS:49FD / 49FE, Amiga hunk 32 +0xC4 / +0xC5, set only by
+    /// GAME.OVR 0x79E4 / hunk 4 +0x5DC) are loaded part by part (0xFF = none; a part the files lack is not
+    /// loaded) and drawn at (3, 3). Each part present is drawn; the Amiga's single head.dax and body.dax serve every
+    /// disk (hunk 19 +0x1592), DOS opens the current disk's HEAD / BODY. False when neither part exists.
+    /// </summary>
+    public bool DrawVenuePortrait(IndexedFrame f, int x, int y, int head, int body, int disk)
+    {
+        bool anyDisk = _choice != PorArtChoice.Dos;
+        var h = head == 255 ? null : Find("HEAD", head, disk, anyDisk: anyDisk);
+        var bd = body == 255 ? null : Find("BODY", body, disk, anyDisk: anyDisk);
+        if (h is not { Frames: [_, ..] })
+            h = null;
+        if (bd is not { Frames: [_, ..] })
+            bd = null;
+        if (h is null && bd is null)
+            return false;
+        f.FillRect(x, y, Window, Window, (byte)Base(h ?? bd!));
+        if (h is { Frames: [var hf, ..] })
+            Blit(f, x, y, h.Variant == "dos" ? hf.X * 8 : AmigaHeadX, 0, hf, Base(h), transparent: false, clipRows: HeadRows);
+        if (bd is { Frames: [var bf, ..] })
+            Blit(f, x, y, bf.X * 8, HeadRows, bf, Base(bd), transparent: false);
+        return true;
+    }
+
+    private bool DrawSprite(IndexedFrame f, int x, int y, ViewPicture v)
+    {
+        switch (v.Kind)
+        {
             case ViewPictureKind.Sprite:
             {
                 if (Find("SPRIT", v.Id, v.Disk) is not { Frames.Count: > 0 } img)
