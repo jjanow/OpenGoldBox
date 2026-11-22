@@ -60,10 +60,10 @@ public sealed class MenuHighlight
     /// Items (0 on entry, 0x21F5F, then the row kept), the coin lists of Drop and the money Trade (0, 0x2365B / 0x2335A),
     /// VMENU (0, 0x1D51), the spell lists (0x270A2: −1 → 0, then kept by Memorize / Scribe / Learn), camp Display (0) and
     /// the venues' lists. The Client calls this from the list pages' hosts (<see cref="GoldBox.Client.Screens.ListPage"/>,
-    /// the explore, combat and party-menu screens) and the party-menu flow.
-    /// `[?]` Lists the Client draws as its own scrolling list do not page the word when longer than the program's
-    /// window: the shop's Buy (rows 4–22) and the loot take (4–22), Take's kinds (2–8), Add's roster (2–22); the
-    /// temple's heal list (4–15) passes an unset position word (0x50E7) and is left out.
+    /// the explore, combat and party-menu screens) and the party-menu flow; the venues' lists and Add too since s46
+    /// (the shop's Buy at position 1, the loot's take, Take's kinds and Add's roster at 0, each kept by its loop; the
+    /// temple's heal list, rows 4–15, ten rows: never paged, enters with position 0, the stack word its caller left,
+    /// 0x50E7, DOSBox-X s46, so it takes the top to 0).
     /// </summary>
     public int ListEntered(int position, int count) => count <= 0 ? ListTop : ListTop = EnterList(ListTop, position, count);
 

@@ -78,7 +78,7 @@ public sealed class HallView
                 int col = 0;
                 if (c.MenuPrompt is { Length: > 0 } mp)
                 {
-                    Chrome.MenuPrompt(f, font, 0, BottomRow, mp, PromptColour);
+                    Chrome.MenuPrompt(f, font, 0, BottomRow, mp, c.MenuPromptColour ?? PromptColour);
                     col = mp.Length + 1;
                 }
                 if (AmigaView.On)

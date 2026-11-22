@@ -169,7 +169,7 @@ public static class HallScreens
                 case TrainingHall.Entry.Begin:
                     return;
                 case TrainingHall.Entry.Exit:
-                    if (camp.Dialog.YesNo(AmigaView.Case(h.Text["Hall.QuitToDos"])))
+                    if (camp.Dialog.YesNo(AmigaView.Case(h.Text["Hall.QuitToDos"]), 14)) // 0x19DF7: 14 (Amiga hunk 10 +0xA38: 24)
                         camp.Quit?.Invoke();
                     break;
                 default:

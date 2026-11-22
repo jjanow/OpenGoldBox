@@ -79,6 +79,20 @@ public sealed class TextWindow
     /// </summary>
     public Action? Typed { get; set; }
 
+    /// <summary>
+    /// Called after each word the Amiga's print (<see cref="PrintAmiga"/>) draws, the last one (only the NUL) included:
+    /// hunk 25 +0x1286–0x1292 Delay(speed byte hunk 32 +0xA8 × 2) in AmigaDOS ticks of 1/50 s, so 40 ms per speed step
+    /// per word, with no typing-flag test (DOS's DS:4A00 has no Amiga counterpart here: every print waits). The owner
+    /// waits there; <see cref="Typed"/> is not called on that path. Null = at once.
+    /// </summary>
+    public Action? WordTyped { get; set; }
+
+    /// <summary>The cells <see cref="Print"/> / <see cref="PrintIn"/> have stored so far (for a typed line's reveal).</summary>
+    public int Printed { get; private set; }
+
+    /// <summary>The Amiga print's wait per word (<see cref="WordTyped"/>): speed × 2 ticks of 20 ms.</summary>
+    public static TimeSpan AmigaWordDelay(int speed) => TimeSpan.FromMilliseconds(40 * speed);
+
     public bool IsEmpty
     {
         get
@@ -370,8 +384,8 @@ public sealed class TextWindow
     /// column plus that count passes right + 1, so a line's last word needs one cell more than on DOS (FS-UAE s45:
     /// "Hitting for 12" / "points of" / "damage" in the fight panel, columns 23–38). Past the bottom row the cursor goes
     /// back to the top, the page prompt waits (<see cref="Pause"/>) and the box is blanked; then the word is printed,
-    /// its space or delimiter included. Nothing moves the cursor after the text. [?] The per-word wait (hunk 25 +0x1286:
-    /// speed byte hunk 32 +0xA8 × 2) is not modelled; the owner's <see cref="Typed"/> runs per character.
+    /// its space or delimiter included. Nothing moves the cursor after the text. After every word, the NUL's included,
+    /// the per-word wait (hunk 25 +0x1286: <see cref="WordTyped"/>); none per character.
     /// </summary>
     private void PrintAmiga(int left, int top, int right, int bottom, string text, bool clear, byte colour)
     {
@@ -407,13 +421,15 @@ public sealed class TextWindow
                 ClearRect(left, top, right, bottom);
             }
             if (end > start)
-                Put(text, start + 1, end, colour);
+                Put(text, start + 1, end, colour, typed: false);
+            WordTyped?.Invoke();
         }
         while (c != '\0');
     }
 
-    /// <summary>Characters p..i at the cursor, one cell each (0x7737); returns i + 1.</summary>
-    private int Put(string text, int p, int i, byte colour)
+    /// <summary>Characters p..i at the cursor, one cell each (0x7737), each followed by <see cref="Typed"/> unless
+    /// <paramref name="typed"/> is false (the Amiga's print waits per word); returns i + 1.</summary>
+    private int Put(string text, int p, int i, byte colour, bool typed = true)
     {
         for (; p <= i; p++)
         {
@@ -426,9 +442,11 @@ public sealed class TextWindow
                 _colours[r, c] = colour;
                 _draws[r, c] = ++_lastDraw;
                 _whole[r, c] = false;
+                Printed++;
             }
             Column++;
-            Typed?.Invoke();
+            if (typed)
+                Typed?.Invoke();
         }
         return p;
     }

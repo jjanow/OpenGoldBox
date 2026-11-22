@@ -78,7 +78,7 @@ public class ListTopTests
     [Fact]
     public void A_list_without_paging_enters_the_top_at_its_position()
     {
-        // View's Items under a venue, the shop's lists: the Client's scrolling list, the program's routine underneath.
+        // View's Items under a venue: the Client's scrolling list, the program's routine underneath.
         var h = new MenuHighlight();
         var page = new ListPage { Shared = h };
         page.Sync(new ListRequest([], ["A", "B"], ["EXIT"], 0));

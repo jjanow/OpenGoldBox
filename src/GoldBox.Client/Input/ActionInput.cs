@@ -30,6 +30,7 @@ public sealed class ActionInput(InputBindings bindings)
     private readonly Dictionary<GameAction, TimeSpan> _nextRepeat = [];
     private readonly List<ScreenClick> _clicks = [];
     private (InputDevice Device, string Name)? _newInput;
+    private bool _newShifted;
 
     public InputBindings Bindings { get; set; } = bindings;
 
@@ -44,6 +45,12 @@ public sealed class ActionInput(InputBindings bindings)
 
     /// <summary>The first new key or pad button this frame, by binding name (for rebinding).</summary>
     public (InputDevice Device, string Name)? NewInput => _newInput;
+
+    /// <summary>
+    /// The keyboard's <see cref="NewInput"/> types a capital: Shift held or Caps Lock on, not both (an Amiga keymap's
+    /// letters; <see cref="GoldBox.Client.Play.TextRequest.KeepsCase"/>). False for a pad button and with no new input.
+    /// </summary>
+    public bool NewShifted => _newShifted;
 
     public bool Pressed(GameAction a) => _pressed.Contains(a);
 
@@ -70,8 +77,11 @@ public sealed class ActionInput(InputBindings bindings)
             if (_prevKeys.IsKeyUp(k) && !IsModifier(k))
             {
                 LastDevice = InputDevice.Keyboard;
-                _newInput ??= (InputDevice.Keyboard, Modified(keys, k.ToString()));
+                // A Shift pressed in the same frame as a letter gives way to the letter (it only changes its case).
+                if (_newInput is null || (_newInput is (InputDevice.Keyboard, "LeftShift" or "RightShift") && !IsShift(k)))
+                    _newInput = (InputDevice.Keyboard, Modified(keys, k.ToString()));
             }
+        _newShifted = _newInput is (InputDevice.Keyboard, _) && ShiftDown(keys) != keys.CapsLock;
         if (pad.IsConnected)
             foreach (var b in AllButtons)
                 if (pad.IsButtonDown(b) && !_prevPad.IsButtonDown(b))
@@ -119,6 +129,10 @@ public sealed class ActionInput(InputBindings bindings)
 
     private static bool IsModifier(Keys k) =>
         k is Keys.LeftAlt or Keys.RightAlt or Keys.LeftControl or Keys.RightControl;
+
+    private static bool IsShift(Keys k) => k is Keys.LeftShift or Keys.RightShift;
+
+    private static bool ShiftDown(KeyboardState keys) => keys.IsKeyDown(Keys.LeftShift) || keys.IsKeyDown(Keys.RightShift);
 
     private static bool AltDown(KeyboardState keys) => keys.IsKeyDown(Keys.LeftAlt) || keys.IsKeyDown(Keys.RightAlt);
     private static bool CtrlDown(KeyboardState keys) => keys.IsKeyDown(Keys.LeftControl) || keys.IsKeyDown(Keys.RightControl);
@@ -178,7 +192,8 @@ public sealed class ActionInput(InputBindings bindings)
 
     /// <summary>A key or button press waiting in the buffer: its actions, its name, and the bytes the BIOS holds for it
     /// (<see cref="DosKeys.Of"/>; null for a pad button, a held key's repeat or a key the PC has no BIOS key for).</summary>
-    private sealed record Waiting(HashSet<GameAction> Pressed, (InputDevice Device, string Name)? New, (byte Ascii, byte Scan)? Dos);
+    private sealed record Waiting(HashSet<GameAction> Pressed, (InputDevice Device, string Name)? New, (byte Ascii, byte Scan)? Dos,
+        bool Shifted = false);
 
     /// <summary>The BIOS type-ahead buffer holds 15 keys; a key pressed when it is full is lost (DOSBox-X s24).</summary>
     public const int BufferSize = 15;
@@ -230,10 +245,12 @@ public sealed class ActionInput(InputBindings bindings)
             }
             _pressed.Clear();
             _newInput = null;
+            _newShifted = false;
             if (read is null)
                 return;
             _pressed.UnionWith(read.Pressed);
             _newInput = read.New;
+            _newShifted = read.Shifted;
             if (read.New is { } n)
                 LastDevice = n.Device;
             return;
@@ -245,6 +262,7 @@ public sealed class ActionInput(InputBindings bindings)
         _pressed.Clear();
         _clicks.Clear();
         _newInput = null;
+        _newShifted = false;
     }
 
     private void ToggleSoundIfRead(Waiting key)
@@ -258,7 +276,7 @@ public sealed class ActionInput(InputBindings bindings)
         if (_waiting.Count >= BufferSize)
             return;
         var dos = _newInput is (InputDevice.Keyboard, var name) ? DosKeys.Of(name) : null;
-        _waiting.Add(new Waiting([.. _pressed], _newInput, dos));
+        _waiting.Add(new Waiting([.. _pressed], _newInput, dos, _newShifted));
     }
 
     /// <summary>

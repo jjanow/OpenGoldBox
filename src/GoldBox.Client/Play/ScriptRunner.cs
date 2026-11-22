@@ -27,8 +27,18 @@ public sealed record ChoiceRequest(string? Prompt, IReadOnlyList<string> Items, 
     public (int Words, int Capitals)? AmigaPens { get; init; }
 
     /// <summary>The prompt's colour when the caller passes another than 13 (the yes/no routine 0x3C5:0x39 takes it as an
-    /// argument: 13 or 14, e.g. 14 for the camp's keep questions 0x1818B / 0x182BA and the quit question 0x19791).</summary>
+    /// argument: 13 or 14, e.g. 14 for the camp's keep questions 0x1818B / 0x182BA and the quit question 0x19791). Under the Amiga
+    /// pages an interface pen (16–30) the Amiga caller passes (24 for DOS's 14, AmigaView.YesNoPrompt).</summary>
     public byte? MenuPromptColour { get; init; }
+
+    /// <summary>
+    /// The menu routine's word colours when the caller passes others than 10 / 15 (DOS): the words in
+    /// <c>Words</c>, the lit word and every hotkey letter in <c>Lit</c>. The yes/no routine 0x3C5:0x39 takes them as
+    /// arguments; three of its 26 calls in GAME.OVR pass 13, 15, 10 (the temple's pay question 0x46CE, the camp cast's
+    /// two questions 0x27CCA / 0x27D30): the words white, the lit one and the hotkeys green (DOSBox-X s46, the pay
+    /// question: "Y" green, "ES" white, "NO" green). Null: 10 / 15.
+    /// </summary>
+    public (byte Words, byte Lit)? MenuColours { get; init; }
 
     /// <summary>
     /// Each item's column from the menu's start, when the program's menu line has more than one space between items:
@@ -191,6 +201,16 @@ public sealed record ListRequest(IReadOnlyList<ListLine> Lines, IReadOnlyList<st
     /// which is the program's: this value serves a page without it.</summary>
     public int Top { get; init; }
 
+    /// <summary>
+    /// With <see cref="Paging"/>: the caller takes the highlighted row on any key the list routine returns but Escape, E
+    /// and 0 (Take's coin kinds, 0x25B14 → 0x25B25), so Return (the pad's A, a click on the lit row) answers
+    /// <see cref="RowPicked"/> with the row whatever word is lit; the words still answer their own index.
+    /// </summary>
+    public bool EnterPicks { get; init; }
+
+    /// <summary>The answer's action when <see cref="EnterPicks"/> took the row.</summary>
+    public const int RowPicked = -20;
+
     /// <summary>With <see cref="Paging"/>: the spell list's own screen (0x239D6 / 0x270A2), drawn instead of <see cref="Lines"/>.</summary>
     public SpellPageLayout? Spell { get; init; }
 
@@ -199,6 +219,13 @@ public sealed record ListRequest(IReadOnlyList<ListLine> Lines, IReadOnlyList<st
     /// Cast list (0x14C0F → 0x239D6; D s33: the list on dark grey); View's pages restore the normal palette.
     /// </summary>
     public bool Grey { get; init; }
+
+    /// <summary>
+    /// The keyboard's Return runs the first action word on the highlighted row whatever word is lit: the list routine
+    /// returns 13 with the row and the caller acts on 13 (the heal list 0x50F2: DOSBox-X s46, Exit lit, Return asked
+    /// for the lit row's cure). The pad's confirm and a click take the lit word.
+    /// </summary>
+    public bool ReturnRunsFirstAction { get; init; }
 }
 
 /// <summary>
@@ -221,15 +248,31 @@ public sealed record SpellPageLayout(string Name, byte NameColour, string Title)
 
     /// <summary>
     /// Camp Display (0x187ED, P s34): one full-screen window (START 03F1:02E8 with 1, 1, 38, 22, colour 15) with
-    /// <see cref="Title"/> centred on row 1 in white and no name; the list window is the request's rows.
+    /// <see cref="Title"/> centred on row 1 in white and no name; the list window is the request's rows. The venues'
+    /// lists draw the same window (P + D s46): the shop's Buy (0x6E1A, "Shop") and the loot's item take (0x609C,
+    /// "Loot"), Take's coin kinds (0x2597B, no title); Add's roster clears the inside only (0x1C9FF), under the party
+    /// menu's frame.
     /// </summary>
     public bool CentredTitle { get; init; }
 
     /// <summary>The list routine's label colour (0x2D669's first colour: 13 for the spell lists, 11 for Display).</summary>
     public byte LabelColour { get; init; } = 13;
 
+    /// <summary>
+    /// The temple's heal list (0x4F4E, P + D s46): <see cref="Title"/> is the whole title line, printed at (1, 1) in white
+    /// (0x709:0x626 with colour 15) with no name before it; the list window's frame and the text box's are drawn as for
+    /// Memorize (<see cref="Box"/> empty: the box blank).
+    /// </summary>
+    public bool WholeTitle { get; init; }
+
+    /// <summary>The list window's first column (0x2D669's x0: 1 for the spell lists, 2 for the heal list).</summary>
+    public int RowColumn { get; init; } = 1;
+
+    /// <summary>The column the menu words start at on row 24 when set (the heal list's "Heal Exit" from column 0).</summary>
+    public int? MenuColumn { get; init; }
+
     /// <summary>The column the menu words start at on row 24.</summary>
-    public int MenuStart => Prompt is { Length: > 0 } p ? p.Length : 1;
+    public int MenuStart => MenuColumn ?? (Prompt is { Length: > 0 } p ? p.Length : 1);
 }
 
 /// <summary>
@@ -256,6 +299,13 @@ public sealed record TextRequest(string Prompt, bool Numeric, int MaxLength) : P
     /// empty line); null: none.
     /// </summary>
     public ushort? Maximum { get; init; }
+
+    /// <summary>
+    /// The keyboard types letters as an Amiga keymap does (lower case unless Shift or Caps Lock), not DOS's capitals:
+    /// the Amiga's input requester (hunk 25 +0xEC6) is a plain Intuition string gadget (no ALTKEYMAP), and the name
+    /// prompts keep what it gives (creation's name, Rename). The pad / mouse letter grid stays upper case.
+    /// </summary>
+    public bool KeepsCase { get; init; }
 }
 
 /// <summary>A pause (DELAY): answered by the screen when the time has passed.</summary>

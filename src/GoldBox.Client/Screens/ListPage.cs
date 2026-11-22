@@ -185,7 +185,7 @@ public sealed class ListPage
             Remenu(r);
             return;
         }
-        // The item lists without paging (View's Items under a venue, the shop's and temple's lists) still enter the
+        // The item lists without paging (View's Items under a venue, the temple's heal list) still enter the
         // routine's global top at their position; their window is the Client's scrolling list.
         if (!r.SharedHighlight)
             Shared?.ListEntered(Math.Max(0, r.Selected), r.Rows.Count);
@@ -315,6 +315,8 @@ public sealed class ListPage
             return Answer(ChoiceRequest.NextMember, _row);
         if (r.Paging is not null && PageKeys(r, input))
             return null;
+        if (r.EnterPicks && r.Paging is not null && input.Pressed(GameAction.Confirm) && input.LastDevice != InputDevice.Mouse && Pickable(r))
+            return Answer(ListRequest.RowPicked, _row);
         if (input.Pressed(GameAction.Confirm) && input.LastDevice != InputDevice.Mouse && r.Paging is not null && _action < _map.Count && _map[_action] < 0)
         {
             // The program's Enter returns 13 with the highlighted row (0x2D669: any key but the page words' hotkeys,
@@ -323,6 +325,9 @@ public sealed class ListPage
             int first = _map.FindIndex(a => a >= 0);
             return first >= 0 && UsableWord(r, first) ? Choose(r, first) : null;
         }
+        if (input.Pressed(GameAction.Confirm) && r.ReturnRunsFirstAction && input.LastDevice == InputDevice.Keyboard
+            && _map.FindIndex(a => a >= 0) is var firstWord and >= 0 && UsableWord(r, firstWord))
+            return Choose(r, firstWord); // Return is 13 with the row, whatever word is lit (ListRequest.ReturnRunsFirstAction)
         if (input.Pressed(GameAction.Confirm) && UsableWord(r, _action))
             return Choose(r, _action);
         if (input.Pressed(GameAction.Cancel) && r.CancelAction is { } ca)
@@ -355,7 +360,9 @@ public sealed class ListPage
         {
             if (r.Labels.Contains(i))
                 return null;
-            if (i == _row && Usable(r, 0))
+            if (i == _row && r.EnterPicks)
+                _clicked = Answer(ListRequest.RowPicked, i);
+            else if (i == _row && Usable(r, 0))
                 _clicked = Answer(0, i);
             _row = i;
             return null;
@@ -469,6 +476,12 @@ public sealed class ListPage
             string t = Fit(s.Title, 38);
             Chrome.Text(f, font, Math.Max(1, (1 + 38 - t.Length) / 2), 1, t, Chrome.White);
         }
+        else if (s.WholeTitle)
+        {
+            Chrome.Box(f, 0, 0, 39, 2);
+            Chrome.Box(f, 0, 2, 39, last + 1);
+            Chrome.Text(f, font, 1, 1, Fit(s.Title, 38), Chrome.White);
+        }
         else
         {
             Chrome.Box(f, 0, 0, 39, 2);
@@ -490,10 +503,11 @@ public sealed class ListPage
         for (int k = 0; k < p.Rows && _top + k < r.Rows.Count; k++)
         {
             int i = _top + k;
+            int col = s.RowColumn, room = 39 - col;
             if (!r.Labels.Contains(i) && i == _row && highlight)
-                Chrome.Lit(f, font, 1, first + k, Fit(r.Rows[i], 38), Chrome.White, listRow: true);
+                Chrome.Lit(f, font, col, first + k, Fit(r.Rows[i], room), Chrome.White, listRow: true);
             else
-                Chrome.Text(f, font, 1, first + k, Fit(r.Rows[i], 38), r.Labels.Contains(i) ? s.LabelColour : Chrome.Green);
+                Chrome.Text(f, font, col, first + k, Fit(r.Rows[i], room), r.Labels.Contains(i) ? s.LabelColour : Chrome.Green);
         }
         if (s.Prompt is { Length: > 0 } prompt)
             Chrome.Text(f, font, 0, ActionRow, Fit(prompt, 40), LabelColour);

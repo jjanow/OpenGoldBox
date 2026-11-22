@@ -25,6 +25,7 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
         get
         {
             _text.Typed ??= TypeDelay;
+            _text.WordTyped ??= WordDelay;
             return _text;
         }
     }
@@ -32,12 +33,8 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
     private readonly TextWindow _text = new();
 
     /// <summary>
-    /// After each character the text routine draws (0x7737): when DS:4A00 is set (<see cref="EclMemory.TypesText"/>)
-    /// Delay(DS:49E2 × 10) ms (START 0x777B–0x778D); speed 0 waits nothing. Off with <see cref="TypesText"/> (tests).
-    /// </summary>
-    /// <summary>
     /// A full-screen window's text through START 0x77F8 (the party-destroyed and party-killed messages): shown as it
-    /// grows and typed as <see cref="TypeDelay"/> says.
+    /// grows and typed as <see cref="TypeDelay"/> (DOS) or <see cref="WordDelay"/> (the Amiga's print) says.
     /// </summary>
     private void TypesInto(TextWindow box)
     {
@@ -47,7 +44,34 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
             Window = box.WindowLines();
             TypeDelay();
         };
+        box.WordTyped = () =>
+        {
+            Window = box.WindowLines();
+            WordDelay();
+        };
     }
+
+    /// <summary>
+    /// After each word the Amiga's print draws (hunk 25 +0x1286): Delay(speed × 2 ticks), 40 ms per speed step, whatever
+    /// DS:4A00 says (the Amiga's print has no such test); speed 0 waits nothing. Off with <see cref="TypesText"/> (tests)
+    /// and for the Client's own notices.
+    /// </summary>
+    private void WordDelay()
+    {
+        if (!TypesText || _atOnce)
+            return;
+        if (memory().GameSpeed is var speed and > 0)
+            runner.Ask(new DelayRequest(TextWindow.AmigaWordDelay(speed))
+            {
+                Chained = true,
+                KeepCommandLine = true,
+            });
+    }
+
+    /// <summary>
+    /// After each character the text routine draws (0x7737): when DS:4A00 is set (<see cref="EclMemory.TypesText"/>)
+    /// Delay(DS:49E2 × 10) ms (START 0x777B–0x778D); speed 0 waits nothing. Off with <see cref="TypesText"/> (tests).
+    /// </summary>
 
     private void TypeDelay()
     {
@@ -818,8 +842,11 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
     /// +0x5DC writes hunk 32 +0xC4 / +0xC5): a PICTURE with $6DE1 ≠ 255 and a portrait close-up. The shop and temple
     /// screen draws them in the view box (START 0x3379 case 1, <see cref="ViewPictures.DrawVenuePortrait"/>). Not
     /// saved. Start value 0, 0: the Amiga's are in its zeroed BSS hunk 32, so a fresh session's shop shows head 0
-    /// alone (body.dax has no block 0; FS-UAE s45, block 26's overland); DOS's are uninitialised data `[?]` (DOSBox-X
-    /// s22's slums shop on disk 2, whose HEAD2 has no block 0, showed an empty box).
+    /// alone (body.dax has no block 0; FS-UAE s45, block 26's overland). DOS's lie past START's initialised data (DS
+    /// 0–0x442F) and the Turbo Pascal start-up clears nothing, so they hold what memory held when START loaded: 0, 0 in
+    /// DOSBox-X (s46, a state taken at the party menu after a plain boot, and the residue probe at the first heal list),
+    /// whose RAM starts cleared; on a real machine whatever was there `[?]`. DOSBox-X s46: a temple and a shop entered
+    /// right after PICTURE with $6DE1 = 5 (head 5 + body 2) show that portrait in the box, also again after the heal list.
     /// </summary>
     public (byte Head, byte Body) VenuePortrait { get; private set; }
 
@@ -1127,6 +1154,13 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
     /// <summary>The interface state the screens are in (DS:49F3: 1 shop/temple, 2 camp, 6 loot), null while exploring.</summary>
     public Venue? Interface { get; private set; }
 
+    /// <summary>The list routine's Next / Prev words (<see cref="TradeContext.ListWords"/>).</summary>
+    internal static (string Next, string Prev) ListWords(CombatText text)
+    {
+        var w = text.Words(CombatMsg.AimNextPrevManual);
+        return (w.ElementAtOrDefault(0) ?? "NEXT", w.ElementAtOrDefault(1) ?? "PREV");
+    }
+
     /// <summary>The context of the money and item screens on <paramref name="state"/>'s pool and treasure list.</summary>
     internal TradeContext? Trade(EncounterState? state)
     {
@@ -1165,6 +1199,7 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
             RosterDrawnLit = ReleaseRosterNamesLit,
             HoldPositionLine = on => PositionLineHeld = on,
             Text = Resources.Texts,
+            ListWords = ListWords(Resources.CombatTexts),
             Party = party,
             Pool = state?.Money ?? new uint[7],
             Treasure = state?.TreasureItems ?? [],
@@ -1518,6 +1553,7 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
         if (SaveFolder is null || memory().Party is not { } party || Game() is null)
             return "NO SAVE FOLDER.";
         var mem = memory();
+        AmigaView.SaveNames(party.Members); // the Amiga's Save writes each member through hunk 16 +0x49C (+0x199E)
         for (int k = 0; k < 3; k++)
             if (_wallSetKnown[k])
             {
@@ -1555,6 +1591,7 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
     {
         if (SaveFolder is null)
             return "NO SAVE FOLDER.";
+        AmigaView.SaveNames(party.Members); // as the camp's Save (hunk 16 +0x199E)
         try
         {
             var save = loaded is not null ? loaded.SaveAtPartyMenu(party, letter)

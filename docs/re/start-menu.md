@@ -334,7 +334,10 @@ through the menus with Keep, Exit, Escape and No; `IconEditorProgramTests`).
 ## 4. Add, Remove, Drop, View
 
 - **Add (0x1C9EC)**: the roster list (LoadCharlist 0x1DFF6, party members' names marked with the mark string), words
-  key `PartyMsg.AddExit`, prompt `PartyMsg.AddPrompt`. A picked unmarked name is loaded (0x1EAD2) and marked **before**
+  key `PartyMsg.AddExit`, prompt `PartyMsg.AddPrompt`. The page (P + D s46): the inside of the frame cleared, the list
+  routine's window (1, 2)–(38, 22) (21 rows, paged by Next / Prev after the words "Add Exit", no Exit flag; the Amiga
+  "Add" with the flag: "Add Next Exit"), position word 0 once (0x1CA19) and then kept; DOSBox-X with 30 names: ROSTER01–21,
+  N → ROSTER10–30 (`por-art-formats.md` "Creation's list labels"). A picked unmarked name is loaded (0x1EAD2) and marked **before**
   the join test, so a refused character also drops off the list when the menu writes it back. Join test
   (`PartyMenu.TryAdd`): an empty party takes it; else the party is walked counting player characters (0x84 < 0x80)
   until a member with the same name and byte 0xAB; when none, a player character joins while fewer than 6 were
@@ -570,7 +573,9 @@ v1.3 does **not** go back to the party menu: the program ends (D, s22: both path
     blanked, the line, a key) leaves its line on row 24, so it stands under the sixth line and the window's message
     while they are typed, as through the pause; the Client drew the command line or nothing there until s45
     (`ClientPlayer.PagePromptStands`; seen on the Amiga, whose copy hunk 25 +0xE78 is the same, FS-UAE s45,
-    por-art-formats.md "Party-killed window"; not grabbed in DOSBox-X while typing `[?]`).
+    por-art-formats.md "Party-killed window"). DOSBox-X s46 (a script PRINT that pages, then HMENU; ecl-format.md
+    "Page prompt under typed text"): the prompt stays on row 24 while the next page is typed, until the menu draws
+    there; the Client the same (the first page and its prompt pixel-equal; the typing pace not compared).
 - So after either screen and its key the ECL run stops, 0x403E returns and the program exits to DOS (D). Starting again
   means running the program again; the party is gone with the program's memory, the roster and save files on disk are
   as they were. A return to the party menu is an engine option (off = quit, as the original): Client

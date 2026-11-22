@@ -135,7 +135,7 @@ public static class CharacterView
     {
         var shown = new EclCharacter(shownBefore.Record);
         shown.Items.AddRange(shownBefore.Items);
-        if (t.Dialog.Ask(new TextRequest(AmigaView.RenamePrompt(c), false, AmigaView.RenameLength)) is string name)
+        if (t.Dialog.Ask(new TextRequest(AmigaView.RenamePrompt(c), false, AmigaView.RenameLength) { KeepsCase = true }) is string name)
             c.Name = name;
         return shown;
     }
@@ -332,7 +332,7 @@ public static class CharacterView
     private static void BoxBlank(TradeContext t) => t.Dialog.Text.ClearRect(BoxLeft, BoxTop, BoxRight, BoxBottom);
 
     /// <summary>START 0x2233 (0x1693): the text on row 24 in green, the game-speed pause (PauseOnly), row 24 cleared.</summary>
-    private static void RowMessage(TradeContext t, string text)
+    internal static void RowMessage(TradeContext t, string text)
     {
         int s = t.Memory?.GameSpeed ?? 0;
         if (s is > 0 and <= 9)

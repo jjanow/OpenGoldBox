@@ -280,6 +280,22 @@ public static class PorAmigaText
     /// </summary>
     public const string RestInterruptPen = "restInterrupt", RestHealPen = "restHeal";
 
+    /// <summary>
+    /// The yes/no question's prompt pen where DOS passes colour 14 (read s46; the question hunk 19 +0x58C8 takes text,
+    /// prompt, other letters and capitals and hands them to the menu routine +0x4DD6 unchanged). DOS's yes/no 0x2D9A0
+    /// has 23 callers: colour 13 (pen 26) or 14; every one of the eleven 14s (memorise and scribe, twice each, the three
+    /// quits, drop from party, the party menu's Drop and its "Are you sure?", Abort Spell) has an Amiga copy passing
+    /// <b>24</b> (red), read here at the memorise question (hunk 1 +0x3E9C). Not the 18 the text pens give colour 14.
+    /// </summary>
+    public const string YesNoWarnPen = "yesNoWarn";
+
+    /// <summary>
+    /// The yes/no questions whose other letters and capitals are swapped (read s46): DOS passes 13 / 15 / 10 (GAME.OVR
+    /// 0x46CE "pay for cure", 0x27CCA "Lose it?", 0x27D30 "Use it?"), the Amiga 26 / 16 / 28 (hunk 25 +0x3A72, hunk 22
+    /// +0x29CE, +0x2A28): read at "pay for cure".
+    /// </summary>
+    public const string YesNoSwappedWordsPen = "yesNoSwappedWords", YesNoSwappedCapitalsPen = "yesNoSwappedCapitals";
+
     /// <summary>The party menu's entries (hunk 10 +0x672: 11 × 42 bytes copied from hunk 11 +0xD2; DOS DS:061A, the
     /// same stride): "PartyMenu.0" … "PartyMenu.10". The last is the Amiga's own exit entry.</summary>
     public const string PartyMenuKey = "PartyMenu.";
@@ -477,6 +493,21 @@ public static class PorAmigaText
         (1, 0x4F04, "4879"),               // … pea the exit word.l (strcat)
         (1, 0x4F30, "4879"),               // … pea prompt.l, …
         (1, 0x4F36, "4eba044e"),           // … jsr the stub at +0x5386
+        (1, 0x3E94, "48780010"),           // Memorize These Spells?: pea capitals.w (16), …
+        (1, 0x3E98, "4878001c"),           // … pea others.w (28), …
+        (1, 0x3E9C, "4878"),               // … pea prompt.w, …
+        (1, 0x3EA0, "4879"),               // … pea the question.l, …
+        (1, 0x3EA6, "4eba152c"),           // … jsr the stub at +0x53D4 …
+        (1, 0x53D4, "4ef9"),               // … jmp the yes/no question (hunk 19 +0x58C8)
+        (25, 0x3A72, "4878"),              // pay for cure: pea capitals.w, …
+        (25, 0x3A76, "4878"),              // … pea others.w, …
+        (25, 0x3A7A, "4878001a"),          // … pea prompt.w (26), …
+        (25, 0x3A7E, "4879"),              // … pea the question.l, …
+        (25, 0x3A84, "4eba0ef6"),          // … jsr the stub at +0x497C …
+        (25, 0x497C, "4ef9"),              // … jmp the yes/no question
+        (19, 0x58DA, "1e2d000f1c2d00131a2d0017"),   // the question: prompt, others, capitals …
+        (19, 0x5902, "4879"),              // … with its "Yes No" words …
+        (19, 0x590C, "6100f4c8"),          // … to the menu routine (+0x4DD6) as they came
     ];
 
     // (hunk, offset, target hunk, value): RELOC32 longs of the call-site reads.
@@ -493,6 +524,8 @@ public static class PorAmigaText
         (1, 0x5388, 19, 0x4DD6),
         (1, 0x4E96, 32, 0xBD),
         (1, 0x4ECC, 32, 0xBC),
+        (1, 0x53D6, 19, 0x58C8),
+        (25, 0x497E, 19, 0x58C8),
     ];
 
     /// <summary>The call-site facts from the player's <c>program</c>, or null when its code is not laid out so.</summary>
@@ -552,6 +585,9 @@ public static class PorAmigaText
                 [HmenuWordsPen] = Word(4, 0x1960),
                 [RestInterruptPen] = Word(1, 0x3656),
                 [RestHealPen] = Word(1, 0x31EC),
+                [YesNoWarnPen] = Word(1, 0x3E9E),
+                [YesNoSwappedWordsPen] = Word(25, 0x3A78),
+                [YesNoSwappedCapitalsPen] = Word(25, 0x3A74),
             };
             // Both DAMAGE key waits pass the same pen; every pen is a register (the prompt's may be one of the low 16).
             if (Word(4, 0x236C) != pens[KeyDamagePen] || pens.Values.Any(p => p is < 0 or > 30))

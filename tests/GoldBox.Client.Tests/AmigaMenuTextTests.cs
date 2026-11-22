@@ -181,14 +181,21 @@ public class AmigaMenuTextTests
     }
 
     [Fact]
-    public void Creation_takes_one_character_less_and_keeps_the_case_on_the_Amiga()
+    public void Creation_takes_one_character_less_and_its_save_upper_cases_the_name_on_the_Amiga()
     {
-        // hunk 10 +0x2114: the requester's MaxChars 15 (14 characters); DOS 15. strncpy at +0x212E: no upper-casing.
+        // hunk 10 +0x2114: the requester's MaxChars 15 (14 characters); DOS 15. strncpy at +0x212E keeps the case, but
+        // the character save at the end (hunk 16 +0x49C) writes the name back upper case (s46, FS-UAE: "ldvorldv" saved
+        // as "LDVORLDV").
         Assert.Equal(14, AmigaView.NameLength(amiga: true));
         Assert.Equal(15, AmigaView.NameLength(amiga: false));
         Assert.Equal(15, AmigaView.RenameLength);      // Rename's requester (hunk 10 +0x551A: 16) keeps 15
-        Assert.Equal("Lorem Ipsum", AmigaView.CreationName("Lorem Ipsum", amiga: true));
+        Assert.Equal("LOREM IPSUM", AmigaView.CreationName("Lorem Ipsum", amiga: true));   // the space kept (0xFF there)
         Assert.Equal("LOREM IPSUM", AmigaView.CreationName("Lorem Ipsum", amiga: false));
+        // H10 +0xE8 drops a '.' only after a '.' or at the start; H10 +0x1B8 drops ".*,?/:;|" once per index.
+        Assert.Equal("AB", AmigaView.SavedName(".a.b"));
+        Assert.Equal("AB", AmigaView.SavedName("a..b"));
+        Assert.Equal("A-B", AmigaView.SavedName("a-b"));
+        Assert.Equal("A.", AmigaView.SavedName("a.,."));   // ',' deleted at index 1 meets only the table after it
         var c = new Core.Ecl.EclCharacter { Name = "Lorem" };
         Assert.Equal("NEW NAME FOR Lorem", AmigaView.RenamePrompt(c));   // the requester draws the bytes
     }

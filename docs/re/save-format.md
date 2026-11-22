@@ -163,8 +163,17 @@ deleted first, so an absent file really means "none".
 ## Amiga `[?]`
 
 The Amiga port uses the same file names with different sizes: `CHRDATAn.sav` 288, `.itm` 65 per item, `.spc` 10
-per effect, `savgamA.dat` 13,141 (wish docs, via `key-facts.txt`). Big-endian and padded records are likely, but
-not checked by us. Later.
+per effect, `savgamA.dat` 13,141 (wish docs, via `key-facts.txt`).
+
+**`savgamX.dat`** (P s46, the Load hunk 16 +0xFC2–0x1286 reads it with fread in this order; FS-UAE s46 loaded
+edited copies): $4900 area 2048 bytes at 0, $6B00 area 2048 at 2048, $9700 area 1024 at 4096 (one **big-endian**
+word per address), the ECL area 7680 at **5120**, the position 10 bytes at 12800 (x, y, facing, then the program's
+own bytes; hunk 32 +0x176F), the location type at 12810 (hunk 32 +0xC1), the interface state at 12811 (+0xBA), the
+party size at 12812, the stems 8 × 41 at 12813: 13,141. No disk byte (one disk). The ECL bytes are DOS's (block 26
+equal byte for byte). Disk A's save A is in block 0 ($49C5 = $49F2 = 0). The game lists only the letters in the
+10-byte file `save` next to the saves ("A" and nine spaces on disk A), so an added save needs its letter there.
+The character file `NAME.cha` (288 bytes) starts with the name (upper case, see por-art-formats.md "Case of the typed
+name"); the rest not decoded `[?]`.
 
 ## JSON (`gbchar.py savegame SAVGAMx.DAT --json`)
 

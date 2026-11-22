@@ -711,7 +711,7 @@ public static class CampScreens
         {
             c.Dialog.Text.Put(19, 1, SpellName(c, spell), 10);
             c.Dialog.Text.Put(20, 1, c.Text[Msg.CombatOnly], 10);
-            if (c.Dialog.YesNo(c.Text[Msg.LoseIt]))
+            if (c.Dialog.YesNo(c.Text[Msg.LoseIt], colours: VenueScreens.PayColours)) // 0x27CCA: 13, 15, 10 as the temple's pay question (read s46)
                 cast.Lose(spell);
             c.Dialog.Text.Clear();
             return;

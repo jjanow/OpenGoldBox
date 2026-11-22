@@ -60,9 +60,23 @@ public sealed class CharGrid(string charset, int firstRow, int maxLength)
         _ => null,
     };
 
+    /// <summary>
+    /// The character this frame's key types: <see cref="KeyChar(string)"/>, and with <paramref name="keepsCase"/> (the
+    /// Amiga's requester, <see cref="GoldBox.Client.Play.TextRequest.KeepsCase"/>) a letter lower case unless
+    /// <see cref="ActionInput.NewShifted"/>.
+    /// </summary>
+    public static char? KeyChar(string name, ActionInput input, bool keepsCase) =>
+        KeyChar(name) is { } ch && keepsCase && char.IsAsciiLetter(ch) && !input.NewShifted ? char.ToLowerInvariant(ch) : KeyChar(name);
+
+    /// <summary>Whether <paramref name="charset"/> holds <paramref name="ch"/>, a lower-case letter by its capital.</summary>
+    public static bool Holds(string charset, char ch) => charset.Contains(char.ToUpperInvariant(ch), StringComparison.Ordinal);
+
+    /// <summary>Letters typed lower case unless Shift (<see cref="KeyChar(string, ActionInput, bool)"/>).</summary>
+    public bool KeepsCase { get; init; }
+
     private void Type(char ch)
     {
-        if (Typed.Length < maxLength && charset.Contains(ch, StringComparison.Ordinal))
+        if (Typed.Length < maxLength && Holds(charset, ch))
             Typed += ch;
     }
 
@@ -89,7 +103,7 @@ public sealed class CharGrid(string charset, int firstRow, int maxLength)
                 Backspace();
                 return null;
             }
-            if (KeyChar(name) is { } ch)
+            if (KeyChar(name, input, KeepsCase) is { } ch)
             {
                 Type(ch);
                 return null;

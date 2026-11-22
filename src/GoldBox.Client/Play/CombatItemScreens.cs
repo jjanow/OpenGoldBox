@@ -354,7 +354,7 @@ public sealed partial class CombatChooser
             if (pick == ViewEntry.Rename)
             {
                 // The Amiga's Rename (AmigaView): the requester, then the same page (R draws nothing again).
-                if (Ask(new TextRequest(AmigaView.RenamePrompt(c), false, AmigaView.RenameLength)) is string name)
+                if (Ask(new TextRequest(AmigaView.RenamePrompt(c), false, AmigaView.RenameLength) { KeepsCase = true }) is string name)
                     c.Name = name;
                 redraw = false;
                 continue;

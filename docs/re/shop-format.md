@@ -13,8 +13,9 @@ holding 150 cp, 37 sp, 9 ep, 3 gp, 600 pp (3010 gold): Buy of a 2000-gold item l
 Id of an already identified flail took 200 (162 pp left); Sell of the flail (value 3) gave 1 gp; Pool and Share
 over six members gave the pool, coins and weights the model computes (remainders to the first members). **D** for
 those steps. Seen as well: the weight word stayed stale after the payment (1449 with the old coins counted) and was
-recomputed when the items screen was redrawn; the shop's Buy list shows 7 items per page (the 8th is on the
-"Prev" page). Take and Appraise are not checked in DOSBox.
+recomputed when the items screen was redrawn; the shop's Buy list showed 7 items with the 8th on the "Prev" page:
+Buy's position word 1 with the list routine's top 1 after start-up, so the window started at the second item (s46,
+"Buy" below). Appraise is not checked in DOSBox.
 
 **DOSBox (s12, capture `temple`)**: Cure Blindness on a character who is not blind (cast anyway: 1000 paid, no
 draw), Cure Light (1d8: 1 draw), Serious (2d8 + 1: 2 draws, capped at max HP), Critical at full HP (600 paid, 3
@@ -64,8 +65,18 @@ the loot menu tests G / O like the shop, and pools only on a non-extended P.
 
 **Buy** (0x7035, P). An item picker over the treasure list (0x6D04) returns a key; B or Enter buys the highlighted
 item, any other key leaves. Price = the item's value word (0x3A). Before listing, the picker writes value 1 into
-every stock item whose value is 0 (0x6D3C: nothing in a shop is free) and renames each item as its name padded to 30
-characters with the value right-aligned at the end (the list's text; s12).
+every stock item whose value is 0 (0x6D3C: nothing in a shop is free) and renames each item: 30 spaces, the value
+right-aligned in them, the name copied over from the first character, the length set to 30 (the list's text; s12,
+s46). A name of 30 characters or more hides the value: the naming routine's names end in a space, so the cleric
+scroll's 29 letters and that space cover it (DOSBox-X s46: the row shows the name alone). **The page** (P + D s46):
+the window (1, 1)–(38, 22) titled "Shop", the list routine 0x2D669 with the window (1, 4)–(38, 22), 19 rows paged by
+Next / Prev, the prompt "Items: ", the word "Buy", Exit; the position word starts at 1 (0x7050) and keeps the row
+the routine leaves, so the window opens at the second item after start-up (top 1) and with the second row lit after
+a list that left the top at 0 (`por-art-formats.md` "Creation's list labels"). No member switch on the page (Home /
+End move the highlight in the list routine); the buyer is the shop menu's current member. Refusals (not enough
+money 0x7136, the copy step's overload 0x6F39, Take's overload 0x2573C) go through START 0x2233: the text on row 24
+in green over the page with its rows unlit, the game-speed pause, then the page again (DOSBox-X s46: a cloak without
+the money; the Client's `VenueScreens.RowMessageOver` equal pixel for pixel, during and after the pause).
 1. If price ≤ low word of the character's gold, or else ≤ the pool's gold: copy the item (0x6F0D).
 2. The copy (0x6F0D, on DS:5D92) first asks 0x23795, which runs the full stat recalculation START 0x1758 on the
    character (0x237A1) and then refuses (message START 0x1693, nothing paid) when it has more than 15 items (+0xC7
@@ -105,11 +116,18 @@ others only when in play = 0 or status = 1 — the same gate as Trade in View (0
 
 **Loot item take** (0x6184, s12): the same copy step 0x6F0D gives the highlighted treasure item to the current
 character (T or Enter; refused when it cannot carry it); on success the original is unlinked from the treasure list
-and freed. Repeats until another key or an empty list.
+and freed. Repeats until another key or an empty list. Its page (0x6092, P + D s46) is Buy's with the title "Loot",
+the word "Take" and the plain names, position word 0 (0x619F) then kept.
 
-**Take** (0x25974 → 0x25711, P): pick a kind held in the pool (kinds 6 down to 0), type an amount (0x24F1D).
-If the amount would overload the character: message, nothing moves. Else amount := min(amount, pool[kind]);
-pool − amount; the character's word + amount, weight + amount. Afterwards DS:6DC0 = any kind left.
+**Take** (0x25974 → 0x25711, P + D s46): the window (1, 1)–(38, 22) with no title, then until the pool is empty or
+the player leaves the list: the kinds held in the pool as a list (built 6 down to 0, each put in front, so copper
+first: "Copper 100"), the list routine with the window (2, 2)–(15, 8), the prompt "Select type of coin", Exit; any
+key but Escape / E / 0 takes the row (Return too); position word 0 once (0x259A4), then kept. Then the amount
+(0x24F1D, colour 10, "How much " + the coin + " will you take?", at most the pool's low word) on row 24 over the list
+drawn unlit. If the amount would overload the character: message, nothing moves. Else amount := min(amount,
+pool[kind]); pool − amount; the character's word + amount, weight + amount. Afterwards DS:6DC0 = any kind left.
+DOSBox-X s46: Copper, 30, Return → the list again with "Copper 70". `[?]` An amount of 0 (Escape) still reaches
+0x25711; the Client moves nothing then and does not show its overload test.
 
 **Pool** (0x25191, P): DS:6DC0 := 1; every party member whose 0x84 is 0 or 0xB3 adds its seven words to the pool,
 loses that much weight, and its seven words are zeroed. Other members (NPCs) keep their money.
@@ -149,6 +167,34 @@ Jewelry / Exit, repeated until Exit or nothing is left.
 
 Heal list (0x4F4E): 10 names from DS:00F1 + 41·k (k = 1..10), the 10th leaves. Every entry acts on the **current
 character** (DS:5D92); prices are immediates in each routine.
+
+**The heal list's screen** (P + D s46). Row 24 blanked (0709:0DD3), the window (1, 1)–(38, 22) and the title window
+(1, 1)–(38, 1) (START 03F1:02E8, frames one cell outside), then each pass: the name and the question at (1, 1) in
+colour 15 (0709:0626), the text box (1, 17)–(38, 22) blanked, and the list routine 0x2D669 (0x50E7) with the window
+(2, 4)–(38, 15), colours 13 / 10 / 15, an empty prompt and the word "Heal": rows from column 2, the lit one white, the
+others green, no cursor; row 24 "HEAL EXIT" from column 0. H or Return (0x50F2) runs the row's entry, the 10th sets the
+end flag; key 0 ends too. DOSBox-X s46: Escape and E leave (E as Exit's hotkey leaves the shared menu cell on the 2nd
+word, so the temple menu then opens on View; after Escape on Heal); with Exit lit (',' / '.'), Return still runs the
+lit row (13). The entry's texts and questions come in the text box with the list above, its rows unlit: the absent
+condition's message is START 0x16EC(member, text, 0, 0) at 0x45B9 (the name on row 18 in its colour, the text from
+row 19 in green, no pause), then the cure-anyway question with 13, 10, 15. At the end the list is freed, row 24
+blanked, the screen drawn again (START 0x27D9, the text box empty) and the party list.
+**The position word** [bp−0xC] (the list's highlight, passed by reference) is never stored before the first call. Its
+stack word is the 0 argument (0x5314) of the temple menu's call of the menu routine 0x2CC8C (03C5:002A at 0x531C),
+pushed as AX whose AH is 0 from `mov ax, 0x28` (0x52D6 / 0x52EB) through the two string calls (System 0x0B25 and
+0x0B0B keep AH); 0x5332 is the routine's only caller, right after that menu. So the word is **0 on every entry**: the
+list starts lit on its first row and takes the list routine's global top (DS:6B29) to 0. Later passes keep the row
+the list returned. DOSBox-X s46 (residue probe site 5, `por_dosbox_game.py --residue`, test save G): 0 on the first
+call after a fresh start (top 1 before), again after leaving the list lit on row 3 and after View; the first list lit on
+Cure Blindness; after Cure Light Wounds and a No to its price, the list lit on Cure Light Wounds again.
+The pay question (0x4636: 03C5:0039 at 0x46CE) passes the colours 13, 15, 10: the words white, the lit word and the
+hotkey letters green ("Y" green, "ES" white, "NO" green with No lit), as only the camp cast's two questions (0x27CCA /
+0x27D30) also do; the other 23 yes/no calls pass 13 or 14, 10, 15. Client: `VenueScreens.HealList` (a list routine
+page, `SpellPageLayout.WholeTitle`, `ListRequest.ReturnRunsFirstAction`), `ChoiceRequest.MenuColours` (also the camp
+cast's lose-it question 0x27CCA, read only; the Client does not ask 0x27D30's); pixel-equal to DOSBox-X on the first
+list, the price question, the list after it, Exit lit, the absent-condition message with its question, and the temple
+menu after Escape and after E (but the Client's help lines). `[?]` The Amiga's heal list layout and its pay
+question's pens are not seen in FS-UAE (the Client draws the DOS layout under either art).
 
 Flow per entry: if the condition is absent the priest says so and asks whether to cast the cure anyway (0x458A); on yes, or when
 the condition holds, payment (0x4636): the price is shown with a yes/no question; character (16-bit total) or

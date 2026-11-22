@@ -85,6 +85,13 @@ trigger), `FightAllQuick` (right trigger), `FightAltX` (left-stick press, the ha
 row 23 shows them under the main menu ("ALT: MAGIC ALL-QUICK ALT-X", click a word). Alt-X works when the start word
 (`--param`, the controls screen's START WORD) equals the program's word (Core `FightKit.AltXEnabled`). Alt-R is not
 offered (it does nothing).
+**The Amiga program has no Alt-X** (read s45 A1, s46 A2; por-art-formats.md "Fight texts"): its menu key loop (hunk 1
++0x1C42–0x1DF4) takes M V A U C T Q D, its magic toggle (key 0x3B, "Magic On" / "Magic Off"), space and its all-quick
+key (−26), and its AI key check (hunk 1 +0x127E) the magic toggle and space; no Alt-X routine, no refusal, no Alt-R.
+Client (s46): under the Amiga art (`AmigaView.On`; the Client keys every Amiga-program difference on the art, the
+module having no program-version flag for the fight) the menu takes no Alt-X, row 23's hint reads "ALT: MAGIC
+ALL-QUICK" (`CombatScreen.AltKeys`), and `FightKit.AltXEnabled` is false, so the AI's key check ignores it too. Not
+tried in FS-UAE.
 
 **Messages of the Alt keys (P + D, s24):** Alt-M's two messages (0x9CD1 / 0x9CE7), Alt-X's refusal (0x9DC0) and
 Alt-X's own message (0x1637A in 0x1638E) all go through the message routine START 0x1693 (0x2233): row 24 cleared
@@ -382,7 +389,10 @@ and Speed menus, an AI attack at game speed 9). Code: `src/GoldBox.Client/Screen
 - **Layout** (8 × 8 text cells): braid frame on rows 0 and 22 and columns 0, 22, 39, yellow corners where they meet;
   the map window of 7 × 7 squares of 24 px at pixel (8, 8); the status panel in columns 23–38: the creature's name on
   row 1 (party cyan, hostile yellow), hit points row 3, AC row 5, the readied weapon's name row 7 (none for a creature
-  with no weapon); attack messages from row 10. Row 23: Aim's range line; row 24: the menu, or Move's prompt in
+  with no weapon); then (read s46, START 0x1588–0x15E4, the Amiga's hunk 13 +0x3F46 alike) on the row after the
+  weapon the status word (DS:0x1047, 13 bytes per status 0x10C) in colour 15 when the creature is out of play (0x10D
+  = 0), else "(HELPLESS)" when 0x15EF finds one of the four effects of DS:286C–286F: not drawn by the Client `[?]`
+  (not seen in DOSBox-X); attack messages from row 10. Row 23: Aim's range line; row 24: the menu, or Move's prompt in
   green. A screen square (c, r) shows arena cell (view x + c, view y + r): no skew in the drawing.
 - **Palette** (located s18): EGA colours 0 and 8 are swapped for the whole screen (ground, panel and menu background
   dark grey, the art's colour 8 black; every DUNGCOM tile matched only with the swap). GAME.OVR 0x3081D writes EGA
@@ -708,7 +718,18 @@ and Speed menus, an AI attack at game speed 9). Code: `src/GoldBox.Client/Screen
   ! , - . : ; ?), with its pause flag: the game-speed pause then START 0x2383 (clear rows 10–21). The cursor
   DS:5E24 / DS:5E25 stays after the text, so a word ending on column 38 moves it to the next row (the "blank line"
   before a down message). The status panel START 0x1583 clears rows 1–21; its weapon name (ending in a space) is
-  wrapped into (23, 7)–(38, 9) (a 16-letter two-word weapon name plus its space takes two rows, **D**). While DS:4A00 is set 0x77F8 types each
+  wrapped into (23, 7)–(38, 9) (a 16-letter two-word weapon name plus its space takes two rows, **D**). **Status line**
+  (read s46, START 0x16A0–0x170D): two rows under the cursor DS:5E25 (the AC line's 5, or where the weapon's print
+  left it), a fixed-cell string in colour 15: out of play (0x10D = 0) the status word of 0x10C (DS:1047, 13 bytes each),
+  else when helpless (START 0x1713) "(HELPLESS)" (START CS:0x9D8). The Amiga (hunk 13 +0x3F46–0x3FB4: 0x10F / 0x10E, its
+  table hunk 31 +0x323, "(Helpless)" hunk 14 +0x2C2) draws them through the string routine in pen 16. The Client drew
+  neither before s46 (`CombatScreen.DrawPanel`); FS-UAE s46 (a slept cleric aimed at, FLAIL on row 7): "(Helpless)" on
+  row 9 in grey, equal to the Client `--art amiga` (Brother Sean asleep, MACE) pixel for pixel. The status words not
+  seen in either emulator `[?]`. **Amiga effect lines** (FS-UAE s46, the city watch fight after a rest on disk A's
+  save A, Sleep cast by Goldleaf and Conly): "Laurann / falls asleep" and "Goldleaf / is unaffected", name and text in
+  pen 28 at rows 10 / 11; the Client `--art amiga` (a DOS fight save, Rhiannon's Sleep) draws "is unaffected" and
+  "falls asleep" on row 11 equal pixel for pixel (896 of 896 each), the name rows in the same pens. Other effect
+  and status-change texts not seen on the Amiga `[?]`. While DS:4A00 is set 0x77F8 types each
   character with Delay(DS:49E2 × 10) (**D**: seen in the panel, s19). Read s25: 0x7737 draws each glyph then, when
   DS:4A00 ≠ 0 (START 0x777B), Delay(DS:49E2 × 10) (0x778D); spaces too, nothing for a word-wrap's skipped spaces. The
   only writers of DS:4A00 (every direct-address write form searched in START.EXE and GAME.OVR): PRINT/PRINTCLR 0x174F

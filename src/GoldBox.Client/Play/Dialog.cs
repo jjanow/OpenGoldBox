@@ -32,12 +32,18 @@ public sealed class Dialog(Func<PlayerRequest, object?> ask, TextWindow text)
     /// The program's yes/no menu (0x2D9A0: "~Yes ~No" with the question as its prompt): true on Yes. Cancel = No. It
     /// sets the shared highlight to No before its menu (<see cref="ChoiceRequest.Selected"/> = 1).
     /// </summary>
-    public bool YesNo(string? prompt = null, byte? promptColour = null) =>
+    /// <paramref name="promptColour"/>: the caller's prompt colour (13 when null; 14 for the camp's and hall's warnings,
+    /// the Amiga's pen 24 there, read s46). <paramref name="colours"/>: the words' and lit word's colours when the caller
+    /// passes them otherwise (<see cref="ChoiceRequest.MenuColours"/>); the Amiga's copies of those callers pass words 16,
+    /// capitals 28 (hunk 25 +0x3A72, hunk 22 +0x29CE, +0x2A28; read s46).
+    public bool YesNo(string? prompt = null, byte? promptColour = null, (byte Words, byte Lit)? colours = null) =>
         ask(new ChoiceRequest(null, ["YES", "NO"], false, 1)
         {
             MenuPrompt = prompt?.TrimEnd(),
-            MenuPromptColour = promptColour,
+            MenuPromptColour = promptColour is byte pc ? AmigaView.YesNoPrompt(pc) : null,
+            MenuColours = colours,
             Selected = 1,
+            AmigaPens = colours is not null ? AmigaView.YesNoSwappedPens : null,
         }) is int i ? i == 0 : false;
 
     /// <summary>Print into the text window.</summary>

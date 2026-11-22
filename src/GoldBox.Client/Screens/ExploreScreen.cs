@@ -112,6 +112,7 @@ public sealed class ExploreScreen : IScreen
         _combat = new CombatScreen(player.FightView, _art.Combat, game.Art.Font, runner, player.Chooser.Text,
             player.Resources.ItemWord)
         {
+            StatusName = s => player.Resources.StatusName(s),
             Report = Report,
             Highlight = _highlight,
             Pictures = _art.Pictures,
@@ -121,9 +122,10 @@ public sealed class ExploreScreen : IScreen
         if (game.Kit is { } kit)
         {
             kit.AiKey = () => _keys?.TakeAiKey() ?? 0;
-            // Alt-X (0x1638E) works when the start word equals the program's copy of the debugging word (0x16374).
+            // Alt-X (0x1638E) works when the start word equals the program's copy of the debugging word (0x16374). The
+            // Amiga program has no Alt-X (CombatScreen.AltKeys): under the Amiga art the AI's key check ignores it too.
             var program = game.Content.Program();
-            kit.AltXEnabled = () => program?.Text("Fight.Password") is { Length: > 0 } word
+            kit.AltXEnabled = () => !AmigaView.On && program?.Text("Fight.Password") is { Length: > 0 } word
                 && HallScreens.ParamStr1(player.ProgramWord) == word;
         }
         _commands = game.Art.Program.ExploreCommands is { Count: > 0 } c
@@ -611,11 +613,20 @@ public sealed class ExploreScreen : IScreen
 
     private void Type(TextRequest t, char ch)
     {
-        if (_typed.Length < t.MaxLength && Charset(t).Contains(ch, StringComparison.Ordinal))
+        if (t.Maximum is { } max)
+        {
+            // The money input 0x24F1D (Take's amount): digits only; a number above the maximum becomes it at once.
+            if (ch is < '0' or > '9')
+                return;
+            string next = _typed + ch;
+            _typed = next.Length > t.MaxLength || int.Parse(next, CultureInfo.InvariantCulture) > max
+                ? max.ToString(CultureInfo.InvariantCulture)
+                : next;
+            return;
+        }
+        if (_typed.Length < t.MaxLength && CharGrid.Holds(Charset(t), ch))
             _typed += ch;
     }
-
-    private static char? KeyChar(string name) => CharGrid.KeyChar(name);
 
     // ---------------------------------------------------------------------------------------------------------------
     // Update
@@ -897,12 +908,14 @@ public sealed class ExploreScreen : IScreen
                 {
                     if (name == "Enter")
                         return new Reply(_typed);
+                    if (name == "Escape" && t.Maximum is not null)
+                        return new Reply(""); // 0x24F1D answers 0 to Escape
                     if (name == "Back")
                     {
                         Backspace();
                         return null;
                     }
-                    if (KeyChar(name) is { } ch)
+                    if (CharGrid.KeyChar(name, input, t.KeepsCase) is { } ch)
                     {
                         Type(t, ch);
                         return null;
@@ -1132,7 +1145,7 @@ public sealed class ExploreScreen : IScreen
             int start = MenuStart(h);
             if (h.MenuPrompt is { Length: > 0 } mp)
                 Chrome.MenuPrompt(f, font, 0, MenuRow, mp, h.MenuPromptColour ?? MenuPromptColour);
-            DrawLine(f, font, h.Items, _selected, start, h.HotkeyOf, h.Columns, h.ScriptText, Pens(h));
+            DrawLine(f, font, h.Items, _selected, start, h.HotkeyOf, h.Columns, h.ScriptText, Pens(h), h.MenuColours);
             (_keptMenu, _keptSelected, _keptMenuDrawn) = (h, _selected, true);
         }
         else if (pending is DelayRequest { BottomLine: null } or null && _runner.Busy && _player.PagePromptStands)
@@ -1146,7 +1159,7 @@ public sealed class ExploreScreen : IScreen
         {
             if (kept.MenuPrompt is { Length: > 0 } kp)
                 Chrome.MenuPrompt(f, font, 0, MenuRow, kp, kept.MenuPromptColour ?? MenuPromptColour);
-            DrawLine(f, font, kept.Items, _keptSelected, MenuStart(kept), kept.HotkeyOf, kept.Columns, kept.ScriptText, Pens(kept));
+            DrawLine(f, font, kept.Items, _keptSelected, MenuStart(kept), kept.HotkeyOf, kept.Columns, kept.ScriptText, Pens(kept), kept.MenuColours);
             _keptMenuDrawn = true;
         }
         else if (pending is null || pending is DelayRequest { BottomLine: null } delay
@@ -1201,7 +1214,7 @@ public sealed class ExploreScreen : IScreen
             case ChoiceRequest { Vertical: false } h:
                 if (h.MenuPrompt is { Length: > 0 } mp)
                     Chrome.MenuPrompt(f, font, 0, MenuRow, mp, h.MenuPromptColour ?? MenuPromptColour);
-                DrawLine(f, font, h.Items, _selected, MenuStart(h), h.HotkeyOf, h.Columns, h.ScriptText, Pens(h));
+                DrawLine(f, font, h.Items, _selected, MenuStart(h), h.HotkeyOf, h.Columns, h.ScriptText, Pens(h), h.MenuColours);
                 break;
             case KeyRequest k:
                 DrawKeyLine(f, font, k, input);
@@ -1252,12 +1265,28 @@ public sealed class ExploreScreen : IScreen
             int start = MenuStart(h);
             if (h.MenuPrompt is { Length: > 0 } mp)
                 Chrome.MenuPrompt(f, font, 0, MenuRow, mp, h.MenuPromptColour ?? MenuPromptColour);
-            DrawLine(f, font, h.Items, _selected, start, h.HotkeyOf, h.Columns, h.ScriptText, Pens(h));
+            DrawLine(f, font, h.Items, _selected, start, h.HotkeyOf, h.Columns, h.ScriptText, Pens(h), h.MenuColours);
         }
         else if (pending is KeyRequest k)
         {
             Chrome.Clear(f, 0, MenuRow, 40);
             DrawKeyLine(f, font, k, input);
+        }
+        else if (pending is TextRequest t && !_player.PageUnderBox)
+        {
+            // Take's amount over its coin list (input 0x24F1D, colour 10; DOSBox-X s46): the question in green, a
+            // space, the digits typed in white, no cursor; the pick grid for the pad and the mouse below the list.
+            Chrome.Clear(f, 0, MenuRow, 40);
+            if (AmigaView.On && Chrome.AmigaGadget is { } gadget)
+                gadget.Requester(f, font, AmigaView.Case(t.Prompt), _typed, t.MaxLength + 1); // the Amiga's input requester (not seen here in FS-UAE)
+            else
+            {
+                string question = Fit(AmigaView.Case(t.Prompt) + " ", 40);
+                Chrome.Text(f, font, 0, MenuRow, question, Chrome.Green);
+                Chrome.Text(f, font, question.Length, MenuRow, Fit(_typed, 40 - question.Length), Chrome.White);
+            }
+            if (input.LastDevice != InputDevice.Keyboard)
+                DrawTextEntry(f, font, t);
         }
         else if (pending is DelayRequest { BottomLine: not null } delay)
         {
@@ -1553,8 +1582,11 @@ public sealed class ExploreScreen : IScreen
 
     /// <summary>A line of words on the bottom row as the original draws its menus: the highlighted item all white, the others with a white hotkey letter.</summary>
     internal static void DrawLine(IndexedFrame f, TextFont font, IReadOnlyList<string> items, int selected, int start,
-        Func<int, char>? hotkey = null, IReadOnlyList<int>? columns = null, bool scriptText = false, AmigaMenuPens? amigaPens = null)
+        Func<int, char>? hotkey = null, IReadOnlyList<int>? columns = null, bool scriptText = false, AmigaMenuPens? amigaPens = null,
+        (byte Words, byte Lit)? colours = null)
     {
+        // The menu routine's word colours (ChoiceRequest.MenuColours): the words, the lit word and the hotkey letters.
+        var (green, white) = colours is var (cw, cl) ? (cw, cl) : (Chrome.Green, Chrome.White);
         // Under Amiga the current entry is not lit: it is drawn as the others, then its gadget box complemented.
         var gadget = Chrome.AmigaGadget;
         int lit = selected;
@@ -1584,18 +1616,18 @@ public sealed class ExploreScreen : IScreen
                 continue;
             }
             int k = hotkey is null ? 0 : Math.Max(0, w.IndexOf(hotkey(i)));
-            Chrome.Text(f, font, col, MenuRow, w, i == selected ? Chrome.White : Chrome.Green);
+            Chrome.Text(f, font, col, MenuRow, w, i == selected ? white : green);
             // The menu routine's entry runs from its capital (or digit) to two cells before the next one (0x2C99A, drawn
             // by 0x2CAA9; D s38, the rest-time menu "Rest   daYs": daYs lit shows "YS" white, Rest lit also lights the D;
             // D s39, the icon editor's "Parts color-1": Parts lit also lights COLOR). Every other line starts each
             // word with its hotkey, where this is the whole word.
             if (k > 0)
             {
-                Chrome.Text(f, font, col, MenuRow, w[..k], Chrome.Green);
+                Chrome.Text(f, font, col, MenuRow, w[..k], green);
                 if (i > 0 && i - 1 == selected && k > 1)
-                    Chrome.Text(f, font, col, MenuRow, w[..(k - 1)], Chrome.White);
+                    Chrome.Text(f, font, col, MenuRow, w[..(k - 1)], white);
             }
-            Chrome.Text(f, font, col + k, MenuRow, w.Substring(k, 1), Chrome.White);
+            Chrome.Text(f, font, col + k, MenuRow, w.Substring(k, 1), white);
             if (i == lit)
                 gadget?.Entry(f, col, MenuRow, w);
             col += w.Length + 1;

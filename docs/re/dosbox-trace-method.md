@@ -85,7 +85,11 @@ reads them:
   0x29CC6) by `INT 66h`, a site id and a NOP. `--residue-watch` also hooks the ECL run loop (0x3ED3, as `--trace`).
   Not together with `--trace` (both use INT 66h).
 - `tools/dosbox/residue.s` (RESIDUE.COM, built like ECLTRACE.COM, started before START) redoes the store and writes
-  `T pppp bbbb rr` / `S …` / `R …` lines to port E9: ECL PC, BP, residue byte. With the watch it also writes
+  `T pppp bbbb rr` / `S …` / `R …` lines to port E9: ECL PC, BP, residue byte. Site 5 (s46) is the temple's heal list
+  (GAME.OVR 0x4F55, `mov byte [bp−0xD], 0`): `H pppp bbbb wwww tttt hh bb` with the position word [bp−0xC], the list
+  top DS:6B29 and the venue box's head / body DS:49FD / 49FE (results: shop-format.md "The heal list's screen",
+  view3d.md "The shop and temple box"). A test copy unpacked earlier can be patched the same way by hand (the four
+  sites' old bytes are in `por_dosbox_game.py`). With the watch it also writes
   `W pppp oo vv` whenever the TREASURE cell SS:3E7D changed since the last instruction (PC and opcode about to run,
   new value), which names the instruction that wrote it. The hooks inside the routines run below the probed cell;
   the watch's frame sits at the run loop's depth and covers the SPELL cell SS:3EDA, so S lines are void with it.

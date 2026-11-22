@@ -192,3 +192,34 @@ public class PadSlotTests
         Assert.False(GoldBoxGame.FirstConnectedPad(4, _ => default).IsConnected);
     }
 }
+
+/// <summary>
+/// The Amiga's input requester types letters as its keymap does (s46, TextRequest.KeepsCase): lower case unless Shift
+/// or Caps Lock; DOS's line inputs keep the capitals.
+/// </summary>
+public class AmigaKeymapTests
+{
+    private static ActionInput Press(params Keys[] keys) => Press(false, keys);
+
+    private static ActionInput Press(bool capsLock, params Keys[] keys)
+    {
+        var input = new ActionInput(InputBindings.Defaults());
+        input.Update(new KeyboardState(keys, capsLock), default, default, TimeSpan.Zero, _ => null);
+        return input;
+    }
+
+    private static char? Typed(ActionInput input, bool keepsCase) =>
+        input.NewInput is (InputDevice.Keyboard, var name) ? GoldBox.Client.Screens.CharGrid.KeyChar(name, input, keepsCase) : null;
+
+    [Fact]
+    public void A_letter_is_lower_case_unless_shift_or_caps_lock_under_the_amiga_requester()
+    {
+        Assert.Equal('l', Typed(Press(Keys.L), keepsCase: true));
+        Assert.Equal('L', Typed(Press(Keys.LeftShift, Keys.L), keepsCase: true));   // Shift in the same frame gives way
+        Assert.Equal('L', Typed(Press(true, Keys.L), keepsCase: true));
+        Assert.Equal('l', Typed(Press(true, Keys.RightShift, Keys.L), keepsCase: true));
+        Assert.Equal('L', Typed(Press(Keys.L), keepsCase: false));                   // DOS: capitals
+        Assert.Equal('7', Typed(Press(Keys.D7), keepsCase: true));
+        Assert.True(GoldBox.Client.Screens.CharGrid.Holds(GoldBox.Client.Screens.CharGrid.Letters, 'l'));
+    }
+}

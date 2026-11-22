@@ -184,17 +184,43 @@ public class VenueTests
         c[0x32] = 10;
         c[0x11B] = 1;
         var (t, s) = Context(new Script(
-            0,              // HEAL
-            2,              // cure light wounds
-            0,              // pay: YES
-            null,           // "is cured" key
-            9,              // the 10th entry leaves
-            4), Party(c));  // EXIT
+            0,                          // HEAL
+            new ListAnswer(0, 2),       // Heal on cure light wounds
+            0,                          // pay: YES
+            null,                       // "is cured" key
+            new ListAnswer(0, 9),       // the 10th entry leaves
+            4), Party(c));              // EXIT
         VenueScreens.Temple(t);
         Assert.Equal(9, c[0x11B]);                       // 1 + 1d8 (8 with Random(8) = 7)
         Assert.Equal(0, c.Word(Money.Platinum));         // 3 gold left: 0 pp, 3 gp
         Assert.Equal(3, c.Word(Money.Gold));
         Assert.Equal(0, s.Left);
+        // The pay question's word colours (0x46CE: 13, 15, 10; DOSBox-X s46).
+        Assert.Contains(s.Asked, r => r is ChoiceRequest { Items: ["YES", "NO"], MenuColours: (15, 10) });
+    }
+
+    [Fact]
+    public void The_heal_list_is_the_list_routine_page_lit_on_its_first_row_then_on_the_row_it_returned()
+    {
+        // P + D s46: the position word [bp−0xC] is 0 on every entry (the temple menu's call left its 0 argument there);
+        // the window (2, 4)–(38, 15), "HEAL EXIT" from column 0, the title the name and the question in white; the next
+        // pass keeps the returned row (DOSBox-X: Cure Light Wounds lit again after its price was refused).
+        var c = Member("ANNA", pp: 1000);
+        var (t, s) = Context(new Script(0, new ListAnswer(0, 2), 1, new ListAnswer(1, 2), 4), Party(c)); // HEAL, row 2, NO, Exit, EXIT
+        VenueScreens.Temple(t);
+        Assert.Equal(0, s.Left);
+        var pages = s.Asked.OfType<ListRequest>().ToList();
+        Assert.Equal(2, pages.Count);
+        Assert.Equal(0, pages[0].Selected);
+        Assert.Equal(2, pages[1].Selected);
+        var p = pages[0];
+        Assert.Equal(["HEAL", "EXIT"], p.Actions);
+        Assert.Equal(10, p.Rows.Count);
+        Assert.Equal(VenueScreens.HealFirstRow, p.FirstRow);
+        Assert.Equal(12, p.Paging?.Rows);
+        Assert.True(p.Spell is { WholeTitle: true, RowColumn: 2, MenuStart: 0, Box: [] });
+        Assert.StartsWith("ANNA, ", p.Spell!.Title);
+        Assert.Equal(1000, c.Word(Money.Platinum));
     }
 
     [Fact]
@@ -217,7 +243,7 @@ public class VenueTests
     public void Temple_asks_before_a_cure_that_is_not_needed()
     {
         var c = Member("ANNA", pp: 1000);
-        var (t, s) = Context(new Script(0, 0, 1, 9, 4), Party(c)); // HEAL, cure blindness, anyway? NO, leave, EXIT
+        var (t, s) = Context(new Script(0, new ListAnswer(0, 0), 1, new ListAnswer(1, 0), 4), Party(c)); // HEAL, cure blindness, anyway? NO, Exit, EXIT
         VenueScreens.Temple(t);
         Assert.Equal(1000, c.Word(Money.Platinum));
         Assert.Equal(0, s.Left);
@@ -325,11 +351,42 @@ public class VenueTests
     {
         var c = Member("ANNA");
         var pool = new uint[] { 0, 0, 0, 7, 0, 0, 0 };
-        var (t, s) = Context(new Script(0, "5"), Party(c), pool: pool);  // gold, 5
-        MoneyScreens.Take(t);
+        var (t, s) = Context(new Script(new ListAnswer(ListRequest.RowPicked, 0), "5", new ListAnswer(0, 0)), Party(c), pool: pool);
+        MoneyScreens.Take(t);                            // gold, 5; the list again (2 left), Exit
         Assert.Equal(5, c.Word(Money.Gold));
         Assert.Equal(2u, pool[3]);
         Assert.Equal(0, s.Left);
+        Assert.Equal(3, s.Asked.Count);
+        Assert.Equal(0, Assert.IsType<ListRequest>(s.Asked[2]).Selected); // the position word kept
+        Assert.Equal((ushort?)7, Assert.IsType<TextRequest>(s.Asked[1]).Maximum);  // at most the pool's count (0x25B89)
+    }
+
+    /// <summary>
+    /// Take's coin kinds (0x25974, P + D s46): copper first (the list is built 6 down to 0, each kind put in front), the
+    /// window (2, 2)–(15, 8) under a frame with no title, the prompt and Exit on row 24, Return takes the lit row; the
+    /// loop goes on until the pool is empty or the player leaves (DOSBox-X: COPPER 70 after taking 30, the list back).
+    /// </summary>
+    [Fact]
+    public void Take_lists_copper_first_in_the_programs_window_and_loops_until_the_pool_is_empty()
+    {
+        var c = Member("ANNA", str: 18);
+        var pool = new uint[] { 3, 0, 0, 2, 0, 0, 1 };
+        var (t, s) = Context(new Script(
+            new ListAnswer(ListRequest.RowPicked, 1), "2",   // gold: all of it
+            new ListAnswer(ListRequest.RowPicked, 1), "9",   // the second row is jewellery now: 9 becomes 1
+            new ListAnswer(ListRequest.RowPicked, 0), "3"), Party(c), pool: pool);
+        MoneyScreens.Take(t);
+        Assert.Equal(0, s.Left);                         // the pool emptied: no list after the last take
+        Assert.All(pool, v => Assert.Equal(0u, v));
+        var first = Assert.IsType<ListRequest>(s.Asked[0]);
+        Assert.StartsWith(t.Text.Coin(0), first.Rows[0]);
+        Assert.StartsWith(t.Text.Coin(6), first.Rows[2]);
+        Assert.True(first.EnterPicks);
+        Assert.Equal((2, 7, 2), (first.FirstRow, first.Paging!.Rows, first.Spell!.RowColumn));
+        Assert.True(first.Spell!.CentredTitle);
+        Assert.Equal(["EXIT"], first.Actions);
+        Assert.Equal(1, Assert.IsType<ListRequest>(s.Asked[2]).Selected);
+        Assert.Equal((ushort?)1, Assert.IsType<TextRequest>(s.Asked[3]).Maximum);
     }
 
     [Fact]

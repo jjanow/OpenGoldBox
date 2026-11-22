@@ -148,6 +148,22 @@ public static class AmigaView
     /// <summary>An Amiga caller's pen read from the program (<see cref="CallPens"/>) under the Amiga pages, or null.</summary>
     public static int? CallPen(string key) => On && CallPens.TryGetValue(key, out int pen) ? pen : null;
 
+    /// <summary>
+    /// The yes/no question's prompt colour (DOS 0x2D9A0 takes it from its caller: 13 or 14): under the Amiga pages DOS's
+    /// 14 is the Amiga caller's pen 24 (<see cref="GoldBox.Data.Module.Por.PorAmigaText.YesNoWarnPen"/>, red; read s46),
+    /// not the yellow 18 the text pens give 14 elsewhere; any other colour as it is.
+    /// </summary>
+    public static byte YesNoPrompt(byte dosColour) =>
+        dosColour == 14 && CallPen(GoldBox.Data.Module.Por.PorAmigaText.YesNoWarnPen) is int pen and >= 16 and <= 30
+            ? (byte)pen : dosColour;
+
+    /// <summary>The yes/no questions with their letters' pens swapped (pay for cure, Lose it?, Use it?: words 16,
+    /// capitals 28, read s46) under the Amiga pages, or null.</summary>
+    public static (int Words, int Capitals)? YesNoSwappedPens =>
+        On && CallPens.TryGetValue(GoldBox.Data.Module.Por.PorAmigaText.YesNoSwappedWordsPen, out int words)
+            && CallPens.TryGetValue(GoldBox.Data.Module.Por.PorAmigaText.YesNoSwappedCapitalsPen, out int capitals)
+            ? (words, capitals) : null;
+
     /// <summary>Creation's portrait menu's pens under the Amiga pages (words 16, capitals 28: hunk 10 +0x3778–0x3790),
     /// or null (the usual menu pens).</summary>
     internal static GoldBox.Client.Screens.ExploreScreen.AmigaMenuPens? PortraitMenuPens =>
@@ -318,12 +334,53 @@ public static class AmigaView
     public static int NameLength(bool amiga) => amiga ? CreationNameLength : EclCharacter.MaxNameLength;
 
     /// <summary>
-    /// The created character's name: the Amiga copies the requester's text as typed (strncpy, hunk 10 +0x212E; asked
-    /// again while empty, +0x2136–0x2146), so lower case stays (its font draws it); DOS stores it upper case. The Amiga
-    /// then stores each space as 0xFF (hunk 10 +0x2332–0x2356; its font draws 0xFF blank), its own record's matter: the
-    /// Client keeps the space (the DOS record).
+    /// The created character's name. The Amiga copies the requester's text as typed (strncpy, hunk 10 +0x212E; asked
+    /// again while empty, +0x2136–0x2146), compares that with its developer names (<see cref="DeveloperBlocks"/>), stores
+    /// each space as 0xFF (+0x2332–0x2356; drawn blank, its own record's matter: the Client keeps the space), then saves
+    /// the character (+0x2380 → hunk 16 +0x49C), which first writes the name back as <see cref="SavedName"/>: so the
+    /// name ends upper case (s46: typed "ldvorldv", the POOLSAVE disk's file and record both "LDVORLDV"). DOS stores it
+    /// upper case at once.
     /// </summary>
-    public static string CreationName(string typed, bool amiga) => amiga ? typed : typed.ToUpperInvariant();
+    public static string CreationName(string typed, bool amiga) => amiga ? SavedName(typed) : typed.ToUpperInvariant();
+
+    /// <summary>The characters the Amiga's character save drops from a name (hunk 11 +0x4C, nine bytes, the space first:
+    /// spaces are 0xFF by then, so the Client, which keeps them as spaces, never drops one).</summary>
+    private const string SaveDropped = " .*,?/:;|";
+
+    /// <summary>
+    /// The name as the Amiga's character save (hunk 16 +0x49C–0x4DA; run by creation's end, Remove and Save) writes it
+    /// back into the record before the file is written: strncpy(name, H10+0x1B8(H10+0xE8(name, ".")), 40).
+    /// H10 +0xE8 deletes a '.' only where the byte before it is a '.' too, or at the start (it compares the
+    /// one-byte copy at index − 1, hunk 27 +0x7080, clamped to 0). H10 +0x1B8 walks the name once and, at each
+    /// index, tries the nine bytes of <see cref="SaveDropped"/> in order, deleting the byte on a match (the next byte
+    /// moves in and meets only the rest of the table), then upper-cases a–z (hunk 0 +0x6DC). Rename (hunk 10 +0x5532)
+    /// does not save, so a renamed member keeps the typed case until the next Save or Remove. Under the Amiga pages
+    /// only: the saved members' names (<see cref="SavedName"/>).
+    /// </summary>
+    public static void SaveNames(IEnumerable<EclCharacter> members)
+    {
+        if (!On)
+            return;
+        foreach (var c in members)
+            c.Name = SavedName(c.Name);
+    }
+
+    /// <summary>One name as <see cref="SaveNames"/> writes it (DOS names are upper case already).</summary>
+    public static string SavedName(string name)
+    {
+        var s = new System.Text.StringBuilder(name);
+        for (int i = 0, end = s.Length; i < end && i < s.Length; i++)
+            if (s[i] == '.' && s[Math.Max(i - 1, 0)] == '.')
+                s.Remove(i, 1);
+        for (int i = 0; i < s.Length; i++)
+            for (int k = 1; k < SaveDropped.Length && i < s.Length; k++)
+                if (s[i] == SaveDropped[k])
+                    s.Remove(i, 1);
+        for (int i = 0; i < s.Length; i++)
+            if (s[i] is >= 'a' and <= 'z')
+                s[i] = (char)(s[i] - 32);
+        return s.ToString();
+    }
 
     /// <summary>
     /// Creation's developer lines (hunk 10 +0x2148–0x2330, <see cref="GoldBox.Data.Module.Por.PorAmigaText.DeveloperKey"/>):

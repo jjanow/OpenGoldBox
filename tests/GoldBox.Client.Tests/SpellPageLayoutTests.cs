@@ -144,4 +144,61 @@ public class SpellPageLayoutTests
         Assert.DoesNotContain(box, l => l.Column == 26);    // level 3: slot byte 0, blank
         Assert.DoesNotContain(box, l => l.Row == 21);
     }
+
+    [Fact]
+    public void The_heal_list_has_its_whole_title_in_white_rows_from_column_2_and_its_words_from_column_0()
+    {
+        // The temple's heal list (0x4F4E, DOSBox-X s46 pixel-equal): title at (1, 1) colour 15, the window (2, 4)–(38, 15)
+        // lit on row 0, the blank text box framed below, "HEAL EXIT" on row 24 from column 0.
+        var names = Enumerable.Range(0, 10).Select(i => "CURE " + i).ToList();
+        var t = new TradeContext
+        {
+            Dialog = new Dialog(_ => null, new TextWindow()),
+            Text = new GameText(),
+            Party = new EclParty(),
+            Pool = new uint[7],
+            Treasure = [],
+            Random = n => 0,
+        };
+        var f = Draw(VenueScreens.HealPage(t, names, "ANNA", 0));
+        Assert.Equal((byte)15, Cell(f, 1, 1));              // the title, white
+        Assert.Equal((byte)0, Cell(f, 1, 4));               // column 1 blank: the rows start at column 2
+        Assert.Equal((byte)15, Cell(f, 2, 4));              // row 0 lit
+        Assert.Equal((byte)10, Cell(f, 2, 5));              // the others green
+        Assert.Equal((byte)0, Cell(f, 2, 14));              // ten rows only
+        foreach (int row in new[] { 0, 2, 16, 23 })
+            Assert.Null(Cell(f, 5, row));                   // braid rows: the windows' frames and the text box's
+        Assert.Equal((byte)15, Cell(f, 0, 24));             // "HEAL" from column 0, lit
+        Assert.Equal((byte)15, Cell(f, 5, 24));             // the E of EXIT (hotkey)
+        Assert.Equal((byte)10, Cell(f, 6, 24));
+    }
+
+    [Fact]
+    public void The_heal_list_runs_the_highlighted_row_on_Return_with_Exit_lit()
+    {
+        // 0x50F2: 'H' or 13 runs the row; the list routine returns 13 for Return whatever word is lit (DOSBox-X s46).
+        var t = new TradeContext
+        {
+            Dialog = new Dialog(_ => null, new TextWindow()),
+            Text = new GameText(),
+            Party = new EclParty(),
+            Pool = new uint[7],
+            Treasure = [],
+            Random = n => 0,
+        };
+        var r = VenueScreens.HealPage(t, Enumerable.Range(0, 10).Select(i => "CURE " + i).ToList(), "ANNA", 2);
+        var page = new ListPage();
+        var input = new ActionInput(InputBindings.Defaults());
+        ListAnswer? Key(Microsoft.Xna.Framework.Input.Keys k)
+        {
+            input.Update(new Microsoft.Xna.Framework.Input.KeyboardState(k), default, default, TimeSpan.Zero, _ => null);
+            var a = page.Update(r, input);
+            input.Update(default, default, default, TimeSpan.Zero, _ => null);
+            return a;
+        }
+        Assert.Null(Key(Microsoft.Xna.Framework.Input.Keys.Right));    // Exit lit
+        Assert.Equal(1, page.SelectedAction);
+        var answer = Key(Microsoft.Xna.Framework.Input.Keys.Enter);
+        Assert.Equal(new ListAnswer(0, 2), answer with { Top = 0 });    // Heal on the lit row, not Exit
+    }
 }

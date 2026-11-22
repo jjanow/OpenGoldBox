@@ -56,6 +56,9 @@ public sealed class CombatScreen
 
     public bool Active => _view.Active;
 
+    /// <summary>The status words by record byte 0x10C (START DS:1047, 13 bytes each; the panel's out-of-play line).</summary>
+    public Func<int, string?> StatusName { get; init; } = _ => null;
+
     /// <summary>The program's shared menu highlight (DS:6B2B), the same cell the area and camp menus use; its list
     /// top is the one the list pages enter and page (<see cref="ListPage.Shared"/>).</summary>
     public MenuHighlight Highlight
@@ -235,7 +238,9 @@ public sealed class CombatScreen
         // (0x2D6B9). FollowHighlight keeps it on the menu's entry while the menu is up.
         _selected = 0;
         _typed = "";
-        _letters = request is TextRequest { Numeric: false } tr ? new CharGrid(CharGrid.Letters, LettersRow, tr.MaxLength) : null;
+        _letters = request is TextRequest { Numeric: false } tr
+            ? new CharGrid(CharGrid.Letters, LettersRow, tr.MaxLength) { KeepsCase = tr.KeepsCase }
+            : null;
         // Another request that draws row 24 (or a page over the screen) replaces the menu kept there.
         if (request is not (null or DelayRequest or ChoiceRequest { Vertical: false }))
             _staleMenu = null;
@@ -414,7 +419,7 @@ public sealed class CombatScreen
         {
             int? alt = input.Pressed(GameAction.FightQuickMagic) ? CombatChooser.AnswerQuickMagic
                 : input.Pressed(GameAction.FightAllQuick) ? CombatChooser.AnswerAllQuick
-                : input.Pressed(GameAction.FightAltX) ? CombatChooser.AnswerAltX
+                : input.Pressed(GameAction.FightAltX) && !AmigaView.On ? CombatChooser.AnswerAltX // none on the Amiga (AltKeys)
                 : null;
             if (alt is { } a)
             {
@@ -781,7 +786,7 @@ public sealed class CombatScreen
                 break;
             case ChoiceRequest { Vertical: false } c:
                 if (c.MenuPrompt is { Length: > 0 } mp)
-                    Chrome.MenuPrompt(f, _font, 0, MenuRow, mp, PromptColour);
+                    Chrome.MenuPrompt(f, _font, 0, MenuRow, mp, c.MenuPromptColour ?? PromptColour);
                 DrawEntries(f, c.Items, MenuStart(c), _selected);
                 break;
             case DelayRequest when _view.PageMessage is { } msg:
@@ -903,17 +908,15 @@ public sealed class CombatScreen
     {
         if (_view.ItemEffectText is not { } window)
             return;
+        // DOS START 0x16EC with DS:49F3 = 2: the frame (03F1:0000 with 1, 17, 38, 22), (1, 17)–(38, 22) blanked, the name
+        // (START 0x1816), the text printed. The Amiga's copy (hunk 13 +0x49FE–0x4A74, s46): the frame blit (hunk 25
+        // +0x16D4 with 1, 17, 38, 22; none while resting, hunk 32 +0x1A32, as DOS's DS:6DDA), the blank (+0x197A), the
+        // name through the name routine (+0x4AD4: the string routine, whole), the text through the print (+0x10EC, glyph
+        // by glyph) in pen 28; so the window's draws are replayed in order (Chrome.TextRuns).
         Chrome.Box(f, TextWindow.Left - 1, TextWindow.Top - 1, TextWindow.Right + 1, TextWindow.Bottom + 1);
         for (int row = TextWindow.Top; row <= TextWindow.Bottom; row++)
-        {
             Chrome.Clear(f, TextWindow.Left, row, TextWindow.Right - TextWindow.Left + 1);
-            for (int col = TextWindow.Left; col <= TextWindow.Right; col++)
-            {
-                var (glyph, colour) = window.Cell(row, col);
-                if (glyph != '\0')
-                    Text(f, col, row, glyph.ToString(), colour);
-            }
-        }
+        Chrome.TextRuns(f, _font, window.Runs(TextWindow.Top, TextWindow.Bottom));
     }
 
     /// <summary>The combat palette: EGA colours 0 and 8 trade places (see the class summary). Exposed for tests.</summary>
@@ -1054,10 +1057,15 @@ public sealed class CombatScreen
         if (PanelCreature() is { } c)
         {
             var lines = _view.ShownLines is { } sl && ReferenceEquals(sl.Creature, c) ? sl : (c, CombatChooser.NameColour(c), (int)c[FightRules.Hp]);
-            Text(f, PanelCol, 1, Fit(AmigaView.Case(c.Name), 16), lines.Item2);   // the Amiga draws the name as stored
+            // The Amiga's panel (hunk 13 +0x3E4A, s46): (23, 1)–(38, 21) blanked, the name through the creature message
+            // routine (+0x4970 → the name routine +0x4AD4: the string routine, pens 28 / 24 / 18 for DOS 11 / 12 / 14),
+            // "Hitpoints" and "AC" at (23, 3) / (23, 5) and the AC number at column 26 (+0x3D38) through the string routine
+            // in pen 28, the HP number at column 33 (+0x3DD4), the weapon name printed (+0x10EC) into (23, 7)–(38, 9) in
+            // pen 28. Strings are drawn whole (Whole), the printed weapon name glyph by glyph.
+            Whole(f, PanelCol, 1, Fit(AmigaView.Case(c.Name), 16), lines.Item2);   // the Amiga draws the name as stored
             // The HP number as the party list (START 0x1513): yellow below the maximum 0x32 (DOSBox-X s29: 185 of 200).
             string hpLabel = _text[CombatMsg.PanelHitpoints].Trim() + " ";
-            Text(f, PanelCol, 3, Fit(hpLabel, 16), Chrome.Green);
+            Whole(f, PanelCol, 3, Fit(hpLabel.TrimEnd(), 16), Chrome.Green);
             // Amiga: the party list's hit-point routine (hunk 13 +0x3EB8 → +0x3DD4): colour 8 below the maximum, else 10.
             if (hpLabel.Length < 16
                 && !_font.DrawAmiga(f, (PanelCol + hpLabel.Length) * 8, 3 * 8,
@@ -1065,26 +1073,49 @@ public sealed class CombatScreen
                 Text(f, PanelCol + hpLabel.Length, 3, Fit(lines.Item3.ToString(CultureInfo.InvariantCulture), 16 - hpLabel.Length),
                     lines.Item3 < c[0x32] ? Chrome.Yellow : Chrome.Green);
             // [?] AC as 60 − record byte 0x111, as the party list (ExploreScreen); DOSBox-X: Darkstar 7, Thrender 1.
-            Text(f, PanelCol, 5, Fit(_text[CombatMsg.PanelAc].Trim() + " " + (60 - c[FightRules.Ac]).ToString(CultureInfo.InvariantCulture), 16), Chrome.Green);
+            // The label and the number are two strings (Amiga +0x3EC8 / +0x3D38), one cell apart.
+            string acLabel = _text[CombatMsg.PanelAc].Trim();
+            Whole(f, PanelCol, 5, Fit(acLabel, 16), Chrome.Green);
+            if (acLabel.Length + 1 < 16)
+                Whole(f, PanelCol + acLabel.Length + 1, 5,
+                    Fit((60 - c[FightRules.Ac]).ToString(CultureInfo.InvariantCulture), 15 - acLabel.Length), Chrome.Green);
             // START 0x1675: the weapon's name (ending in a space, as composed) word-wrapped into (23, 7)–(38, 9) through
             // 0x77F8 (DOSBox-X s19: "TWO-HANDED SWORD " takes two rows).
+            // The cursor row the status line follows (DS:5E25; Amiga hunk 32 +0x2D0): the AC line's 5, or where the
+            // weapon's print left it.
+            int cursorRow = 5;
             if (_view.Fight is { } fight && FightRules.Equipment(c, fight.Items)[FightRules.SlotWeapon] is { } w)
             {
                 var box = new TextWindow(PanelCol, 7, 38, 9);
                 box.PrintIn(PanelCol, 7, 38, 9, ItemNames.Compose(w, _itemWord), true, Chrome.Green);
+                cursorRow = box.Row;
                 int left = _view.WeaponTyped ?? int.MaxValue; // typed while DS:4A00 is set (CombatChooser.ShowPanel)
                 for (int row = 7; row <= 9; row++)
                     for (int col = PanelCol; col <= 38; col++)
                         if (box.Cell(row, col) is ({ } ch and not '\0', var colour) && left-- > 0)
-                            Text(f, col, row, ch.ToString(), colour);
+                            Chrome.Glyphs(f, _font, col, row, ch.ToString(), colour);   // printed: one glyph at a time
             }
+            // START 0x16A0–0x170D (Amiga hunk 13 +0x3F46–0x3FB4): two rows under the cursor, a fixed-cell string in
+            // colour 15 (Amiga pen 16, the string routine): out of play (0x10D = 0; Amiga 0x10F) the status word of
+            // 0x10C (Amiga 0x10E, its table hunk 31 +0x323), else when helpless (START 0x1713) "(HELPLESS)". FS-UAE s46:
+            // "(Helpless)" on row 9 under a one-row weapon for a sleeping cleric, grey.
+            string? status = c[FightRules.InPlay] == 0
+                ? StatusName(c[FightRules.Status]) is { } st ? AmigaView.Case(st) : null
+                : FightRules.IsHelpless(c) ? _text[CombatMsg.PanelHelpless] : null;
+            if (status is not null && cursorRow + 2 <= CombatView.PanelBottom)
+                Text(f, PanelCol, cursorRow + 2, Fit(status, 16), Chrome.White);
         }
-        // The message area: the panel's cells as START 0x16EC / 0x77F8 wrote them.
-        var panel = _view.Panel;
-        for (int row = 1; row <= CombatView.PanelBottom; row++)
-            for (int col = CombatView.PanelLeft; col <= CombatView.PanelRight; col++)
-                if (panel.Cell(row, col) is ({ } ch and not '\0', var colour))
-                    Text(f, col, row, ch.ToString(), colour);
+        // The message area: the panel's draws as START 0x16EC / 0x77F8 made them, in their order (the names and fixed
+        // lines whole, the printed text glyph by glyph: Chrome.TextRuns).
+        Chrome.TextRuns(f, _font, _view.Panel.Runs(1, CombatView.PanelBottom));
+    }
+
+    /// <summary>A fixed-cell string as the string routine draws it (Amiga hunk 25 +0xC3C: whole, JAM2 then pass 2); the
+    /// DOS font as before.</summary>
+    private void Whole(IndexedFrame f, int col, int row, string s, byte colour)
+    {
+        if (!_font.DrawString(f, col * 8, row * 8, s, colour, 0))
+            Text(f, col, row, s, colour);
     }
 
     private void DrawLines(IndexedFrame f, ActionInput input)
@@ -1176,7 +1207,7 @@ public sealed class CombatScreen
     {
         int start = MenuStart(c);
         if (c.MenuPrompt is { Length: > 0 } mp)
-            Chrome.MenuPrompt(f, _font, 0, MenuRow, mp, PromptColour);
+            Chrome.MenuPrompt(f, _font, 0, MenuRow, mp, c.MenuPromptColour ?? PromptColour);
         if (AmigaView.On)
         {
             ExploreScreen.DrawLine(f, _font, c.Items, selected, start, scriptText: c.ScriptText);
@@ -1199,16 +1230,28 @@ public sealed class CombatScreen
     private bool IsMainMenu(ChoiceRequest c) => _view.Mode == CombatMode.Menu && c.MenuPrompt is null;
 
     /// <summary>The main menu's Alt keys on row 23 for the pad (their buttons) and the mouse (words to click).</summary>
-    private static readonly string[] AltWords = ["MAGIC", "ALL-QUICK", "ALT-X"];
+    private static string[] AltWords => AltKeys(AmigaView.On).Words;
     private const int AltWordsStart = 5;
-    private static readonly int[] AltAnswers = [CombatChooser.AnswerQuickMagic, CombatChooser.AnswerAllQuick, CombatChooser.AnswerAltX];
+    private static int[] AltAnswers => AltKeys(AmigaView.On).Answers;
+
+    /// <summary>
+    /// The main menu's Alt keys: DOS takes Alt-M, Alt-Q and Alt-X (0x9FF3–0xA057). The Amiga program has no Alt-X: its
+    /// menu key loop (hunk 1 +0x1C42–0x1DF4) takes M V A U C T Q D, the magic toggle (key 0x3B, +0x1D5A), space and the
+    /// all-quick key (−26, +0x1DBA), and its AI key check (hunk 1 +0x127E) only the magic toggle and space; there is no
+    /// Alt-X routine, so no refusal either (s45 A1, s46 A2). Under the Amiga art (<paramref name="amiga"/>, as every
+    /// Amiga-program difference) the Client offers no Alt-X.
+    /// </summary>
+    internal static (string[] Words, int[] Answers) AltKeys(bool amiga) => amiga
+        ? (["MAGIC", "ALL-QUICK"], [CombatChooser.AnswerQuickMagic, CombatChooser.AnswerAllQuick])
+        : (["MAGIC", "ALL-QUICK", "ALT-X"], [CombatChooser.AnswerQuickMagic, CombatChooser.AnswerAllQuick, CombatChooser.AnswerAltX]);
 
     private static string AltHint(ActionInput input)
     {
         if (input.LastDevice == InputDevice.Mouse)
             return "ALT: " + string.Join(' ', AltWords);
         string L(GameAction a) => PromptLabels.For(input.Bindings, a, InputDevice.Gamepad);
-        return $"{L(GameAction.FightQuickMagic)} MAGIC {L(GameAction.FightAllQuick)} ALL QUICK {L(GameAction.FightAltX)} ALT-X";
+        string hint = $"{L(GameAction.FightQuickMagic)} MAGIC {L(GameAction.FightAllQuick)} ALL QUICK";
+        return AmigaView.On ? hint : $"{hint} {L(GameAction.FightAltX)} ALT-X";
     }
 
     /// <summary>How to move on the pad or with the mouse (the keyboard uses the original's keypad keys).</summary>

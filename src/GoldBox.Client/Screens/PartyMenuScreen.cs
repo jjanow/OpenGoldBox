@@ -144,6 +144,9 @@ public sealed class PartyMenuScreen(PartyMenuFlow flow, ScriptRunner runner, ISc
         return false;
     }
 
+    /// <summary>A list routine page: a <see cref="ListRequest"/>, or a pick shown as one (<see cref="PickRequest.List"/>: Add).</summary>
+    private static ListRequest? AsList(PlayerRequest? r) => r as ListRequest ?? (r as PickRequest)?.List;
+
     private void Sync()
     {
         var r = runner.Pending;
@@ -163,7 +166,7 @@ public sealed class PartyMenuScreen(PartyMenuFlow flow, ScriptRunner runner, ISc
             _selected = cp.Page.Selected;
         if (r is DelayRequest d)
             _delayEnd = _clock.Elapsed + d.Duration;
-        if (r is ListRequest l)
+        if (AsList(r) is { } l)
         {
             _list.Sync(l);
             if (l.SharedHighlight)
@@ -209,7 +212,7 @@ public sealed class PartyMenuScreen(PartyMenuFlow flow, ScriptRunner runner, ISc
             _hasClick = false;
             return new Reply(_clickAnswer);
         }
-        switch (request)
+        switch (AsList(request) ?? request)
         {
             case PartyMenuRequest m:
             {
@@ -457,7 +460,7 @@ public sealed class PartyMenuScreen(PartyMenuFlow flow, ScriptRunner runner, ISc
                     _typed = _typed[..^1];
                 return null;
             }
-            if (KeyChar(name) is { } ch)
+            if (CharGrid.KeyChar(name, input, t.KeepsCase) is { } ch)
             {
                 Type(t, ch);
                 return null;
@@ -524,7 +527,7 @@ public sealed class PartyMenuScreen(PartyMenuFlow flow, ScriptRunner runner, ISc
     {
         Sync();
         int col = x / 8, row = y / 8;
-        switch (runner.Pending)
+        switch (AsList(runner.Pending) ?? runner.Pending)
         {
             case ListRequest l:
                 _list.Hover(l, col, row);
@@ -565,7 +568,7 @@ public sealed class PartyMenuScreen(PartyMenuFlow flow, ScriptRunner runner, ISc
             _clickAnswer = v;
             _hasClick = true;
         }
-        switch (runner.Pending)
+        switch (AsList(runner.Pending) ?? runner.Pending)
         {
             case ListRequest l:
                 return _list.Click(l, click);
@@ -687,7 +690,7 @@ public sealed class PartyMenuScreen(PartyMenuFlow flow, ScriptRunner runner, ISc
     {
         Sync(); // a request answered this frame is drawn with its own highlight at once (no frame with the old one)
         var pending = runner.Pending;
-        if (pending is ListRequest list)
+        if (AsList(pending) is { } list)
         {
             _list.Draw(f, font, list, input);
             return;
@@ -724,7 +727,9 @@ public sealed class PartyMenuScreen(PartyMenuFlow flow, ScriptRunner runner, ISc
                 DrawPick(f, p, input);
                 break;
             case SheetRequest s:
-                DrawSheet(f, s.Character);
+                // The Amiga's portrait menu (hunk 10 +0x374A) draws only the portrait window (hunk 19 +0x14C4) over the
+                // sheet the keep question left, drawn before the name was asked: no name row (FS-UAE s46).
+                DrawSheet(f, s.Character, hideName: s.IsPortraitMenu && AmigaView.On);
                 break;
             case CharacterPageRequest cp:
                 // The list routine draws its rows again without the highlight when it returns (DOSBox-X s39: the coin
@@ -764,7 +769,7 @@ public sealed class PartyMenuScreen(PartyMenuFlow flow, ScriptRunner runner, ISc
                 Line(f, md.Prompt, PromptColour, md.Actions, _word);
                 break;
             case ChoiceRequest c:
-                Line(f, c.MenuPrompt, PromptColour, c.Items, _word, ChoiceStart(c.MenuPrompt));
+                Line(f, c.MenuPrompt, c.MenuPromptColour ?? PromptColour, c.Items, _word, ChoiceStart(c.MenuPrompt));
                 break;
             case TextRequest t when back is CharacterPageRequest { PickRows: true } && input.LastDevice == InputDevice.Keyboard && !AmigaView.On:
                 // Drop's amount (input 0x24F1D; DOSBox-X s39): the question in green, a space, the digits typed in white,
@@ -795,7 +800,7 @@ public sealed class PartyMenuScreen(PartyMenuFlow flow, ScriptRunner runner, ISc
                 Chrome.Text(f, font, 0, MenuRow, Fit(bl.Text, 40), bl.Colour);
             }
             else if (pending is DelayRequest && _talkChoice is var (kc, lit))
-                Line(f, kc.MenuPrompt, PromptColour, kc.Items, lit, ChoiceStart(kc.MenuPrompt));
+                Line(f, kc.MenuPrompt, kc.MenuPromptColour ?? PromptColour, kc.Items, lit, ChoiceStart(kc.MenuPrompt));
             else if (pending is DelayRequest && back is CharacterPageRequest itemsPage)
                 // Row 24 keeps the page's menu with the chosen entry lit while the text types and pauses (DOSBox-X
                 // s41: the page menu with Id lit under Id's offer).
@@ -880,7 +885,7 @@ public sealed class PartyMenuScreen(PartyMenuFlow flow, ScriptRunner runner, ISc
     /// (<paramref name="field"/>) draws that value in colour 13: an ability (0x2193B, with Strength's exceptional part)
     /// or the hit points (START 0x973).
     /// </summary>
-    private void DrawSheet(IndexedFrame f, EclCharacter c, int? field = null)
+    private void DrawSheet(IndexedFrame f, EclCharacter c, int? field = null, bool hideName = false)
     {
         Chrome.Box(f, 0, 0, 39, 23);
         byte[]? weapon = null, armour = null;
@@ -895,7 +900,7 @@ public sealed class PartyMenuScreen(PartyMenuFlow flow, ScriptRunner runner, ISc
         int nameRow = AmigaView.On ? AmigaView.NameRow : 1;
         foreach (var (col, row, text, colour) in AmigaView.Sheet(CombatSheet.Build(resources, c, weapon, armour,
                      it => AmigaView.Case(ItemNames.Compose(it, resources.ItemWord).Trim())), c, amiga))
-            if (c.Name.Length > 0 || row != nameRow)
+            if ((c.Name.Length > 0 && !hideName) || row != nameRow)
                 Chrome.Text(f, font, col, row, Fit(text, 40 - col),
                     field is { } h && (h < 6 ? row == 7 + h && col is >= 5 and <= 7 : row == 18 && col == 4)
                         ? PromptColour : colour);

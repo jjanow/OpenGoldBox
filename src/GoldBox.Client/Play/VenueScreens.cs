@@ -54,52 +54,91 @@ public static class VenueScreens
     }
 
     /// <summary>
-    /// Buy (0x7035): the stock list (0x6D04: a value 0 becomes 1; name with the value right-aligned at column 30); B or
-    /// Enter buys the highlighted item for the current character (<see cref="ShopRules.Buy"/>), anything else leaves.
+    /// Buy (0x7035): the stock list (0x6D04: a value 0 becomes 1; the name over the value right-aligned at column 30) on
+    /// the item page (<see cref="ItemPage"/>); B or Enter buys the highlighted item for the current character
+    /// (<see cref="ShopRules.Buy"/>), anything else leaves. The position word starts at 1 (0x7050) and keeps the row
+    /// the list routine leaves in it (P + D s46: after start-up's top 1 the window starts at the second item with Prev
+    /// shown; after a list that took the top to 0, the first window with the second row lit).
     /// </summary>
     public static void Buy(TradeContext t)
     {
         ShopRules.PriceStock(t.Treasure);
-        int selected = 0;
+        int position = 1;
         while (t.Current is { } c && t.Treasure.Count > 0)
         {
-            var rows = t.Treasure.Select(it => PriceRow(t.ItemName(it), it)).ToList();
-            var a = t.Dialog.Page(new ListRequest(
-                [new(t.Text[Msg.ShopTitle], 15, 1), new(MoneyScreens.MoneyLine(t, c), 14, 1), new(t.Text[Msg.ItemsHeader], 15, 1)],
-                rows, ["BUY", "EXIT"], 1, FirstRow: 4, VisibleRows: 7)
-            {
-                Selected = Math.Clamp(selected, 0, rows.Count - 1),
-                RowActions = new HashSet<int> { 0 },
-                PartySelect = true,
-            });
-            if (t.SelectMember(a.Action))
-                continue;
+            var rows = t.Treasure.Select(it => PriceRow(t.StoredItemName(it), it)).ToList();
+            var page = ItemPage(t, t.Text[Msg.ShopTitle], "BUY", rows, position);
+            var a = t.Dialog.Page(page);
             if (a.Action != 0 || a.Row < 0 || a.Row >= t.Treasure.Count)
                 return;
-            selected = a.Row;
+            position = a.Row;
             var item = t.Treasure[a.Row];
             // The copy step 0x6F0D runs START 0x1758 before the carry test and after the copy, then the price is paid
             // with no recalculation: the weight keeps the old coins (DOSBox s11: until the items screen is drawn again).
             switch (ShopRules.Buy(c, t.Pool, item, Carrying.StrengthAllowance(c), t.Recalculate))
             {
                 case ShopRules.BuyResult.NotEnoughMoney:
-                    t.Dialog.Say(t.Text[Msg.ShopNoMoney]);
+                    RowMessageOver(t, page, t.Text[Msg.ShopNoMoney]); // 0x7136
                     break;
                 case ShopRules.BuyResult.CannotCarry:
-                    t.Dialog.Say(t.Text[Msg.ShopOverloaded]);
+                    RowMessageOver(t, page, t.Text[Msg.ShopOverloaded]); // the copy step's refusal, 0x6F39
                     break;
             }
         }
     }
 
-    /// <summary>A name with the value right-aligned in a 30-character field (0x6D04).</summary>
+    /// <summary>
+    /// The item page of the shop's Buy (0x6D04) and the loot's item take (0x6092), P + D s46: the window (1, 1)–(38, 22)
+    /// with the title centred on row 1 in white (START 03F1:02E8), then the list routine 0x2D669 with the window
+    /// (1, 4)–(38, 22) (19 rows, paged by Next / Prev through the shared top <see cref="MenuHighlight.ListTop"/>),
+    /// colours 13 / 10 / 15, the prompt "Items: " and the caller's word, then Next / Prev and Exit (flag 1), from the
+    /// position word <paramref name="position"/> as the caller keeps it. No member switch: a key other than the word's
+    /// letter or Return leaves the list (0x706D, 0x61BC). The Amiga passes the same window and positions (hunk 22
+    /// +0x5418–0x545E, hunk 19 +0x7F0–0x86C).
+    /// </summary>
+    public static ListRequest ItemPage(TradeContext t, string title, string word, IReadOnlyList<string> rows, int position) =>
+        new([], rows, [word, "EXIT"], 1, FirstRow: ItemPageFirstRow)
+        {
+            Selected = position,
+            RowActions = new HashSet<int> { 0 },
+            Paging = new ListPaging(t.ListWords.Next, t.ListWords.Prev, ItemPageRows, 1),
+            Spell = new SpellPageLayout("", 15, AmigaView.Case(title.Trim()))
+            {
+                CentredTitle = true,
+                Prompt = AmigaView.Case(t.Text[Msg.ItemsHeader].TrimEnd()) + " ",
+            },
+        };
+
+    /// <summary>
+    /// A refusal on a list page (START 0x2233 through 00BA:1693): the text on row 24 in green over the page, its rows
+    /// unlit as the list routine left them, for the game-speed pause, then the page again (DOSBox-X s46: Buy of a cloak
+    /// without the money, "NOT ENOUGH MONEY." under the shop's rows).
+    /// </summary>
+    public static void RowMessageOver(TradeContext t, ListRequest page, string text)
+    {
+        t.ShowPageAlone(page);
+        CharacterView.RowMessage(t, text);
+        t.ShowPageAlone(null);
+    }
+
+    /// <summary>The item page's list window (1, 4)–(38, 22): its first row and its rows.</summary>
+    public const int ItemPageFirstRow = 4, ItemPageRows = 19;
+
+    /// <summary>
+    /// A stock row (0x6D04): 30 spaces, the value right-aligned in them, then the name copied over from the first
+    /// character and the length set to 30, so a name of 30 characters or more hides the value (DOSBox-X s46: the
+    /// cleric scroll's 29 letters and the naming routine's closing space cover it, the row shows the name alone).
+    /// </summary>
     public static string PriceRow(string name, byte[] item)
     {
         string v = ((ushort)(item[0x3A] | item[0x3B] << 8)).ToString(CultureInfo.InvariantCulture);
-        int room = 30 - v.Length;
-        string n = name.Length > room - 1 ? name[..Math.Max(0, room - 1)] : name;
-        return n.PadRight(room) + v;
+        var row = v.PadLeft(PriceField).ToCharArray();
+        for (int i = 0; i < name.Length && i < PriceField; i++)
+            row[i] = name[i];
+        return new string(row);
     }
+
+    private const int PriceField = 30;
 
     // ---- Temple (0x5280) -------------------------------------------------------------------------------------------
 
@@ -171,39 +210,101 @@ public static class VenueScreens
     /// The heal list (0x4F4E): ten names, the 10th leaves; each entry works on the current character. Absent
     /// condition → "cure anyway?" (0x458A); then the price question (0x4636) and payment (character, else pool, else
     /// "not enough money"); after payment the "cured" text and the effect (<see cref="TempleRules.Apply"/>).
+    /// The screen (P + D s46): row 24 blanked, the window (1, 1)–(38, 22) and the title window (1, 1)–(38, 1) once
+    /// (START 03F1:02E8, frames one cell outside); each pass the title (the name and the question) at (1, 1) in white,
+    /// the text box (1, 17)–(38, 22) blanked, and the list routine 0x2D669 (0x50E7) with the window (2, 4)–(38, 15),
+    /// colours 13 / 10 / 15, the word "Heal" and Exit: the menu line "HEAL EXIT" from column 0, the highlighted row
+    /// white, the others green, no cursor. H or Return runs the highlighted row whatever word is lit (Return is 13: with
+    /// Exit lit it still asked for the row's cure), the 10th row leaves, and so do Escape and E; the entry's texts and
+    /// questions come in the text box with the list left above it, every row unlit; at the end the screen is drawn
+    /// again (START 0x27D9: the text box empty) (DOSBox-X s46). `[?]` The Amiga's heal list layout and its pay
+    /// question's pens are not seen in FS-UAE: the Client draws the DOS layout under either art.
+    /// The position word [bp−0xC] is not stored before the first call: it is the stack word that the temple menu's call
+    /// of the menu routine left there (its 0 argument, 0x5314, pushed as AX whose AH is 0 from `mov ax, 0x28` at 0x52D6 /
+    /// 0x52EB through the two string calls), so 0 on every entry (DOSBox-X s46, residue probe: 0 after a fresh start,
+    /// after leaving the list on row 3 and after View). The list therefore starts lit on its first row and takes the
+    /// shared window top to 0 (<see cref="MenuHighlight.ListEntered"/>, done by the page's host); later passes keep the
+    /// row the list returned (DOSBox-X: Cure Light Wounds still lit after its price question was refused).
     /// </summary>
     public static void HealList(TradeContext t)
     {
         var names = (t.TempleNames ?? OurCures).Select(n => AmigaView.Case(n)).ToList();
-        // `[?]` The program's list (0x2D669 at 0x50E7, rows 4–15) passes the position word [bp−0xC] of 0x4F4E, which
-        // nothing stores before the first call (stack residue, read s45): how it moves the list routine's global top
-        // (MenuHighlight.ListTop) is unknown, so this list leaves the Client's top as it was.
+        int position = 0; // [bp−0xC]: 0 on entry (see above), then the row the list returns
         while (t.Current is { } c)
         {
             string who = AmigaView.Case(c.Name);
-            int i = t.Dialog.List(who + t.Text[Msg.HowCanWeHelp], names, cancel: names.Count - 1);
-            if (i < 0 || i >= 9)
+            var page = HealPage(t, names, who, position);
+            var a = t.Dialog.Page(page);
+            if (a.Action != 0 || a.Row < 0 || a.Row >= 9)
+            {
+                t.Dialog.Text.Clear(); // 0x51A0: START 0x27D9 draws the screen again, the text box empty
                 return;
-            var cure = (TempleRules.Cure)i;
-            var d = t.Dialog;
-            if (!TempleRules.Applies(cure, c) && Absent(cure) is { } absent)
-            {
-                d.Show(GameText.Cat(who, t.Text[absent]));
-                if (!d.YesNo(t.Text[Msg.CureAnyway]))
-                    continue;
             }
-            ushort price = TempleRules.Price(cure);
-            d.Show(GameText.Cat(names[i] + t.Text[Msg.WillOnlyCost], price) + t.Text[Msg.GoldPieces]);
-            if (!d.YesNo(t.Text[Msg.PayForCure]))
-                continue;
-            if (Money.Pay(c, t.Pool, price, wideCharacterTotal: false) == Money.Payer.None)
+            int i = position = a.Row;
+            t.ShowPageUnder(page); // the list stays above the text box while the entry runs (rows unlit)
+            try
             {
-                d.Say(t.Text[Msg.TempleNoMoney]);
-                continue;
+                Heal(t, c, names, who, i);
             }
-            d.Say(who + t.Text[Msg.IsCured]);
-            TempleRules.Apply(cure, c, t.Random);
+            finally
+            {
+                t.ShowPageUnder(null);
+            }
         }
+    }
+
+    /// <summary>The heal list's window (2, 4)–(38, 15): its first row and its rows.</summary>
+    public const int HealFirstRow = 4, HealRows = 12;
+
+    /// <summary>The pay question's word colours (0x4636 → 0x3C5:0x39 at 0x46CE with 13, 15, 10: words white, lit and hotkeys green).</summary>
+    public static readonly (byte Words, byte Lit) PayColours = (15, 10);
+
+    /// <summary>One pass of the heal list's page (<see cref="HealList"/>).</summary>
+    public static ListRequest HealPage(TradeContext t, IReadOnlyList<string> names, string who, int position) =>
+        new([], names, ["HEAL", "EXIT"], 1, FirstRow: HealFirstRow)
+        {
+            Selected = position,
+            RowActions = new HashSet<int> { 0 },
+            ReturnRunsFirstAction = true, // 0x50F2: 'H' or 13 runs the row
+            // Ten rows in a twelve-row window whose top is 0: Next / Prev never show (0x2D7E6 / 0x2D854).
+            Paging = new ListPaging("NEXT", "PREV", HealRows, 1),
+            Spell = new SpellPageLayout("", 15, who + t.Text[Msg.HowCanWeHelp])
+            {
+                WholeTitle = true,
+                RowColumn = 2,
+                MenuColumn = 0,
+                Box = [],
+            },
+        };
+
+    private static void Heal(TradeContext t, EclCharacter c, List<string> names, string who, int i)
+    {
+        var cure = (TempleRules.Cure)i;
+        var d = t.Dialog;
+        if (!TempleRules.Applies(cure, c) && Absent(cure) is { } absent)
+        {
+            // 0x458A: START 0x16EC(member, text, 0, no pause) outside a fight: (1, 17)–(38, 22) cleared, the name at
+            // (1, 18) in its colour, the text word-wrapped from (1, 19) in green (DOSBox-X s46: "THRENDER GRONE" cyan on
+            // row 18, "IS NOT BLIND." on row 19), then the question (13, 10, 15).
+            var w = d.Text;
+            w.ClearRect(TextWindow.Left, TextWindow.Top, TextWindow.Right, TextWindow.Bottom);
+            w.Put(TextWindow.Top + 1, TextWindow.Left, who, CombatChooser.NameColour(c));
+            w.PrintIn(TextWindow.Left, TextWindow.Top + 2, TextWindow.Right, TextWindow.Bottom, AmigaView.Case(t.Text[absent]),
+                true, TextWindow.ScriptColour);
+            if (!d.YesNo(t.Text[Msg.CureAnyway]))
+                return;
+        }
+        ushort price = TempleRules.Price(cure);
+        d.Show(GameText.Cat(names[i] + t.Text[Msg.WillOnlyCost], price) + t.Text[Msg.GoldPieces]);
+        if (!d.YesNo(t.Text[Msg.PayForCure], colours: PayColours))
+            return;
+        if (Money.Pay(c, t.Pool, price, wideCharacterTotal: false) == Money.Payer.None)
+        {
+            d.Say(t.Text[Msg.TempleNoMoney]);
+            return;
+        }
+        d.Say(who + t.Text[Msg.IsCured]);
+        TempleRules.Apply(cure, c, t.Random);
     }
 
     // ---- After combat (0x6866, 0x5E94, 0x644B) ---------------------------------------------------------------------
@@ -342,33 +443,27 @@ public static class VenueScreens
     }
 
     /// <summary>
-    /// The item take (0x6184): the treasure list (title, "Items:"); T or Enter gives the highlighted item to the current
-    /// character through the copy step (refused: overloaded) and frees it from the list; any other key leaves.
+    /// The item take (0x6184): the treasure list on the item page (<see cref="ItemPage"/>, title "Loot"); T or Enter
+    /// gives the highlighted item to the current character through the copy step (refused: overloaded) and frees it
+    /// from the list; any other key leaves. The position word starts at 0 (0x619F) and keeps the row the list routine
+    /// leaves (D s46: after a take on the second page the window stays at its top, one row shorter).
     /// </summary>
     public static void TakeItems(TradeContext t)
     {
-        int selected = 0;
+        int position = 0;
         while (t.Current is { } c && t.Treasure.Count > 0)
         {
             var rows = t.Treasure.Select(t.ItemName).ToList();
-            var a = t.Dialog.Page(new ListRequest(
-                [new(t.Text[Msg.LootTitle], 15, 1), new(AmigaView.Case(c.Name), 11, 1), new(t.Text[Msg.ItemsHeader], 15, 1)],
-                rows, ["TAKE", "EXIT"], 1, FirstRow: 4, VisibleRows: 7)
-            {
-                Selected = Math.Clamp(selected, 0, rows.Count - 1),
-                RowActions = new HashSet<int> { 0 },
-                PartySelect = true,
-            });
-            if (t.SelectMember(a.Action))
-                continue;
+            var page = ItemPage(t, t.Text[Msg.LootTitle], "TAKE", rows, position);
+            var a = t.Dialog.Page(page);
             if (a.Action != 0 || a.Row < 0 || a.Row >= t.Treasure.Count)
                 return;
-            selected = a.Row;
+            position = a.Row;
             var item = t.Treasure[a.Row];
-            // 0x6184 → the copy step 0x6F0D: START 0x1758 before the carry test and after the copy.
+            // 0x6184 -> the copy step 0x6F0D: START 0x1758 before the carry test and after the copy.
             if (!ShopRules.GiveCopy(c, item, Carrying.StrengthAllowance(c), t.Recalculate))
             {
-                t.Dialog.Say(t.Text[Msg.ShopOverloaded]);
+                RowMessageOver(t, page, t.Text[Msg.ShopOverloaded]); // the copy step's refusal, 0x6F39
                 continue;
             }
             t.Treasure.RemoveAt(a.Row);

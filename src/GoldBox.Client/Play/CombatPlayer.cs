@@ -277,6 +277,7 @@ public sealed partial class CombatChooser(Func<PlayerRequest, object?> ask, Comb
         // 0x2C4F / 0x32E0 and the after-combat end 0x6BAF): the panel's texts through START 0x77F8 type out when the
         // fight starts with it set (after the start-up or a fight, no PRINT or ENCMENU since), else they show at once.
         View.Panel.Typed = TypeDelay;
+        View.Panel.WordTyped = WordDelay; // the Amiga's print waits after every word, set flag or not
     }
 
     /// <summary>
@@ -306,6 +307,13 @@ public sealed partial class CombatChooser(Func<PlayerRequest, object?> ask, Comb
     {
         if (View.Speed > 0 && Pauses && Typing())
             ask(new DelayRequest(TimeSpan.FromMilliseconds(10 * View.Speed)) { Chained = true });
+    }
+
+    /// <summary>The Amiga print's wait after a word (hunk 25 +0x1286: speed × 2 ticks, no typing-flag test).</summary>
+    private void WordDelay()
+    {
+        if (View.Speed > 0 && Pauses)
+            ask(new DelayRequest(TextWindow.AmigaWordDelay(View.Speed)) { Chained = true });
     }
 
     public void Detach(Fight fight)
@@ -346,6 +354,7 @@ public sealed partial class CombatChooser(Func<PlayerRequest, object?> ask, Comb
         _goal = null;
         _cursorGoal = null;
         View.Panel.Typed = null;
+        View.Panel.WordTyped = null;
         View.Clear();
     }
 
@@ -393,9 +402,22 @@ public sealed partial class CombatChooser(Func<PlayerRequest, object?> ask, Comb
         // The weapon's name goes through 0x77F8, so it types while DS:4A00 is set (Delay(DS:49E2 × 10) after each
         // character, spaces too); the name, HP and AC lines are fixed-cell strings and show at once. DOSBox-X s29: the
         // weapon typed letter by letter on every panel (turns, attacks, each aim candidate) in a fight entered by a
-        // step's COMBAT after a load.
-        if (!type || View.Speed == 0 || !Pauses || !Typing() || View.Fight is not { } fight
+        // step's COMBAT after a load. The Amiga prints it (hunk 13 +0x3F02–0x3F3E: the print hunk 25 +0x10EC into (23,
+        // row + 1)–(38, row + 3), pen 28, cleared) and so waits speed × 2 ticks after each word, typing flag or not.
+        if (!type || View.Speed == 0 || !Pauses || View.Fight is not { } fight
             || FightRules.Equipment(c, fight.Items)[FightRules.SlotWeapon] is not { } w)
+            return;
+        if (AmigaView.On)
+        {
+            foreach (int shown in WeaponWords(ItemNames.Compose(w, Resources().ItemWord)))
+            {
+                View.WeaponTyped = shown;
+                ask(new DelayRequest(TextWindow.AmigaWordDelay(View.Speed)) { Chained = true });
+            }
+            View.WeaponTyped = null;
+            return;
+        }
+        if (!Typing())
             return;
         int n = WeaponCells(ItemNames.Compose(w, Resources().ItemWord));
         for (int i = 1; i <= n; i++)
@@ -404,6 +426,19 @@ public sealed partial class CombatChooser(Func<PlayerRequest, object?> ask, Comb
             ask(new DelayRequest(TimeSpan.FromMilliseconds(10 * View.Speed)) { Chained = true });
         }
         View.WeaponTyped = null;
+    }
+
+    /// <summary>
+    /// The Amiga's print of the panel's weapon name: after each word it waits (the last word only the NUL), with the
+    /// cells shown so far; the count is of the cells <see cref="WeaponCells"/> counts, in print order.
+    /// </summary>
+    internal static List<int> WeaponWords(string name)
+    {
+        var box = new TextWindow(CombatView.PanelLeft, 7, CombatView.PanelRight, 9) { Amiga = true };
+        var shown = new List<int>();
+        box.WordTyped = () => shown.Add(box.Printed);
+        box.PrintIn(CombatView.PanelLeft, 7, CombatView.PanelRight, 9, name, true, 10);
+        return shown;
     }
 
     /// <summary>The cells the panel's weapon name fills when word-wrapped into (23, 7)–(38, 9), spaces included.</summary>
@@ -968,7 +1003,7 @@ public sealed partial class CombatChooser(Func<PlayerRequest, object?> ask, Comb
     /// </summary>
     private void ItemEffectTextWindow(EclCharacter c, string text)
     {
-        var window = new TextWindow { Typed = TypeDelay };
+        var window = new TextWindow { Typed = TypeDelay, WordTyped = WordDelay };
         View.ItemEffectText = window;
         try
         {
@@ -1082,22 +1117,24 @@ public sealed partial class CombatChooser(Func<PlayerRequest, object?> ask, Comb
     /// </summary>
     private void Frame() => Pause(0, animation: true);
 
-    private int Choose(CombatMode mode, string? prompt, IReadOnlyList<string> items, int? cancel = null, int selected = 0)
+    private int Choose(CombatMode mode, string? prompt, IReadOnlyList<string> items, int? cancel = null, int selected = 0,
+        byte? promptColour = null)
     {
         View.Mode = mode;
         View.MovePrompt = null; // the menu is written over row 24
-        var r = ask(new ChoiceRequest(null, items, false, cancel) { MenuPrompt = prompt, Selected = selected });
+        var r = ask(new ChoiceRequest(null, items, false, cancel) { MenuPrompt = prompt, Selected = selected, MenuPromptColour = promptColour });
         return r is int i ? i : cancel ?? 0;
     }
 
     /// <summary>The yes/no routine 0x2D9A0: the shared highlight goes to No first (0x2D9B9), so the menu opens on No
     /// (DOSBox-X s21: "Continue battle", 0xA1A5).</summary>
-    private bool YesNo(string prompt)
+    private bool YesNo(string prompt, byte? promptColour = null)
     {
         var words = Text.Words(CombatMsg.YesNo);
         if (words.Count < 2)
             words = ["YES", "NO"];
-        return Choose(CombatMode.Question, prompt.TrimEnd(), words, 1, selected: 1) == 0;
+        return Choose(CombatMode.Question, prompt.TrimEnd(), words, 1, selected: 1,
+            promptColour is byte pc ? AmigaView.YesNoPrompt(pc) : null) == 0;
     }
 
     /// <summary>
@@ -1454,7 +1491,7 @@ public sealed partial class CombatChooser(Func<PlayerRequest, object?> ask, Comb
     /// <summary>The spell's aim picked nothing (0x27EF2): yes = the spell is lost.</summary>
     public bool ConfirmAbortSpell(FightMenu menu)
     {
-        bool abort = YesNo(Text[CombatMsg.AbortSpell]);
+        bool abort = YesNo(Text[CombatMsg.AbortSpell], 14); // GAME.OVR 0x27F07: 14 (the Amiga's hunk 22 +0x2C56: pen 24)
         if (abort)
             Say(null, Text[CombatMsg.SpellAborted]);
         return abort;

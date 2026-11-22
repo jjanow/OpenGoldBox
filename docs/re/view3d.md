@@ -307,7 +307,7 @@ Code: `GoldBox.Core.Explore.AreaLoop` (one command at a time), `GameClock`, `Are
   3D layout and the chest in the box (both equal to the Client but the help lines and the pressed gadget). Client before s45: the 3D layout's frames on the overland too (column
   16, row 0 over the party list and (16, 16) differed); now `ExploreScreen` draws the three windows under Amiga
   while the interface layout stands (`overlandLayout`). Equal to FS-UAE but the party, the marker's frame (the
-  session's marker counter, geo-format.md "Marker counter"; the Amiga's after its Load not followed `[?]`), the help
+  session's marker counter, geo-format.md "Marker counter", Amiga read and seen s46), the help
   lines and the pressed gadget.
 - **The shop and temple box shows the last head + body** (P s45, DOS and Amiga; FS-UAE s45). START 0x3379 case 1 draws the
   layout with the box, then loads and draws the head and body last given to the head + body loader (0x33BA–0x33D0:
@@ -316,9 +316,19 @@ Code: `GoldBox.Core.Explore.AreaLoop` (one command at a time), `GameClock`, `Are
   written only by hunk 4 +0x5DC). A part is loaded only when not 0xFF and present in the file (0x2E6A7; hunk 19
   +0x1592); DOS opens the current disk's HEAD / BODY, the Amiga its one head.dax / body.dax. Start values: the
   Amiga's hunk 32 is BSS (zero), so a fresh session's shop or temple shows head 0 (head.dax has it, body.dax has no
-  block 0: the head alone). FS-UAE: the overland shop showed that head in the box. DOS's DS:49FD / 49FE are
-  uninitialised data `[?]`; HEAD3 and HEAD4 have a block 0, HEAD2 (the slums, DOSBox-X s22's shop) has none. Not
-  seen after a portrait `[?]` (the rule says the shop then shows that portrait). Client: `ClientPlayer.VenuePortrait`
+  block 0: the head alone). FS-UAE: the overland shop showed that head in the box. DOS's DS:49FD / 49FE (P + D s46)
+  lie past START's initialised data (DS 0–0x442F) and nothing writes them at start-up: the Turbo Pascal System init
+  (START 0xAF80) clears no data, so they hold what memory held when START loaded. DOSBox-X, whose RAM starts cleared:
+  0, 0 (a state at the party menu after a plain boot; the residue probe at the first heal list, por-art-formats.md
+  "Creation's list labels"); a real machine `[?]` (whatever was there). HEAD3 and HEAD4 have a block 0, HEAD2 (the
+  slums, DOSBox-X s22's shop) has none. **After a portrait** (DOSBox-X s46, scratch saves: save A with vector 0 =
+  `SAVE 5 → $6DE1`, `PICTURE 2`, then the temple or the shop as test saves G / F): the temple and the shop show head 5
+  + body 2 in the box, the temple again after the heal list (the probe logged 05 02); the Client pixel-equal but its
+  help lines (rows 12–13). **The Amiga after a portrait** (P + FS-UAE s46): hunk 4 +0x5DC has two callers, PICTURE
+  with $6DE1 ≠ 255 (hunk 16 +0x238E) and the close-up (hunk 4 +0x7C8), as DOS. FS-UAE (disk A's save A put on block 26's
+  overland at 10,20 N, vector 0 = `SAVE 8 → $6DE1`, `PICTURE 8`, CLRMON, an empty TREASURE, `SAVE 1 → $6E6C`, COMBAT,
+  loaded at the start-up, one step north): the shop's box shows head 8 + body 8; the Client (`--art amiga`, the same
+  code on a `save-overland` save) equal: 0 of 7744 box pixels differ. Client: `ClientPlayer.VenuePortrait`
   (start 0, 0), `ViewPictures.DrawVenuePortrait` (each part the art has; the Amiga art any disk), drawn in the
   Shop venue's blank box; FS-UAE's box equal pixel for pixel.
 - **Camp menu 0x196A0** (s12): DS:49F3 = 2 (saved and restored), a camp message in the text box, then the menu
@@ -355,7 +365,8 @@ EXIT: (1, 17), no clear).
 3. If column + (word length − 1) > x1: column := x0, row + 1, and spaces at p are skipped (0x77A4). If the row is then
    below y1 and text is left, the cursor goes to (x0, y0), a page prompt (a fixed string just before the routine) is
    drawn on row 24 in colour 13, the program waits for a key (GetKey 0x7CC1: a key already waiting answers it at
-   once, below), blanks the box and prints the word; otherwise the next
+   once, below), blanks the box and prints the word (the prompt stays on row 24 under the next page: DOSBox-X s46,
+   ecl-format.md "Page prompt under typed text"); otherwise the next
    pass prints it on the new row. (A test at 0x79A9 for a word ending exactly on x1 can never be true.)
 4. Else the word is drawn (0x7737), one cell per character; while DS:4A00 is set each character is
    followed by Delay(DS:49E2 × 10) (START 0x7782 → the Crt-style Delay START 0xA69C, calibrated milliseconds; s15).

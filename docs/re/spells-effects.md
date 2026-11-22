@@ -32,7 +32,7 @@ Code: `src/GoldBox.Core/Game/EffectHandlers*.cs` (`IFightEffects`, the DAMAGE ho
 | 682A | save type being rolled |
 | 6C94 / 6C95 + 4·(i−1) | spell target list: count / far pointers (nil = dropped) |
 | 6DBF | an item is being used |
-| 6828 + 4·id | effect handler table (ids 1..127 effects, 128..139 item codes; built at 0x11DFD, except id 88 = DS:6988, written by the spell table builder at 0x2A7B9) |
+| 6828 + 4·id | effect handler table (ids 1..127 effects, 128..139 item codes; built at 0x11DFD, except id 88 = DS:6988, written by the spell table builder at 0x2A7B9; the Amiga's, hunk 32 +0x14EA + 4·id built at hunk 7 +0x328C, has the same ids in the same slots, s46) |
 | 6B84 + 4·id | spell routine table (id 0 = target pick: 0x27AA9 outside a fight, 0x148BE in one; built at 0x2A42B) |
 | 6DB9 / 6DBA | the aimed square (the caster's at the pick start, then the last aim; Lightning Bolt's rebound moves it) |
 | 6DBB | stinking-cloud list (19-byte GetMem nodes, see spell 34 / handler 40) |
@@ -249,8 +249,8 @@ the program's data; `PorSpellData.Names` reads them from the player's program.
 | 135 | 0x11D8F | Str < 19 → unreadied, its text through START 0x1693 (row 24; s30) |
 | 137 | 0x11DD5 | removed → effect 0x17 removed |
 | 40 | 0xF91E | (only as a removal call) the caster's cloud numbered param ÷ 16 (first match in DS:6DBB); none → nothing. (Message) each clouded cell gets 0x1F when a body (DS:66D6 + 7k, k ≤ DS:6715, pointer set) lies on it, else the terrain it covered; the node is unlinked and freed; every remaining cloud's cells are set to 0x1E again |
-| 73 | 0x161CD | rake: DS:6823 = 2 hits in phase 1 and the last target in play → combat +4 = 2, 0x114 = 2, 0x116 = 2, 0x118 = 4, 0x113 = 0 (two 2d4 attacks in phase 2), message, MakeAttack (0x1407F, defender turns), actions end |
-| 74 | 0x16281 | hold (from 77), victim = DS:65B9[param]: removed or either out of play → victim's 0x3A goes, and unless removed this record goes (byte 4 cleared first). Else one 3d4 attack (0x113 = 1, 0x114 = 0, 0x115 = 3, 0x117 = 4), MakeAttack with the defender not turning, actions end; victim out of play → the record goes |
+| 73 | 0x161CD | (Amiga: the empty handler, hunk 7 +0x3270, s46; por-art-formats.md "Fight texts") rake: DS:6823 = 2 hits in phase 1 and the last target in play → combat +4 = 2, 0x114 = 2, 0x116 = 2, 0x118 = 4, 0x113 = 0 (two 2d4 attacks in phase 2), message, MakeAttack (0x1407F, defender turns), actions end |
+| 74 | 0x16281 | (Amiga: the empty handler, as 73) hold (from 77), victim = DS:65B9[param]: removed or either out of play → victim's 0x3A goes, and unless removed this record goes (byte 4 cleared first). Else one 3d4 attack (0x113 = 1, 0x114 = 0, 0x115 = 3, 0x117 = 4), MakeAttack with the defender not turning, actions end; victim out of play → the record goes |
 | 75 | 0x103CA | blood drain (from 76), victim = DS:65B9[param]: removed or either out of play → victim's 0x3A goes, unless removed the record goes (byte 4 cleared), and with both in play combat +0x10 = 1. Else (message) 1d4 (count to 681C), element 0, non-weapon damage, actions end; victim in play and minutes ÷ 16 > damage → minutes − 16 × damage, else the record goes |
 | 76 | 0x10510 | attach: 0x4B on the creature (207 minutes, param = target's slot 0x31399, removal on); 0x3A on the target (permanent, param 255) and handler 58 on it |
 | 77 | 0x10590 | target Str < 19: 0x4A on the creature (permanent, slot, removal on), 0x3A on the target, handler 58, message |

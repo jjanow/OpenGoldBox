@@ -559,6 +559,43 @@ public class PartyMenuScreenTests
         Assert.Equal((before & 0xF0) | ((before + 1) & 0x0F), saved[IconEditor.Colours]);
     }
 
+    /// <summary>
+    /// Add's roster (0x1CA7A, P + D s46): the list routine's window (1, 2)–(38, 22) of 21 rows with "Add Exit" and then
+    /// Next / Prev, paging through the shared top. DOSBox-X with 30 names: ROSTER01–21 with "ADD EXIT NEXT"; N shows
+    /// ROSTER10–30 with ROSTER10 lit and "ADD EXIT PREV" (top min(0 + 21, 30 − 21) = 9).
+    /// </summary>
+    [Fact]
+    public void Add_pages_its_roster_in_the_programs_window_through_the_shared_top()
+    {
+        if (Dir() is null)
+            return;
+        using var r = Start(77);
+        for (int i = 1; i <= 30; i++)
+        {
+            var cc = new CharacterCreation(r.Tables, new TurboPascalRandom((uint)i).Next);
+            cc.PickRace(7);
+            cc.PickGender(0);
+            cc.PickClass(cc.ClassChoices()[0]);
+            cc.PickAlignment(cc.AlignmentChoices()[0]);
+            cc.Roll(r.Items);
+            cc.SetName($"ROSTER{i:00}");
+            new PorRoster(r.Roster.FullName).Save(cc.Character, null);
+        }
+        r.Key(Keys.A);
+        var pick = Assert.IsType<PickRequest>(r.Runner.Pending);
+        var list = Assert.IsType<ListRequest>(pick.List);
+        Assert.Equal((2, 21, 2), (list.FirstRow, list.Paging!.Rows, list.Paging.WordsAt));
+        Assert.Equal(["ADD", "EXIT"], list.Actions);
+        Assert.Equal(0, r.Flow.Highlight.ListTop);  // position 0 (0x1CA19): the entry takes the start-up's 1 to 0
+        r.Key(Keys.N);                               // Next: 0x2D502
+        Assert.Equal(9, r.Flow.Highlight.ListTop);
+        r.Key(Keys.Enter);                           // the lit row, at the window's top: ROSTER10 joins
+        Assert.Equal("ROSTER10", r.Flow.Party.Current!.Name);
+        Assert.Equal(9, Assert.IsType<PickRequest>(r.Runner.Pending).List!.Selected); // the position word kept
+        r.Key(Keys.Escape);
+        Assert.IsType<PartyMenuRequest>(r.Runner.Pending);
+    }
+
     private static void AddHero(Rig r, int classChoice = 0)
     {
         var cc = new CharacterCreation(r.Tables, new TurboPascalRandom(5).Next);

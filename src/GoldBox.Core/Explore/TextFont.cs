@@ -155,7 +155,8 @@ public sealed class TextFont
 
     /// <summary>
     /// The menu routine's prompt (hunk 19 +0x4EEE–0x4F6A): with the face, in the pass-2 pen at x + 3 first, then in the
-    /// pen at x + 4 (set bits; the first pass's JAM2 background `[?]`); without it as <see cref="Draw"/>.
+    /// pen at x + 4 (set bits; the first pass's JAM2 background `[?]`); without it as <see cref="Draw"/>. A colour of 16–30
+    /// is an interface pen (the pass-2 pen the next one).
     /// </summary>
     public void DrawMenuPrompt(IndexedFrame f, int x, int y, string text, byte colour)
     {
@@ -163,6 +164,13 @@ public sealed class TextFont
         {
             Pass(face, f, x + 3, y, text, face.Shadows[colour]);
             Pass(face, f, x + 4, y, text, face.Pens[colour]);
+            return;
+        }
+        // An interface pen the caller passes itself (16–30, e.g. the yes/no warnings' 24).
+        if (Face is { InterfaceBase: >= 0 } own && colour is >= 16 and <= 30)
+        {
+            Pass(own, f, x + 3, y, text, (byte)(own.InterfaceBase + colour - 15));
+            Pass(own, f, x + 4, y, text, (byte)(own.InterfaceBase + colour - 16));
             return;
         }
         Draw(f, x, y, text, colour);

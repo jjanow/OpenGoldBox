@@ -450,6 +450,20 @@ Checked against DOSBox-X (PoR v1.3, EGA, save A put on the overland with `goldbo
     to the Client's but its help lines and the pick's hints (one DOSBox-X frame drew the spell page before its menu
     line: machine time). Trade (0x2276E / 0x23190, s42): each START 0x3379 (T, and the money pick again after a transfer) steps the marker
     once (**D** s42, the same save: frames alternate per draw; camp.md "Trade").
+  - **The Amiga** (P + FS-UAE s46): the counter is hunk 32 +0x1A33 (BSS); its four references are the start-up's
+    initialiser (hunk 25 +0x153A, := 0; called once from hunk 10 +0x594) and the marker routine hunk 7 +0x37B6 (slot
+    9 + c / 2, frame c % 2 at +0x3844–0x3876; c := (c + 1) mod 6 at +0x387E–0x388A). The marker routine runs from the
+    redraw hunk 7 +0x396A (at +0x3B24, modes 2–4 unless $49E6 ≠ 0) and the overland interface hunk 13 +0x5E80. Load
+    (hunk 16 +0xFC2) does not touch it; the first pass (hunk 16 +0x51C8) is DOS's 0x403E ($BA := 4, or 3 when $49F2 is
+    25–27 with $49E6 = 0; then hunk 13 +0x5B16 case 4 and the redraw). So the Amiga follows the same rule as DOS.
+    FS-UAE (disk A's save A put on block 26's overland at 10,20 N, $49F2 = 0, loaded at the start-up): frame c3 (slot
+    10, frame 1), the Client's (`--art amiga`, `save-overland` save) silhouette equal. **Open `[?]`:** the same save
+    with vector 0 = PROGRAM 0, one step north, Remove × 6, hall Load of a same-area save (interface state 2, so
+    PROGRAM 0's START 0x3379 copy draws case 2, no redraw; the run goes on to the step): FS-UAE showed c0 (three draws
+    after c3: the step's redraw and two more), the Client c4 (the step's redraw only). The two extra draws were not
+    found: every marker draw goes through the redraw or the interface, the interface needs $C0 (DS:49F9) < 2, and
+    $C0's writers (start-up, the loop restart +0x5074, the command routine's end hunk 19 +0x2C9A) leave 3 there as
+    read; DOS not checked on this path. Amiga saves: savegame layout in save-format.md "Amiga".
   The draw (0x2DC18–0x2DC30) takes icon slot 9 + counter / 2, frame counter % 2; the interface load puts ICON 0, 1, 2
   into slots 9, 10, 11 (0x17285–0x172D5, each slot block b and b + 128). The camp's Alter Icon on the overland ends by
   loading ICON 0 into slot 11 (and 1 into slot 12; icon editor 0x1D84A, start-menu.md §3), so until the next interface

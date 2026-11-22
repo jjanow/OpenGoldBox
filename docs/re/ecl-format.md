@@ -273,6 +273,16 @@ area loop 0x403E (checks at 0x4118–0x423B), which clears it on exit (0x4245); 
   $A0AB) prints the cell's value as digits, and slot 1 keeps the digits afterwards. DOSBox-X check (patched save D):
   PRINTCLR 12345 then PRINT [x] with x = 5 showed `123455`, and slot 1 still held the digits' tail afterwards.
   How the text box shows a text: `view3d.md` "Text window" (program read s12: START 0x77F8).
+- **Page prompt under typed text** (P s45, D s46). A text longer than the box's six rows stops at the text routine's
+  page prompt (START 0x7A12 → the key wait 0x7C85: row 24 blanked, the prompt in colour 13, one key); the wait does
+  not blank the row afterwards, so the prompt stays on row 24 while the next page is typed (the row keeps the command
+  line while the first page types) until a menu, a message or another key line draws there. DOSBox-X s46 (scratch
+  copy, save A with vector 0 = `PRINT` of a 249-character text, then `HMENU "WAIT"`): the first page, the prompt, a
+  key, "LONG TEST TEXT FOR …" typed from row 17 with the prompt still on row 24, then "WAIT" over it. A decoded text
+  past 255 characters ran on with stray characters and the script never reached the menu (a string[255] limit `[?]`,
+  not followed). Client (`ClientPlayer.PagePromptStands`, s45): the first page with its prompt pixel-equal, the prompt
+  standing on row 24 while the next page types (as in DOSBox-X), and "WAIT" over it equal but the help line; the
+  typing pace was not compared (the two captures were not timed against each other).
 - **INPUTNUM / INPUTSTR** (0x1697 / 0x16DA): the length operand is loaded but never fetched.
 - **The ECL line inputs** (P + D s43). INPUTSTR calls START 0x7A73 (0709:09E3) with an empty prompt (the local string
   at 0x16E9), colour 10 and 40 characters; INPUTNUM calls START 0x7BF6 (0709:0B66) with an empty prompt and colour 10,

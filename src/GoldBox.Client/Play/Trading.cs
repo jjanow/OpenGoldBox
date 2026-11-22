@@ -79,6 +79,11 @@ public sealed class TradeContext
     /// </summary>
     public Action<bool> HoldPositionLine { get; init; } = _ => { };
     public required GameText Text { get; init; }
+
+    /// <summary>The list routine's page words Next and Prev (GAME.OVR 0x2D657 / 0x2D65D, read as the aim menu's first
+    /// two, <see cref="CombatMsg.AimNextPrevManual"/>).</summary>
+    public (string Next, string Prev) ListWords { get; init; } = ("NEXT", "PREV");
+
     public required EclParty Party { get; init; }
     /// <summary>The pool: seven dwords (copper … jewellery).</summary>
     public required uint[] Pool { get; init; }
@@ -167,6 +172,10 @@ public sealed class TradeContext
 
     public string ItemName(byte[] item) => AmigaView.Case(ItemNames.Compose(item, Word, Detect).TrimEnd());
 
+    /// <summary>The name as the naming routine leaves it (START 0x0FE2: ending in a space), which the shop's stock rows
+    /// copy whole (0x6D04).</summary>
+    public string StoredItemName(byte[] item) => AmigaView.Case(ItemNames.Compose(item, Word, Detect));
+
     /// <summary>The pool holds money (0x25C07, first answer).</summary>
     public bool PoolHasMoney => Pool.Any(v => v != 0);
 
@@ -225,27 +234,55 @@ public static class MoneyScreens
     }
 
     /// <summary>
-    /// Take (0x25974 → 0x25711): pick a kind the pool holds (kinds 6 down to 0), type an amount; overloaded → a message
-    /// and nothing moves.
+    /// Take (0x25974 → 0x25711), P + D s46: the window (1, 1)–(38, 22) with no title (START 03F1:02E8), then until the
+    /// pool is empty or the player leaves: the kinds the pool holds as a list (built 6 down to 0 by putting each in
+    /// front, so copper comes first; "Copper 100"), the list routine 0x2D669 with the window (2, 2)–(15, 8), colours
+    /// 13 / 10 / 15, the prompt "Select type of coin", an empty word and Exit (flag 1), the position word 0 once
+    /// (0x259A4) and then as the routine leaves it; any key but Escape / E / 0 takes the row (Return too, with Exit lit).
+    /// Then the amount (input 0x24F1D, colour 10: "How much " + the coin + " will you take?", at most the pool's low
+    /// word) on row 24 over the list drawn unlit; overloaded → a message and nothing moves. The Amiga passes the same
+    /// window and position (hunk 19 +0x3A60–0x3B84).
     /// </summary>
     public static void Take(TradeContext t)
     {
-        if (t.Current is not { } c)
-            return;
-        var kinds = Enumerable.Range(0, 7).Reverse().Where(k => t.Pool[k] != 0).ToList();
-        if (kinds.Count == 0)
-            return;
-        var labels = kinds.Select(k => $"{t.Text.Coin(k)} {t.Pool[k].ToString(CultureInfo.InvariantCulture)}").Append("EXIT").ToList();
-        int i = t.Dialog.List(t.Text[Msg.SelectCoin], labels, cancel: labels.Count - 1);
-        if (i < 0 || i >= kinds.Count)
-            return;
-        int kind = kinds[i];
-        int? n = t.Dialog.Number(t.Text[Msg.HowMuch] + t.Text[Msg.WillYouTake]);
-        if (n is not { } amount || amount <= 0)
-            return;
-        if (!ShopRules.Take(c, t.Pool, kind, (ushort)Math.Min(amount, ushort.MaxValue), Carrying.StrengthAllowance(c)))
-            t.Dialog.Say(t.Text[Msg.Overloaded]);
+        int position = 0;
+        while (t.Current is { } c)
+        {
+            var kinds = Enumerable.Range(0, 7).Where(k => t.Pool[k] != 0).ToList();
+            if (kinds.Count == 0)
+                return;
+            var rows = kinds.Select(k => $"{t.Text.Coin(k)} {t.Pool[k].ToString(CultureInfo.InvariantCulture)}").ToList();
+            var page = new ListRequest([], rows, ["EXIT"], 0, FirstRow: CoinKindsFirstRow)
+            {
+                Selected = position,
+                EnterPicks = true,
+                Paging = new ListPaging(t.ListWords.Next, t.ListWords.Prev, CoinKindsRows, 0),
+                Spell = new SpellPageLayout("", 10, "")
+                {
+                    CentredTitle = true,
+                    RowColumn = CoinKindsColumn,
+                    Prompt = AmigaView.Case(t.Text[Msg.SelectCoin].TrimEnd()) + " ",
+                },
+            };
+            var a = t.Dialog.Page(page);
+            if (a.Action != ListRequest.RowPicked || a.Row < 0 || a.Row >= kinds.Count)
+                return;
+            position = a.Row;
+            int kind = kinds[a.Row];
+            string prompt = GameText.Cat(GameText.Cat(t.Text[Msg.HowMuch], t.Text.Coin(kind)), t.Text[Msg.WillYouTake]).TrimEnd();
+            t.ShowPageAlone(page);
+            var typed = t.Dialog.Ask(new TextRequest(prompt, true, 5) { Maximum = (ushort)(t.Pool[kind] & 0xFFFF) }) as string;
+            t.ShowPageAlone(null);
+            // [?] 0x25711 runs with an amount of 0 too (Escape, nothing typed); the Client moves nothing then.
+            if (!ushort.TryParse(typed, NumberStyles.None, CultureInfo.InvariantCulture, out var amount) || amount == 0)
+                continue;
+            if (!ShopRules.Take(c, t.Pool, kind, amount, Carrying.StrengthAllowance(c)))
+                VenueScreens.RowMessageOver(t, page, t.Text[Msg.Overloaded]); // 0x2573C: START 0x2233
+        }
     }
+
+    /// <summary>Take's coin-kind window (2, 2)–(15, 8): its first row, rows and column.</summary>
+    public const int CoinKindsFirstRow = 2, CoinKindsRows = 7, CoinKindsColumn = 2;
 
     /// <summary>
     /// Appraise (0x2663B): needs gems or jewellery on the current character; Gems / Jewelry / Exit until Exit or

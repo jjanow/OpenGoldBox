@@ -38,6 +38,13 @@ public sealed record PickRequest(IReadOnlyList<string> Rows, IReadOnlyList<strin
 
     /// <summary>The first row's screen row.</summary>
     public int FirstRow => Title is null ? 2 : 3;
+
+    /// <summary>
+    /// The pick as the list routine's page (<see cref="GoldBox.Client.Screens.ListPage"/>: its window, Next / Prev and the
+    /// shared top), drawn and answered instead of the rows above (Add's roster); its answer is that page's
+    /// <see cref="ListAnswer"/>.
+    /// </summary>
+    public ListRequest? List { get; init; }
 }
 
 /// <summary>
@@ -319,13 +326,15 @@ public sealed class PartyMenuFlow(Func<PlayerRequest, object?> ask, PartyMenuTex
         Random = n => Random.Next(n),
         Halt = Halt,
         ProgramWord = ProgramWord,
-        YesNo = YesNo,
+        YesNo = q => YesNo(q, 13), // "Do you wish to train?" (0x1C80E: 13)
     };
 
-    private bool YesNo(string prompt)
+    /// <summary>The yes/no 0x2D9A0; every party-menu question passes prompt colour 14 (the quit 0x19DF7, Drop's two
+    /// 0x1B8F7 / 0x1B91C; the Amiga pen 24, hunk 10 +0xA38, +0x23D6, +0x23F2), the training question 13.</summary>
+    private bool YesNo(string prompt, byte promptColour = 14)
     {
         Highlight.Index = 1;
-        return ask(new ChoiceRequest(null, texts.YesNo, false, 1) { MenuPrompt = prompt }) is 0;
+        return ask(new ChoiceRequest(null, texts.YesNo, false, 1) { MenuPrompt = prompt, MenuPromptColour = AmigaView.YesNoPrompt(promptColour) }) is 0;
     }
 
     // ---- Create ---------------------------------------------------------------------------------------------------
@@ -369,16 +378,17 @@ public sealed class PartyMenuFlow(Func<PlayerRequest, object?> ask, PartyMenuTex
         }
         while (ask(new SheetRequest(c, texts.YesNo) { Prompt = texts.KeepCharacter }) is not 0);
 
-        // The Amiga asks through its requester with MaxChars 15 (hunk 10 +0x2114: 14 characters, DOS 15) and keeps the
-        // name as typed (strncpy, hunk 10 +0x212E; DOS upper-cases it). AmigaView.CreationName.
+        // The Amiga asks through its requester with MaxChars 15 (hunk 10 +0x2114: 14 characters, DOS 15), the letters
+        // as its keymap types them (TextRequest.KeepsCase), and keeps the name as typed (strncpy, hunk 10 +0x212E) until
+        // the character save at the end; DOS upper-cases it at once. AmigaView.CreationName.
         string name, typed;
         do
         {
-            typed = ask(new TextRequest(texts.CharacterName, false, AmigaView.NameLength(AmigaView.On))) as string ?? "";
+            typed = ask(new TextRequest(texts.CharacterName, false, AmigaView.NameLength(AmigaView.On)) { KeepsCase = AmigaView.On }) as string ?? "";
             name = typed.Trim();
         }
         while (name.Length == 0);
-        cc.SetName(AmigaView.CreationName(name, AmigaView.On));
+        cc.SetName(AmigaView.On ? name : AmigaView.CreationName(name, false));
         // The Amiga then compares the name with its developer names (hunk 10 +0x2148–0x2330): each match's lines on
         // row 24, each held Delay(100), the row blanked after the block (AmigaView.DeveloperBlocks). DOS has none.
         if (AmigaView.CallPen(GoldBox.Data.Module.Por.PorAmigaText.DeveloperPen) is int devPen)
@@ -394,6 +404,9 @@ public sealed class PartyMenuFlow(Func<PlayerRequest, object?> ask, PartyMenuTex
         PlaySong?.Invoke(3);
         Portrait(c);
         EditIcon(c);
+        // The Amiga's character save (hunk 10 +0x2380 → hunk 16 +0x49C) writes the name back upper case first.
+        if (AmigaView.On)
+            c.Name = AmigaView.CreationName(name, true);
         roster.Save(c, Party);
     }
 
@@ -628,6 +641,7 @@ public sealed class PartyMenuFlow(Func<PlayerRequest, object?> ask, PartyMenuTex
     {
         if (Party.Current is not { } cur)
             return;
+        AmigaView.SaveNames([cur]); // the Amiga's Remove saves through hunk 16 +0x49C (hunk 10 +0x9AC)
         roster.Save(cur, Party);
         PartyMenu.RemoveCurrent(Party);
     }
@@ -646,19 +660,35 @@ public sealed class PartyMenuFlow(Func<PlayerRequest, object?> ask, PartyMenuTex
             _notice = texts.SighOfRelief(c.Name);
     }
 
-    /// <summary>Add (0x1C9EC): the roster list; a picked name is marked and joins when the party rules allow.</summary>
+    /// <summary>
+    /// Add (0x1C9EC): the roster list; a picked name is marked and joins when the party rules allow. P + D s46: the
+    /// inside of (1, 1)–(38, 22) cleared (START 03F1:0137, the menu's frame stays), then the list routine 0x2D669 with the
+    /// window (1, 2)–(38, 22) (21 rows, paged by Next / Prev through the shared top), the prompt "Add a character: " and
+    /// the word "Add Exit" with no Exit flag, so DOS shows "Add Exit Next"; the Amiga passes the word "Add" with the
+    /// flag (hunk 10 +0x34BE–0x34F8: "Add Next Exit"). The position word is 0 once (0x1CA19) and then as the routine
+    /// leaves it (the loop goes back to 0x1CA2E). Return or A adds, Escape / E end, any other key shows the list again.
+    /// </summary>
     public void Add()
     {
         var entries = roster.Entries(Party);
         if (entries.Count == 0)
             return;
         int row = 0;
+        var words = CombatTexts.Words(CombatMsg.AimNextPrevManual);
+        var paging = new ListPaging(words.ElementAtOrDefault(0) ?? "NEXT", words.ElementAtOrDefault(1) ?? "PREV", AddRows,
+            AmigaView.On ? 1 : texts.AddExit.Count);
         while (true)
         {
-            // 0x1CA19–0x1CA7A: the list routine with the position word 0 on the first call (kept after), so the
-            // global top goes to 0 and a later Create shows its list labels (MenuHighlight.ListTop).
-            Highlight.ListEntered(row, entries.Count);
-            var a = ask(new PickRequest(entries, texts.AddExit, 1) { Prompt = texts.AddPrompt }) as ListAnswer;
+            var list = new ListRequest([], [.. entries.Select(AmigaView.Case)], texts.AddExit, texts.AddExit.Count - 1,
+                FirstRow: AddFirstRow)
+            {
+                Selected = row,
+                RowActions = new HashSet<int> { 0 },
+                Paging = paging,
+                Spell = new SpellPageLayout("", 15, "") { CentredTitle = true, Prompt = AmigaView.Case(texts.AddPrompt) },
+            };
+            Highlight.ListEntered(row, entries.Count); // the entry (0x2D766) as the page's own sync does it (ListPage.Shared)
+            var a = ask(new PickRequest(entries, texts.AddExit, 1) { Prompt = texts.AddPrompt, List = list }) as ListAnswer;
             if (a is null || a.Action is not (PickRequest.RowChosen or 0))
                 break;
             row = a.Row;
@@ -675,6 +705,9 @@ public sealed class PartyMenuFlow(Func<PlayerRequest, object?> ask, PartyMenuTex
         }
         roster.WriteEntries(entries);
     }
+
+    /// <summary>Add's list window (1, 2)–(38, 22): its first row and its rows.</summary>
+    public const int AddFirstRow = 2, AddRows = 21;
 
     /// <summary>Load (0x1F5E8): a slot of the saves present; the game goes on from it.</summary>
     private void Load()
