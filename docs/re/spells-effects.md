@@ -226,7 +226,7 @@ the program's data; `PorSpellData.Names` reads them from the player's program.
 | 80 | 0x106A7 | element 0x10; target takes 1d4 |
 | 87 | 0x11047 | target without rot gets 0x32 (14400 min) and 0x39 (43200 min, param 1d6 × 16 + 15), removal on (1d6); then its text on the target (s30, "Handler messages") |
 | 89 | 0x110EB | round 0 and attack roll 0 → param AND 0x0F; else first attack (bit 4 clear) → attack roll − 1, bit 4 set |
-| 90 / 97 | 0x11134 / 0x112E5 | save type 0 resp. 4 or 2 → save + Constitution bonus (4–6: 1, 7–10: 2, 11–13: 3, 14–17: 4, 18–20: 5; else the handler's uninitialised [bp−1], see "Handlers 40, 84, 88, 90, 97 under emulation"). E s49 |
+| 90 / 97 | 0x11134 / 0x112E5 | save type 0 resp. 4 or 2 → save + Constitution bonus (4–6: 1, 7–10: 2, 11–13: 3, 14–17: 4, 18–20: 5; else the program adds the handler's uninitialised [bp−1], see "Handlers 40, 84, 88, 90, 97 under emulation"; fixed s50: below 4 → 0, above 20 → 5). E s49 |
 | 91 | 0x111B1 | spell 15 → nullified (message); else element bit 2 → nullified |
 | 93, 114, 118 | 0x111FD, 0x116C8, 0x117BE | element bit 0 / 2 / 1 → damage ÷ 2 |
 | 94, 115 | 0x11217, 0x116E2 | attacker's missile with base byte 7 AND 0x81 (resp. byte 7 = 0 or bit 0) → damage ÷ 2 |
@@ -311,13 +311,14 @@ then done := START 0x31D7 (the actions end: +3, +0, +7, +6 := 0; always 1, so do
 Else done := 1, the begins-casting message (START 0x228C, colour 10, with its pause), combat record +0 = spell,
 +3 (signed) − delay when above the delay, else 1; the turn ends with the actions
 not over, so the creature is picked again in the same round (D: `fight_casts` q29 → q30, the charmed Sean's AI Bless).
-`[?]` Ids above 67 index past the table. The menu's list never holds one (bytes ≥ 0x80 are left out, and Memorize writes
+Ids above 67 index past the table. The menu's list never holds one (bytes ≥ 0x80 are left out, and Memorize writes
 only table ids), but the AI's list 0xB105 takes every memorised byte > 0 (unsigned compare), so a spell waiting to be
 memorised (0x80 + id) can be drawn. 0xAEAB then reads its AI priority past the table, DS:31FA + 16·id + 13: in the
 loaded image 60 of the ids 0x81–0xC3 have a non-zero byte there (DS:3A0A–3E39; whether the program writes that area
 at run time was not checked), so such an id could pass a priority pass and reach 0x14C0F and 0x27C38 (whose routine
-table it would index past too). Core's table gives those ids AI priority 0 and "when" 0, so the C# AI never picks one.
-A possible program bug for an NPC or quick-magic caster with pending spells; not followed further (s49). Checked under unicorn for ids
+table it would index past too). **An original bug, fixed (user, s50):** the engine's AI list holds bytes 1..0x7F only,
+as the menu's, so a pending spell is neither drawn nor counted in the 1d(count) draw (`MonsterAi.CastSpell`, test
+`MonsterAiTests.Ai_list_skips_spells_still_to_be_memorised`); not an option. Checked under unicorn for ids
 0..67, ai 0 and 1, initiatives around the delay, and the list on random slots (`tools/scripts/por_cast_oracle.py`,
 `CombatCastProgramTests`). **D** (s49, `fight_save.py BASE OUT 1C0B00040001000224 --hp 200` with every member's
 memorised slots set to a camp-only cleric spell then Bless, `--spells I:22,1`): Rhiannon's Cast shows both (the camp-only one
@@ -848,8 +849,10 @@ C#: `EffectHandlers.CharmGazeRangeResidue`. Handler 97 ran twice on Thrender (dw
 4..20 it is overwritten. Carriers are created dwarves, gnomes and halflings (race limits 12–19, 8–18, 10–19 at
 creation and in Modify, DS:3DA3). Writers of record +0x14 found by a byte scan of both files: handler 7 (0xEEB7, + 1,
 so 21 from 20) and the temple's raise (0x4B85: Constitution − 1 per raise, not below 0). So a carrier raised often
-enough reaches 3 and below, and the residue then decides its saves vs. poison (90) or spells and wands (97); the Core
-adds 0 there `[?]` (residue, varies).
+enough reaches 3 and below (and handler 7 can make 21), and the residue then decides its saves vs. poison (90) or
+spells and wands (97). **An original bug, fixed (user, s50):** the engine adds 0 below Constitution 4 and 5 above 20
+(the table extended at both ends; not an option). Core `EffectHandlers.ConSaveBonus`, test
+`EffectHandlersMoreTests.Constitution_save_bonus_outside_4_to_20_is_the_s50_rule`.
 
 ## DOSBox — D
 

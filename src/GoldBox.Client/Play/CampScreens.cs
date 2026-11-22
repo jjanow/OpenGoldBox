@@ -190,12 +190,13 @@ public static class CampScreens
             {
                 MenuPrompt = prompt?.TrimEnd(),
                 PartySelect = partySelect,
+                ExtendedKeysPickFirst = partySelect && selectMember is null, // camp, Magic, Alter (user s50)
                 Hotkeys = keys,
                 UpAnswer = up,
                 DownAnswer = down,
                 Animates = true, // the camp unit's menus pass 1 (0x18C73, 0x194D0, 0x19750, …)
             }) is int a ? a : items.Count - 1;
-            if (i is ChoiceRequest.PreviousMember or ChoiceRequest.NextMember || i <= TradeContext.MemberPick)
+            if (i is ChoiceRequest.PreviousMember or ChoiceRequest.NextMember or ChoiceRequest.FirstMember || i <= TradeContext.MemberPick)
             {
                 if (selectMember is null)
                     c.Trade.SelectMember(i);
@@ -1204,10 +1205,11 @@ public static class CampScreens
             {
                 MenuPrompt = c.Text[Msg.PartyOrder].TrimEnd(),
                 PartySelect = true,
+                ExtendedKeysPickFirst = mode == 0, // Select (user s50); Place's other keys not read [?]
                 Hotkeys = keys,
                 Animates = true, // 0x19006
             }) is int a ? a : items.Count - 1;
-            if (i is ChoiceRequest.PreviousMember or ChoiceRequest.NextMember || i <= TradeContext.MemberPick)
+            if (i is ChoiceRequest.PreviousMember or ChoiceRequest.NextMember or ChoiceRequest.FirstMember || i <= TradeContext.MemberPick)
             {
                 if (mode == 0)
                     c.Trade.SelectMember(i);

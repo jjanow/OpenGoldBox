@@ -36,7 +36,7 @@ public sealed class Dialog(Func<PlayerRequest, object?> ask, TextWindow text)
     /// nothing (shop-format.md "Exit").
     /// </summary>
     public int MenuHelper(IReadOnlyList<string> items) =>
-        ask(new ChoiceRequest(null, items, false) { PartySelect = true }) is int i ? i : 0;
+        ask(new ChoiceRequest(null, items, false) { PartySelect = true, ExtendedKeysPickFirst = true }) is int i ? i : 0;
 
     /// <summary>A vertical list in the text window under <paramref name="prompt"/>; the answer is the index.</summary>
     public int List(string? prompt, IReadOnlyList<string> items, int? cancel = null) =>

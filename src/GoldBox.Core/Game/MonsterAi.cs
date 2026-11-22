@@ -700,6 +700,9 @@ public sealed class MonsterAi : IFightController
     /// With spells, an NPC (0x84 &gt; 0x7F) or quick magic on, and enemies left: passes with priority 7, 6, … of up to
     /// three tries of 1d(count) each, until <see cref="DecideCast"/> accepts. The pick is cast with the program's target
     /// choice (0x14C0F, ai = 1); returns its result.
+    /// The program takes every byte above 0 (unsigned), so a spell still to be memorised (id + 0x80) joins the list and
+    /// its priority and routine are read past the spell table. An original bug, fixed (user, s50; spells-effects.md
+    /// "Combat cast"): the list holds 1..0x7F only, as the menu's (0x275B4).
     /// </summary>
     public bool CastSpell(Fight f, EclCharacter c)
     {
@@ -707,7 +710,7 @@ public sealed class MonsterAi : IFightController
         var spells = new List<byte>();
         if (rec[CombatRecord.CastAllowed] != 0)
             for (int i = 0; i < SpellsCount; i++)
-                if (c[SpellsFirst + i] > 0)
+                if (c[SpellsFirst + i] is > 0 and < 0x80)
                     spells.Add(c[SpellsFirst + i]);
         int chosen = 0, priority = 7;
         byte n = D(f, 7);

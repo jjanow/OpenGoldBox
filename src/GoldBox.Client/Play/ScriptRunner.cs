@@ -13,6 +13,10 @@ public sealed record ChoiceRequest(string? Prompt, IReadOnlyList<string> Items, 
     /// <summary>Answers for the previous / next party member (the program's party selection 0x23819).</summary>
     public const int PreviousMember = -2, NextMember = -3;
 
+    /// <summary>Answer for an extended key that makes the party's first member current (0x23819 with any key but
+    /// Home / End), on menus with <see cref="ExtendedKeysPickFirst"/>.</summary>
+    public const int FirstMember = -4;
+
     /// <summary>
     /// A prompt drawn on the menu line before the items, in colour 13, as the program's menu routine (0x2CC8C) does
     /// ("Camp:"); null = none.
@@ -52,6 +56,16 @@ public sealed record ChoiceRequest(string? Prompt, IReadOnlyList<string> Items, 
     /// loot menus): answered <see cref="PreviousMember"/> / <see cref="NextMember"/>.
     /// </summary>
     public bool PartySelect { get; init; }
+
+    /// <summary>
+    /// The menu passes every extended key to the party selection 0x23819, as the camp (0x19762), Magic (0x18C85),
+    /// Alter (0x194E2), Order's Select (0x1901E) and the menu helper 0x8B57 (0x8BCE) do (their menus run with the
+    /// keypad flag): a key the Client gives no meaning to here answers <see cref="FirstMember"/>, or
+    /// <see cref="PreviousMember"/> / <see cref="NextMember"/> for keypad 7 / 1 (<see cref="Input.DosKeys.MemberPick"/>).
+    /// Keys the Client uses (the arrows, Confirm, Cancel, hotkeys) keep its meaning: user, s50 (shop-format.md "Party
+    /// selection").
+    /// </summary>
+    public bool ExtendedKeysPickFirst { get; init; }
 
     /// <summary>Extra hotkeys that answer as <see cref="PreviousMember"/> / <see cref="NextMember"/> (G and O where the program tests them).</summary>
     public string? MemberLetters { get; init; }

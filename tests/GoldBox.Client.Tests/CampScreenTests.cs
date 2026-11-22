@@ -174,6 +174,35 @@ public class CampScreenTests
         Assert.Equal(0, s.Left);
     }
 
+    /// <summary>
+    /// The s50 rule (user; shop-format.md "Party selection"): the camp's menus pass every extended key to 0x23819, so a
+    /// key the Client leaves free (an F-key, PgUp, Alt-letter, keypad digit) makes the first member current. The camp,
+    /// Magic and Alter menus and Order's Select carry the flag; the screen answers <see cref="ChoiceRequest.FirstMember"/>.
+    /// </summary>
+    [Fact]
+    public void Camp_extended_keys_make_the_first_member_current()
+    {
+        var a = Member("ANNA");
+        var b = Member("BORN");
+        var (t, s) = Context(new Script(
+            4,                          // ALTER
+            ChoiceRequest.NextMember,   // End: BORN current
+            ChoiceRequest.FirstMember,  // F5 (say): ANNA current
+            3,                          // ICON
+            5, 5), a, b);               // EXIT alter, EXIT camp
+        var edited = new List<EclCharacter>();
+        var c = Camp(t);
+        c = new CampContext
+        {
+            Trade = c.Trade, State = c.State, Spells = c.Spells, Rest = c.Rest, Memory = c.Memory,
+            EditIcon = edited.Add,
+        };
+        VenueScreens.Camp(c, null);
+        Assert.Same(a, Assert.Single(edited));
+        Assert.All(s.Asked.OfType<ChoiceRequest>().Where(r => r.PartySelect), r => Assert.True(r.ExtendedKeysPickFirst));
+        Assert.Equal(0, s.Left);
+    }
+
     [Fact]
     public void Alter_icon_runs_the_icon_editor_on_the_current_member()
     {

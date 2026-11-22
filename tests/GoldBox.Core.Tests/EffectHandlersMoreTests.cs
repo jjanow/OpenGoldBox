@@ -97,6 +97,28 @@ public class EffectHandlersMoreTests
         Assert.Equal(14, h.Cells.SaveRoll);
     }
 
+    /// <summary>
+    /// The original bug fixed (user, s50; spells-effects.md): outside Constitution 4..20 the program adds stack residue;
+    /// Core adds 0 below 4 and 5 above 20, for handler 90 (save type 0) and 97 (types 2 and 4).
+    /// </summary>
+    [Theory]
+    [InlineData(90, 0, 3, 10)]
+    [InlineData(90, 0, 0, 10)]
+    [InlineData(90, 0, 21, 15)]
+    [InlineData(97, 4, 2, 10)]
+    [InlineData(97, 2, 25, 15)]
+    [InlineData(97, 4, 255, 15)]
+    public void Constitution_save_bonus_outside_4_to_20_is_the_s50_rule(int handler, int type, int con, int roll)
+    {
+        var (h, _) = Make(new Script(9)); // 1d20 = 10
+        var c = new EclCharacter();
+        c[0x14] = (byte)con;
+        c[0x6D + type] = 30;
+        EffectHandlers.AddEffect(c, (byte)handler, 0, 0xFF, false);
+        h.SavingThrow(c, type, 0);
+        Assert.Equal(roll, h.Cells.SaveRoll);
+    }
+
     [Fact]
     public void Troll_burn_adds_0x66_for_3d6_unless_fire_or_acid()
     {

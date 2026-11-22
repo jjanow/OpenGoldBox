@@ -432,6 +432,31 @@ public class MonsterAiTests
         Assert.Equal(new[] { 7, 2 }, rng.Sides);
     }
 
+    /// <summary>
+    /// The original bug fixed (user, s50; spells-effects.md "Combat cast"): 0xB105 takes every byte above 0, so a spell
+    /// still to be memorised (id + 0x80) could be drawn and read past the spell table. The engine's list skips it: the
+    /// draw is 1d2 over spells 5 and 9 only, never the pending 0x89.
+    /// </summary>
+    [Fact]
+    public void Ai_list_skips_spells_still_to_be_memorised()
+    {
+        var rng = new Script(0, 1);
+        var mage = Creature(1);
+        mage[CombatRules.Npc] = 0x80;
+        mage[0x17] = 0x89;
+        mage[0x18] = 5;
+        mage[0x19] = 9;
+        var a = Creature(0);
+        var (fight, map) = Setup(rng, a, mage);
+        map.Place(mage, 1, 1);
+        map.Place(a, 8, 8);
+        var spells = new TestSpells();
+        fight.Spells = spells;
+        Assert.True(new MonsterAi(Steps).CastSpell(fight, mage));
+        Assert.Equal(9, spells.Cast);
+        Assert.Equal(new[] { 7, 2 }, rng.Sides);
+    }
+
     private sealed class TestSpells : IFightSpells
     {
         public int Cast = -1;

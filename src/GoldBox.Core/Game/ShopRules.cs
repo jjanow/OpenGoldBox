@@ -320,11 +320,28 @@ public static class ShopRules
     }
 
     /// <summary>
+    /// Take's amount maximum. The program caps the input at the pool's low word (0x25B89) and adds the amount to the
+    /// coin word and the weight unchecked (0x25711's carry test is weight + amount in 16 bits), so a large amount
+    /// wraps both. Original bugs, fixed (user, s48 and s50; shop-format.md "Take"): the pool, at most
+    /// 65535 − the character's coin word of that kind and 65535 − its weight, so nothing wraps.
+    /// </summary>
+    public static ushort TakeMaximum(EclCharacter c, uint pool, int kind)
+    {
+        uint max = Math.Min(pool, ushort.MaxValue);
+        max = Math.Min(max, (uint)(ushort.MaxValue - c.Word(Money.Coins + 2 * kind)));
+        max = Math.Min(max, (uint)(ushort.MaxValue - c.Word(Money.Weight)));
+        return (ushort)max;
+    }
+
+    /// <summary>
     /// Take (0x25711): if <paramref name="amount"/> would overload the character, nothing (a message); else the
     /// amount, limited to what the pool holds of that kind, moves to the character, whose weight grows by it.
+    /// The amount is first cut to what neither the coin word nor the weight can wrap with (the s50 fix,
+    /// <see cref="TakeMaximum"/>); the overload test then sees it as the program does, before the cut to the pool.
     /// </summary>
     public static bool Take(EclCharacter c, uint[] pool, int kind, ushort amount, int strengthAllowance)
     {
+        amount = Math.Min(amount, TakeMaximum(c, ushort.MaxValue, kind));
         if (Money.Overloaded(c, amount, strengthAllowance, out _))
             return false;
         if ((int)pool[kind] < amount)

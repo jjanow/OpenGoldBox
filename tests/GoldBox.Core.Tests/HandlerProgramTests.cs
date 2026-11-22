@@ -156,8 +156,10 @@ public class HandlerProgramTests
                     if (bonus && roll != fx.Cells.SaveRoll)
                     {
                         // Constitution outside 4..20: the handler adds its uninitialised byte, the oracle's stack filler
-                        // (a natural 1 or 20 returns before the handlers run, so those rolls are equal).
-                        if ((byte)(roll - fx.Cells.SaveRoll) != 0xEE)
+                        // 0xEE (a natural 1 or 20 returns before the handlers run, so those rolls are equal); Core adds
+                        // the s50 fix instead: 0 below 4, 5 above 20.
+                        int fix = con > 20 ? 5 : 0;
+                        if ((byte)(roll - fx.Cells.SaveRoll) != (byte)(0xEE - fix))
                             fails.Add($"{what}: Con {con}: roll {fx.Cells.SaveRoll} vs {roll} (residue not 0xEE)");
                         residue++;
                     }

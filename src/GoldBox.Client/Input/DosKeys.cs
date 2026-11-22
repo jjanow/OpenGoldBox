@@ -76,6 +76,31 @@ public static class DosKeys
         return null;
     }
 
+    /// <summary>
+    /// What a key gives the party selection 0x23819 in a menu run with the keypad flag (the camp's menus, Order's
+    /// Select, the menu helper 0x8B57) or on the 3D / overland command line, under the s50 rule (user; shop-format.md
+    /// "Party selection"): Home's 0x47 (keypad 7), End's 0x4F (keypad 1), or another code, which makes the first member
+    /// current. The keypad flag turns the digits 1–9 and backslash (either row) into cursor codes (DS:288C); every other
+    /// extended key (PgUp, PgDn, Ins, Del, F1–F10, Alt-letters) passes its scan code. Null for keys the Client keeps for
+    /// itself: the four arrows (menu moves, or the command line's steps), Home / End (bound as the member actions), and
+    /// keys that give a plain character (letters, Enter, Escape, …).
+    /// </summary>
+    public static byte? MemberPick(string name)
+    {
+        string bare = name;
+        if (bare.StartsWith("NumPad", StringComparison.Ordinal) && bare.Length == 7 && char.IsAsciiDigit(bare[6]))
+            bare = "D" + bare[6];
+        if (bare.Length == 2 && bare[0] == 'D' && bare[1] is >= '1' and <= '9')
+            return bare[1] switch { '7' => 0x47, '1' => 0x4F, _ => 0 };
+        if (bare == "OemPipe")
+            return 0x37;
+        if (Of(name) is not (0, var scan))
+            return null;
+        if (scan is 0x48 or 0x50 or 0x4B or 0x4D or 0x47 or 0x4F)
+            return null;
+        return scan;
+    }
+
     /// <summary>The key name of an extended key's scan code (Alt+letter included), or null.</summary>
     public static string? OfScan(byte scan)
     {

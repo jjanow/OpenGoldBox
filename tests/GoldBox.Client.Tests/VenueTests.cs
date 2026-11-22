@@ -425,13 +425,33 @@ public class VenueTests
     [InlineData(70000u, 65535)]
     public void Take_maximum_is_the_pool_up_to_65535(uint pool, int max)
     {
-        Assert.Equal((ushort)max, MoneyScreens.TakeMaximum(pool));
         var c = Member("ANNA");
+        Assert.Equal((ushort)max, MoneyScreens.TakeMaximum(c, pool, 3));
         var coins = new uint[] { 0, 0, 0, pool, 0, 0, 0 };
         var (t, s) = Context(new Script(new ListAnswer(ListRequest.RowPicked, 0), "5", new ListAnswer(0, 0)), Party(c), pool: coins);
         MoneyScreens.Take(t);
         Assert.Equal((ushort?)max, Assert.IsType<TextRequest>(s.Asked[1]).Maximum);
         Assert.Equal(pool - 5, coins[3]);                // 5 taken even from a pool of exactly 65536
+    }
+
+    /// <summary>
+    /// The s50 fix (shop-format.md "Take"): the program's 16-bit carry test let weight + amount and the coin word wrap;
+    /// the maximum leaves room under 65535 for both, and Take cuts a larger amount to it.
+    /// </summary>
+    [Fact]
+    public void Take_maximum_leaves_no_wrap_of_weight_or_coins()
+    {
+        var c = Member("ANNA");
+        c.SetWord(Money.Weight, 1000);
+        c.SetWord(Money.Coins + 2 * 3, 500);
+        Assert.Equal((ushort)64535, MoneyScreens.TakeMaximum(c, 70000, 3)); // 65535 − weight
+        c.SetWord(Money.Coins + 2 * 3, 65000);
+        Assert.Equal((ushort)535, MoneyScreens.TakeMaximum(c, 70000, 3));   // 65535 − coins
+        var pool = new uint[] { 0, 0, 0, 70000, 0, 0, 0 };
+        Assert.True(ShopRules.Take(c, pool, 3, 60000, 0x7FFF));
+        Assert.Equal(65535, c.Word(Money.Coins + 2 * 3));
+        Assert.Equal(1535, c.Word(Money.Weight));
+        Assert.Equal(70000u - 535, pool[3]);
     }
 
     /// <summary>

@@ -154,12 +154,14 @@ byte above 0 (a lone 0x80 lists as spell 0), with arg ≠ 0 only bytes above 0x8
 then DS:477F[DS:4843] := the scroll and DS:4843 += 1. **0x27534(arg)** (modes 3 and 6 of the list 0x275B4; mode 2 calls
 0x27466(0) on DS:6B80 alone): clears DS:477F[0..48] (49 far pointers) and DS:4843, then walks the reader's items (0xC8,
 next at +0x2A) and calls 0x27466(arg) for each readable one (0x2A255); DS:6B80 is left nil. A pick in mode 3 sets
-DS:6B80 from DS:477F[row] (0x2727D). Two unbounded writes (original bugs, not fixed, `[U]`): DS:4843 is reset only by
+DS:6B80 from DS:477F[row] (0x2727D). Two unbounded writes (original bugs, fixed s50): DS:4843 is reset only by
 0x27534, so every mode-2 read (a scroll used through Use) adds its rows to it; after 49 rows since the last scroll
 list of modes 3 / 6 the pointer for row 49 lands on DS:4843–4846 (the count itself and the spell globals DS:4844 /
 DS:4845) and later ones on the globals after them. DS:476A holds 21 spell bytes: a list with more spell rows writes
 the extra bytes over the start of DS:477F (harmless outside mode 3; in mode 3 row 0's scroll pointer gets a spell
-byte from the 22nd row on). Core keeps rows and scrolls as lists and does not model either overflow.
+byte from the 22nd row on). **Both original bugs, fixed (user, s50; not options):** Core keeps rows and scrolls as
+lists (`FightSpells` scroll lists), so neither overflow happens: every row keeps its own scroll, and the spell globals
+DS:4844 / DS:4845 are never overwritten (test `ScrollSpellListTests.Lists_past_21_spells_keep_every_row_and_scroll`).
 
 ## Base item table (`ITEMS`, 16 bytes per type)
 

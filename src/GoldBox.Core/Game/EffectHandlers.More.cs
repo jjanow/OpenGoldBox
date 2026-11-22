@@ -365,10 +365,11 @@ public sealed partial class EffectHandlers
 
     /// <summary>
     /// 0x11134 / 0x112E5: Constitution 0x14: 4–6 → 1, 7–10 → 2, 11–13 → 3, 14–17 → 4, 18–20 → 5 (checked against the
-    /// program, por_handler_oracle.py). [?] Outside those ranges the program adds the handler's uninitialised [bp−1]
-    /// (the saving throw's BP − 0x125), stack residue from before the throw: DOSBox-X showed 0x1F and 0x00 on the same
-    /// path (spells-effects.md "Handlers 40, 84, 88, 90, 97 under emulation"); taken as 0. Carriers (created dwarves,
-    /// gnomes, halflings) leave 4..20 through the temple's raise (Constitution − 1 each, 0x4B85) or handler 7's + 1 at 20.
+    /// program, por_handler_oracle.py). Outside those ranges the program adds the handler's uninitialised [bp−1] (the
+    /// saving throw's BP − 0x125), stack residue that varies (DOSBox-X showed 0x1F and 0x00 on the same path,
+    /// spells-effects.md "Handlers 40, 84, 88, 90, 97 under emulation"). An original bug, fixed (user, s50): below 4 → 0,
+    /// above 20 → 5. Carriers (created dwarves, gnomes, halflings) leave 4..20 through the temple's raise (Constitution
+    /// − 1 each, 0x4B85); above 20 only edited or imported characters.
     /// </summary>
     private int ConSaveBonus(EclCharacter c)
     {
@@ -379,10 +380,9 @@ public sealed partial class EffectHandlers
             case >= 7 and <= 10: return 2;
             case >= 11 and <= 13: return 3;
             case >= 14 and <= 17: return 4;
-            case >= 18 and <= 20: return 5;
+            case >= 18: return 5; // above 20: the s50 fix (the program reads stack residue)
         }
-        Diag("[?] Constitution save bonus outside 4..20 reads stack residue (varies); 0 taken");
-        return 0;
+        return 0; // below 4: the s50 fix (the program reads stack residue)
     }
 
     /// <summary>

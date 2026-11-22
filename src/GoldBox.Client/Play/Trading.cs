@@ -205,6 +205,9 @@ public sealed class TradeContext
             case ChoiceRequest.NextMember:
                 PartySelection.Select(Party, PartySelection.End);  // the last wraps to the head
                 return true;
+            case ChoiceRequest.FirstMember:
+                PartySelection.Select(Party, 0); // any other extended key: the head (user s50)
+                return true;
             case <= MemberPick when MemberPick - answer < n:
                 Party.CurrentIndex = MemberPick - answer;
                 return true;
@@ -282,10 +285,10 @@ public static class MoneyScreens
             int kind = kinds[a.Row];
             string prompt = AmigaView.AmountPrompt(GameText.Cat(GameText.Cat(t.Text[Msg.HowMuch], t.Text.Coin(kind)), t.Text[Msg.WillYouTake]));
             t.ShowPageAlone(page);
-            // The program caps the input at the pool's low word (0x25B89): an original bug, fixed (user, s48): the pool
-            // up to 65535 (the most the 5-digit input and the character's coin word take), so a pool of 65536 or more
-            // can still be taken (shop-format.md "Take").
-            var typed = AmigaView.Number(t.Dialog.Ask, new TextRequest(prompt, true, 5) { Maximum = TakeMaximum(t.Pool[kind]) });
+            // The program caps the input at the pool's low word (0x25B89) and lets the coin word and weight wrap:
+            // original bugs, fixed (user, s48, s50): the pool up to 65535, less what would wrap the character's coin
+            // word or weight (shop-format.md "Take").
+            var typed = AmigaView.Number(t.Dialog.Ask, new TextRequest(prompt, true, 5) { Maximum = TakeMaximum(c, t.Pool[kind], kind) });
             t.ShowPageAlone(null);
             // 0x24F1D answers 0 to Escape and to Return with nothing typed (Val of an empty string), and 0x25974 calls
             // 0x25711 with it all the same (0x25BAF): its carry test then refuses a member already over the limit (the
@@ -298,10 +301,10 @@ public static class MoneyScreens
     }
 
     /// <summary>
-    /// Take's amount maximum for a pool of <paramref name="pool"/> coins: at most 65535 (s48 fix; the program's
-    /// <c>pool &amp; 0xFFFF</c> made a pool of 65536 untakeable).
+    /// Take's amount maximum (<see cref="ShopRules.TakeMaximum"/>): the pool, at most 65535 (s48 fix; the program's
+    /// <c>pool &amp; 0xFFFF</c> made a pool of 65536 untakeable), less what would wrap the coin word or weight (s50 fix).
     /// </summary>
-    public static ushort TakeMaximum(uint pool) => (ushort)Math.Min(pool, ushort.MaxValue);
+    public static ushort TakeMaximum(EclCharacter c, uint pool, int kind) => ShopRules.TakeMaximum(c, pool, kind);
 
     /// <summary>Take's coin-kind window (2, 2)–(15, 8): its first row, rows and column.</summary>
     public const int CoinKindsFirstRow = 2, CoinKindsRows = 7, CoinKindsColumn = 2;

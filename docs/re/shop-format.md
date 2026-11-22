@@ -76,8 +76,14 @@ in those menus the arrows (not on the command line), PgUp, PgDn, Ins, Del, the F
 3 / 5 / 9 and backslash, either row (cursor codes 0x51, 0x20, 0x49, 0x37: the conversion takes the character)
 make the first member current there, and the digits 7 / 1 act as Home / End (the digits read, not seen; Up at the
 camp menu and PgUp on the 3D command line seen in DOSBox-X s49). The Client answers Home / End (and G / O
-where tested) through the routine; the other extended keys are not wired (the Client uses PgUp / PgDn and the
-keypad for steps and pages): a decision for the user.
+where tested) through the routine. **Decided (user, s50): hybrid.** Every key the Client gives no meaning to in that
+menu takes the program's rule: F1–F10, Alt-letters, Ins / Del, PgUp / PgDn, the digits 1–9 and backslash (either row)
+make the first member current, 7 / 1 act as Home / End (Client `DosKeys.MemberPick`, `ChoiceRequest.ExtendedKeysPickFirst`
+on the camp, Magic, Alter, Order's Select and the menu helper; `ExploreScreen.PickMember` on the command line). Keys
+the Client uses there keep its meaning, a deliberate difference: the arrows (the lit word, the command line's steps),
+Confirm, Cancel, hotkeys and any key bound to a command-line action. Order's Place mode: other extended keys not read
+`[?]`, left alone. Tests `KeyBufferTests.Member_pick_codes_of_extended_keys`,
+`CampScreenTests.Camp_extended_keys_make_the_first_member_current`.
 
 **Buy** (0x7035, P). An item picker over the treasure list (0x6D04) returns a key; B or Enter buys the highlighted
 item, any other key leaves. Price = the item's value word (0x3A). Before listing, the picker writes value 1 into
@@ -158,10 +164,11 @@ pool of 65536 or more of one coin (Pool can gather that from several members' 16
 `pool mod 65536` be taken at a time, and at exactly 65536 (or any multiple) the maximum is 0: every amount typed
 becomes 0 and that coin can never be taken (Share still divides it). The Client's maximum is the pool, at most 65535
 (`MoneyScreens.TakeMaximum`; the five-digit input and the character's coin word hold no more), under every art.
-Left as the program has it (not part of the decision): 0x25711's carry test adds weight + amount in 16 bits and the
-coin word adds unchecked, so an amount above 65535 − weight passes the test and both words wrap. The program reaches
-that with a pool of about 63000 to 65535 (a member's weight is at most a few thousand); the fix makes
-it reachable from larger pools too `[U]`.
+**Original bug, fixed (user, s50):** 0x25711's carry test adds weight + amount in 16 bits and the coin word adds
+unchecked, so an amount above 65535 − weight passes the test and both words wrap (the program reaches that with a pool
+of about 63000 to 65535; the s48 fix would make it reachable from larger pools). The engine's maximum is
+min(pool, 65535 − the character's coin word of that kind, 65535 − its weight), and Take cuts a larger amount to it, so
+neither word wraps (Core `ShopRules.TakeMaximum`; test `VenueTests.Take_maximum_leaves_no_wrap_of_weight_or_coins`).
 
 **Pool** (0x25191, P): DS:6DC0 := 1; every party member whose 0x84 is 0 or 0xB3 adds its seven words to the pool,
 loses that much weight, and its seven words are zeroed. Other members (NPCs) keep their money.

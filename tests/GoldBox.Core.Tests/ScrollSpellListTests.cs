@@ -61,4 +61,29 @@ public class ScrollSpellListTests
         Assert.Equal(3, CampSpells.ScrollList(Table, reader, mu, 11).Count);
         Assert.Equal(0, mu[0x35]);
     }
+
+    /// <summary>
+    /// Original bugs, fixed (user, s50; item-format.md): the program's row buffer DS:476A holds 21 spells, so a 22nd
+    /// overwrites the row → scroll table DS:477F, and the count DS:4843 grows over every mode-2 read until 49 rows
+    /// overrun the spell globals. Core's lists have no bound: 8 scrolls of 3 spells list 24 rows, each row keeping
+    /// its own scroll, and a scroll read alone (mode 2) any number of times lists the same rows.
+    /// </summary>
+    [Fact]
+    public void Lists_past_21_spells_keep_every_row_and_scroll()
+    {
+        var c = new EclCharacter();
+        var scrolls = Enumerable.Range(0, 8).Select(_ => Scroll(10, 16, 35)).ToList();
+        foreach (var it in scrolls)
+            c.Items.Add(it);
+        var rows = new CampSpells(Table, _ => true).List(c, CampSpells.ListKind.OnScrolls, _ => 11);
+        Assert.Equal(24, rows.Count);
+        for (int i = 0; i < 24; i++)
+        {
+            Assert.Same(scrolls[i / 3], rows[i].Scroll);
+            Assert.Equal(new[] { 10, 16, 35 }[i % 3], rows[i].Spell);
+        }
+
+        for (int k = 0; k < 30; k++) // 90 rows read through Use with no list in between
+            Assert.Equal([10, 16, 35], CampSpells.ScrollList(Table, c, scrolls[0], 11).Select(r => r.Spell));
+    }
 }

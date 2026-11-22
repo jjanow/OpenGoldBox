@@ -695,7 +695,7 @@ public sealed class ExploreScreen : IScreen
             FollowHighlight(request, reply, input.Pressed(GameAction.Cancel));
             if (reply is { } answer)
             {
-                if (answer.Value is ChoiceRequest.PreviousMember or ChoiceRequest.NextMember)
+                if (answer.Value is ChoiceRequest.PreviousMember or ChoiceRequest.NextMember or ChoiceRequest.FirstMember)
                     _memberPicked = true; // the pick (0x23819) redraws the list with the new current member
                 _bottomLineDrawn = null;
                 _runner.Answer(answer.Value);
@@ -739,14 +739,52 @@ public sealed class ExploreScreen : IScreen
     /// </summary>
     private void PickMember(ActionInput input)
     {
-        if (!input.Pressed(GameAction.PreviousMember) && !input.Pressed(GameAction.NextMember))
+        if (_game.Memory.Party is not { } party)
             return;
-        if (_game.Memory.Party is { } party)
-        {
+        if (input.Pressed(GameAction.PreviousMember) || input.Pressed(GameAction.NextMember))
             GoldBox.Core.Game.PartyMenu.Select(party, input.Pressed(GameAction.NextMember) ? 1 : -1);
-            PositionLineDrawn();
-        }
+        else if (ExtendedMemberAnswer(input) is { } a)
+            // 0x17254 / 0x173C3 pass any other extended key to 0x23819 too (user s50: the keys the Client leaves free)
+            GoldBox.Core.Game.PartySelection.Select(party, a switch
+            {
+                ChoiceRequest.PreviousMember => GoldBox.Core.Game.PartySelection.Home,
+                ChoiceRequest.NextMember => GoldBox.Core.Game.PartySelection.End,
+                _ => (byte)0,
+            });
+        else
+            return;
+        PositionLineDrawn();
     }
+
+    /// <summary>
+    /// The s50 rule (user; shop-format.md "Party selection"): a keyboard key the Client gives no meaning to here (no
+    /// menu or member action pressed with it) that the program passes to 0x23819 as an extended key
+    /// (<see cref="DosKeys.MemberPick"/>): <see cref="ChoiceRequest.PreviousMember"/> / <see cref="ChoiceRequest.NextMember"/>
+    /// for Home's / End's codes (keypad 7 / 1), else <see cref="ChoiceRequest.FirstMember"/>. Null otherwise.
+    /// </summary>
+    private static int? ExtendedMemberAnswer(ActionInput input)
+    {
+        if (input.NewInput is not (InputDevice.Keyboard, var name) || DosKeys.MemberPick(name) is not { } code)
+            return null;
+        foreach (var a in ClientMeaning)
+            if (input.Pressed(a))
+                return null;
+        return code switch
+        {
+            GoldBox.Core.Game.PartySelection.Home => ChoiceRequest.PreviousMember,
+            GoldBox.Core.Game.PartySelection.End => ChoiceRequest.NextMember,
+            _ => ChoiceRequest.FirstMember,
+        };
+    }
+
+    /// <summary>The actions that keep a key's Client meaning over the s50 member rule (menus, the command line).</summary>
+    private static readonly GameAction[] ClientMeaning =
+    [
+        GameAction.MenuUp, GameAction.MenuDown, GameAction.MenuLeft, GameAction.MenuRight, GameAction.Confirm,
+        GameAction.Cancel, GameAction.PreviousMember, GameAction.NextMember, GameAction.Forward, GameAction.TurnLeft,
+        GameAction.TurnRight, GameAction.TurnAround, GameAction.AreaMap, GameAction.Controls, GameAction.Search,
+        GameAction.Look, GameAction.Encamp, GameAction.View, GameAction.Cast,
+    ];
 
     /// <summary>
     /// A new request on screen starts with nothing typed and its first item selected, except the menus that share the
@@ -917,6 +955,8 @@ public sealed class ExploreScreen : IScreen
                                 _keptSelected = i; // the hotkey lights its entry (0x2CF48) and the row stays so
                             return new Reply(i);
                         }
+                if (c.ExtendedKeysPickFirst && ExtendedMemberAnswer(input) is { } em)
+                    return new Reply(em);
                 return null;
             }
 

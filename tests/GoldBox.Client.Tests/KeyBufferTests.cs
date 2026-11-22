@@ -458,4 +458,31 @@ public class HallWordTests
         var text = new Play.HallText(null);
         Assert.Null(text.Program?.Text("Hall.Password"));
     }
+
+    /// <summary>
+    /// The s50 rule (user; shop-format.md "Party selection"): what a key gives 0x23819 in a keypad-flag menu or on the
+    /// command line. Keypad 7 / 1 (either row) act as Home / End; other digits, backslash, PgUp/PgDn, Ins/Del, F-keys and
+    /// Alt-letters give another code (the first member); arrows, Home/End and plain characters are left to the Client.
+    /// </summary>
+    [Theory]
+    [InlineData("NumPad7", 0x47)]
+    [InlineData("D7", 0x47)]
+    [InlineData("NumPad1", 0x4F)]
+    [InlineData("D3", 0)]
+    [InlineData("NumPad5", 0)]
+    [InlineData("OemPipe", 0x37)]
+    [InlineData("PageUp", 0x49)]
+    [InlineData("Delete", 0x53)]
+    [InlineData("F5", 0x3F)]
+    [InlineData("Alt+M", 0x32)]
+    [InlineData("Up", null)]
+    [InlineData("Home", null)]
+    [InlineData("End", null)]
+    [InlineData("M", null)]
+    [InlineData("D0", null)]
+    [InlineData("Enter", null)]
+    public void Member_pick_codes_of_extended_keys(string key, int? code)
+    {
+        Assert.Equal(code is { } v ? (byte)v : null, DosKeys.MemberPick(key));
+    }
 }
