@@ -178,7 +178,11 @@ ORACLE_O = {0x143F3: 'ai', 0x148BE: 'ai', 0xAEAB: 'ai', 0x22AC4: 'ai', 0x22827: 
             0x23819: 'venue', 0x4864: 'venue', 0x22F8C: 'venue',
             # s49 oracles: por_round_oracle.py, por_handler_oracle.py, por_spellcast_oracle.py, por_cast_oracle.py
             0x127FB: 'round', 0x9938: 'round', 0x12F0D: 'round', 0x2B9D1: 'round',
-            0x2BC4D: 'handler', 0x27C38: 'spellcast', 0x275B4: 'spellcast', 0x14C0F: 'cast', 0x24331: 'cast'}
+            0x2BC4D: 'handler', 0x27C38: 'spellcast', 0x275B4: 'spellcast', 0x14C0F: 'cast', 0x24331: 'cast',
+            # s51: por_altx_oracle.py
+            0x1638E: 'altx',
+            # s51: por_items_oracle.py
+            0x21F32: 'items'}
 ORACLE_S = {0x9E5C: 'sound', 0x9ECA: 'sound', 0xA222: 'sound', 0xA28E: 'sound', 0x2FD3: 'combat', 0x30FB: 'combat', 0x3AF7: 'level', 0x1758: 'trade'}
 disp = json.load(open(_WORK + 'disp.json'))
 for sid in [35, 36, 37, 39, 41, 42, 43, 44, 46, 47, 48, 51, 55, 56, 57, 58, 59, 60, 62, 64, 65, 67, 34]:

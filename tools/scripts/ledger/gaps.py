@@ -1,13 +1,10 @@
 # ---- hand-ranked gap lists (exec'd at the end of render.py) ----
 GAP_PLAY = [
-    ('O:21aed', 'read whole s49: the entries follow the record and DS:49F3 = 5 only, the same for every caller (combat-menu.md "View / Use"); Spells shows the memorised list from seven callers, the party menu\'s View (0x19D23) still gives the Client\'s notice'),
-    ('O:18668', 'Memorize / Scribe page buffer allocation (memory only; likely nothing to port)'),
-    ('O:1638e', 'Alt-X debugging switch (needs the start word; no effect in normal play)'),
-    ('S:6', 'main program: the order is in `start-menu.md` §1 and Program.cs, cited only inside'),
+    ('O:6184', 'loot item take: the s51 extended-key rule lets Shift-F1 (Take) reach it with neither money nor items left; what the page shows on an empty list is not read (combat-format.md "Loot menu", `[?]`)'),
 ]
-# rows closed in s49 (W or N now): their hand notes, shown under "Closed in s49"; prune at the next session's rebuild
+# rows closed in s49–s51 (W or N now): their hand notes, shown under "Closed in s49–s51"; prune at the next session's rebuild
 GAP_DONE = [
-    ('O:27c38', 'done s49: read whole, oracle `por_spellcast_oracle.py` (memorised, item and scroll casts, aim abort, combat-only questions; Core driven out of a fight, the fight branch checked against the program\'s rules only); bit 7 of a scroll pick is not kept; out-of-fight branch `CampCast.Run`, fight branch `FightSpells.CastNow` + `FightMenu.CastNow` (the loot menu\'s D caller 0x6605 not wired in the Client)'),
+    ('O:27c38', 'done s49: read whole, oracle `por_spellcast_oracle.py` (memorised, item and scroll casts, aim abort, combat-only questions; Core driven out of a fight, the fight branch checked against the program\'s rules only); bit 7 of a scroll pick is not kept; out-of-fight branch `CampCast.Run`, fight branch `FightSpells.CastNow` + `FightMenu.CastNow` (the loot menu\'s D caller 0x6605 wired s51: `LootRules.Detect`, oracle `por_venue_oracle.py` "loot")'),
     ('O:127fb', 's49: read whole and run under emulation with its callees and the trigger-0x12 effects (`por_round_oracle.py`, `RoundProgramTests`); the C# already matched'),
     ('O:9938', 's49: read whole, run under emulation on every initiative byte and after real round starts (`RoundProgramTests`)'),
     ('O:12f0d', 's49: read whole with the guards 0x12E22, the callers\' hand-off and 0x2B9D1, run under emulation (`RoundProgramTests`); the step is now drawn inside the routine (`Fight.StepDrawn`)'),
@@ -29,12 +26,17 @@ GAP_DONE = [
     ('O:b4', 'read s49 (start-menu.md §1): memory handler set-up. Not ported by design'),
     ('O:4a', 'read s49 (start-menu.md §1): reached through DS:4414 from GetMem (START 0xB343), not dead; .NET has no fixed heap. Not ported by design'),
     ('S:228c', 'W by citation after s49: the C# now names the entry (FightSpells.CombatCastStep)'),
+    ('O:18668', 'read whole s51: Display\'s nested append (its four callers all in 0x187ED), no branch; not Memorize / Scribe as the s47 role said; texts all under 40 characters (camp.md "Display")'),
+    ('S:77f8', 'checked s51: the 255-character case was fixed s48 (a) and run s49 (`TextWindow.PrintDos`, `PrintProgramTests`); the one `[?]` on its spec lines was combat-menu.md\'s Amiga status texts, which only shared a line with it'),
+    ('O:2dcf4', 'checked s51: the same-area Load marker was settled s47 (FS-UAE) and fixed s48 (d) (`AreaLoop.ReloadMarkerSlots`, `OverlandViewTests`; not seen on screen, a [release] item); the picture `[?]` closed: it draws nothing only for DS:49FA outside 1..4, which no writer stores (por-art-formats.md)'),
+    ('S:6', 'read whole s51 (start-menu.md §1): one branch (the debug word at START CS:0000 skips the introduction and the code wheel), the Client\'s order the same, the code wheel N, the exits Exit / AFTER DEFEAT off; the view colours 0x2EA4C(11, 0, 7, 6) never drawn (also W now)'),
+    ('O:1638e', 'read whole s51, oracle `por_altx_oracle.py` (AltXProgramTests, 48 cases: the word and five variants, hostile party members, creatures without a slot); Core no longer takes the creatures off through 0x3154B (no body tune, no grid rebuild, no body)'),
+    ('O:21f32', 'done s51: read whole with Ready 0x2250A, Drop, Halve 0x22827, Join 0x228D7; oracle `por_items_oracle.py` (ItemsPageProgramTests, 420 cases over DS:49F3 0-6); every caller outside a fight runs them; DOSBox-X and the Client pixel-equal on the camp\'s Items page (camp.md "The Items page\'s Ready, Drop, Halve and Join")'),
+    ('O:21aed', 'done s51: the party menu\'s View runs Spells (0x21D05) as every caller; DS:6DB5 kept on the game memory (camp.md "The remembered target DS:6DB5")'),
 ]
 GAP_PRES = [
-    ('S:77f8', 'text window: typing and paging; open `[?]` on the 255-character case (PLAN "Next" (1))'),
     ('O:2d669', 'list window and its never-cited helpers 0x2C936, 0x2CFE0, 0x2D073, 0x2D1A6, 0x2D1F2, 0x2D238, 0x2D2D7: the Client rebuilt the pages from DOSBox-X (s45–s46)'),
     ('S:3379', 'screen redraw by case (hall, camp, loot, shop): two `[?]` and three observed-only lines'),
-    ('O:2dcf4', '3D / overland redraw: marker and backdrop seen in DOSBox-X; the Amiga marker after a same-area Load is open (PLAN "Next" (2))'),
     ('O:239d6', 'spell list window: four `[?]` lines; the Client draws its own page'),
     ('O:2cc8c', 'menu routine (every horizontal menu): one `[?]` line; its key handling is run by the oracles but its drawing is not compared'),
     ('S:1307', 'party list redraw and its colour helpers 0x148F, 0x1513, the creature panel 0x1583, the icon flash 0x257E, the View text helper 0x1C4D: run under the oracles, drawing compared only in DOSBox-X'),
@@ -70,7 +72,7 @@ G.append('|---|---|---|---|---|')
 for i, (k, note) in enumerate(GAP_PRES, 1):
     G.append('| %d | %s | %s | %s | %s |' % (i, addr(k), role(k), ST[k], note))
 G.append('')
-G.append('### Closed in s49')
+G.append('### Closed in s49–s51')
 G.append('')
 G.append('Rows that left the ranked lists this session, with the lane notes (their status stays in the unit tables).')
 G.append('')

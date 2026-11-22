@@ -55,7 +55,8 @@ guard (START 0x3226: actions end, +7 = 1, message). Returns true.
 
 **Key check** (0xBB81), only with a key waiting: M (scan 0x32) toggles quick magic DS:6E30 (message); space (0x20)
 sets 0x10F = 0 on every creature with 0x84 < 0x80 and status ≠ 1 (the party back to manual) and, when this creature
-is among them, initiative 20 and the turn ends; X (0x2D) calls 0x1638E `[?]`. Headless: no key.
+is among them, initiative 20 and the turn ends; X (0x2D) calls 0x1638E (the fight's Alt-X, its result unused: combat-menu.md
+"Entries", read whole s51). Headless: no key.
 
 ## Morale (0xBC97) — P
 
@@ -262,10 +263,12 @@ item's hands taken off again, and the choice readied. Rebuild, attacks left (0x1
 off-hand item, or the chosen weapon when that item is cursed or missing; 0x100 < 2 and the off-hand item is not the
 best shield and not cursed: it is unreadied and the best shield readied. Rebuild; redraw when anything changed.
 
-**Ready / unready** (0x2250A, for DS:5D92): readied and cursed → message only; readied → unreadied (items with 0x3E >
-0x7F run their handler, 0x2AEEA, "removed"). Unreadied → readied only when 0x100 + hands ≤ 2, its slot (0–8; a ring
-→ the second ring slot; arrows 0x49 / bolts 0x1C → slots 11/12) is free and the class mask fits; otherwise a
-message.
+**Ready / unready** (0x2250A, for DS:5D92; read whole s51, `ItemCommands.Ready`): readied and cursed → message only;
+readied → unreadied (items with 0x3E > 0x7F run their handler, 0x2AEEA, "removed"). Unreadied → readied only when 0x100
++ hands ≤ 2, its slot (0–8; a ring → the second ring slot; arrows 0x49 / bolts 0x1C → slots 11/12) is free and the
+class mask fits; otherwise a message (camp.md "The Items page's Ready, Drop, Halve and Join"), the hands-full one not
+for a creature with 0x10F ≠ 0 in a fight. `[?]` The AI's own calls (the weapon pick) show the class and slot messages
+too when they refuse; Core's `MonsterAi.Toggle` drops them (not seen in DOSBox-X).
 
 ## Random draws, in order
 
@@ -305,7 +308,7 @@ done, combat record, item list after); 160 Halve / Join cases. All match.
 
 ## Open `[?]`
 
-- Other writers of combat record +0x10 (effects?); the meaning of $49E5; key X (0x1638E).
+- Other writers of combat record +0x10 (effects?); the meaning of $49E5.
 - 0x14E38 with a nil target.
 - No DOSBox capture of an AI cast or item use yet (no casts in `fight_quick`: no NPCs, quick magic off); the rules
   below "Casts by the AI" and "Item use" are checked under emulation only.

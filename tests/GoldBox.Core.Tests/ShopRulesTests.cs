@@ -272,6 +272,53 @@ public class ShopRulesTests
         Assert.Empty(c.Effects);
     }
 
+    /// <summary>
+    /// The poison cure with doubled records (shop-format.md "Temple", original bug fixed s51): the program's handler 22
+    /// kills on a second 55 and writes the lock 0, so a second 15 re-adds itself and takes a hit point. The engine
+    /// removes every 55, 22 and 15 under the lock: nothing harmed, nothing left.
+    /// </summary>
+    [Fact]
+    public void Poison_cure_removes_every_record_and_never_harms()
+    {
+        var rng = new TurboPascalRandom(7);
+        var fx = new EffectHandlers(rng.Next);
+        foreach (var ids in new[] { new byte[] { 55, 22, 15, 15 }, [55, 55, 22], [55, 55, 22, 22, 15, 15, 15, 33] })
+        {
+            var c = Char();
+            c[0x32] = 20;
+            c[0x11B] = 11;
+            c[0x10D] = 1;
+            fx.List = () => [c];
+            foreach (var id in ids)
+                EffectHandlers.AddEffect(c, id, 10, 0, onRemove: true);
+            Assert.True(TempleRules.Applies(TempleRules.Cure.Poison, c));
+            TempleRules.Apply(TempleRules.Cure.Poison, c, _ => 0, fx);
+            Assert.Equal(11, c[0x11B]);
+            Assert.Equal(0, c[0x10C]);
+            Assert.Equal(ids.Contains((byte)33) ? [33] : Array.Empty<byte>(), c.Effects.Select(e => e[0]));
+            Assert.Equal(0, fx.Cells.Lock);
+            // Without the engine the records go the same way.
+            var d = Char();
+            foreach (var id in ids)
+                EffectHandlers.AddEffect(d, id, 10, 0, onRemove: true);
+            TempleRules.Apply(TempleRules.Cure.Poison, d, _ => 0);
+            Assert.Equal(ids.Contains((byte)33) ? [33] : Array.Empty<byte>(), d.Effects.Select(e => e[0]));
+        }
+    }
+
+    /// <summary>The loot menu's extended keys (user s51): Del / Shift-F1 / Shift-F3 = Share / Take / View as the
+    /// program's loop compares them; F10 = Detect only with Detect on the line; others nothing.</summary>
+    [Theory]
+    [InlineData(0x53, false, "Share")]
+    [InlineData(0x54, false, "Take")]
+    [InlineData(0x56, true, "View")]
+    [InlineData(0x44, true, "Detect")]
+    [InlineData(0x44, false, null)]
+    [InlineData(0x50, true, null)]   // Down = P: the program tests the extended cell there
+    [InlineData(0x3B, true, null)]
+    public void Loot_extended_keys(int scan, bool detectOnLine, string? word) =>
+        Assert.Equal(word, LootRules.ExtendedKey((byte)scan, detectOnLine));
+
     [Fact]
     public void Raise_dead_follows_the_program()
     {

@@ -654,7 +654,7 @@ public sealed class ExploreScreen : IScreen
     public void Update(ActionInput input)
     {
         _keys = input;
-        if (input.Pressed(GameAction.Controls))
+        if (input.Pressed(GameAction.Controls) && !(_runner.Pending is ChoiceRequest pc && ShiftedMenuKey(pc, input) is not null))
         {
             _host.Push(new ControlsScreen(_game.Art.Font, _host, _art, _player.ProgramWordSetting, Toggles, Sound));
             return;
@@ -775,6 +775,34 @@ public sealed class ExploreScreen : IScreen
             GoldBox.Core.Game.PartySelection.End => ChoiceRequest.NextMember,
             _ => ChoiceRequest.FirstMember,
         };
+    }
+
+    /// <summary>
+    /// The menu's own answer for this frame's extended key (<see cref="ChoiceRequest.ExtendedKeys"/>, the loot menu's
+    /// s51 rule), or null. A key with a Client meaning keeps it (as the s50 rule), unless Shift made it another key
+    /// for the program than the bound one (<see cref="ShiftedMenuKey"/>).
+    /// </summary>
+    private static int? MenuExtendedAnswer(ChoiceRequest c, ActionInput input)
+    {
+        if (c.ExtendedKeys is not { } keys || input.NewInput is not (InputDevice.Keyboard, var name)
+            || DosKeys.ExtendedScan(name, input.NewShiftHeld) is not { } scan || keys(scan) is not { } answer)
+            return null;
+        if (ShiftedMenuKey(c, input) is not null)
+            return answer;
+        foreach (var a in ClientMeaning)
+            if (input.Pressed(a))
+                return null;
+        return answer;
+    }
+
+    /// <summary>The menu's answer for a Shift-F-key (Shift-F1..F10: codes of their own in the BIOS, so not the Client's
+    /// binding of the bare F-key, e.g. F1 for the controls), or null.</summary>
+    private static int? ShiftedMenuKey(ChoiceRequest c, ActionInput input)
+    {
+        if (c.ExtendedKeys is not { } keys || !input.NewShiftHeld || input.NewInput is not (InputDevice.Keyboard, var name)
+            || DosKeys.ExtendedScan(name, true) is not { } scan || scan == DosKeys.ExtendedScan(name, false))
+            return null;
+        return keys(scan);
     }
 
     /// <summary>The actions that keep a key's Client meaning over the s50 member rule (menus, the command line).</summary>
@@ -955,6 +983,8 @@ public sealed class ExploreScreen : IScreen
                                 _keptSelected = i; // the hotkey lights its entry (0x2CF48) and the row stays so
                             return new Reply(i);
                         }
+                if (MenuExtendedAnswer(c, input) is { } ea)
+                    return new Reply(ea);
                 if (c.ExtendedKeysPickFirst && ExtendedMemberAnswer(input) is { } em)
                     return new Reply(em);
                 return null;
@@ -1071,7 +1101,7 @@ public sealed class ExploreScreen : IScreen
         if (_player.PageUnder is { } under)
         {
             _player.ReleaseRosterNames();
-            DrawOverPage(f, font, under, pending, input);
+            DrawOverPage(f, font, under, pending, input, keptMenuWasDrawn);
             return;
         }
         if (_player.Hall is { } hall)
@@ -1212,9 +1242,11 @@ public sealed class ExploreScreen : IScreen
         else if (pending is DelayRequest { BottomLine: null } or null && _runner.Busy && _player.PagePromptStands)
             // The text after a page prompt is typed with the prompt still on row 24 (its key wait does not blank it).
             DrawKeyLine(f, font, StalePagePrompt, input);
-        else if (pending is DelayRequest { BottomLine: null } keptDelay && (keptDelay.KeepCommandLine || _player.Camping)
+        else if (pending is DelayRequest { BottomLine: null } keptDelay
+            && (keptDelay.KeepCommandLine || _player.Camping || _player.Interface == Venue.Loot)
             && keptMenuWasDrawn && _keptMenu is { } kept && !AmigaView.On)
-            // typing keeps the row; in the camp a message's pause does too (D s33: the rest-time menu under the revive text).
+            // typing keeps the row; in the camp a message's pause does too (D s33: the rest-time menu under the revive text),
+            // and in the loot menu (D s51: the loot line with Detect lit under the Detect Magic cast's message).
             // The Amiga's menu routine blanks row 24 on every way out (hunk 19 +0x5372, +0x5560, +0x55DE, +0x564A, +0x56A6:
             // columns 0-39 of row 24 through hunk 25 +0x197A; FS-UAE s44: the row blank under the rest's interruption line).
         {
@@ -1302,7 +1334,8 @@ public sealed class ExploreScreen : IScreen
     /// columns 0 and 39) over it with the inside blanked, the box's text, and on row 24 the list's menu line unless
     /// something else is asked there.
     /// </summary>
-    private void DrawOverPage(IndexedFrame f, TextFont font, ListRequest under, PlayerRequest? pending, ActionInput input)
+    private void DrawOverPage(IndexedFrame f, TextFont font, ListRequest under, PlayerRequest? pending, ActionInput input,
+        bool keptMenuWasDrawn)
     {
         _list.Draw(f, font, under, input, highlight: false);
         if (_player.PageUnderBox)
@@ -1327,6 +1360,18 @@ public sealed class ExploreScreen : IScreen
             if (h.MenuPrompt is { Length: > 0 } mp)
                 Chrome.MenuPrompt(f, font, 0, MenuRow, mp, h.MenuPromptColour ?? MenuPromptColour);
             DrawLine(f, font, h.Items, _selected, start, h.HotkeyOf, h.Columns, h.ScriptText, Pens(h), h.MenuColours);
+            (_keptMenu, _keptSelected, _keptMenuDrawn) = (h, _selected, true);
+        }
+        else if (pending is DelayRequest { BottomLine: null } && _player.Interface == Venue.Shop && keptMenuWasDrawn
+            && _keptMenu is { } kept && !AmigaView.On)
+        {
+            // The temple's entries (D s51): the menu routine leaves row 24 as its question drew it, so the pay question's
+            // line (the answer lit) stays under the "is cured" text and the handlers' messages after it.
+            Chrome.Clear(f, 0, MenuRow, 40);
+            if (kept.MenuPrompt is { Length: > 0 } kp)
+                Chrome.MenuPrompt(f, font, 0, MenuRow, kp, kept.MenuPromptColour ?? MenuPromptColour);
+            DrawLine(f, font, kept.Items, _keptSelected, MenuStart(kept), kept.HotkeyOf, kept.Columns, kept.ScriptText, Pens(kept), kept.MenuColours);
+            _keptMenuDrawn = true;
         }
         else if (pending is KeyRequest k)
         {

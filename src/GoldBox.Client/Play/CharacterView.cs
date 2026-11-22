@@ -6,9 +6,14 @@ namespace GoldBox.Client.Play;
 
 /// <summary>
 /// View (GAME.OVR 0x21AED): the character page with its menu (Items, Spells, Trade, Drop, Exit), and the items page
-/// whose menu adds Sell and Id in a shop or temple (DS:49F3 = 1; 0x22104–0x2217E). Only Sell, Id and the member
-/// selection do real work, Use outside a fight (<see cref="TradeContext.UseItem"/>), and Trade (the item's 0x2276E, the money's 0x23190; <see cref="TradeRules"/>); the other item
-/// commands say they are not built yet (TODO: Ready 0x2207B, Use 0x2D669, Drop 0x234B2, Halve, Join, Spells). The character page is the program's (0x21084,
+/// whose menu adds Sell and Id in a shop or temple (DS:49F3 = 1; 0x22104–0x2217E). Every View entry runs for every
+/// caller outside a fight (party menu, hall, camp, shop, temple, loot menu, command line): Items, Spells (the memorised
+/// list, <see cref="TradeContext.ShowMemorised"/>), Trade (the money's 0x23190) and Drop (money, 0x234E1); they fall
+/// back to our notice only when the host gives no program page or coin list. On the Items page (0x21F32) every command
+/// runs for every caller: Ready (0x2250A, <see cref="ItemCommands.Ready"/>, the item handler 0x2AEEA through
+/// <see cref="TradeContext.ItemHandler"/>), Use (DS:49F3 2–4, <see cref="TradeContext.UseItem"/>), the item's Trade
+/// (0x2276E; <see cref="TradeRules"/>), Drop (0x21DAA, then 0x22398: the item is freed in every venue), Halve (0x22827),
+/// Join (0x228D7), Sell and Id (s51; checked under emulation, ItemsPageProgramTests). The character page is the program's (0x21084,
 /// <see cref="CombatSheet"/>) through <see cref="TradeContext.ViewPage"/>; our list page (<see cref="Sheet(TradeContext,
 /// EclCharacter)"/>) only when the Client has no party pages. [?] The items page is still ours, not 0x21F32's.
 /// </summary>
@@ -245,10 +250,28 @@ public static class CharacterView
             if (a.Row < 0 || a.Row >= c.Items.Count)
                 continue;
             var item = c.Items[a.Row];
+            var d = t.Dialog;
             if (a.Action == sell)
                 Sell(t, c, item);
             else if (a.Action == id)
                 Identify(t, c, item);
+            else if (actions[a.Action] == "READY" && t.ItemTypes is { } types)
+                Ready(t, c, item, types, venue);
+            else if (actions[a.Action] == "DROP")
+            {
+                if (ShopRules.SellCheck(item, t.IsScroll(item[0x2E])) is not { } scroll)
+                    d.Say(t.Text[Msg.MustBeUnreadied]);
+                else if (!scroll || d.YesNo(t.Text[Msg.OkayToLose]))
+                {
+                    var x = t.CombatTexts;
+                    d.Show(x[CombatMsg.Your] + t.StoredItemName(item) + x[CombatMsg.GoneForever]);
+                    ItemCommands.Drop(c, item, d.YesNo(x[CombatMsg.DropIt]));
+                }
+            }
+            else if (actions[a.Action] == "HALVE")
+                Halve(t, c, item);
+            else if (actions[a.Action] == "JOIN")
+                FightItemScreens.Join(c, item);
             else
                 NotBuilt(t, actions[a.Action]);
         }
@@ -256,10 +279,10 @@ public static class CharacterView
 
     /// <summary>
     /// 0x21F32 on the program's page (<see cref="TradeContext.ItemsPage"/>): while the character has items, the entries
-    /// of <see cref="FightItemScreens.ItemsEntries"/> for the venue's DS:49F3 (Use only in the camp, 2; Sell and Id in a
-    /// shop or temple, 1) and the list, the row kept between choices; Exit or Escape back to View. Sell and Id run; the
-    /// other commands are not built yet (our notice on the bottom line). After each choice the member (DS:5D92, the
-    /// giver of a Trade) is recalculated (START 0x1758 at 0x224AF, on [bp−0x3F] := DS:5D92 from 0x21F39).
+    /// of <see cref="FightItemScreens.ItemsEntries"/> for the venue's DS:49F3 (Use at 2–4; Sell and Id in a shop or
+    /// temple, 1) and the list, the row kept between choices; Exit or Escape back to View. Ready, Use, Trade, Drop,
+    /// Halve, Join, Sell and Id run (read whole s51, <c>por_items_oracle.py</c>). After each choice the member (DS:5D92,
+    /// the giver of a Trade) is recalculated (START 0x1758 at 0x224AF, on [bp−0x3F] := DS:5D92 from 0x21F39).
     /// </summary>
     private static void ProgramItems(TradeContext t, Venue venue,
         Func<EclCharacter, IReadOnlyList<ItemsEntry>, int, Func<byte[], string>, ListAnswer> itemsPage)
@@ -327,6 +350,43 @@ public static class CharacterView
                     {
                         t.TalkOverItemsPage(false);
                     }
+                    break;
+                case ItemsEntry.Ready when t.ItemTypes is { } types:
+                    t.TalkOverItemsPage(true); // a handler's text (START 0x16EC) and the refusals talk over the page
+                    try
+                    {
+                        Ready(t, c, item, types, venue);
+                    }
+                    finally
+                    {
+                        t.TalkOverItemsPage(false);
+                    }
+                    break;
+                case ItemsEntry.Drop:
+                    t.TalkOverItemsPage(true);
+                    try
+                    {
+                        if (LetGoOnPage(t, c, item))
+                            DropOnPage(t, c, item);
+                    }
+                    finally
+                    {
+                        t.TalkOverItemsPage(false);
+                    }
+                    break;
+                case ItemsEntry.Halve:
+                    t.TalkOverItemsPage(true); // the refusal on row 24 over the page
+                    try
+                    {
+                        Halve(t, c, item);
+                    }
+                    finally
+                    {
+                        t.TalkOverItemsPage(false);
+                    }
+                    break;
+                case ItemsEntry.Join:
+                    FightItemScreens.Join(c, item); // 0x228D7: no message
                     break;
                 case var e:
                     NotBuilt(t, e.ToString().ToUpperInvariant(), bottomLine: true);
@@ -412,6 +472,49 @@ public static class CharacterView
             default:
                 return true;
         }
+    }
+
+    /// <summary>
+    /// Ready (0x2250A, <see cref="ItemCommands.Ready"/>) on the page's member: the item readied or unreadied, an item
+    /// handler (kind 0x3E &gt; 0x7F) run through 0x2AEEA (<see cref="TradeContext.ItemHandler"/>); a refusal's words on
+    /// row 24 (START 0x1693, the game-speed pause): "It's Cursed", "Wrong Class", "already using " and the name of the
+    /// item in the slot (START 0xFE2 on it), "Your hands are full!" (outside a fight always).
+    /// </summary>
+    private static void Ready(TradeContext t, EclCharacter c, byte[] item, BaseItemTable types, Venue venue)
+    {
+        var r = ItemCommands.Ready(types, c, item, Context(venue), t.ItemHandler);
+        if (!r.Message)
+            return;
+        var x = t.CombatTexts;
+        RowMessage(t, r.Refusal switch
+        {
+            ReadyRefusal.Cursed => x[CombatMsg.Cursed],
+            ReadyRefusal.WrongClass => x[CombatMsg.WrongClass],
+            ReadyRefusal.HandsFull => x[CombatMsg.HandsFull],
+            _ => x[CombatMsg.AlreadyUsing] + (r.InTheWay is { } w ? t.StoredItemName(w) : ""),
+        });
+    }
+
+    /// <summary>
+    /// Drop after 0x21DAA let the item go (0x223A9–0x2244A): the item's name (START 0xFE2), "Your " + the name + "will
+    /// be gone forever" in the box (1, 21)–(38, 22) in colour 14, cleared first (START 0x77F8); the yes/no "Drop It? "
+    /// (0x2D9A0, colours 13, 10, 15); Yes: the item leaves the list and is freed (START 0x20A9), in every venue alike.
+    /// The box is blanked at the end (START 0x4047).
+    /// </summary>
+    private static void DropOnPage(TradeContext t, EclCharacter c, byte[] item)
+    {
+        var x = t.CombatTexts;
+        BoxText(t, x[CombatMsg.Your] + t.StoredItemName(item) + x[CombatMsg.GoneForever]);
+        ItemCommands.Drop(c, item, t.Dialog.YesNo(x[CombatMsg.DropIt])); // 13, 10, 15 as 0x21DAA's and Sell's
+        BoxBlank(t);
+    }
+
+    /// <summary>Halve (0x22827, <see cref="FightItemScreens.Halve"/>): a count below 2 gives "Can't halve that" on row 24
+    /// (START 0x1693, 0x228CC), in every venue as in a fight.</summary>
+    private static void Halve(TradeContext t, EclCharacter c, byte[] item)
+    {
+        if (!FightItemScreens.Halve(c, item))
+            RowMessage(t, t.CombatTexts[CombatMsg.CannotHalve]);
     }
 
     /// <summary>START 0x3379 for the venue (<see cref="TradeContext.InterfaceRedraw"/>): the item and money Trade draw

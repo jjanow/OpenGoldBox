@@ -136,6 +136,223 @@ public class VenueProgramTests
         Assert.True(fails.Count == 0, $"{fails.Count} differences:\n" + string.Join("\n", fails.Take(40)));
     }
 
+    /// <summary>
+    /// Every heal-list entry (0x47C0, 0x4864, 0x4978 with 1–3, 0x4CC8, 0x4A87, 0x4DB1, 0x4E9F) on made-up characters:
+    /// the questions asked, the record, effect list and items afterwards, DS:681F and RandSeed, and the messages the
+    /// effect engine raises against the program's START 0x16EC / 0x2B8B calls (heal: the revive of handler 0x4E;
+    /// poison: the death of handler 22 and the "goes down" of handler 15's damage). The poison cure is an original bug
+    /// fixed (user s51, <see cref="TempleRules.CurePoison"/>): where the program's cure leaves a record of 55, 22 or 15,
+    /// changes the record (handler 15's hit point, handler 22's death) or raises a message, the test expects the fixed
+    /// result instead, worked out here from the input: every 55, 22 and 15 gone, the record, RandSeed and messages
+    /// unchanged, the lock 0.
+    /// </summary>
+    [OracleDataFact]
+    public void Temple_entries_match_the_program_under_emulation()
+    {
+        var program = PorProgram.Open(PorData.Open())!;
+        var names = PorSpellData.Names(program);
+        using var doc = Doc();
+        var fails = new List<string>();
+        int n = 0, poisonFixed = 0;
+        var seen = new HashSet<int>();
+        foreach (var k in doc.RootElement.GetProperty("templeEntries").EnumerateArray())
+        {
+            n++;
+            var cure = (TempleRules.Cure)k.GetProperty("entry").GetInt32();
+            var c = new EclCharacter(Convert.FromHexString(k.GetProperty("record").GetString()!));
+            foreach (var e in k.GetProperty("effects").EnumerateArray())
+            {
+                var r = new byte[EclCharacter.EffectRecordSize];
+                Convert.FromHexString(e.GetString()!).CopyTo(r, 0);
+                c.Effects.Add(r);
+            }
+            foreach (var it in k.GetProperty("items").EnumerateArray())
+                c.Items.Add(Convert.FromHexString(it.GetString()!));
+            var rng = new TurboPascalRandom(k.GetProperty("seed").GetUInt32());
+            var fx = new EffectHandlers(rng.Next, names)
+            {
+                List = () => [c],
+                CurrentCharacter = () => c,
+                LevelStats = _ => { },
+                RaceLevelLimit = (_, _) => false,
+                CanRevive = _ => true,
+                Recalculate = _ => { },
+            };
+            int messages = 0;
+            fx.Event += (_, e) =>
+            {
+                if (e is EffectEvent.Revived or EffectEvent.PoisonDeath or EffectEvent.GoesDown)
+                    messages++;
+            };
+            var answers = k.GetProperty("answers").EnumerateArray().Select(a => a.GetInt32()).ToList();
+            // Cures 2–4 have no condition and no "cure anyway"; the others ask it when the condition is absent.
+            bool conditional = cure is not (TempleRules.Cure.CureLight or TempleRules.Cure.CureSerious or TempleRules.Cure.CureCritical);
+            bool applies = TempleRules.Applies(cure, c);
+            int asked = conditional && !applies ? 1 : 0, a = 0;
+            bool go = asked == 0 || answers[a++] == 'Y';
+            int paid = go ? 1 : 0;
+            bool cured = go && answers[a] == 'Y';
+            if (cured)
+            {
+                seen.Add((int)cure);
+                TempleRules.Apply(cure, c, x => rng.Next((ushort)x), fx);
+            }
+            string what = $"case {n} ({cure})";
+            var counts = k.GetProperty("counts");
+            int Count(string name) => counts.TryGetProperty(name, out var v) ? v.GetInt32() : 0;
+            if (asked != Count("cureAnyway") || paid != Count("pay"))
+                fails.Add($"{what}: asked {asked} paid {paid} vs {counts}");
+            string Effects(IEnumerable<byte[]> x) => string.Join(" ", x.Select(e => Convert.ToHexString(e, 0, 5)));
+            var after = k.GetProperty("after");
+            if (cured && cure == TempleRules.Cure.Poison)
+            {
+                // The fixed cure, from the input alone.
+                string inRecord = k.GetProperty("record").GetString()!;
+                var inEffects = k.GetProperty("effects").EnumerateArray().Select(e => Convert.FromHexString(e.GetString()!)).ToList();
+                string fixedEffects = Effects(inEffects.Where(e => !TempleRules.PoisonEffects.Contains(e[0])));
+                bool programHarms = !Convert.FromHexString(after.GetProperty("record").GetString()!)
+                        .Where((b, i) => !PointerByte(i)).SequenceEqual(Convert.FromHexString(inRecord).Where((b, i) => !PointerByte(i)))
+                    || Count("message") != 0
+                    || after.GetProperty("effects").EnumerateArray().Any(e => TempleRules.PoisonEffects.Contains(Convert.FromHexString(e.GetString()!)[0]));
+                if (programHarms)
+                {
+                    poisonFixed++;
+                    SameRecord(fails, what + " (fixed)", c, inRecord);
+                    if (Effects(c.Effects) != fixedEffects)
+                        fails.Add($"{what} effects (fixed): {Effects(c.Effects)} vs {fixedEffects}");
+                    if (messages != 0 || fx.Cells.Lock != 0 || rng.Seed != k.GetProperty("seed").GetUInt32())
+                        fails.Add($"{what} (fixed): {messages} messages, lock {fx.Cells.Lock}, RandSeed moved");
+                    continue;
+                }
+            }
+            // START 0x2B8B and the 0x16EC of the remove-curse spell routine 0x29558 (cure 7) are not raised by the rules.
+            if (cure != TempleRules.Cure.RemoveCurse && messages != Count("message"))
+                fails.Add($"{what}: {messages} messages vs {counts}");
+            if (fx.Cells.Lock != k.GetProperty("lock").GetInt32())
+                fails.Add($"{what}: lock {fx.Cells.Lock}");
+            if (rng.Seed != k.GetProperty("seedAfter").GetUInt32())
+                fails.Add($"{what}: RandSeed differs");
+            SameRecord(fails, what, c, after.GetProperty("record").GetString()!);
+            string wantEffects = string.Join(" ", after.GetProperty("effects").EnumerateArray().Select(e => e.GetString()!.ToUpperInvariant()));
+            if (Effects(c.Effects) != wantEffects)
+                fails.Add($"{what} effects: {Effects(c.Effects)} vs {wantEffects}");
+            var wantItems = after.GetProperty("items").EnumerateArray().Select(i => Convert.FromHexString(i.GetString()!)).ToList();
+            if (wantItems.Count != c.Items.Count)
+                fails.Add($"{what}: {c.Items.Count} items vs {wantItems.Count}");
+            else
+                for (int i = 0; i < wantItems.Count; i++)
+                    for (int b = 0; b < wantItems[i].Length; b++)
+                        if (b is not (>= 0x2A and < 0x2E) && wantItems[i][b] != c.Items[i][b])
+                            fails.Add($"{what} item {i} +{b:X2}: {c.Items[i][b]} vs {wantItems[i][b]}");
+        }
+        Assert.True(n >= 1000, $"{n} cases");
+        Assert.True(seen.Count == 9, $"entries cured: {string.Join(",", seen)}");
+        Assert.True(poisonFixed >= 5, $"{poisonFixed} poison cures where the program harms");
+        Assert.True(fails.Count == 0, $"{fails.Count} differences:\n" + string.Join("\n", fails.Take(40)));
+    }
+
+    /// <summary>
+    /// The loot menu 0x644B run with its menu routine answered by the oracle: every pass's item line, the D cast's
+    /// arguments (the first 5 or 11 among the current character's memorised bytes, ai 0, announce 0) and the cast run
+    /// for real (0x27C38 → 0x27AA9 → 0x28101), Home / End through 0x23819; afterwards the party's records, effect
+    /// lists, the current member and RandSeed equal Core's (<see cref="LootRules"/>, <see cref="CampCast"/>).
+    /// </summary>
+    [OracleDataFact]
+    public void Loot_menu_and_its_detect_cast_match_0x644B_under_emulation()
+    {
+        var program = PorProgram.Open(PorData.Open())!;
+        var names = PorSpellData.Names(program);
+        var table = PorSpellData.Spells(program)!;
+        using var doc = Doc();
+        var fails = new List<string>();
+        int n = 0, casts = 0;
+        foreach (var k in doc.RootElement.GetProperty("loot").EnumerateArray())
+        {
+            n++;
+            var party = new EclParty();
+            foreach (var m in k.GetProperty("members").EnumerateArray())
+            {
+                var c = new EclCharacter(Convert.FromHexString(m.GetProperty("record").GetString()!));
+                foreach (var e in m.GetProperty("effects").EnumerateArray())
+                {
+                    var r = new byte[EclCharacter.EffectRecordSize];
+                    Convert.FromHexString(e.GetString()!).CopyTo(r, 0);
+                    c.Effects.Add(r);
+                }
+                party.Members.Add(c);
+            }
+            party.CurrentIndex = k.GetProperty("current").GetInt32();
+            var rng = new TurboPascalRandom(k.GetProperty("seed").GetUInt32());
+            var fx = new EffectHandlers(rng.Next, names)
+            {
+                LevelStats = _ => { },
+                RaceLevelLimit = (_, _) => false,
+                CanRevive = _ => true,
+                Recalculate = _ => { },
+            };
+            var cast = new CampCast(new FightSpells(table, fx, rng.Next), party);
+            bool money = k.GetProperty("pool").EnumerateArray().Any(p => p.GetUInt32() != 0);
+            bool items = k.GetProperty("items").GetInt32() != 0;
+            string what = $"case {n}";
+            var log = k.GetProperty("log").EnumerateArray().ToList();
+            for (int i = 0; i < log.Count; i++)
+            {
+                var l = log[i];
+                if (!l.TryGetProperty("line", out var line))
+                {
+                    fails.Add($"{what}: unexpected {l}");
+                    break;
+                }
+                int spell = LootRules.DetectSpell(party.Current, items);
+                string want = string.Join(" ", LootRules.MenuWords(money, items, spell != 0));
+                if (want != line.GetString())
+                    fails.Add($"{what} pass {i}: '{want}' vs '{line.GetString()}'");
+                int key = l.GetProperty("key").GetInt32();
+                bool ext = l.GetProperty("ext").GetInt32() != 0;
+                if (key == 'D' && !ext)
+                {
+                    if (i + 1 >= log.Count || !log[i + 1].TryGetProperty("cast", out var args) ||
+                        args[0].GetInt32() != spell || args[1].GetInt32() != 0 || args[2].GetInt32() != 0)
+                        fails.Add($"{what} pass {i}: D with spell {spell} vs {(i + 1 < log.Count ? log[i + 1] : "nothing")}");
+                    else
+                    {
+                        i++;
+                        casts++;
+                        if (LootRules.Detect(cast, spell) != CampCast.Outcome.Cast)
+                            fails.Add($"{what} pass {i}: the cast of {spell} did not happen");
+                    }
+                }
+                else if (key is PartySelection.Home or PartySelection.End && ext)
+                    PartySelection.Select(party, (byte)key);
+                else if (key is 'V' or 'T' or 'S' or 'P')
+                {
+                    // View, Take, Share and (non-extended) Pool are trapped by the oracle: one call each.
+                    if (i + 1 < log.Count && log[i + 1].TryGetProperty("call", out _))
+                        i++;
+                    else
+                        fails.Add($"{what} pass {i}: {(char)key} called nothing");
+                }
+            }
+            if (party.CurrentIndex != k.GetProperty("currentAfter").GetInt32())
+                fails.Add($"{what}: current {party.CurrentIndex} vs {k.GetProperty("currentAfter")}");
+            if (rng.Seed != k.GetProperty("seedAfter").GetUInt32())
+                fails.Add($"{what}: RandSeed differs");
+            var after = k.GetProperty("after").EnumerateArray().ToList();
+            for (int m = 0; m < after.Count; m++)
+            {
+                var c = party.Members[m];
+                SameRecord(fails, $"{what} member {m}", c, after[m].GetProperty("record").GetString()!);
+                string Effects(IEnumerable<byte[]> x) => string.Join(" ", x.Select(e => Convert.ToHexString(e, 0, 5)));
+                string wantEffects = string.Join(" ", after[m].GetProperty("effects").EnumerateArray().Select(e => e.GetString()!.ToUpperInvariant()));
+                if (Effects(c.Effects) != wantEffects)
+                    fails.Add($"{what} member {m} effects: {Effects(c.Effects)} vs {wantEffects}");
+            }
+        }
+        Assert.True(n >= 300, $"{n} cases");
+        Assert.True(casts >= 100, $"{casts} casts");
+        Assert.True(fails.Count == 0, $"{fails.Count} differences:\n" + string.Join("\n", fails.Take(40)));
+    }
+
     [OracleFact]
     public void Shop_identify_matches_0x22F8C_under_emulation()
     {

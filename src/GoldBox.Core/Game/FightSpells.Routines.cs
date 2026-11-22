@@ -629,6 +629,11 @@ public sealed partial class FightSpells
     /// <summary>
     /// 0x29E65: the first target losing poison 0x37 (message) → under the lock its first 0x16 goes. Else Cure Disease
     /// (0x292A2); nothing cured → healed 1d4 + 8 (no bypass), message when healed.
+    /// <b>Original bug, fixed (user, s51; not an option):</b> the program removes only the first 0x37 and the first
+    /// 0x16 (lock 0x29E81 / 0x29E9C); with a second 0x37 left, handler 22 (0x16) finds it on removal and kills the
+    /// target, as the temple's poison cure did (<see cref="TempleRules.CurePoison"/>). The engine removes the first 0x37
+    /// as the program (message, no lock), then every further 0x37 and every 0x16 with the lock set before each removal
+    /// (handler 22 writes it 0), and leaves the lock 0 as the program does.
     /// </summary>
     private void Spell58()
     {
@@ -636,8 +641,12 @@ public sealed partial class FightSpells
             return;
         if (RemoveWithMessage(t, 0x37))
         {
-            Effects.Cells.Lock = 1;
-            Effects.RemoveEffect(t, 0x16);
+            foreach (byte id in (ReadOnlySpan<byte>)[0x37, 0x16])
+                while (EffectHandlers.FindEffect(t, id) is { } node)
+                {
+                    Effects.Cells.Lock = 1;
+                    Effects.RemoveEffect(t, id, node);
+                }
             Effects.Cells.Lock = 0;
             return;
         }
@@ -658,4 +667,29 @@ public sealed class SpellGlobals
 {
     public byte Ds4844 { get; set; }
     public byte Ds4845 { get; set; }
+
+    /// <summary>
+    /// DS:6DB5 (far pointer): the remembered target of a cast outside a fight (0x27AA9, mode 2). Its writers in the
+    /// whole image (START and GAME.OVR, read s51): the start-up 0x2A42B (0x2A447, called once by 0xE600 from the main
+    /// program) and the Cast menu 0x17CD2 (0x17CE3) and the camp's end (0x197E9) set nil; 0x27AA9 sets the caster when it
+    /// is nil (0x27ABF) and passes it by reference to START's member pick 0x37E8 (0x27B11), which writes the pick or nil
+    /// (START 0x3993, 0x3A4D, 0x3A88, 0x3AB1). Nothing else clears it: it outlives the command line's View / Use, the
+    /// loot menu and fights. <b>Original bug, fixed (user, s51; not an option):</b> the program keeps the pointer when
+    /// its member leaves the party (Remove, Drop, a script's LOADCHAR / DUMP, a Load that frees the records), so the
+    /// next pick starts on a freed record and lights nobody; the engine clears it there (<see cref="MemberLeft"/>,
+    /// <see cref="PartyReplaced"/>), and the next pick starts as with no target (the caster).
+    /// </summary>
+    public EclCharacter? Ds6DB5 { get; set; }
+
+    /// <summary>A member left the party (Remove, Drop, LOADCHAR / DUMP): the remembered target goes when it was that
+    /// member (the s51 fix of <see cref="Ds6DB5"/>).</summary>
+    public void MemberLeft(EclCharacter? c)
+    {
+        if (c is not null && ReferenceEquals(Ds6DB5, c))
+            Ds6DB5 = null;
+    }
+
+    /// <summary>The party's records were replaced (a Load over the running game): the remembered target goes (the s51
+    /// fix of <see cref="Ds6DB5"/>).</summary>
+    public void PartyReplaced() => Ds6DB5 = null;
 }

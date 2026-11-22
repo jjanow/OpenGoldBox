@@ -17,6 +17,7 @@ public class CampCastTests
         [5] = new(0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 0x0E, 1, 0, 0, 0, 0),
         [9] = new(1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0),
         [0x22] = new(1, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0),
+        [58] = new(0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 0x0E, 1, 0, 0, 0, 0), // as 5: the caster
     });
 
     private static readonly BaseItemTable Items = MakeItems();
@@ -161,6 +162,27 @@ public class CampCastTests
         Assert.Empty(seen);
     }
 
+    /// <summary>Spell 58 (0x29E65) with two records of poison 0x37: the program's handler 22 finds the second on the
+    /// 0x16's removal and kills; the s51 fix (user, not an option) removes every 0x37 and 0x16 under the lock.</summary>
+    [Fact]
+    public void Spell_58_removes_every_poison_record_and_never_kills()
+    {
+        foreach (var ids in new[] { new byte[] { 0x37, 0x16 }, [0x37, 0x37, 0x16], [0x37, 0x37, 0x16, 0x16, 33] })
+        {
+            var (cast, _, a) = Make();
+            a[0x32] = 20;
+            a[0x11B] = 11;
+            foreach (var id in ids)
+                EffectHandlers.AddEffect(a, id, 10, 0, onRemove: true);
+            a[FightSpells.Memorised] = 58;
+            bool done = false;
+            Assert.Equal(CampCast.Outcome.Cast, cast.Run(58, announce: false, new CampCast.Hooks(), ref done));
+            Assert.Equal(0, a[0x10C]);
+            Assert.Equal(11, a[0x11B]);
+            Assert.Equal(ids.Contains((byte)33) ? [33] : Array.Empty<byte>(), a.Effects.Select(e => e[0]));
+        }
+    }
+
     [Fact]
     public void A_member_pick_given_up_loses_nothing_and_spends_no_charge()
     {
@@ -243,5 +265,89 @@ public class CampCastTests
         Assert.Equal(10, m.SpellGlobals.Ds4845);
         Assert.Equal(18, m.SpellGlobals.Ds4844);
         Assert.NotEqual(18, budget); // the budget was Sleep's own
+    }
+    /// <summary>
+    /// DS:6DB5 (the remembered target) is a program global: 0x27AA9 defaults it to the caster only when it is nil
+    /// (0x27AAF–0x27AC2) and the member pick writes its answer back through the pointer (0x27B11 → START 0x37E8). A second
+    /// cast object on the same game memory (the command line's next View / Use) starts its pick there; giving up leaves
+    /// it nil.
+    /// </summary>
+    [Fact]
+    public void The_remembered_target_lives_on_the_game_memory()
+    {
+        var m = new EclMemory();
+        var p = new EclParty();
+        var a = new EclCharacter { Name = "Anna" };
+        var b = new EclCharacter { Name = "Bo" };
+        p.Members.AddRange([a, b]);
+        p.SetCurrent(a);
+        var fx = new EffectHandlers(_ => 0) { List = () => p.Members, CurrentCharacter = () => p.Current };
+        CampCast New() => new(new FightSpells(Table, fx, _ => 0) { Globals = m.SpellGlobals }, p);
+        var starts = new List<EclCharacter?>();
+        bool done = false;
+        a[FightSpells.Memorised] = 3;
+        New().Run(3, false, new CampCast.Hooks { PickMember = s => { starts.Add(s); return b; }, Routine = _ => { } }, ref done);
+        Assert.Same(b, m.SpellGlobals.Ds6DB5);
+        a[FightSpells.Memorised] = 3;
+        var second = New();
+        Assert.Same(b, second.Remembered);
+        second.Run(3, false, new CampCast.Hooks { PickMember = s => { starts.Add(s); return null; }, Routine = _ => { } }, ref done);
+        Assert.Equal([a, b], starts);
+        Assert.Null(m.SpellGlobals.Ds6DB5);
+        Assert.False(done);
+        a[FightSpells.Memorised] = 3;
+        New().Run(3, false, new CampCast.Hooks { PickMember = s => { starts.Add(s); return s; }, Routine = _ => { } }, ref done);
+        Assert.Same(a, starts[^1]); // nil again: the caster
+    }
+    /// <summary>
+    /// The remembered target DS:6DB5 goes when its member leaves the party (original bug fixed, user s51; camp.md "The
+    /// remembered target DS:6DB5"): the party menu's Remove / Drop (0x1CC10), a script's LOADCHAR / DUMP
+    /// (<see cref="EclPartyRules.RemoveCurrent"/>); another member leaving keeps it. The next pick starts on the caster.
+    /// </summary>
+    [Fact]
+    public void A_member_leaving_the_party_clears_the_remembered_target()
+    {
+        var m = new EclMemory();
+        var p = new EclParty();
+        m.Party = p;
+        var a = new EclCharacter { Name = "Anna" };
+        var b = new EclCharacter { Name = "Bo" };
+        var c = new EclCharacter { Name = "Cy" };
+        p.Members.AddRange([a, b, c]);
+        var fx = new EffectHandlers(_ => 0) { List = () => p.Members, CurrentCharacter = () => p.Current };
+        CampCast New() => new(new FightSpells(Table, fx, _ => 0) { Globals = m.SpellGlobals }, p);
+        var starts = new List<EclCharacter?>();
+        bool done = false;
+        void Cast(EclCharacter? answer)
+        {
+            p.SetCurrent(a);
+            a[FightSpells.Memorised] = 3;
+            New().Run(3, false, new CampCast.Hooks { PickMember = s => { starts.Add(s); return answer ?? s; }, Routine = _ => { } }, ref done);
+        }
+
+        // Remove (party menu): another member leaving keeps it, its own member leaving clears it.
+        Cast(b);
+        p.SetCurrent(c);
+        PartyMenu.RemoveCurrent(p, m.SpellGlobals);
+        Assert.Same(b, m.SpellGlobals.Ds6DB5);
+        p.SetCurrent(b);
+        PartyMenu.RemoveCurrent(p, m.SpellGlobals);
+        Assert.Null(m.SpellGlobals.Ds6DB5);
+        Cast(null);
+        Assert.Same(a, starts[^1]); // as with no target: the caster
+
+        // LOADCHAR with bit 0x80 / DUMP (EclPartyRules.RemoveCurrent).
+        p.Members.Add(b);
+        Cast(b);
+        Assert.Same(b, m.SpellGlobals.Ds6DB5);
+        p.SetCurrent(b);
+        new EclPartyRules(m, _ => 0).RemoveCurrent();
+        Assert.Null(m.SpellGlobals.Ds6DB5);
+
+        // A party replaced by a Load over the running game.
+        p.Members.Add(b);
+        Cast(b);
+        m.SpellGlobals.PartyReplaced();
+        Assert.Null(m.SpellGlobals.Ds6DB5);
     }
 }

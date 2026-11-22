@@ -13,8 +13,20 @@ No game text is quoted here: strings are named by their catalogue keys (`PartyMs
 
 ## 1. Start-up sequence
 
-START's main program (image 0x00F6): start-up 0xE600; unless the first argument is the debug word, the introduction
+START's main program (entry START 0x0006, read whole s51): the unit inits (START 0x0006–0x00F1, one far call per unit,
+among them the configuration START 0x4354 at START 0x2E and the HeapError set-up 0x00B4 at START 0xF1, below), then
+its body (image 0x00F6): start-up 0xE600; unless the first argument is the debug word, the introduction
 (0x06FB, §1a) and the code wheel (0x0AA9); then the party menu 0x19AE0; the view colours (0x2EA4C); the game loop 0x403E.
+Its only branch is START 0x116: ParamStr(1) (START 0xC63C) compared with the Pascal string at START CS:0000 (START
+0xBB90), a third copy of the word, byte-equal to the hall's J word and Alt-X's (GAME.OVR 0x16374; catalogue keys
+`Hall.Password`, `Fight.Password`). The view colours are 0x2EA4C(11, 0, 7, 6) (START 0x12C–0x138: DS:6A60 sky 11,
+6A61–6A63 = 0, 7, 6); 0x2EA4C's only other caller is the redraw 0x2DCF4, and the game loop runs the script init
+(0x7689, which sets the recompute flag DS:84E5) before its first redraw on every path (new game and Load alike,
+0x40A3 before 0x40C8; the backdrop's one reader 0x2EA6B is reached only from the 3D draw 0x2EEF4), so these start
+values are never drawn (view3d.md "Horizon"). Then START 0x142 (0899:0000, the quit below) and Halt(0) (START 0x14C).
+Client (`Program.cs`): the same order with the code wheel left out (copy protection, not ported); the debug word as
+the start word (`--param`, the controls screen's START WORD) skips the introduction; Exit and the end of the game loop
+close the window (or the party menu with AFTER DEFEAT on, an option, off = the original).
 
 - **Start-up 0xE600** allocates and zeroes the VM zones, sets the party square DS:6AAD/6AAE/6AAF := 15, 1, 6 (west),
   the disk byte DS:5376 := 1, the game speed DS:49E2 := 1, the location type DS:49F9/49FA := 1, the party lists

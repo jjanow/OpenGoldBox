@@ -829,6 +829,48 @@ public class PartyMenuScreenTests
     }
 
     /// <summary>
+    /// View's Spells on the party menu (0x19D23 → 0x21AED → 0x21D05: 0x239D6 kind 0, action 0), the call every caller
+    /// makes: the memorised list on the list's own screen (title, level heading, the spells, Exit only); Exit or Escape
+    /// bring the page back (S is in the redraw set) with its first word lit, as the list routine left the cell; the
+    /// list's entry (position 0) takes the list routine's global top to 0, as every 0x2D669 call does.
+    /// </summary>
+    [Fact]
+    public void View_spells_shows_the_memorised_list_on_the_party_menu()
+    {
+        if (Dir() is null)
+            return;
+        using var r = WithTwoFighters();
+        var one = r.Flow.Party.Members[0];
+        one[0x17] = 1;                                         // a memorised spell (0x17–0x2B)
+        one[0x18] = 1;
+        r.Key(Keys.V);
+        var page = Assert.IsType<SheetRequest>(r.Runner.Pending);
+        Assert.Equal(["ITEMS", "SPELLS", "TRADE", "DROP", "EXIT"], page.Actions);
+        Assert.Equal(1, r.Flow.Highlight.ListTop);
+        r.Key(Keys.S);
+        var list = Assert.IsType<ListRequest>(r.Runner.Pending);
+        Assert.Equal(["EXIT"], list.Actions);
+        Assert.NotNull(list.Spell);
+        Assert.StartsWith("ONE ", list.Lines[0].Text);
+        Assert.Equal(3, list.Rows.Count);                      // the level heading and the two copies
+        Assert.Equal(list.Rows[1], list.Rows[2]);
+        Assert.Contains(0, list.Labels);
+        var f = Drawn(r);
+        Assert.Single(Cell(f, 33, 6));                         // the list's screen: no portrait
+        r.Key(Keys.Escape);
+        Assert.IsType<SheetRequest>(r.Runner.Pending);         // the page again
+        r.Key(Keys.None);
+        Assert.Equal(0, r.Flow.Highlight.Index);               // its first word lit
+        Assert.Equal(0, r.Flow.Highlight.ListTop);
+        r.Key(Keys.S);
+        Assert.IsType<ListRequest>(r.Runner.Pending);
+        r.Key(Keys.E);                                         // Exit, the same
+        Assert.IsType<SheetRequest>(r.Runner.Pending);
+        r.Key(Keys.E);
+        Assert.IsType<PartyMenuRequest>(r.Runner.Pending);
+    }
+
+    /// <summary>
     /// V runs 0x21AED, the camp's View: the program's page with the View menu after "View:" (DOSBox-X s25: a fighter
     /// with an item and gold gets Items, Trade, Drop, Exit); Home / End do nothing in View (0x21AED's loop has no member
     /// selection); Items opens the items menu without Use (DS:49F3 = 0) and comes back to the View menu; Escape and Exit
@@ -872,10 +914,11 @@ public class PartyMenuScreenTests
         Assert.DoesNotContain(Chrome.Green, Cell(fi, 2, 24));
         r.Key(Keys.Enter);                                     // Return: 13, which 0x21F32 does not act on
         Assert.Same(items, r.Runner.Pending);
-        r.Key(Keys.R);                                         // Ready: not built yet, on the bottom line
-        Assert.Equal("READY: NOT IN THIS BUILD YET.", Assert.IsType<KeyRequest>(r.Runner.Pending).Prompt);
-        r.Key(Keys.Enter);
+        var item = party.Members[0].Items[0];
+        byte readied = item[0x34];
+        r.Key(Keys.R);                                         // Ready (0x2250A) runs here too (s51): the page again
         Assert.IsType<CharacterPageRequest>(r.Runner.Pending);
+        Assert.NotEqual(readied, item[0x34]);
         r.Key(Keys.Escape);
         Assert.IsType<SheetRequest>(r.Runner.Pending);         // back on the View menu
 
@@ -1198,6 +1241,28 @@ public class PartyMenuScreenTests
         r.Key(Keys.Escape);
         menu = Assert.IsType<PartyMenuRequest>(r.Runner.Pending);
         Assert.Contains(menu.Items, i => i.Item == PartyMenuItem.Train);
+    }
+
+    /// <summary>
+    /// Remove in the hall's menu (0x1CC10) takes the remembered cast target DS:6DB5 with the member (original bug fixed,
+    /// user s51; camp.md "The remembered target DS:6DB5"): the program keeps the stale pointer.
+    /// </summary>
+    [Fact]
+    public void Remove_clears_the_remembered_target()
+    {
+        if (Dir() is null)
+            return;
+        using var r = Start(21);
+        AddHero(r);
+        var hero = r.Flow.Party.Current!;
+        var m = new GoldBox.Core.Ecl.EclMemory { Party = r.Flow.Party };
+        r.Flow.GameMemory = m;
+        m.SpellGlobals.Ds6DB5 = hero;
+        Assert.IsType<PartyMenuRequest>(r.Runner.Pending);
+        r.Key(Keys.R);
+        Assert.IsType<PartyMenuRequest>(r.Runner.Pending);
+        Assert.DoesNotContain(hero, r.Flow.Party.Members);
+        Assert.Null(m.SpellGlobals.Ds6DB5);
     }
 
     [Fact]

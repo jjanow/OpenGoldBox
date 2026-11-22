@@ -1,3 +1,15 @@
+// The Client's start follows the program's main program (START 0x0006, read whole s51; docs/re/start-menu.md §1):
+// - the unit inits (START 0x0006–0x00F1): devices, memory and the configuration START 0x4354 (START 0x2E): the settings
+//   and the controls screen here; the HeapError set-up 0x00B4 (START 0xF1) is not ported (no fixed heap);
+// - the start-up 0xE600 (PorGame.NewGame / the module's start values);
+// - its one branch: ParamStr(1) against the word at START CS:0000 (START 0x116; byte-equal to the hall's and Alt-X's
+//   copies, GAME.OVR 0x16374): equal skips the introduction 0x06FB and the code wheel 0x0AA9, else both run; the code
+//   wheel is not ported (copy protection), so the introduction goes straight to the party menu (the window below);
+// - the party menu 0x19AE0 (PartyMenuFlow), whose Exit quits (0x19E25 → 0899:0000);
+// - the view colours 0x2EA4C(11, 0, 7, 6) (START 0x138): never drawn, the loop's script init recomputes them
+//   (BackdropRule);
+// - the game loop 0x403E; when it returns (the party destroyed) 0899:0000 and Halt(0) (START 0x142, 0x14C): the window
+//   closes, or the party menu when the AFTER DEFEAT option is on (off = the original).
 using GoldBox.Client;
 using GoldBox.Client.Audio;
 using GoldBox.Client.Play;
@@ -301,6 +313,7 @@ else
                 // Its Items page (0x21F32) and Drop's coin list (0x234E1), on the same overlay.
                 player.ItemsPage = (c, entries, row, name) => hf.ItemsPage(c, entries, row, name);
                 player.ItemsTalk = w => hf.TextOverPage = w;
+                player.ItemsTalkFramed = on => hf.TextOverPageFramed = on;
                 player.Coins = (c, kinds, words) => hf.Coins(c, kinds, words);
             }
             loadSlot = (slot, started) =>

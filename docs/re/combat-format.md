@@ -356,6 +356,44 @@ text in colour 10 with the box cleared, the second in 15 running on after it (07
 menu helper 0x8B57 (`shop-format.md` "Exit"; in the Client the keyboard's Return answers the lit word too, a
 deliberate difference, s48). Answer 1 (No) ends the menu with the question left in the box; any
 other answer blanks the box (0709:0DD3 with 1, 17, 38, 22) and the menu runs again. Nothing left: the menu ends.
+**The whole loop (W s51, run under emulation: `por_venue_oracle.py` "loot", test
+`VenueProgramTests.Loot_menu_and_its_detect_cast_match_0x644B_under_emulation`, 400 menus with the cast run for real).**
+Each pass (0x6465) asks 0x25C07 for the money flag (any of the seven pool dwords DS:67F4 + 4k non-zero) and the items
+flag (DS:6810 not nil), then, only with items, walks the current character's memorised bytes 0x17 + k (k = 0..20) to
+the first equal to 5 or 11 (Detect Magic, cleric / magic-user; a spell still to be memorised, id + 0x80, does not
+count) and keeps its id in [bp−0x10B]; the line is "View Take Pool Share" (money), "View Take Pool" (items) or "View
+Pool", then " Detect Exit" or " Exit". The menu routine 0x2CC8C runs with colours 13, 10, 15, the keypad flag 1, the
+repeat flag 1 and its extended cell [bp−0x106] (written 0 first on every call, 0x2CCF6). **D** (0x65F0–0x6605):
+0x27C38([bp−0x10B], ai 0, announce 0, var [bp−0x106]); both Detect Magics have target mode 1 (the caster), so no cast
+message, no pick, no question: the caster's invisibility goes (0x2BEBC), the memorised copy goes (START 0x202B), the
+routine 0x28101 adds effect 5 (10 minutes at the v1.3 table; a second cast adds a second record, as 0x2C540 keeps an
+equal duration) with its message (START 0x2B8B) and START 0x2383 blanks rows 18–22; then the loop runs again with no
+redraw (so Detect leaves the line when the last copy went). Effect 5 on any party member makes the naming routine START
+0xFE2 put "* " before a magical item (`item-format.md`), and Take's list (0x6092) and View's Items name every item on
+every pass, so the marks show there next. Core `LootRules` (`DetectSpell`, `MenuWords`, `Detect` → `CampCast.Run`),
+Client `CampScreens.LootDetect`. **Extended keys.** The program: the D test (0x65F0) does not look at the extended
+cell, and with the keypad flag the menu routine returns any zero-prefixed key's scan code, so F10 (scan 0x44) casts
+too, Detect on the line or not; [bp−0x10B] is only written when a detect spell is found, so with none found in this
+menu the cast gets an uninitialised stack byte as the spell id (emulation: the 0xEE fill) and otherwise the id last
+found, even for a character without the spell (a free Detect Magic, the copy-removal finding nothing): an original
+bug. The other collisions, none of which looks at the line either (0x65A6–0x6717, read s51): Del (0x53) = S, Share
+0x252C3 (with no money it shares nothing); Shift-F1 (0x54) = T, Take 0x62B6 (with neither money nor items it runs the
+item take 0x6184 on the empty list; `[?]` what that page shows is not read); Shift-F3 (0x56) = V, View; Home / End
+(0x47 / 0x4F) = G / O, the only keys that reach 0x23819 here (so no first-member pick, unlike the camp's menus); P
+tests the cell (0x65D5), so Down (0x50) does not pool. **Decided (user, s51):** Del, Shift-F1 and Shift-F3 act as
+Share, Take and View, as the program, line or not; F10 acts as D only when Detect is on the line (then with the spell
+this pass found), otherwise nothing (`LootRules.ExtendedKey`; Client `ChoiceRequest.ExtendedKeys`, `DosKeys.ExtendedScan`
+for the BIOS's Shift-F1..F10 codes 0x54..0x5D). In the Client F1 stays the controls key; Shift-F1 is the program's
+other key and answers Take in this menu. Take with nothing left does nothing in the Client (the `[?]` above). Tests
+`ShopRulesTests.Loot_extended_keys`, `VenueTests.Loot_extended_keys_follow_the_s51_rule`,
+`CampPlayTests.Loot_menu_extended_keys_reach_the_menu`.
+**D s51** (a `por_test_saves.py`-style save C: CLRMON, TREASURE 100 copper with 133 = five random items, COMBAT;
+Brother Sean's first memorised byte 5): on Brother Sean the line "View Take Pool Share Detect Exit"; Take → Items
+listed five names without marks; D: "BROTHER SEAN / IS AFFECTED" (rows 18 / 19) with row 24 keeping the loot line,
+Detect lit, then the box blanked and the line without Detect; Take → Items: "* " before each of the five. The Client
+on the same save: the same steps and screens (the text box and row 24 under the message pixel-equal) (its random items differ: the treasure draw is not this check), once it
+kept the loot line on row 24 under the cast's pause (`ExploreScreen`: a pause in the loot keeps the last menu line, as
+in the camp).
 **Take** (0x62B6): money and items → a "Take:" menu (Money, Items, Exit) until Exit; money only → the coin take
 0x25974; items only → the item take 0x6184 (`shop-format.md`). **Summary** (0x5E94, s12): the text box is cleared, then one
 result line: with DS:443A (a hostile that did not flee) or a duel (DS:84D4): in a duel the duel-lost text when

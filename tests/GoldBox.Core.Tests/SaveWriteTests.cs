@@ -171,7 +171,10 @@ public class SaveWriteTests
             var vectors = g.Vm.Vectors.ToArray();
             Assert.False(g.LoadInMenu(camp, party));
             Assert.Empty(party.Members);
+            var old = new GoldBox.Core.Ecl.EclCharacter { Name = "GONE" };
+            g.Memory.SpellGlobals.Ds6DB5 = old; // the remembered cast target: freed with the old records (fixed s51)
             Assert.True(g.LoadInMenu(hallPath, party));
+            Assert.Null(g.Memory.SpellGlobals.Ds6DB5);
             Assert.Same(party, g.Memory.Party);
             Assert.Equal(6, party.Members.Count);
             Assert.Equal(0, party.CurrentIndex);

@@ -75,6 +75,12 @@ public interface IFightMap : IFightGeometry
 
     /// <summary>0x3154B: take a creature off the map (destroyed by turn undead, dropped). [?] Default: nothing.</summary>
     void Remove(EclCharacter c) { }
+
+    /// <summary>
+    /// The icon size byte of the creature's slot := 0 and nothing else (DS:5F2A + 4 × slot, as 0x1638E writes it): no
+    /// grid rebuild, no body, no sound. Default: <see cref="Remove"/> [?] (a map without slots).
+    /// </summary>
+    void ClearIconSize(EclCharacter c) => Remove(c);
 }
 
 /// <summary>What a single step on the combat map ended in.</summary>

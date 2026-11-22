@@ -177,8 +177,9 @@ ORACLES = {
 SPELL_TRAPS = ORACLES['spell'][1]
 AI_TRAPS = [O_(0x2AEEA), O_(0x30A0F)]
 ORACLES.update({
-    'venue': ([O_(x) for x in (0x23819, 0x4864, 0x22F8C)],
-              [O_(x) for x in (0x458A, 0x4636, 0x2D9A0)] + [S_(x) for x in (0xFE2, 0x77F8, 0x4047, 0x2233, 0x7E4E)] + SPELL_TRAPS),
+    'venue': ([O_(x) for x in (0x23819, 0x4864, 0x22F8C, 0x47C0, 0x4978, 0x4CC8, 0x4A87, 0x4DB1, 0x4E9F, 0x644B, 0x25C07)],
+              [O_(x) for x in (0x458A, 0x4636, 0x2D9A0, 0x2CC8C, 0x21AED, 0x62B6, 0x25191, 0x252C3, 0x8B57)]
+              + [S_(x) for x in (0xFE2, 0x77F8, 0x4047, 0x2233, 0x7E4E, 0x7E63, 0x3379, 0x1307)] + SPELL_TRAPS),  # s51: every temple entry, the loot menu
     'round': ([O_(x) for x in (0x127FB, 0x9938, 0x12F0D, 0x2B9D1)],
               [O_(0x30C65), S_(0x8BBC), O_(0x1407F)] + SPELL_TRAPS),
     'handler': ([O_(x) for x in (0xF91E, 0x10AD2, 0x2A0F1, 0x11134, 0x112E5, 0x2BC4D)],
@@ -188,6 +189,11 @@ ORACLES.update({
                   + [S_(x) for x in (0x76B6, 0x2233, 0x2383, 0x4047, 0x257E, 0x8C85, 0x8BBC, 0x25C9)] + AI_TRAPS + SPELL_TRAPS),
     'cast': ([O_(x) for x in (0x14C0F, 0x275B4, 0x24331)],
              [O_(x) for x in (0x239D6, 0x27C38, 0x319D2)] + [S_(x) for x in (0x2233, 0x228C, 0x3728, 0x1583)] + AI_TRAPS + SPELL_TRAPS),
+    # s51: por_altx_oracle.py (ParamStr START 0xC63C trapped)
+    'altx': ([O_(0x1638E)], [S_(0xC63C)] + SPELL_TRAPS),
+    # s51: por_items_oracle.py (the Items loop whole; list, yes/no, handler, naming and drawing trapped)
+    'items': ([O_(0x21F32)], [O_(x) for x in (0x2D669, 0x2D9A0, 0x2AEEA)]
+              + [S_(x) for x in (0x2233, 0xFE2, 0x7D3B, 0x76B6, 0x77F8, 0x3F10, 0x4047, 0x41F8, 0x23B6)] + ALLOC),
 })
 via_oracle = {}
 for name, (roots, traps) in ORACLES.items():

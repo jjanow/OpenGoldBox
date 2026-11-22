@@ -82,6 +82,76 @@ public static class SpellLists
         };
 
     /// <summary>
+    /// 0x239D6's page for <paramref name="who"/>: list <paramref name="kind"/> (or a scroll's spells, kind 2, when
+    /// <paramref name="scroll"/> is given) with its level headings, the title "NAME Spells " + the list's words, the
+    /// choose-spell prompt and the action word when <paramref name="action"/> is given, then Exit (and Next / Prev).
+    /// Null when the list is empty. Ids: the spell of each row (0 on a heading).
+    /// </summary>
+    public static (ListRequest Request, List<int> Ids, HashSet<int> Labels)? Page(GameText text, ClientResources res,
+        CampSpells spells, EclCharacter who, CampSpells.ListKind kind, Msg? action, IReadOnlyList<ListLine>? extra = null,
+        ListPlace? place = null, IReadOnlyList<WindowLine>? box = null, byte[]? scroll = null)
+    {
+        var list = scroll is not null
+            ? CampSpells.ScrollList(spells.Table, who, scroll, res.ItemSlot(scroll))
+            : spells.List(who, kind, it => res.ItemSlot(it));
+        if (list.Count == 0)
+            return null;
+        var rows = new List<string>();
+        var labels = new HashSet<int>();
+        var ids = new List<int>();
+        foreach (var r in list)
+        {
+            if (r.HeadingLevel is { } l)
+            {
+                labels.Add(rows.Count);
+                rows.Add(AmigaView.Case(res.LevelName(l) ?? $"LEVEL {l.ToString(CultureInfo.InvariantCulture)}"));
+                ids.Add(0);
+            }
+            rows.Add((r.Pending ? " *" : "  ") + SpellName(res, r.Spell));
+            ids.Add(r.Spell);
+        }
+        Msg suffix = scroll is not null ? Msg.OnScroll : kind switch
+        {
+            CampSpells.ListKind.InMemory => Msg.InMemory,
+            CampSpells.ListKind.SpellBook => Msg.InSpellBook,
+            CampSpells.ListKind.OnScrolls => Msg.OnScrolls,
+            CampSpells.ListKind.ToMemorise => Msg.ToBeMemorised,
+            _ => Msg.ToBeScribed,
+        };
+        var lines = new List<ListLine> { new(AmigaView.Case(who.Name) + " " + text[Msg.SpellsWord] + text[suffix], 11, 1) };
+        if (action is not null)
+            lines.Add(new(text[Msg.ChooseSpell], 13, 1));
+        if (extra is not null)
+            lines.AddRange(extra);
+        string[] actions = action is { } m ? [text[m], "EXIT"] : ["EXIT"];
+        var request = new ListRequest(lines, rows, actions, actions.Length - 1, FirstRow: FirstRow)
+        {
+            Labels = labels,
+            RowActions = new HashSet<int> { 0 },
+            Paging = Paging(res.CombatTexts, memorize: action == Msg.MemoriseAction, wordsAt: actions.Length - 1),
+            Selected = place?.Row ?? 0,
+            Top = place?.Top ?? 0,
+            Spell = Layout(who, text, suffix, action is not null, box),
+        };
+        return (request, ids, labels);
+    }
+
+    /// <summary>A spell's name as the lists show it (the program's, else a placeholder).</summary>
+    public static string SpellName(ClientResources res, int spell) =>
+        AmigaView.Case(res.SpellName(spell) ?? $"SPELL {spell.ToString(CultureInfo.InvariantCulture)}");
+
+    /// <summary>
+    /// View's Spells (0x21D05: 0x239D6 kind 0, action 0, the position word −1) for the current member: the memorised
+    /// list with only Exit (and Next / Prev); nothing changes. Every caller of 0x21AED runs the same call (the camp,
+    /// shop, temple, loot menu, command line and the party menu, 0x19D23).
+    /// </summary>
+    public static void ShowMemorised(Dialog dialog, GameText text, ClientResources res, CampSpells spells, EclCharacter? who)
+    {
+        if (who is not null && Page(text, res, spells, who, CampSpells.ListKind.InMemory, null) is var (request, _, _))
+            dialog.Page(request);
+    }
+
+    /// <summary>
     /// Memorize's slot lines (0x17DD5, read s33; D s33): per class (cleric, magic-user) and level 1–3 the free slots
     /// (0x17A8D, a byte) through Str, at most two characters, blank where the slot byte is 0; a class with any slot byte
     /// counts. With one, START 0x16EC(member, "can memorize:", 10, 0) in the camp's text box: the box's frame drawn
@@ -547,11 +617,7 @@ public static class CampScreens
         }
     }
 
-    public static string SpellName(CampContext c, int spell) =>
-        AmigaView.Case((c.Resources.SpellName(spell) ?? $"SPELL {spell.ToString(CultureInfo.InvariantCulture)}"));
-
-    private static string LevelName(CampContext c, int level) =>
-        AmigaView.Case((c.Resources.LevelName(level) ?? $"LEVEL {level.ToString(CultureInfo.InvariantCulture)}"));
+    public static string SpellName(CampContext c, int spell) => SpellLists.SpellName(c.Resources, spell);
 
     /// <summary>The refusal of 0x17B9D as a message; true when the character may go on.</summary>
     private static bool Allowed(CampContext c, CampActivity a)
@@ -588,49 +654,8 @@ public static class CampScreens
         c.LastPage = null;
         if (c.Party.Current is not { } who)
             return (0, false);
-        // List kind 2 (a scroll's spells, 0x275B4 → 0x27466(0)) when a scroll is given.
-        var list = scroll is not null
-            ? CampSpells.ScrollList(c.Spells.Table, who, scroll, c.Resources.ItemSlot(scroll))
-            : c.Spells.List(who, kind, it => c.Resources.ItemSlot(it));
-        if (list.Count == 0)
+        if (SpellLists.Page(c.Text, c.Resources, c.Spells, who, kind, action, extra, place, box, scroll) is not var (request, ids, labels))
             return (0, false);
-        var rows = new List<string>();
-        var labels = new HashSet<int>();
-        var ids = new List<int>();
-        foreach (var r in list)
-        {
-            if (r.HeadingLevel is { } l)
-            {
-                labels.Add(rows.Count);
-                rows.Add(LevelName(c, l));
-                ids.Add(0);
-            }
-            rows.Add((r.Pending ? " *" : "  ") + SpellName(c, r.Spell));
-            ids.Add(r.Spell);
-        }
-        Msg suffix = scroll is not null ? Msg.OnScroll : kind switch
-        {
-            CampSpells.ListKind.InMemory => Msg.InMemory,
-            CampSpells.ListKind.SpellBook => Msg.InSpellBook,
-            CampSpells.ListKind.OnScrolls => Msg.OnScrolls,
-            CampSpells.ListKind.ToMemorise => Msg.ToBeMemorised,
-            _ => Msg.ToBeScribed,
-        };
-        var lines = new List<ListLine> { new(AmigaView.Case(who.Name) + " " + c.Text[Msg.SpellsWord] + c.Text[suffix], 11, 1) };
-        if (action is not null)
-            lines.Add(new(c.Text[Msg.ChooseSpell], 13, 1));
-        if (extra is not null)
-            lines.AddRange(extra);
-        string[] actions = action is { } m ? [c.Text[m], "EXIT"] : ["EXIT"];
-        var request = new ListRequest(lines, rows, actions, actions.Length - 1, FirstRow: SpellLists.FirstRow)
-        {
-            Labels = labels,
-            RowActions = new HashSet<int> { 0 },
-            Paging = SpellLists.Paging(c.Resources.CombatTexts, memorize: action == Msg.MemoriseAction, wordsAt: actions.Length - 1),
-            Selected = place?.Row ?? 0,
-            Top = place?.Top ?? 0,
-            Spell = SpellLists.Layout(who, c.Text, suffix, action is not null, box),
-        };
         c.LastPage = request;
         var a = c.Dialog.Page(request);
         if (place is not null)
@@ -700,6 +725,10 @@ public static class CampScreens
     internal static EclCharacter? PickTarget(CampContext c, EclCharacter? remembered)
     {
         c.Trade.ShowPageUnder(null);
+        // From the Items page's Use the redraw replaces the page too (DOSBox-X s51, the command line's View → Items →
+        // Use of a potion: the 3D screen and the party list with the pick lit, not the page): its text stops talking
+        // over the page, and the page's overlay gives way to the venue's screen.
+        c.Trade.TalkOverItemsPage(false);
         if (c.InterfaceRedraw is { } redraw)
             redraw(); // 0x27AFA outside the camp: START 0x3379 for DS:49F3 = 3 / 4
         c.Trade.FrameTextBox(false);
@@ -771,8 +800,9 @@ public static class CampScreens
         if (!ReferenceEquals(c.Party.Current, who))
             c.Party.SetCurrent(who);
         // DS:6DB5 (the remembered target) is not cleared by Use: only the Cast menu (0x17CE4), the camp's end
-        // (0x197EA) and the spell-table builder 0x2A42B (0x2A448) clear it. [?] The command line's View builds a new
-        // CampCast each time (Remembered starts empty there); the program keeps DS:6DB5 until one of those.
+        // (0x197EA) and the start-up's 0x2A42B (0x2A448) clear it (and the engine when its member leaves the party,
+        // an original bug fixed s51: SpellGlobals.MemberLeft). It lives on the game's spell globals
+        // (SpellGlobals.Ds6DB5), so it carries over between the command line's View / Use calls and into the camp.
         var w = c.Dialog.Text;
         void ItemMessage(EclCharacter user, byte[] used)
         {
@@ -816,6 +846,30 @@ public static class CampScreens
         {
             c.Trade.ShowPageUnder(null);
         }
+    }
+
+    /// <summary>
+    /// The loot menu's D (0x6605, DS:49F3 = 6): 0x27C38(spell, ai 0, announce 0, var done) for the current character's
+    /// Detect Magic (<see cref="LootRules.Detect"/>): no cast message (announce 0), no pick (target mode 1, the caster),
+    /// the memorised copy removed, the spell's routine 0x28101 with its effect message (0x2C540 → START 0x2B8B), and
+    /// START 0x2383 at the end (rows 18–22 blanked). The loot menu then runs again without a redraw; the items' "* "
+    /// marker shows wherever their names are composed next (Take's list 0x6092 and View's Items call START 0xFE2 on
+    /// every pass).
+    /// </summary>
+    internal static void LootDetect(CampContext c, int spell)
+    {
+        if (c.Cast is not { } cast)
+        {
+            c.Dialog.Say("CASTING NEEDS THE SPELL TABLE.", colour: 14);
+            return;
+        }
+        var w = c.Dialog.Text;
+        var hooks = new CampCast.Hooks
+        {
+            PickMember = remembered => PickTarget(c, remembered),
+            End = () => w.ClearRect(TextWindow.Left, TextWindow.Top + 1, TextWindow.Right, TextWindow.Bottom), // START 0x2383
+        };
+        WithCastMessages(c, cast, () => LootRules.Detect(cast, spell, hooks));
     }
 
     /// <summary>
@@ -1096,7 +1150,9 @@ public static class CampScreens
     /// (<see cref="CampSpells.Display"/>, no indent) or the none text, and an empty entry. One full-screen window
     /// (START 03F1:02E8 with 1, 1, 38, 22, its title centred in white), then 0x2D669 with the window (1, 4)–(38, 22),
     /// colours 11 / 10 / 15, no prompt, no action word and Exit: the empty entry on row 4, the first name on row 5,
-    /// " Exit" from column 1 (D: s33). Display only: any key that ends the list leaves.
+    /// " Exit" from column 1 (D: s33). Display only: any key that ends the list leaves. Each entry after the first is
+    /// one call of the nested 0x18668 (the text's first 40 bytes, the label flag +0x29, appended at the tail; s51): every
+    /// text here is shorter than 40 characters, so the list holds them whole.
     /// </summary>
     public static void Display(CampContext c)
     {

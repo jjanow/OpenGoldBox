@@ -168,8 +168,9 @@ Four full-width bands of the 88-row view:
   - ground (0x2DCB6): $C059 0x0B → 8, 6 → 1, else (9, 0xDB, …) 6.
   - The script init sets 0x41 / 9 and the flag (0x76A3), so every area starts with 15, 7, 6 (the Slums values
     measured in DOSBox-X). Writes to $C059/$C05F set the flag (0x82BB/0x82CD); CALL $2C90 clears it after its redraw
-    (0x3A8D). The backdrop bytes DS:6A60–6A63 are written only by this redraw (0x2DD63/6F/7B and 0x2EA4C, called from
-    it alone), so the colours always follow the current bytes. Scripts that write them: ECL4 block 10 (Valhingen
+    (0x3A8D). The backdrop bytes DS:6A60–6A63 are written only by this redraw (0x2DD63/6F/7B and 0x2EA4C) and by the
+    main program's 0x2EA4C(11, 0, 7, 6) after the party menu (START 0x138), which the game loop's script init makes
+    stale before any redraw (start-menu.md §1, s51), so the colours always follow the current bytes. Scripts that write them: ECL4 block 10 (Valhingen
     Graveyard: $C05F = 8, $C059 = 11 → 0, 8, 8) and ECL8 block 29 (Kuto's Well). Code: `BackdropRule`.
 
 ## DrawAreaMap

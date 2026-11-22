@@ -101,6 +101,20 @@ public static class DosKeys
         return scan;
     }
 
+    /// <summary>
+    /// The scan code an extended key gives the program (character 0), with Shift held or not: the BIOS gives Shift-F1 ..
+    /// Shift-F10 their own codes 0x54..0x5D; Shift changes no other extended key's code here. Alt-letters give theirs
+    /// (<see cref="Of"/>). Null for a key that gives a character, or no BIOS key.
+    /// </summary>
+    public static byte? ExtendedScan(string name, bool shift)
+    {
+        if (Of(name) is not (0, var scan))
+            return null;
+        if (shift && scan is >= 0x3B and <= 0x44 && !name.StartsWith("Alt+", StringComparison.Ordinal))
+            return (byte)(scan - 0x3B + 0x54);
+        return scan;
+    }
+
     /// <summary>The key name of an extended key's scan code (Alt+letter included), or null.</summary>
     public static string? OfScan(byte scan)
     {

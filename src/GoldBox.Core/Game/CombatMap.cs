@@ -42,12 +42,16 @@ public sealed class CombatMap : IFightMap, IFightAuraRange, IFightTerrain, IFigh
     public void SetSlotSize(int k, int size) => _size[k] = (byte)size;
 
     /// <summary>
-    /// 0x31399: the slot of a creature, 1..<see cref="SlotCount"/>, or 0. [?] With a slot count of 0 the program's loop
-    /// runs past 255 and wraps.
+    /// 0x31399: the slot of a creature, 1..<see cref="SlotCount"/>, or 0 (a repeat loop: slot 1 is always looked at).
+    /// With a slot count of 0 the byte counter runs on past 255 to 0, so slots 1..255 are all searched (s51, oracle
+    /// `por_altx_oracle.py`; past the creatures' slots the entries are other DS data, no creature pointer), and slot 0's
+    /// entry, looked at last, gives 0 anyway. In the program only Alt-X on a hostile creature without a slot writes that
+    /// count (0x1638E), which the engine does not (<see cref="ClearIconSize"/>, decided s51); the wrap is kept as 0x31399's.
     /// </summary>
     public int Slot(EclCharacter c)
     {
-        for (int i = 1; i <= Math.Max(SlotCount, 1) && i <= MaxSlots; i++)
+        int last = SlotCount == 0 ? MaxSlots : Math.Max(SlotCount, 1);
+        for (int i = 1; i <= last && i <= MaxSlots; i++)
             if (ReferenceEquals(_creature[i], c))
                 return i;
         return 0;
@@ -210,6 +214,18 @@ public sealed class CombatMap : IFightMap, IFightAuraRange, IFightTerrain, IFigh
         }
         Rebuild();
         return true;
+    }
+
+    /// <summary>
+    /// 0x1638E's write: DS:5F2A + 4 × slot := 0, the grid not rebuilt (its cells keep the slot until the next 0x30ADA).
+    /// <b>Original bug, fixed (user, s51; not an option):</b> for a creature with no slot (0x31399 gives 0) the program
+    /// writes DS:5F2A + 0, which is the slot count itself, to 0; the engine skips such a creature and leaves the count.
+    /// </summary>
+    public void ClearIconSize(EclCharacter c)
+    {
+        int slot = Slot(c);
+        if (slot != 0)
+            _size[slot] = 0;
     }
 
     /// <summary>The map part of 0x2BDF0 (a creature put out of play): its icon leaves the map and the grid is rebuilt.</summary>

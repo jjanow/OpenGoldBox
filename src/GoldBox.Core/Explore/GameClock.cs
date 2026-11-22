@@ -94,8 +94,10 @@ public static class GameClock
 /// (DS:0C26) of $49FD, or of $49FE when the party's square has an event byte ≥ 0x80. The other three come from the
 /// colour bytes behind $C05F (DS:6F69: both horizon bands) and $C059 (DS:6F68: the ground) through three small maps,
 /// recomputed while DS:84E5 is set. The script init (0x76A3) and every write to $C059/$C05F set the flag, CALL $2C90
-/// clears it after its redraw (0x3A8D), and nothing else writes the backdrop (only 0x2DD63/6F/7B store it), so the
-/// colours always follow the current bytes. Script init: 0x41 / 9 → 15, 7, 6 (the Slums).
+/// clears it after its redraw (0x3A8D). The bands are stored at 0x2DD63/6F/7B, then handed to the setter 0x2EA4C
+/// (DS:6A60–6A63), whose only other caller is the main program (START 0x0006, at START 0x138: 11, 0, 7, 6 after the
+/// party menu); the game loop's script init (0x7689, before its first redraw) sets the flag again, so those start
+/// values are never drawn and the colours always follow the current bytes. Script init: 0x41 / 9 → 15, 7, 6 (the Slums).
 /// </summary>
 public static class BackdropRule
 {

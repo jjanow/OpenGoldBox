@@ -336,7 +336,7 @@ On its later turn the menu (0x9B21) and the AI cast +0 (0x27C38) and the actions
 the caster is the current character DS:5D92; DS:6DBF says whether an item casts (set by the item use 0x22AC4, scrolls
 included). Callers: the menu's spell begun earlier 0x9B6C (ai 0, announce 1), the AI's 0xAD13 (1, 1), the combat cast
 0x14CE6 (the AI flag, 1), the camp's Cast 0x17D4D (0, 1), the item use 0x22C17 (the user's 0x10F, 0) and the loot
-menu's D 0x6605 (0, 0; not built in the Client yet).
+menu's D 0x6605 (0, 0; s51: `LootRules.Detect`, `combat-format.md` "Loot menu").
 1. **Outside a fight only** (DS:49F3 ≠ 5) and target mode (table byte 7) 0, combat only: with DS:6DBF = 0 the spell's
    name at (1, 19) and the combat-only line at (1, 20) (START 0x76B6, colour 10) and the lose-it question (0x2D9A0 with
    colours 13, 15, 10 in push order); Y removes the memorised copy (START 0x202B). With DS:6DBF ≠ 0 the item's two
@@ -445,7 +445,9 @@ importer copies texts, so they reach a module only after an importer bump). Clie
 on row 19 during the pause, on a framed text window over the Items page that clears rows 17–22 (`ItemEffectTextWindow`,
 s32). Item handlers in a fight: Ready / unready (0x2250A, the menu's Items page and the AI's) now runs
 the item's handler 0x3E through 0x2AEEA (`FightKit` wires `FightItemScreens` and `MonsterAi.ItemHandler`, s30; before,
-nothing ran). Outside a fight the Client has no Ready yet (`CharacterView` TODO), so 131 / 135 there are `[?]`.
+nothing ran). Outside a fight (s51) the Items page's Ready runs them on an effect engine of its own
+(`TradeContext.ItemHandler`); 131's text over the camp's Items page matched DOSBox-X pixel for pixel (camp.md "The
+Items page's Ready, Drop, Halve and Join"); 135 outside a fight not seen.
 **D** (s33, Darkstar Str 12 readying the gauntlets of ogre power from View's Items, seed 12345): the frame is drawn
 again around rows 17–22 over the Items page, the name on row 18 and the text typed on row 19, the pause (~0.95 s),
 then the page again with the item readied; while the text shows the page's rows are unlit and row 24 keeps the Items
@@ -660,7 +662,7 @@ monsters: dosbox-trace-method.md "Monsters of another disk"):
 | 60 | 0x29F65 | 0x298D4 with 1d6 + 20 on the aimed square; then 0x29973 (3, 20, 4, no bonus) |
 | 56 Restoration | 0x29C5B | the first target only (no search); nothing when its 0x74 is 0. g = 0x75 ÷ 0x74; 0x32, HP, 0xB1 + g, 0x75 − g, 0x74 − 1; class (0..7) with 0 < level ≤ best (13), 0 < XP[level + 1] < lowest (10,000,000), not stopped by START 0x3AF7 → + 1 level; XP 0xAC raised to that threshold when below (also with no class found: the routine then adds 1 at its uninitialised index [bp−0xC], **8** in DOSBox-X, i.e. record 0x9E gender + 1; see below); 0x2AA87 (always, also with no class); no START 0x1758 recalculation; message. At and past the race limit: below |
 | 57 | 0x29E1A | first target losing Slow 0x2A (message) → done; else plain |
-| 58 | 0x29E65 | first target losing poison 0x37 → under the lock its 0x16 goes; else 0x292A2; nothing cured → heal 1d4 + 8 (no bypass), message |
+| 58 | 0x29E65 | first target losing poison 0x37 → under the lock its 0x16 goes; else 0x292A2; nothing cured → heal 1d4 + 8 (no bypass), message. **Original bug, fixed (user, s51; not an option):** only the first 0x37 and 0x16 go, so with a second 0x37 handler 22 finds it on the 0x16's removal and kills the target (as the temple's poison cure, `shop-format.md` "Temple"); the engine removes every further 0x37 and every 0x16 with the lock set before each (`FightSpells.Spell58`) |
 | 59 | 0x29EFD | raise to Str 21 / 0 (message); effect 0x26, duration 1d4 × 10 + 40, removal on |
 | 62 | 0x29FE8 | heal 2d4 + 2 (no bypass), message |
 | 65 | 0x2A070 | damage 2d4 + 2 (count to 681C), element 8 |

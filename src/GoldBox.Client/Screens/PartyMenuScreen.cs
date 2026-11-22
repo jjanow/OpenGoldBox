@@ -791,6 +791,16 @@ public sealed class PartyMenuScreen(PartyMenuFlow flow, ScriptRunner runner, ISc
         {
             // Sell's and Id's text (0x22D28, 0x22F8C, 0x21DAA: START 0x77F8 in the box (1, 21)–(38, 22), colour 14)
             // straight over the page, no frame; their row-24 messages (START 0x2233) during the pause.
+            if (flow.TextOverPageFramed)
+            {
+                // An item handler's text from Ready (0x2250A → 0x2AEEA, e.g. 131): START 0x16EC outside a fight draws
+                // the text window's frame again, blanks (1, 17)–(38, 22), the name on row 18 and the text from row 19
+                // (DOSBox-X s51: the gauntlets over the camp's Items page). Its end (START 0x2383) clears the box.
+                Chrome.Box(f, TextWindow.Left - 1, TextWindow.Top - 1, TextWindow.Right + 1, TextWindow.Bottom + 1);
+                for (int row = TextWindow.Top; row <= TextWindow.Bottom; row++)
+                    Chrome.Clear(f, TextWindow.Left, row, TextWindow.Right - TextWindow.Left + 1);
+                Chrome.TextRuns(f, font, box.Runs(TextWindow.Top, TextWindow.Bottom));
+            }
             for (int row = 21; row <= 22; row++)
                 Chrome.Clear(f, 1, row, 38);
             Chrome.TextRuns(f, font, box.Runs(21, 22));

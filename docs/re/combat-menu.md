@@ -77,7 +77,28 @@ Alt-M (0x32); other extended keys become 0 and are ignored (0x9FF3–0xA057, Pas
 | space | — | every creature in the list with 0x84 < 0x80 (not an NPC) gets 0x10F = 0; not done |
 | Alt-Q | 0xAA32 for all | this creature's initiative = 20; every creature in the list becomes computer-controlled as by Q; done. The creature is picked again at once (initiative 20), the turn makes it 19 and the AI acts |
 | Alt-R | — | accepted, does nothing |
-| Alt-X | 0x1638E | a debugging switch: only when the program was started with a particular command-line word (ParamStr(1) compared with the word at GAME.OVR 0x16374, a byte-identical copy of the hall's J word, training.md; read s23), its message (0x1637A, START 0x2233), every hostile creature (0x10E = 1) gets in play 0 and status 6 and every creature's actions end, the map redrawn; done. Otherwise 0x1638E returns 0 and the menu shows the refusal (0x9B0F), not done. The AI's key check (0xBB81) calls the same routine on scan 0x2D and ignores its result (no refusal there) |
+| Alt-X | 0x1638E | a debugging switch: only when the program was started with a particular command-line word (ParamStr(1) compared with the word at GAME.OVR 0x16374, a byte-identical copy of the hall's J word, training.md; read s23), its message (0x1637A, START 0x2233), every hostile creature (0x10E = 1) gets in play 0 and status 6 and every creature's actions end, the map redrawn; done. Otherwise 0x1638E returns 0 and the menu shows the refusal (0x9B0F), not done. The AI's key check (0xBB81) calls the same routine on scan 0x2D and ignores its result (no refusal there). Read whole s51 (below the table) |
+
+**0x1638E, every branch (read whole s51, oracle `por_altx_oracle.py` → `AltXProgramTests`, 48 cases).** Result
+byte := 0; ParamStr(1) (START 0xC63C) compared with the Pascal string at 0x16374 (START 0xBB90: equal length and
+bytes, so case and a longer or shorter word count); different → returns 0, nothing else. Equal → result 1, the message
+(0x1637A through START 0xBA8B into a local, then START 0x2233), then the list DS:5D96 in order (links +0x104): a
+creature with +0x10E = 1 (a hostile one: a monster, or a party member turned hostile) gets +0x10D := 0, +0x10C := 6
+and the size byte of its slot DS:5F2A + 4 × 0x31399(creature) := 0 (only that byte: no grid rebuild 0x30ADA, no body,
+no body sound, none of 0x3154B's record changes); then every creature, hostile or not, START 0x31D7 (combat record
++3, +0, +7, +6 := 0; its result is unused). Last the view is drawn again in place: 0x310D0(arena +2 + 3, arena +3 + 3,
+255, 8), drawing only. **Original bug, fixed (user, s51; not an option):** a hostile creature with no slot (0x31399
+gives 0) makes the program write DS:5F2A + 0, which is the slot count itself, to 0; 0x31399's repeat loop then counts
+its byte past 255 for every later creature and still finds their slots (the oracle's cases 40–47). The engine skips a
+creature with no slot at that write and leaves the slot count as it was (`CombatMap.ClearIconSize`); everything else
+(records, combat records, sizes, grid) is as the program's, and `AltXProgramTests` expects the kept count in those
+cases (the fixture's 0 is checked too). The grid DS:60DB keeps the removed creatures' slot numbers (no 0x30ADA), which matters
+only after "Continue battle" Yes: their cells still read as taken until the next rebuild; Core keeps the same stale
+grid. Core `FightMenu.GodsIntervene` with `CombatMap.ClearIconSize` / `Slot` (s51: before,
+it took the creatures off through 0x3154B's body path, which also played the body tune per creature and rebuilt the
+grid). **D** s51 (DOSBox-X, `START` with the word: straight to the party menu, START 0x0006's branch; Load of
+`por_test_saves.py` save D, one step into the goblin fight, Alt-X at Phineas's menu): the message on row 24, then the
+goblin in view gone with no body on its square, the party's icons kept, the cursor box gone, and the continue question.
 
 Client (s23): the Alt keys are actions with modifier bindings (`Alt+M`, `Alt+Q`, `Alt+X`; the bindings file takes
 "Alt+" / "Ctrl+" prefixes, and a bare key does not count while Alt or Ctrl is held): `FightQuickMagic` (left
@@ -369,7 +390,8 @@ below means 0x84 ≥ 0x80, in play (0x10D ≠ 0) and status ≠ 1.
 ' ', done := 0, DS:471A := DS:5D92, the page 0x21084. Loop while the key is not in {0, 'E'} (the set at CS:0A4C of
 unit 0x2103A) and done = 0: the entries below are built afresh each pass from the record and DS:49F3 only (so every
 caller, the party menu 0x19D23, the camp 0x197B3, shop 0x730D, temple 0x5341, loot 0x65B4, the command line 0x17118 /
-0x17330 and the fight 0x9BC0, gets the same rule, the fight losing only Trade), then the menu routine with the View
+0x17330 and the fight 0x9BC0, gets the same rule, the fight losing only Trade) (W s51: every caller's entries run in the Client, the
+Items page's commands too, camp.md "The Items page's Ready, Drop, Halve and Join"), then the menu routine with the View
 prompt, colours 13 / 10 / 15, keypad flag 0, no animation; the help position [bp−0x32] := −1; I → 0x21F32(done), S →
 the spell list 0x239D6 (show), T → 0x23190, D → 0x234E1 then the money lines 0x21547; when done is still 0 and the key
 is I, S or T (set CS:0A93) the page 0x21084 again. At the end START 0x3379 redraws the interface. Core
@@ -388,10 +410,10 @@ entries, then the item list (0x2D669: an entry key and the item under the cursor
 
 | Entry | Shown when | Does |
 |---|---|---|
-| Ready | always | ready / unready 0x2250A (`combat-ai.md` "Ready / unready") |
+| Ready | always | ready / unready 0x2250A (`combat-ai.md` "Ready / unready"; its messages camp.md "The Items page's Ready, Drop, Halve and Join") |
 | Use | in play, VM $49E5 = 0, and DS:49F3 is 2–4, or a fight with combat record +2 (item use allowed) ≠ 0 | not readied → a "needs readying" message; a scroll (0x2A255) or power 0x3D > 0 with kind 0x3E < 0x80 → item use 0x22AC4 (`combat-ai.md` "Item use"), done as it reports (outside a fight done is reset to 0); else nothing. The player's pick is 0x27C38's (ai = 0): the same aim and abort loop as a cast from the menu (Core: `FightMenu.PickForItem`, through `IFightItemScreens.Use(fight, c, menu)`; `IItemScreenChooser.AimItem` only when the screens are opened without the menu) |
 | Trade | not an NPC in play, not in a fight | 0x21DAA, then 0x2276E (camp.md "Trade") |
-| Drop | always | 0x21DAA, then "drop it?" → the item leaves the list (START 0x20A9) |
+| Drop | always | 0x21DAA, then "drop it?" → the item leaves the list and is freed (START 0x20A9), in every venue |
 | Halve | 0xC7 < 16 | 0x22827 |
 | Join | always | 0x228D7 |
 | Sell | not an NPC in play, in a shop | 0x21DAA, then 0x22D28 (`shop-format.md`) |
@@ -789,8 +811,8 @@ and Speed menus, an AI attack at game speed 9). Code: `src/GoldBox.Client/Screen
   save A, Sleep cast by Goldleaf and Conly): "Laurann / falls asleep" and "Goldleaf / is unaffected", name and text in
   pen 28 at rows 10 / 11; the Client `--art amiga` (a DOS fight save, Rhiannon's Sleep) draws "is unaffected" and
   "falls asleep" on row 11 equal pixel for pixel (896 of 896 each), the name rows in the same pens. Other effect
-  and status-change texts not seen on the Amiga `[?]`. While DS:4A00 is set 0x77F8 types each
-  character with Delay(DS:49E2 × 10) (**D**: seen in the panel, s19). Read s25: 0x7737 draws each glyph then, when
+  and status-change texts not seen on the Amiga `[?]`.
+  While DS:4A00 is set 0x77F8 types each character with Delay(DS:49E2 × 10) (**D**: seen in the panel, s19). Read s25: 0x7737 draws each glyph then, when
   DS:4A00 ≠ 0 (START 0x777B), Delay(DS:49E2 × 10) (0x778D); spaces too, nothing for a word-wrap's skipped spaces. The
   only writers of DS:4A00 (every direct-address write form searched in START.EXE and GAME.OVR): PRINT/PRINTCLR 0x174F
   sets 1 at 0x1763 and 0 at 0x17DC after its text (so PRINT always types), ENCMENU 0x2C3E 1 at 0x2C4F and 0 at 0x32E0,

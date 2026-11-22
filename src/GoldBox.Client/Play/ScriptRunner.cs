@@ -67,6 +67,15 @@ public sealed record ChoiceRequest(string? Prompt, IReadOnlyList<string> Items, 
     /// </summary>
     public bool ExtendedKeysPickFirst { get; init; }
 
+    /// <summary>
+    /// The menu's own answer for an extended key, by the scan code the program would get (<see cref="Input.DosKeys.ExtendedScan"/>,
+    /// Shift-F1..F10 included), or null when the key does nothing there: the loot menu, whose loop compares the menu
+    /// routine's scan codes with its letters (<see cref="GoldBox.Core.Game.LootRules.ExtendedKey"/>, user s51). Such a
+    /// key wins over a Client binding only where Shift makes it another key than the bound one (Shift-F1 is not F1,
+    /// the controls key).
+    /// </summary>
+    public Func<byte, int?>? ExtendedKeys { get; init; }
+
     /// <summary>Extra hotkeys that answer as <see cref="PreviousMember"/> / <see cref="NextMember"/> (G and O where the program tests them).</summary>
     public string? MemberLetters { get; init; }
 

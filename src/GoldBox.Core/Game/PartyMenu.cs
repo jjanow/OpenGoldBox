@@ -101,13 +101,16 @@ public static class PartyMenu
 
     /// <summary>
     /// 0x1CC10 (Remove and Drop): the current character leaves the list. When it was the first, the next one becomes
-    /// current (none when it was alone); otherwise the one before it.
+    /// current (none when it was alone); otherwise the one before it. With the game's <paramref name="globals"/> the
+    /// remembered cast target DS:6DB5 goes when it was that character (original bug fixed s51,
+    /// <see cref="SpellGlobals.MemberLeft"/>).
     /// </summary>
-    public static void RemoveCurrent(EclParty party)
+    public static void RemoveCurrent(EclParty party, SpellGlobals? globals = null)
     {
         int i = party.CurrentIndex;
         if (i < 0 || i >= party.Members.Count)
             return;
+        globals?.MemberLeft(party.Members[i]);
         party.Members.RemoveAt(i);
         party.CurrentIndex = i == 0 ? (party.Members.Count > 0 ? 0 : -1) : i - 1;
     }

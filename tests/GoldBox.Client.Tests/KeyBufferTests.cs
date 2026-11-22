@@ -485,4 +485,21 @@ public class HallWordTests
     {
         Assert.Equal(code is { } v ? (byte)v : null, DosKeys.MemberPick(key));
     }
+    /// <summary>The scan codes the program gets for extended keys, Shift-F1..F10 their own (0x54..0x5D; the loot menu's
+    /// s51 rule reads Shift-F1 / Shift-F3 as T / V).</summary>
+    [Theory]
+    [InlineData("F1", false, 0x3B)]
+    [InlineData("F1", true, 0x54)]
+    [InlineData("F3", true, 0x56)]
+    [InlineData("F10", false, 0x44)]
+    [InlineData("F10", true, 0x5D)]
+    [InlineData("Delete", false, 0x53)]
+    [InlineData("Delete", true, 0x53)]
+    [InlineData("Alt+M", false, 0x32)]
+    [InlineData("M", true, null)]
+    [InlineData("Enter", false, null)]
+    public void Extended_scan_codes_with_shift(string key, bool shift, int? code)
+    {
+        Assert.Equal(code is { } v ? (byte)v : null, DosKeys.ExtendedScan(key, shift));
+    }
 }

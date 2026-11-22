@@ -1010,12 +1010,15 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
         Interface = Venue.Loot;
         PartyMenuUnder = false; // the window 03F1:02E8 (1, 1, 38, 22) over the whole page, then START 0x3379 case 6
         LootDrawn = false;
+        var camp = CampContextFor(t);
+        t.LootDetect = spell => CampScreens.LootDetect(camp, spell);
         try
         {
             VenueScreens.Loot(t, outcome, state.Duel, Game()?.Encounter.NpcsTakingShare ?? []);
         }
         finally
         {
+            t.LootDetect = null;
             Interface = null;
             LootDrawn = false;
             Window = null;
@@ -1239,6 +1242,7 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
             RosterDrawnLit = ReleaseRosterNamesLit,
             HoldPositionLine = on => PositionLineHeld = on,
             Text = Resources.Texts,
+            CombatTexts = Resources.CombatTexts,
             ListWords = ListWords(Resources.CombatTexts),
             Party = party,
             Pool = state?.Money ?? new uint[7],
@@ -1249,10 +1253,12 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
             ItemTypes = Resources.ItemTypes,
             TempleNames = Resources.TempleNames,
             Effects = game?.OutsideEffects,
+            ItemEffects = () => CampEffects(party),
             Halt = Halt,
             ViewPage = ViewPage,
             ItemsPage = ItemsPage,
             TalkOverItemsPage = on => ItemsTalk?.Invoke(on ? Text : null),
+            FrameOverItemsPage = on => ItemsTalkFramed?.Invoke(on),
             Coins = Coins,
             Memory = memory(),
             PickMenu = Resources.TargetMenu,
@@ -1281,6 +1287,9 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
 
     /// <summary>The text window Sell / Id talk in over <see cref="ItemsPage"/> (null when they are done), set with it.</summary>
     public Action<TextWindow?>? ItemsTalk { get; set; }
+
+    /// <summary>On while an item handler's text shows framed over <see cref="ItemsPage"/> (<see cref="TradeContext.FrameOverItemsPage"/>).</summary>
+    public Action<bool>? ItemsTalkFramed { get; set; }
 
     /// <summary>
     /// View's page and menu as the program draws them (0x21AED; the party menu's, <see cref="PartyMenuFlow.ViewPage"/>),

@@ -22,7 +22,7 @@ public enum ItemNotice
     MustBeUnreadied,
     /// <summary>0x228BD: Halve of an item with a count below 2.</summary>
     CannotHalve,
-    /// <summary>0x2250A refusals: cursed, wrong class, slot taken, hands full.</summary>
+    /// <summary>0x2250A refusals: cursed, wrong class, slot taken (the item passed is the one in the slot), hands full.</summary>
     Cursed, WrongClass, SlotTaken, HandsFull,
     /// <summary>An entry whose routine is not read here (Trade, Sell, Id) [?].</summary>
     NotModelled,
@@ -270,15 +270,23 @@ public sealed class FightItemScreens(IItemScreenChooser chooser, Action<EclChara
         return done;
     }
 
+    /// <summary>0x2250A (<see cref="ItemCommands.Ready"/>): its refusal's message through <see cref="IItemScreenChooser.Notice"/>
+    /// (START 0x1693); for a taken slot the item passed is the one in the slot, whose name follows the words.</summary>
     private void Ready(Fight fight, EclCharacter c, byte[] item)
     {
-        int r = MonsterAi.ToggleReady(fight, c, item, ItemHandler);
-        if (r != 0)
-            Chooser.Notice(r switch
-            {
-                1 => ItemNotice.WrongClass, 2 => ItemNotice.SlotTaken, 3 => ItemNotice.HandsFull, _ => ItemNotice.Cursed,
-            }, c, item);
+        var r = ItemCommands.Ready(fight.Items, c, item, InFight, ItemHandler);
+        if (r.Message)
+            Chooser.Notice(Notice(r.Refusal), c, r.Refusal == ReadyRefusal.SlotTaken ? r.InTheWay : item);
     }
+
+    /// <summary>The notice of a Ready refusal.</summary>
+    public static ItemNotice Notice(ReadyRefusal r) => r switch
+    {
+        ReadyRefusal.WrongClass => ItemNotice.WrongClass,
+        ReadyRefusal.SlotTaken => ItemNotice.SlotTaken,
+        ReadyRefusal.HandsFull => ItemNotice.HandsFull,
+        _ => ItemNotice.Cursed,
+    };
 
     /// <summary>0x222F0: Use of an item: not readied → a "needs readying" message, nothing else; a usable item (a scroll, or power
     /// 0x3D &gt; 0 with kind 0x3E &lt; 0x80) → 0x22AC4; anything else → nothing.</summary>

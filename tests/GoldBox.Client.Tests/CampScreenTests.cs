@@ -72,7 +72,7 @@ public class CampScreenTests
             Spells = spells,
             Rest = new CampRest(m, state, spells, _ => 0, (c, e) => c.Effects.Remove(e), c => fx.RestoreHitPoints(c, 1, false)),
             Memory = m,
-            Cast = new CampCast(new FightSpells(table, fx, _ => 0), t.Party),
+            Cast = new CampCast(new FightSpells(table, fx, _ => 0) { Globals = m.SpellGlobals }, t.Party), // as ClientPlayer
             Save = k =>
             {
                 saved?.Add(k);
@@ -338,5 +338,75 @@ public class CampScreenTests
         CampScreens.UseItem(camp, a, wand);
         Assert.Equal(chargesLeft, wand[0x3C]);
         Assert.Equal(0, s.Left);
+    }
+    /// <summary>
+    /// DS:6DB5, the remembered target, is a program global (read s51: written only by the start-up 0x2A42B, the Cast menu
+    /// 0x17CE3, the camp's end 0x197E9, 0x27AA9 and the member pick it hands it to). The command line's View builds a
+    /// new camp context for each V, so the target lives on the game's spell globals: a wand's second Use, from a new
+    /// context on the same game memory, starts its pick on the member the first Use chose; the Cast menu clears it.
+    /// </summary>
+    [Fact]
+    public void The_remembered_target_carries_over_to_the_next_use_and_the_cast_menu_clears_it()
+    {
+        var a = Member("ANNA");
+        var b = Member("BO");
+        var types = new byte[BaseItemTable.EntrySize * BaseItemTable.Count];
+        types[7 * BaseItemTable.EntrySize + BaseItemTable.Slot] = 2;
+        var wand = new byte[63];
+        (wand[0x2E], wand[0x34], wand[0x3D], wand[0x3C], wand[0x39]) = (7, 1, 3, 5, 1); // spell 3: one member
+        a.Items.Add(wand);
+        var memory = new EclMemory();
+        var lit = new List<EclCharacter?>();
+        bool talking = false; // the Items page's text over the page (CharacterView sets it around Use)
+
+        CampContext Use(params object?[] answers)
+        {
+            var s = new Script(answers);
+            var p = new EclParty();
+            p.Members.AddRange([a, b]);
+            p.CurrentIndex = 0;
+            var t = new TradeContext
+            {
+                Dialog = new Dialog(s.Ask, new TextWindow()),
+                Text = new GameText(),
+                Party = p,
+                Pool = new uint[7],
+                Treasure = [],
+                Random = n => 0,
+                ItemTypes = new BaseItemTable(types),
+                // The pick redraws the venue's screen (0x27AFA; DOSBox-X s51): the page's text no longer talks over it.
+                RosterDrawnLit = who => { Assert.False(talking); lit.Add(who); },
+                TalkOverItemsPage = on => talking = on,
+            };
+            var camp = Camp(t, memory);
+            talking = true;
+            CampScreens.UseItem(camp, a, wand);
+            Assert.Equal(0, s.Left);
+            return camp;
+        }
+
+        Use(null, ChoiceRequest.NextMember, 0, null); // the item message's pause; End → BO; Select; the heal message
+        Assert.Equal([a, b], lit);                  // the first pick starts on the caster (0x27ABF)
+        Assert.Same(b, memory.SpellGlobals.Ds6DB5);
+        Assert.Equal(4, wand[0x3C]);
+
+        lit.Clear();
+        Use(null, 0, null);                         // a new context (the next V): Select at once
+        Assert.Equal([b], lit);                     // the pick starts on BO
+        Assert.Same(b, memory.SpellGlobals.Ds6DB5);
+        Assert.Equal(3, wand[0x3C]);
+
+        // The command line's C (Cast 0x17CD2) clears it at once (0x17CE3): nothing memorised, the message and out.
+        var (t2, s2) = Context(new Script(new object?[] { null }), a, b);
+        CampScreens.CastMenu(Camp(t2, memory));
+        Assert.Null(memory.SpellGlobals.Ds6DB5);
+        Assert.Equal(0, s2.Left);
+
+        // The camp keeps it while it runs and clears it at its end (0x197E9).
+        memory.SpellGlobals.Ds6DB5 = b;
+        var (t3, s3) = Context(new Script(5), a, b); // EXIT
+        Assert.False(VenueScreens.Camp(Camp(t3, memory), null));
+        Assert.Null(memory.SpellGlobals.Ds6DB5);
+        Assert.Equal(0, s3.Left);
     }
 }

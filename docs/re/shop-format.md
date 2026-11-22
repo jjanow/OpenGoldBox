@@ -300,27 +300,33 @@ even for Raise Dead / Stone to Flesh on a target that does not qualify, which th
 
 | # | Routine | Price | Condition | Effect after payment |
 |---|---|---|---|---|
-| 0 | 0x47C0 | 1000 | effect 33 (blindness) | remove effect 33 (0x2AF10) |
+| 0 | 0x47C0 | 1000 | effect 33 (blindness) | remove effect 33 (0x2AF10, no lock) |
 | 1 | 0x4864 | 1000 | any of effects 31, 34, 43, 44, 50, 57 (DS:0114) | remove the first record of each of the six through 0x2AF10, DS:681F = 1 meanwhile (below) |
 | 2 | 0x4978(1) | 100 | none | heal 1d8 |
 | 3 | 0x4978(2) | 350 | none | heal 2d8 + 1 |
 | 4 | 0x4978(3) | 600 | none | heal 3d8 + 3 |
-| 5 | 0x4CC8 | 1000 | effect 55 (poison) | remove effects 55, 22, 15 (DS:681F = 1) |
-| 6 | 0x4A87 | 5500 | status 6 (dead) or 1 | raise dead, below |
+| 5 | 0x4CC8 | 1000 | effect 55 (poison) | remove the first record of 55, 22, 15 in that order through 0x2AF10, DS:681F = 1 meanwhile (below); **the engine removes every record of each with the lock held (original bug fixed, s51)** |
+| 6 | 0x4A87 | 5500 | status 6 (dead) or 1, tested before the questions | raise dead, below (paid but nothing done when the test failed) |
 | 7 | 0x4DB1 | 3500 | an item with `cursed` ≠ 0, or effect 36 | DS:6C95 := DS:5D92, then the remove-curse routine 0x29558: if the character has effect 36, that effect is removed (0x2BF6B → 0x2AF10) and nothing else; else `cursed` := 0 on the **first** cursed item only |
 | 8 | 0x4E9F | 2000 | status 7 (stone) | if still 7: status 0, in play 1, HP 1 |
 
 - **Dice**: only entries 2–4 draw (1–3 × Random(8) + 1 through 0x2BCCD, summed in a byte; the bonus is added
   after; max 27).
-- **Heal** (0x2C647, called with flag 0): only for status 0, 1, 4 or 5 (set at OVR 0x2C627); effect 50 blocks it;
-  HP 0x11B += amount (byte), capped at max HP 0x32; no check before payment (full HP still pays). Then if in play
-  0x10D = 0: status 5 → 4, and a status-4 creature outside combat (DS:49F3 ≠ 5) gets effect handler 0x4E (0x2AEEA)
-  `[?]` (whether that makes it status 0 is not read).
+- **Heal** (0x2C647, called with flag 0 at 0x49C2 / 0x4A11 / 0x4A61): only for status 0, 1, 4 or 5 (set at OVR
+  0x2C627); effect 50 blocks it; HP 0x11B += amount (byte), capped at max HP 0x32; no check before payment (full HP
+  still pays). Then if in play 0x10D = 0: status 5 → 4, and a status-4 creature outside combat (DS:49F3 ≠ 5) gets
+  effect handler 0x4E (0x2AEEA, "removed", no record). **Settled s51** (run under emulation, below): handler 0x4E
+  (0x10634) is the revive 0x2C753 with the creature's HP: outside a fight the square test 0x317E1 passes, so status 0,
+  in play 1, HP kept, the revived message (START 0x16EC) and the teams counted. So a temple heal wakes an unconscious
+  or dying character out of play and brings it back to status 0. Core `EffectHandlers.RestoreHitPoints` (78 →
+  `Revive`).
 - **Raise dead** (0x4B22–0x4C9D), literally: remove effects 32 and 55 (DS:681F = 1); HP 1, status 0, in play 1;
   Con (0x14) − 1 if > 0; d = max HP − 0xB1 (rolled HP) if positive, else 0 (byte). If the new Con ≥ 14: s = Σ over
   level bytes 0x96 + k (k = 0..7) that are > 0: k = 2 (fighter) → level × (Con − 14); else 2 × level when Con > 15,
   else level (byte sum); d := d div s when s > 0; max HP −= d unless Con ≥ 17 and the fighter level ≤ 0. No dice,
-  no survival roll, no ageing. `[?]` what this is meant to compute.
+  no survival roll, no ageing. `[?]` what this is meant to compute. The two removals run before the HP rule: a
+  record of 32 (Animate Dead) with byte 4 set runs handler 32 (0xF776) under the lock: no death, but it writes the
+  hostile byte (param >> 4), auto, undead level, attack level, move 12, NPC byte and type 0 (s51, emulation).
 - **Effect removal** (0x2AF10): the code removes one record per call (the model drops the first match); the
   handler call on removal follows `item-format.md` "Effect record". **DS:681F** (settled s49): 0x2AF10 never reads
   it; the handlers do. Its readers in the whole program are 0xEC7A (the re-add every recurring handler uses: among them
@@ -334,13 +340,54 @@ even for Raise Dead / Stone to Flesh on a target that does not qualify, which th
   the "cure anyway" question 0x458A, its answer replacing the default Y. On Y: the price text (CS:02E0) and 1000 to the
   pay question 0x4636; on its Y: DS:681F := 1, for i = 1..6 0x2AF10(DS:5D92, DS:0114[i], nil), DS:681F := 0 (written 0,
   not restored). Core `TempleRules.CureDisease` with the game's effect engine outside a fight (`TradeContext.Effects`).
-  Entries 5 (0x4D45) and 6 (0x4B22) set the same lock around their removals; the engine still only drops their
-  records (not part of this port).
-
+- **Every entry whole (W s51, `por_venue_oracle.py` "templeEntries", test
+  `VenueProgramTests.Temple_entries_match_the_program_under_emulation`, 1300 cases).** Entries 0x47C0, 0x4864,
+  0x4978(1..3), 0x4CC8, 0x4A87, 0x4DB1, 0x4E9F run on made-up characters (statuses 0/1/4/5/6/7 in and out of play,
+  Con 0–19, signed levels, rolled HP, effect records 55, 22, 15, 32, 36, 33 and the disease ids with byte 4 set or not,
+  doubles, cursed items), the questions answered Y / N: the questions asked, the record, effect list and items, DS:681F,
+  RandSeed and the START 0x16EC count equal Core's (`TempleRules.Apply` with the engine; the count not for cure 7,
+  whose spell routine's messages the rules do not raise). **Poison (0x4CC8) whole:**
+  test START 0x2199(member, 55, var record); absent: the not-poisoned text (CS:072E) and 0x458A; on Y the price text
+  (CS:073F), 1000 to 0x4636; on its Y: DS:681F := 1, 0x2AF10(DS:5D92, 55, nil), (…, 22, nil), (…, 15, nil), DS:681F := 0.
+  The cure runs after payment whether or not 55 was there. **Raise dead (0x4A87) whole:** [bp−0x106] := status 6 or 1,
+  tested before the questions; absent: the not-dead text (CS:04F8) and 0x458A; price text (CS:0505), 5500; on Y, only when
+  [bp−0x106] is set, 0x4B22–0x4C9D (above, with a local copy of DS:5D92); otherwise the money is gone and nothing happens.
+  **Remove curse (0x4DB1):** the cursed-item walk stops at the first cursed item; else START 0x2199(member, 36); the
+  pay path sets DS:6C95 := DS:5D92 and calls the spell routine 0x29558 (its messages START 0x2B8B / 0x16EC are the spell's;
+  the Client does not show them yet).
+  **Handler 22's own lock (original bug, fixed: user decision s51, not an option):** handler 22 (0xF3D0) on removal
+  sets DS:681F := 1 (0xF40B), removes 15 and writes DS:681F := 0 (0xF424), inside the cure's own lock. So with two
+  records of 15 (and 22 with byte 4 set) the cure's removal of the second 15 runs unlocked: handler 15 re-adds itself
+  for 10 minutes and takes a hit point (the party list redrawn; 0x2C44A's message when that drops the character). The
+  character leaves the temple still carrying a recurring 15. And with two records of 55, handler 22 finds the second
+  and kills the character (status 6, the poison-death text) during the paid cure. Both seen under emulation and in
+  DOSBox-X (below). **The engine** (`TempleRules.CurePoison`) removes every record of 55, then every record of 22, then
+  every record of 15, setting DS:681F := 1 again before each removal, and leaves it 0 at the end as 0x4D8C does: no 55
+  is left when a handler 22 runs, and no handler 15 runs unlocked, so the cure never harms or kills. Handler 22 itself
+  is unchanged (it also runs at Slow Poison's end). `VenueProgramTests.Temple_entries_match_the_program_under_emulation`
+  expects this fixed result where the program's cure harms (worked out from the input: the three ids gone, record,
+  RandSeed and messages unchanged, lock 0); `ShopRulesTests.Poison_cure_removes_every_record_and_never_harms`.
+  **Other users of the lock (s51, every write of DS:681F in GAME.OVR and START):** 1 / 0 pairs at 0x48FF / 0x4936
+  (cure 1), 0x4B24 / 0x4B55 (raise dead), 0x4D47 / 0x4D8E (cure 5), 0xF40B / 0xF424 (handler 22), 0x292AE / 0x2933D
+  (Cure Disease 0x292A2) and 0x29E81 / 0x29E9C (spell 58 0x29E65); 0 at the start-up 0x2A43D. Handler 22 is the only
+  one that writes 0 inside another's lock, and only the poison cure and spell 58 remove a 22 under a lock; cures 1
+  and 6 and Cure Disease never do, so the lock-clearing touches no other temple cure or camp cast. Spell 58 removes
+  the first 55 (no lock), then under the lock the first 22 and writes 0 right after, so the cleared lock changes
+  nothing there; but with two records of 55 its handler 22 finds the second and kills the target, as the unfixed
+  temple cure did (not changed; a question for the user).
+  **D s51** (test save G of `por_test_saves.py`, Thrender's `.SPC` = 55, 22, 15, 15 and Bakshi's = 55, 55, 22, all
+  byte 4 set, money added; Neutralize Poison paid on each): Thrender "is cured", then HP 11 → 10 and the party list
+  (START 0x0767 from handler 15, 0xF28A) drawn over the heal list, which the next pass redraws only row by row, so the
+  names and HP stay over its right half; Bakshi "is cured", then "dies from poison" (name row 18, text row 19), HP 0,
+  the party list over the list again (0xECB3's end). Row 24 keeps the pay question's line ("PAY FOR CURE YES NO") under
+  both messages. The Client (same save, before the s51 fix): the same HP, status and texts in the box, and (once it
+  kept the answered pay question's line on row 24 under the entry's pauses, `ExploreScreen.DrawOverPage`) the text box
+  and row 24 equal to DOSBox-X pixel for pixel under both messages. Since the fix the Client cures both without harm
+  (no hit point lost, no death, no party list over the heal list), a deliberate difference from these DOSBox-X screens.
 ## Open `[?]`
 
-- Temple: effect handler 0x4E on a revived character, the intent of the raise dead hit-point rule; entries 5 and 6
-  removing through 0x2AF10 under the lock as cure 1 now does.
+- Temple: the intent of the raise dead hit-point rule; the remove-curse entry's spell messages (0x29558) in the
+  Client.
 
 ## The menu routine (0x2CC8C) — P (s15)
 

@@ -334,6 +334,61 @@ public class VenueTests
         Assert.Equal(0, Assert.IsType<ChoiceRequest>(s.Asked[1]).CancelIndex);
     }
 
+    /// <summary>
+    /// The loot menu's extended keys (user s51, combat-format.md "Loot menu"): Del / Shift-F1 / Shift-F3 answer Share /
+    /// Take / View whether or not the line has the word (the program's loop does not look at it), F10 answers Detect
+    /// only with Detect on the line. Del with items and no money runs Share off the line (nothing to share).
+    /// </summary>
+    [Fact]
+    public void Loot_extended_keys_follow_the_s51_rule()
+    {
+        var c = Member("ANNA");
+        var loot = new List<byte[]> { Item(5, 20) };
+        var pool = new uint[] { 30, 0, 0, 0, 0, 0, 0 };
+        var (t, s) = Context(new Script(4, 1), Party(c), loot, pool);  // EXIT, then No
+        VenueScreens.LootMenu(t);
+        var m = Assert.IsType<ChoiceRequest>(s.Asked[0]);
+        Assert.Equal(["VIEW", "TAKE", "POOL", "SHARE", "EXIT"], m.Items);
+        Assert.Equal(3, m.ExtendedKeys!(0x53));           // Del: Share
+        Assert.Equal(1, m.ExtendedKeys(0x54));            // Shift-F1: Take
+        Assert.Equal(0, m.ExtendedKeys(0x56));            // Shift-F3: View
+        Assert.Null(m.ExtendedKeys(0x44));                // F10 with no Detect on the line: nothing
+        Assert.Null(m.ExtendedKeys(0x3C));                // F2
+
+        c[0x17] = 11;                                     // a magic-user's Detect Magic memorised
+        pool[0] = 0;
+        int? share = null;
+        var asked = new List<ChoiceRequest>();
+        // Each pass of the menu answers through its own extended-key map: Del, then F10, then Exit and No.
+        var keys = new Queue<byte>([0x53, 0x44]);
+        object? Answer(PlayerRequest req)
+        {
+            if (req is not ChoiceRequest r)
+                return null;
+            if (!r.Items.Contains("VIEW"))
+                return 1;                                 // the exit question: No
+            asked.Add(r);
+            if (keys.Count == 0)
+                return r.Items.Count - 1;                 // EXIT
+            int? a = r.ExtendedKeys!(keys.Dequeue());
+            share ??= a;
+            return a;
+        }
+        int detected = 0;
+        var t2 = new TradeContext
+        {
+            Dialog = new Dialog(Answer, new TextWindow()), Text = new GameText(), Party = Party(c), Pool = pool,
+            Treasure = loot, Random = n => n - 1, Word = _ => null, ShowWindow = _ => { }, RosterDrawn = () => { },
+            LootDetect = _ => detected++,
+        };
+        VenueScreens.LootMenu(t2);
+        Assert.Equal(["VIEW", "TAKE", "POOL", "DETECT", "EXIT"], asked[0].Items);
+        Assert.True(share >= 100);                         // past the line
+        Assert.Equal(3, asked[1].ExtendedKeys!(0x44));
+        Assert.Equal(1, detected);
+        Assert.Single(loot);
+    }
+
     [Fact]
     public void Loot_exit_with_treasure_left_asks_and_detect_is_offered_with_the_spell()
     {
@@ -345,6 +400,48 @@ public class VenueTests
         Assert.Equal(["VIEW", "TAKE", "POOL", "DETECT", "EXIT"], Assert.IsType<ChoiceRequest>(s.Asked[0]).Items);
         Assert.True(((ChoiceRequest)s.Asked[0]).Animates);       // 0x659D: animate flag 1 (the loot picture moves)
         Assert.Single(loot);                             // left behind after "no"
+        Assert.Equal(0, s.Left);
+    }
+
+    /// <summary>
+    /// The loot menu's D (0x6605, s51): the first of 5 / 11 among the memorised bytes is cast (0x27C38 with announce 0,
+    /// on the caster), the copy goes, so the next pass has no Detect; effect 5 marks the magical item "* ".
+    /// </summary>
+    [Fact]
+    public void Loot_detect_casts_the_first_detect_spell_and_marks_magic_items()
+    {
+        var c = Member("ANNA");
+        c[0x96] = 1;                                     // cleric level 1
+        c[0x17] = 3;
+        c[0x18] = 0x85;                                  // detect magic still to be memorised: not counted
+        c[0x19] = 5;                                     // the one D casts
+        var magic = Item(5, 20, type: 7);
+        magic[0x32] = 1;                                 // plus 1
+        var loot = new List<byte[]> { magic };
+        var (t, s) = Context(new Script(3, null, 3, 1), Party(c), loot); // DETECT, the effect message's pause, EXIT on the new line, No
+        var table = new SpellTable(new Dictionary<int, SpellInfo>
+        {
+            [5] = new(0, 1, 3, 0, 10, 0, 0, 1, 0, 4, 5, 2, 1, 0, 0, 0), // v1.3's row: target 1 (caster), effect 5, 10 minutes
+        });
+        var fx = new EffectHandlers(_ => 0) { List = () => t.Party.Members, CurrentCharacter = () => t.Party.Current };
+        var camp = new CampContext
+        {
+            Trade = t,
+            State = new CampState(),
+            Spells = new CampSpells(table, _ => false),
+            Rest = new CampRest(new EclMemory(), new CampState(), new CampSpells(table, _ => false), _ => 0, (_, _) => { }, _ => false),
+            Memory = new EclMemory(),
+            Cast = new CampCast(new FightSpells(table, fx, _ => 0), t.Party),
+        };
+        Assert.DoesNotContain("*", t.ItemName(magic));
+        t.LootDetect = spell => CampScreens.LootDetect(camp, spell);
+        VenueScreens.LootMenu(t);
+        Assert.Equal(["VIEW", "TAKE", "POOL", "DETECT", "EXIT"], Assert.IsType<ChoiceRequest>(s.Asked[0]).Items);
+        Assert.Equal(["VIEW", "TAKE", "POOL", "EXIT"], s.Asked.OfType<ChoiceRequest>().ElementAt(1).Items);
+        Assert.Equal(0, c[0x19]);                        // the copy cast is gone, the pending one stays
+        Assert.Equal(0x85, c[0x18]);
+        Assert.True(c.HasEffect(5));
+        Assert.StartsWith("* ", t.ItemName(magic));
         Assert.Equal(0, s.Left);
     }
 

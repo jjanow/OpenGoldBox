@@ -29,7 +29,8 @@ public static class TempleRules
 
     /// <summary>Effect ids entry 1 tests and removes (DS:0114, six bytes; 0x4864).</summary>
     public static readonly byte[] DiseaseEffects = [31, 34, 43, 44, 50, 57];
-    /// <summary>Effect ids entry 5 removes (0x4CC8); its test is effect 55 alone.</summary>
+    /// <summary>Effect ids entry 5 removes, in this order (0x4D45–0x4D87; the engine removes every record of each, see
+    /// <see cref="CurePoison"/>); its test is effect 55 alone.</summary>
     public static readonly byte[] PoisonEffects = [55, 22, 15];
 
     private const int Status = 0x10C, InPlay = 0x10D, Hp = 0x11B, MaxHp = 0x32, Con = 0x14, RolledHp = 0xB1,
@@ -52,18 +53,23 @@ public static class TempleRules
 
     /// <summary>
     /// The effect after payment. <paramref name="random"/> answers Random(n) (used only by cures 2–4: 1d8, 2d8 + 1,
-    /// 3d8 + 3). Effect removal goes through the program's remove routine 0x2AF10, which runs the effect's handler
-    /// first when the record's byte 4 is set. Entry 1 (0x4864, ported whole s49) does that through
-    /// <paramref name="effects"/> (the game's effect engine outside a fight) under the effect lock DS:681F = 1; without
-    /// an engine the records are only dropped. Entries 5 and 6 also set the lock (0x4D45, 0x4B22) but still only drop
-    /// the records here.
+    /// 3d8 + 3 through 0x2BCCD). With <paramref name="effects"/> (the game's effect engine outside a fight) every entry
+    /// runs as the program's (s49 cure 1, s51 the rest; checked under emulation, `por_venue_oracle.py`): effect removal
+    /// goes through 0x2AF10 (<see cref="EffectHandlers.RemoveEffect"/>: the handler first, with "removed", when the
+    /// record's byte 4 is set), cures 1, 5 and 6 under the effect lock DS:681F = 1 (written 0 after, not restored), and
+    /// the healing of cures 2–4 is 0x2C647 with flag 0 (<see cref="EffectHandlers.RestoreHitPoints"/>, which revives an
+    /// unconscious character through handler 0x4E). Without an engine the records are only dropped and the healing is
+    /// <see cref="Heal"/>.
     /// </summary>
     public static void Apply(Cure cure, EclCharacter c, Func<int, int> random, EffectHandlers? effects = null)
     {
         switch (cure)
         {
-            case Cure.Blindness:
-                RemoveEffects(c, 33);
+            case Cure.Blindness: // 0x483D: 0x2AF10(member, 33, nil), no lock
+                if (effects is not null)
+                    effects.RemoveEffect(c, 33);
+                else
+                    RemoveEffects(c, 33);
                 break;
             case Cure.Disease:
                 if (effects is not null)
@@ -77,19 +83,26 @@ public static class TempleRules
                 int sum = 0;
                 for (int k = 0; k < n; k++)
                     sum += random(8) + 1;
-                int bonus = n switch { 2 => 1, 3 => 3, _ => 0 };
-                Heal(c, (byte)(sum + bonus));
+                byte amount = (byte)(sum + n switch { 2 => 1, 3 => 3, _ => 0 });
+                if (effects is not null)
+                    effects.RestoreHitPoints(c, amount, false); // 0x49C2 / 0x4A11 / 0x4A61: 0x2C647(member, amount, 0)
+                else
+                    Heal(c, amount);
                 break;
             }
             case Cure.Poison:
-                RemoveEffects(c, PoisonEffects);
+                if (effects is not null)
+                    CurePoison(c, effects);
+                else
+                    foreach (var id in PoisonEffects) // every record of each (the s51 fix, as CurePoison)
+                        c.Effects.RemoveAll(e => e.Length > 0 && e[0] == id);
                 break;
             case Cure.RaiseDead:
-                if (Applies(cure, c))
-                    RaiseDead(c);
+                if (Applies(cure, c)) // 0x4B18: the status test made before the questions ([bp−0x106])
+                    RaiseDead(c, effects);
                 break;
             case Cure.RemoveCurse:
-                RemoveCurse(c);
+                RemoveCurse(c, effects);
                 break;
             case Cure.StoneToFlesh:
                 if (c[Status] == 7)
@@ -103,10 +116,11 @@ public static class TempleRules
     }
 
     /// <summary>
-    /// The heal routine with its last argument 0 (0x2C647), as the temple calls it: only for status 0, 1, 4 or 5;
+    /// The heal routine with its last argument 0 (0x2C647) without an effect engine: only for status 0, 1, 4 or 5;
     /// effect 50 blocks it; HP += amount (byte), capped at max HP. A creature out of play with status 5 (dying)
-    /// becomes 4; a status-4 creature then gets effect handler 0x4E (outside combat) [?] not modelled. Returns
-    /// whether it healed.
+    /// becomes 4. The program then runs effect handler 0x4E for a status-4 creature outside a fight (back in play,
+    /// status 0: <see cref="EffectHandlers.RestoreHitPoints"/>, which <see cref="Apply"/> uses when given the engine);
+    /// this fallback leaves it out. Returns whether it healed.
     /// </summary>
     public static bool Heal(EclCharacter c, byte amount)
     {
@@ -129,9 +143,20 @@ public static class TempleRules
     /// level (byte sum); d = d div s when s &gt; 0; then max HP −= d unless Con ≥ 17 and the fighter level ≤ 0.
     /// No dice. [?] The intent (removing one level's worth of Constitution hit points?) is not settled.
     /// </summary>
-    public static void RaiseDead(EclCharacter c)
+    public static void RaiseDead(EclCharacter c, EffectHandlers? effects = null)
     {
-        RemoveEffects(c, 32, 55);
+        if (effects is not null)
+        {
+            // 0x4B22–0x4B53: DS:681F := 1, 0x2AF10(member, 32, nil), 0x2AF10(member, 55, nil), DS:681F := 0. Handler 32
+            // (Animate Dead, 0xF776) runs on a record with byte 4 set: under the lock no death, but it writes the
+            // hostile, auto, undead-level, attack-level, move and type bytes before the HP / status writes below.
+            effects.Cells.Lock = 1;
+            effects.RemoveEffect(c, 32);
+            effects.RemoveEffect(c, 55);
+            effects.Cells.Lock = 0;
+        }
+        else
+            RemoveEffects(c, 32, 55);
         c[Hp] = 1;
         c[Status] = 0;
         c[InPlay] = 1;
@@ -164,11 +189,14 @@ public static class TempleRules
     /// The remove-curse routine (0x29558) on the character: with effect 36 only that effect is removed; else the
     /// first item with <c>cursed</c> ≠ 0 gets <c>cursed</c> := 0 (later cursed items stay cursed).
     /// </summary>
-    public static void RemoveCurse(EclCharacter c)
+    public static void RemoveCurse(EclCharacter c, EffectHandlers? effects = null)
     {
         if (c.HasEffect(36))
         {
-            RemoveEffects(c, 36);
+            if (effects is not null)
+                effects.RemoveEffect(c, 36); // 0x2BF6B → 0x2AF10
+            else
+                RemoveEffects(c, 36);
             return;
         }
         var item = c.Items.FirstOrDefault(i => i[0x36] != 0);
@@ -191,6 +219,28 @@ public static class TempleRules
         foreach (var id in DiseaseEffects)
             effects.RemoveEffect(c, id);
         effects.Cells.Lock = 0; // 0x4934 writes 0, not the value it found
+    }
+
+    /// <summary>
+    /// 0x4CC8 after payment. The program (0x4D45–0x4D8C): DS:681F := 1; 0x2AF10(member, id, nil) for 55, 22 and 15 in
+    /// that order, the first record of each; DS:681F := 0. Handler 22 (0xF3D0) runs when its record has byte 4 set:
+    /// with another record of 55 still on the member it kills it (status 6, the poison death text); then it sets the
+    /// lock to 1 itself, removes 15 and writes the lock 0 (0xF40B / 0xF424), so the cure's own removal of a second 15
+    /// runs unlocked: handler 15 (0xF246) re-adds itself for 10 minutes and takes a hit point when HP &gt; 1 (checked
+    /// under emulation and in DOSBox-X, s51). <b>Original bug, fixed (user, s51; not an option):</b> the engine removes
+    /// every record of 55, then of 22, then of 15, the lock set again before each removal so a handler's own write of
+    /// 0 never leaves the next removal unlocked; with no 55 left when a handler 22 runs, the paid cure never harms or
+    /// kills. The lock is 0 afterwards, as the program leaves it.
+    /// </summary>
+    public static void CurePoison(EclCharacter c, EffectHandlers effects)
+    {
+        foreach (var id in PoisonEffects)
+            while (EffectHandlers.FindEffect(c, id) is { } node)
+            {
+                effects.Cells.Lock = 1;
+                effects.RemoveEffect(c, id, node);
+            }
+        effects.Cells.Lock = 0; // 0x4D8C writes 0, not the value it found
     }
 
     private static void RemoveEffects(EclCharacter c, params byte[] ids)

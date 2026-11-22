@@ -262,10 +262,14 @@ public sealed class FightMenu
     }
 
     /// <summary>
-    /// 0x1638E with the start word (ParamStr(1) equal to its copy at GAME.OVR 0x16374, the hall's J word): after its
-    /// message (0x1637A, START 0x2233), every hostile creature (0x10E = 1) leaves play with status 6 and its map byte
-    /// cleared (DS:5F2A), every creature's actions end (START 0x31D7), and the map is redrawn. Called by Alt-X in the
-    /// menu and by X in the AI's key check (0xBB81).
+    /// 0x1638E with the start word (ParamStr(1) equal to its copy at GAME.OVR 0x16374, the hall's J word; read whole
+    /// s51, every branch): after its message (0x1637A, START 0x2233), in list order every hostile creature (0x10E = 1)
+    /// gets in play 0 and status 6 and its slot's icon size 0 (DS:5F2A + 4 × slot; no grid rebuild, no body, no body
+    /// sound: not 0x3154B; a creature with no slot is skipped there, where the program zeroes the slot count: an
+    /// original bug fixed, s51, <see cref="CombatMap.ClearIconSize"/>), and every creature's actions end (START 0x31D7, its result unused); then the view is
+    /// redrawn in place (0x310D0(view x + 3, view y + 3, 255, 8): drawing only). A hostile party member (charmed) is
+    /// treated the same. Called by Alt-X in the menu and by X in the AI's key check (0xBB81). Oracle:
+    /// <c>por_altx_oracle.py</c> (AltXProgramTests).
     /// </summary>
     public static void GodsIntervene(Fight fight)
     {
@@ -275,7 +279,7 @@ public sealed class FightMenu
             {
                 x[FightRules.InPlay] = 0;
                 x[FightRules.Status] = (byte)CreatureStatus.Dead;
-                fight.Map?.Remove(x); // the program clears the icon's map byte (DS:5F2A)
+                fight.Map?.ClearIconSize(x);
             }
             fight.EndActions(x);
         }

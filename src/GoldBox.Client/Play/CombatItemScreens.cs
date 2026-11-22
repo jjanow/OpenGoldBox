@@ -490,8 +490,8 @@ public sealed partial class CombatChooser
 
     /// <summary>
     /// A message of the item screens: the program's message routine (START 0x1693: row 24 cleared, the text in green
-    /// at column 0, the pause 0x709:0xDBE, row 24 cleared). [?] That Ready's and Halve's refusals use the same
-    /// routine is not read; Trade, Sell and Id are never offered in a fight.
+    /// at column 0, the pause 0x709:0xDBE, row 24 cleared). Ready's (0x2250A) and Halve's (0x228CC) refusals use the
+    /// same routine (read s51); Trade, Sell and Id are never offered in a fight.
     /// </summary>
     public void Notice(ItemNotice notice, EclCharacter c, byte[]? item)
     {
@@ -502,7 +502,7 @@ public sealed partial class CombatChooser
             ItemNotice.CannotHalve => Text[CombatMsg.CannotHalve],
             ItemNotice.Cursed => Text[CombatMsg.Cursed],
             ItemNotice.WrongClass => Text[CombatMsg.WrongClass],
-            ItemNotice.SlotTaken => Text[CombatMsg.AlreadyUsing] + (item is null ? "" : ItemName(item)), // [?] what follows the words
+            ItemNotice.SlotTaken => Text[CombatMsg.AlreadyUsing] + (item is null ? "" : ItemName(item)), // the item in the slot (0x226C4)
             ItemNotice.HandsFull => Text[CombatMsg.HandsFull],
             _ => "NOT IN THIS BUILD YET",
         };

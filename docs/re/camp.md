@@ -31,7 +31,7 @@ mean something else (VM $6DCA is Search, $6DCB surprise, $49FB no area map), so 
 | 49F3 | byte | interface state: 2 while the camp runs (saved and restored by 0x196A0) |
 | 49FB | word | rest ticks since the last interruption roll; cleared only by the roll (not on camp entry) |
 | 471E | 72 bytes | per creature-list position 1..72: has timed effects left (0x23DCC) |
-| 6DB5 | far ptr | remembered cast target; cleared when the Cast menu opens and when the camp ends |
+| 6DB5 | far ptr | remembered cast target; cleared when the Cast menu opens and when the camp ends ("The remembered target DS:6DB5" below: every writer in the image) |
 | 6DC2 | 7 words | the rest time, shaped like the game clock (1 minutes, 2 ten minutes, 3 hours, 4 days, 5 months, 6 years); cleared on camp entry and after each rest |
 | 6DD0 | 8 bytes | spell preparation timer per party position 1..8 |
 | 6DD8 | word | rest ticks since the last whole-party heal; cleared on camp entry |
@@ -147,10 +147,104 @@ not after D (+0x54F6: the money lines +0x4DB6 only) or R. The Client's shared lo
 **View's Spells outside a fight (P s49, D s49).** S runs the spell list 0x239D6 in show mode (0x21D05: kind 0, action
 0, the position word −1): the member's memorised list on the list's screen with Exit only; its exit draws the View page
 again (S is in the redraw set) with the shared highlight on the first word (the list routine stored 1). Before s49 the
-Client gave its not-built notice. Client: `TradeContext.ShowMemorised` → `CampScreens.ShowMemorised` (the camp's,
-shop's, temple's, loot menu's and command line's View; the party menu's View still gives the notice). **D** (s49, save
-A, camp, Brother Sean: End ×3, E, V, S, E): the list (title, level heading, three rows with the last lit, Exit) and
-the View page after it equal to DOSBox-X by eye.
+Client gave its not-built notice. Client: `TradeContext.ShowMemorised` → `SpellLists.ShowMemorised` (one page builder, `SpellLists.Page`, for every
+caller: the camp's, shop's, temple's, loot menu's, command line's and, since s51, the party menu's View, 0x19D23).
+**D** (s49, save A, camp, Brother Sean: End ×3, E, V, S, E): the list (title, level heading, three rows with the last
+lit, Exit) and the View page after it equal to DOSBox-X by eye.
+**The party menu's caller (W s51).** 0x19D23 calls 0x21AED with DS:49F3 = 0 and nothing else set: its S is the same
+0x21D05 call. The list's screen replaces the page (no text window on the party menu; the list draws its own window and
+title), Exit or Escape (the list routine's 0) return to 0x21AED, which draws the page again (S is in the redraw set
+0x21ACD) with the cell the list routine left (1: the page's first word lit). The list's entry is a 0x2D669 call with
+position 0, so it takes the list routine's global top to 0 (`MenuHighlight.ListEntered`), as View's Items does; by the
+s45 rule a later Create then shows its list labels (not seen for this caller). Client: `PartyMenuFlow.View` hands `SpellLists.ShowMemorised` to the trade context;
+`PartyMenuScreen` draws the list's screen as the hall's Learn list (test
+`PartyMenuScreenTests.View_spells_shows_the_memorised_list_on_the_party_menu`).
+**D** (s51, 20000 cycles: DOSBox-X loads the `unstarted` slot C fixture with Brother Sean's record and items from save A
+as its member (CHRDATA4 → CHRDATC1) at the start-up menu; the Client adds the same record from its roster; V, S,
+Escape): the View page, the list ("BROTHER SEAN'S SPELLS IN MEMORY", 1st level, Bless and two Cure Light Wounds with
+the last row lit, Exit) and the page again with Items lit are pixel-equal in both (640 × 400 compared).
+**Which View commands run where (s51).** View's own entries (Items, Spells, Trade, Drop money) run for every caller
+outside a fight; our notice remains only when a host gives no program page or coin list (scripted tests). The Items
+page 0x21F32 runs every command for every caller outside a fight (camp, shop, temple, loot menu, command line, party
+menu, hall): Ready, Use (DS:49F3 2–4), the item's Trade, Drop, Halve, Join, Sell and Id (s51, below); the fight runs
+them through Core `FightItemScreens.Use`.
+**The Items page's Ready, Drop, Halve and Join (W s51).** 0x21F32 read whole (unit 0x2103A; the loop, its entries,
+its dispatch 0x222DC–0x224A6) with its four own commands. Every caller runs the same code; DS:49F3 only gates the
+entries (`FightItemScreens.ItemsEntries`) and Ready's hands-full message. The loop: until the key is 0 or E (set
+CS:0E63), done is set or the item count 0xC7 is 0: the entries string, the names of every item (START 0xFE2 each
+pass), the page when its flag [bp−0x2C] or DS:6821 (set by handlers 131 / 132) is set, the list 0x2D669; a nil item
+(the cursor past the list) skips the command; after every answer START 0x1758 on DS:5D92 (0x224AF) and, when 0xC7
+changed, the list flag [bp−0x2D]. **Original bug, fixed (user, s51; not an option, as the s48 text-routine hang):**
+0xC7 above 0 with an empty list (only a stale count): 0x21FB1 jumps past the recalculation to 0x224B4, so the loop
+never ends; the Client loops on the list itself and leaves the page.
+- **Ready** (0x2250A, Core `ItemCommands.Ready`): readied and cursed (0x36) → "It's Cursed"; readied → 0x34 := 0, kind
+  0x3E > 0x7F → the handler 0x2AEEA(kind, DS:5D92, item, removed 1). Not readied: the refusal code [bp−2], the last
+  failing test winning: hands 0x100 + the type's hands > 2 → 3; the type's slot 0–8 taken (+0xCC + 4·slot) → 2, slot 9
+  with the second ring slot (+0xF4) taken → 2; type 0x49 with the arrow slot (+0xF8) → 2 naming slot 11, type 0x1C
+  with the bolt slot (+0xFC) → 2 naming slot 12; class mask (ITEMS byte 13 AND 0xB0) 0 → 1. Code 0: 0x34 := 1 and
+  the handler with removed 0. Messages through START 0x1693 (row 24, green, the game-speed pause): 1 "Wrong Class",
+  2 "already using " + the name of the item **in the slot** (START 0xFE2 on +0xCC + 4·[bp−3]; a ring names the first
+  ring slot though the second was tested), 3 "Your hands are full!" except in a fight for a creature with 0x10F ≠ 0
+  (the AI's Toggle: no message), 4 "It's Cursed". The fight's Client had named the item being readied; fixed s51.
+- **Drop** (0x22398): 0x21DAA first (readied → "Must be unreadied"; a scroll with a spell flagged for scribing → the
+  warning and its yes/no); then the item's name, "Your " + name + "will be gone forever" in the box (1, 21)–(38, 22),
+  colour 14, cleared first (START 0x77F8), the yes/no "Drop It? " (0x2D9A0, colours 13, 10, 15, No lit); Y → START
+  0x20A9 unlinks and frees the item and sets the list flag; the box blanked (START 0x4047). **In every venue the item
+  is gone**: nothing reaches the pool, the treasure list or a shop's stock (unlike Drop money in a shop or the loot).
+- **Halve** (0x22827) and **Join** (0x228D7) as in a fight (combat-menu.md "View / Use"); Halve's refusal "Can't halve
+  that" (CS:17DC) is START 0x1693 for every caller. Join has no message.
+- **Handler texts** (Ready of the gauntlets, handler 131): START 0x16EC outside a fight draws the text window's frame
+  again over the page (braid row 16), blanks (1, 17)–(38, 22), the name on row 18, types the text from row 19, pauses,
+  START 0x2383 clears; the list rows are unlit meanwhile and the YES column still shows the old value; then the page is
+  drawn whole (DS:6821). Client: `TradeContext.ItemHandler` on a fresh engine with the game's rules
+  (`TradeContext.ItemEffects`: `ClientPlayer.CampEffects`, the party menu its own), `OutsideEffectMessages` with
+  `TradeContext.FrameOverItemsPage` (`PartyMenuFlow.TextOverPageFramed`).
+Checked under emulation: `tools/scripts/por_items_oracle.py` runs 0x21F32 whole on 420 generated characters (DS:49F3
+0–6, VM $49E5 0 / 1, a combat record in a fight), the list and yes/no scripted, START 0x1693 and 0x2AEEA recorded:
+the entries each pass, every message text, question, handler call (kind, item, removed), the records and lists after
+equal Core's (`ItemsPageProgramTests`). Client: `CharacterView.ProgramItems` (and our list page), `ItemCommands`.
+**D** (s51, 20000 cycles, save A with a long sword, a cursed necklace (readied, 0x36 = 1), the gauntlets of ogre power
+and 10 arrows added to Thrender by `fight_save.py --item`; camp E, V, I): End, End, R ("ALREADY USING FLAIL"), Home,
+Home, R (flail unreadied), End, End, R (long sword readied), End, R ("IT'S CURSED"), End, R (the gauntlets: the framed
+"THRENDER GRONE / IS STRONGER", then the page with YES), End, H (two rows of 5 arrows, the first lit), J (10 arrows
+again), Home ×3, H on the long sword ("CAN'T HALVE THAT"), End ×3, D ("YOUR 10 ARROWS WILL BE GONE FOREVER", "DROP IT?
+YES NO" with NO lit), Y (the arrows gone, the gauntlets row lit). Row 24 keeps Ready lit after a hotkey (H, J, D),
+the YES / NO column is redrawn after each Ready, the lit row stays (after the last row's Drop: the new last). The
+Client (`--save A` of the same copy) gives every one of those frames **pixel-equal** (640 × 400). Fixed on the way:
+the Halve refusal was drawn over the camp screen (it now talks over the page), and the gauntlets' text was shown twice,
+first unseen under the page by the game's effect engine's display (a pause before the framed one): the handler now
+runs on an engine of its own (`TradeContext.ItemEffects`).
+**The remembered target DS:6DB5 (W s51).** A far pointer, every reference in START and GAME.OVR (scan of both images
+for the operand 0x6DB5 / 0x6DB7, s51): written by the start-up 0x2A42B (0x2A447 / 0x2A44A: nil; called only by 0xE600,
+which the main program calls once), the Cast menu 0x17CD2 (0x17CE3: nil), the camp's end (0x197E9: nil), the non-combat
+target handler 0x27AA9 (0x27ABF: the caster when it is nil) and, through the reference 0x27AA9 passes at 0x27B11, START's
+member pick 0x37E8 (its writes through the var parameter at START 0x3993, 0x3A4D (nil on Exit / Escape), 0x3A88,
+0x3AB1); read only by 0x27AA9 (0x27AAF, 0x27B1B, 0x27B3A). No block fill or move of the data segment covers it. So it
+outlives a fight, the loot menu, the command line's View / Use (DS:49F3 3 / 4) and the camp's View / Use: a wand used
+twice from the command line starts its second "Cast Spell on whom" on the member the first chose; only the command
+line's or the camp's Cast and the camp's end clear it (a Load does not; the engine clears it for a member who leaves,
+below). Client: the cell is `SpellGlobals.Ds6DB5` on
+the game memory (`EclMemory.SpellGlobals`, as DS:4844 / 4845), `CampCast.Remembered` reads and writes it, so every
+`CampContextFor` shares it (tests `CampCastTests.The_remembered_target_lives_on_the_game_memory`,
+`CampScreenTests.The_remembered_target_carries_over_to_the_next_use_and_the_cast_menu_clears_it`). **Original bug,
+fixed (user decision s51, not an option):** a member who leaves the party (Remove or Drop 0x1CC10, a script's LOADCHAR
+with bit 0x80 or SotSB's DUMP, a hall Load that frees the records) leaves the program a stale pointer, since none of
+those paths writes DS:6DB5: the next pick lights nobody, and End / Home and Select then work from a freed record (read
+from the writer list above; not tried in DOSBox-X). The engine clears the remembered target whenever its member leaves
+(`SpellGlobals.MemberLeft` from `PartyMenu.RemoveCurrent` and `EclPartyRules.RemoveCurrent`) and when a hall Load
+replaces the party (`SpellGlobals.PartyReplaced` in `PorGame`'s hall load); a Load at the start-up menu starts a new
+game memory, nil already. The next pick then starts as with no target: on the caster (0x27AA9's default). No path in
+PoR drops a dead member from the party list. Tests `CampCastTests.A_member_leaving_the_party_clears_the_remembered_target`,
+`PartyMenuScreenTests.Remove_clears_the_remembered_target`, `SaveWriteTests` (the hall Load).
+**D** (s51, 20000 cycles, save A with a readied Potion of Extra Healing (ITEM2.DAX block 5 record 0: power 3, Cure
+Light Wounds, 3 charges) added to Thrender by `fight_save.py --item`): command line V, I, End, End, U: the pick's
+screen is the 3D view and the party list (0x27AFA, START 0x3379 for state 4), not the Items page, with Thrender lit;
+End, End, S on Rhiannon; back on the Items page; Escape, Escape to the command line; V, I, End, End, U again: the pick
+starts with **Rhiannon lit**. The Client (`--save A` of the same copy) gives the same screens, pixel-equal but for its
+own help lines (rows 12–13 of the panel); before s51 it showed the pick over the Items page (fixed: the pick stops the
+page's talk overlay, `CampScreens.PickTarget`) and started the second pick on Thrender. The same from the camp (save A, E, V, I,
+End, End, U; End, End, S): the pick over the camp screen (fire picture, "CAMPING") with Thrender lit, then Rhiannon's
+heal message under the pick ~0.3 s after S: equal in both but for the help lines and the fire's frame.
 **Member selection in the camp (D s49).** Home on the first member lights the last, End on the last the first; Up (any
 extended key but Home / End) makes the first member current, and PgUp on the 3D command line too (`shop-format.md`
 "Party selection"): seen in DOSBox-X; the Client wires Home / End only.
@@ -418,7 +512,16 @@ effect byte (+10) is the id (the text 0x186F1 and the id when none); ids 4, 7, 2
 by their own texts (0x186F9–0x187C6, in that order); every other effect is left out. The text 0x187D0 when none,
 a blank line after each member. The screen (P s34): the list opens with an empty entry (flag 0); each name is a label (flag 1),
 the effect rows and the none text are plain entries with no indent of their own, and the blank line after each member
-is a plain (pickable) entry. One window START 03F1:02E8 (1, 1, 38, 22, colour 15, the title centred on row 1), then
+is a plain (pickable) entry. Every entry but the first is added by Display's nested helper **0x18668** (read whole s51; its
+only callers are 0x1885D the name, 0x18B0C an effect row, 0x18B3D the none text, 0x18B54 the blank line): GetMem(0x2E),
+the node linked after the list's tail (Display's local at BP−0xC, which then points at it), next (+0x2A) nil, the
+first 40 bytes of the text moved to +0 (START 0xBAA5: the length byte and 39 characters; +0x28 is not written) and the
+flag +0x29 from its byte argument (1 for the name, 0 for the others). No branch: the texts here are all shorter than
+40 characters (a name at most 15; the spell names DS:28E9 + 41 × id at most 32 for ids 1..56; the fixed effect texts
+0x186F1–0x187D0 at most 37; the id text 7 + 3 digits), so the raw 40-byte move (not a string assign: a longer text
+would keep its length byte and show what follows) never matters;
+out of memory goes to the HeapError handler 0x004A (start-menu.md §1, not ported by design). The list's head (the
+empty entry, flag 0) is built the same way inline (0x187F4–0x18833). One window START 03F1:02E8 (1, 1, 38, 22, colour 15, the title centred on row 1), then
 0x2D669 (overlay stub 03C5:0034) with empty prompt and word, colours 11 / 10 / 15, keypad flag 1, the window
 (1, 4)–(38, 22) (19 rows: the empty entry on row 4, the first name on row 5) and the Exit flag; START 03C5:0043 frees
 the list and START 0x27D9 empties the text window. Client: `CampScreens.Display` (`SpellPageLayout.CentredTitle`),

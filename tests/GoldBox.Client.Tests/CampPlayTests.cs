@@ -73,6 +73,55 @@ public class CampPlayTests
         }
     }
 
+    /// <summary>
+    /// The loot menu's extended keys through the screen (user s51, <see cref="LootRules.ExtendedKey"/>): Del, Shift-F1
+    /// and Shift-F3 answer Share, Take and View; F10 answers Detect only when Detect is on the line; F1 alone stays
+    /// the controls key and Shift-F1 is the program's other key.
+    /// </summary>
+    [Fact]
+    public void Loot_menu_extended_keys_reach_the_menu()
+    {
+        if (Dir() is null)
+            return;
+        var r = Start();
+        var answers = new List<char>();
+        void Run(bool detect)
+        {
+            r.Runner.Start(() =>
+            {
+                while (r.Runner.Ask(new ChoiceRequest(null, ["VIEW", "EXIT"], false, 1)
+                       {
+                           ExtendedKeys = scan => LootRules.ExtendedKey(scan, detect) is { } w ? w[0] : null,
+                       }) is int a and not 1)
+                    answers.Add((char)a);
+            });
+        }
+        void Keys2(params Keys[] keys)
+        {
+            r.Input.Update(new KeyboardState(keys), default, default, TimeSpan.Zero, _ => null);
+            r.Screen.Update(r.Input);
+            r.Input.Update(default, default, default, TimeSpan.Zero, _ => null);
+        }
+
+        Run(detect: false);
+        Key(r, Keys.F10);                                  // Detect not on the line: nothing
+        Key(r, Keys.Delete);
+        Keys2(Keys.LeftShift, Keys.F1);
+        Keys2(Keys.RightShift, Keys.F3);
+        Key(r, Keys.F2);                                   // no meaning in the loot menu
+        Assert.Equal(['S', 'T', 'V'], answers);
+        Assert.IsType<ChoiceRequest>(r.Runner.Pending);
+        Key(r, Keys.E);
+        Assert.Null(r.Runner.Pending);
+
+        answers.Clear();
+        Run(detect: true);
+        Key(r, Keys.F10);
+        Assert.Equal(['D'], answers);
+        Key(r, Keys.E);
+        Assert.Null(r.Runner.Pending);
+    }
+
     [Fact]
     public void Rest_with_actions_then_save_with_keys_and_load_it_again()
     {

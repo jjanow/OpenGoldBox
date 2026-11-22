@@ -91,6 +91,7 @@ public sealed class EclPartyRules(EclMemory memory, Func<int, int> random)
             return null;
         int i = party.CurrentIndex;
         party.Members.RemoveAt(i);
+        Memory.SpellGlobals.MemberLeft(cur); // the remembered cast target DS:6DB5 (original bug fixed s51)
         party.CurrentIndex = i > 0 ? i - 1 : party.Members.Count > 0 ? 0 : -1;
         ushort size = Memory.Profile.Cells.PartySize;
         Memory.Write(size, (ushort)(Memory.Read(size) - 1));

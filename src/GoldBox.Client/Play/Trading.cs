@@ -79,6 +79,9 @@ public sealed class TradeContext
     /// </summary>
     public Action<bool> HoldPositionLine { get; init; } = _ => { };
     public required GameText Text { get; init; }
+    /// <summary>The fight's texts (the Items page's Ready / Drop / Halve messages are the same strings, GAME.OVR unit
+    /// 0x2103A, catalogued as <see cref="CombatMsg"/>).</summary>
+    public CombatText CombatTexts { get; init; } = new();
 
     /// <summary>The list routine's page words Next and Prev (GAME.OVR 0x2D657 / 0x2D65D, read as the aim menu's first
     /// two, <see cref="CombatMsg.AimNextPrevManual"/>).</summary>
@@ -119,6 +122,34 @@ public sealed class TradeContext
     /// disease effects through it (0x4864, <see cref="TempleRules.CureDisease"/>). Null: the records are only dropped.</summary>
     public EffectHandlers? Effects { get; init; }
 
+    /// <summary>
+    /// A fresh effect engine for the Items page's item handlers outside a fight (the game's rules: race names,
+    /// experience, level seams), with no other listener on its messages; null: none (the handlers do not run).
+    /// </summary>
+    public Func<EffectHandlers>? ItemEffects { get; init; }
+
+    /// <summary>
+    /// The item handler 0x2AEEA (kind 0x3E &gt; 0x7F) run by the Items page's Ready outside a fight (0x2250A): the
+    /// handler on an <see cref="ItemEffects"/> engine with its messages shown as START 0x16EC / 0x1693 show them outside
+    /// a fight (<see cref="OutsideEffectMessages"/> framed over the page). Its own engine, so the game's engine's display
+    /// (the area window's, under the page) does not show the text a second time. Null when there is no engine.
+    /// </summary>
+    public Action<EclCharacter, byte[], bool>? ItemHandler => ItemEffects is { } make ? (c, item, removed) =>
+    {
+        var fx = make();
+        var shown = new OutsideEffectMessages(Dialog.Text, Dialog.Ask, () => Memory?.GameSpeed ?? 0, CombatTexts, () => false,
+            null, () => FrameOverItemsPage(true), HoldRosterName, RosterDrawn);
+        fx.Event += (who, e) => shown.Show(who, e, fx);
+        try
+        {
+            fx.CallHandler(item[ItemCommands.Kind], c, item, removed);
+        }
+        finally
+        {
+            FrameOverItemsPage(false); // 0x221CE: DS:6821 set by the handler, the page is drawn again whole
+        }
+    } : null;
+
     /// <summary>View's Spells outside a fight (0x21AED → 0x239D6 in show mode): the current member's memorised list, Exit
     /// back to View. Null: not built here (our notice).</summary>
     public Action? ShowMemorised { get; init; }
@@ -147,9 +178,17 @@ public sealed class TradeContext
     /// </summary>
     public Action<bool> TalkOverItemsPage { get; init; } = _ => { };
 
+    /// <summary>On while an item handler's text shows over <see cref="ItemsPage"/> (START 0x16EC outside a fight: the
+    /// text window's frame again, (1, 17)–(38, 22) blanked, the name and the text).</summary>
+    public Action<bool> FrameOverItemsPage { get; init; } = _ => { };
+
     /// <summary>The Items page's Use outside a fight (0x222F0 → 0x22AC4; <see cref="CampScreens.UseItem"/>), set by
     /// the camp and the command line's View; null: not offered here.</summary>
     public Action<EclCharacter, byte[]>? UseItem { get; set; }
+
+    /// <summary>The loot menu's D (0x6605 → 0x27C38(spell, 0, 0, var done); <see cref="CampScreens.LootDetect"/>), set
+    /// by the after-combat loot; null: the cast is not built here.</summary>
+    public Action<int>? LootDetect { get; set; }
 
     /// <summary>
     /// View's coin list and amount (<see cref="PartyMenuFlow.Coins"/>): Drop's (0x234E1, texts null) and the money

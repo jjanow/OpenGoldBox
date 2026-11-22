@@ -320,6 +320,9 @@ public sealed class PorGame
         party.Members.AddRange(members);
         party.CurrentIndex = party.Members.Count > 0 ? 0 : -1;
         Memory.Party = party;
+        // The old records are freed: the remembered cast target DS:6DB5 goes (original bug fixed s51; the program keeps
+        // the stale pointer, SpellGlobals.Ds6DB5).
+        Memory.SpellGlobals.PartyReplaced();
         LoadedInterfaceState = sg.InterfaceState;
         Memory.InterfaceState = sg.InterfaceState; // Load reads DS:49F3 back (0x1F87B); a camp save keeps 2 after the hall
         if (sg.InterfaceState != 0)

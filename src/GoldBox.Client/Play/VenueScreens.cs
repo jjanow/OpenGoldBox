@@ -410,7 +410,11 @@ public static class VenueScreens
     /// <summary>
     /// The loot menu (0x644B), DS:49F3 = 6. With money in the pool: View, Take, Pool, Share; with items only: View,
     /// Take, Pool; then " Detect Exit" when there are items and the current character has spell 5 or 11 memorised
-    /// (bytes 0x17–0x2B), else " Exit"; nothing left: View, Pool, Exit. Exit with treasure left asks to go back.
+    /// (bytes 0x17–0x2B), else " Exit"; nothing left: View, Pool, Exit (<see cref="LootRules"/>, read whole and run under
+    /// emulation s51). D casts the first of 5 / 11 found (<see cref="LootRules.Detect"/>), then the loop runs again with
+    /// no redraw. Exit with treasure left asks to go back. Extended keys (user s51, <see cref="LootRules.ExtendedKey"/>):
+    /// Del, Shift-F1 and Shift-F3 act as Share, Take and View whether or not the word is on the line, as the program;
+    /// F10 casts only when Detect is on the line.
     /// </summary>
     public static void LootMenu(TradeContext t)
     {
@@ -418,26 +422,30 @@ public static class VenueScreens
         while (true)
         {
             bool money = t.PoolHasMoney, items = t.Treasure.Count > 0;
-            bool detect = items && t.Current is { } c && Enumerable.Range(0, 21).Any(k => c[0x17 + k] is 5 or 11);
-            var menu = new List<string>();
-            if (money) menu.AddRange(["VIEW", "TAKE", "POOL", "SHARE"]);
-            else if (items) menu.AddRange(["VIEW", "TAKE", "POOL"]);
-            else menu.AddRange(["VIEW", "POOL"]);
-            if (detect) menu.Add("DETECT");
-            menu.Add("EXIT");
+            int detectSpell = LootRules.DetectSpell(t.Current, items); // 0x64A6: redone on every pass
+            var menu = LootRules.MenuWords(money, items, detectSpell != 0).Select(w => w.ToUpperInvariant()).ToList();
+            // An extended key's word: its index on the line, or past the line for a word the line lacks (Share with no
+            // money, Take with nothing left: the program's loop does not look at the line).
+            int? Extended(byte scan) => LootRules.ExtendedKey(scan, detectSpell != 0)?.ToUpperInvariant() is { } w
+                ? menu.IndexOf(w) is var k and >= 0 ? k : LootOffLine + Array.IndexOf(LootOffLineWords, w)
+                : null;
             // 0x659D passes the animate flag 1: the loot picture (PIC 1) animates while the menu waits.
-            int i = t.Dialog.Menu(menu, cancel: menu.Count - 1, partySelect: true, memberLetters: MemberLetters, animates: true);
+            int i = t.Dialog.Menu(menu, cancel: menu.Count - 1, partySelect: true, memberLetters: MemberLetters, animates: true,
+                extendedKeys: Extended);
             if (t.SelectMember(i))
                 continue;
-            switch (menu[Math.Clamp(i, 0, menu.Count - 1)])
+            switch (i >= LootOffLine ? LootOffLineWords[i - LootOffLine] : menu[Math.Clamp(i, 0, menu.Count - 1)])
             {
                 case "VIEW": CharacterView.Run(t, Venue.Loot); break;
                 case "TAKE": LootTake(t); break;
                 case "POOL": MoneyScreens.Pool(t); break;
                 case "SHARE": MoneyScreens.Share(t); break;
                 case "DETECT":
-                    // TODO: the detect magic cast (0x27C38) belongs to the spells, not built yet.
-                    t.Dialog.Say("DETECT: NOT IN THIS BUILD YET.", colour: 14);
+                    // 0x65F0–0x6605: the cast 0x27C38(spell, ai 0, announce 0, var done); no redraw after it.
+                    if (t.LootDetect is { } detect)
+                        detect(detectSpell);
+                    else
+                        t.Dialog.Say("CASTING NEEDS THE SPELL TABLE.", colour: 14);
                     break;
                 default:
                     // E or key 0 (0x660D): with money or items left (0x25C07 asked again) the question (0x6636–0x66DB):
@@ -452,9 +460,14 @@ public static class VenueScreens
         }
     }
 
+    /// <summary>Answers past the loot line: the words an extended key reaches when the line lacks them.</summary>
+    private const int LootOffLine = 100;
+    private static readonly string[] LootOffLineWords = ["TAKE", "SHARE"];
+
     /// <summary>
     /// Take (0x62B6): with money and items a "Take:" menu (Money, Items, Exit) until Exit or nothing is left; money
-    /// only → the coin take; items only → the item take.
+    /// only → the coin take; items only → the item take. With neither (only Shift-F1 gets here) the program runs the
+    /// item take 0x6184 on the empty list; [?] what its page shows then is not read: nothing happens here.
     /// </summary>
     public static void LootTake(TradeContext t)
     {

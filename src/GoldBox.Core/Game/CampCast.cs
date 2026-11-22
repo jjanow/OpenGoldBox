@@ -43,8 +43,14 @@ public sealed class CampCast
     public FightSpells Spells { get; }
     private readonly EclParty _party;
 
-    /// <summary>DS:6DB5: the remembered target, cleared when the cast menu opens and when the camp ends.</summary>
-    public EclCharacter? Remembered { get; set; }
+    /// <summary>DS:6DB5: the remembered target, cleared when the cast menu opens and when the camp ends. A program
+    /// global (<see cref="SpellGlobals.Ds6DB5"/>, on <see cref="FightSpells.Globals"/>): every cast of the run that
+    /// shares the game's globals sees the same one.</summary>
+    public EclCharacter? Remembered
+    {
+        get => Spells.Globals.Ds6DB5;
+        set => Spells.Globals.Ds6DB5 = value;
+    }
 
     public CampCast(FightSpells spells, EclParty party)
     {

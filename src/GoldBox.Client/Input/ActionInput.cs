@@ -31,6 +31,7 @@ public sealed class ActionInput(InputBindings bindings)
     private readonly List<ScreenClick> _clicks = [];
     private (InputDevice Device, string Name)? _newInput;
     private bool _newShifted;
+    private bool _newShiftHeld;
 
     /// <summary>
     /// The Amiga program's fight keys, which take the place of the bindings' keys for these actions under the Amiga art
@@ -84,6 +85,10 @@ public sealed class ActionInput(InputBindings bindings)
     /// </summary>
     public bool NewShifted => _newShifted;
 
+    /// <summary>A Shift key was held with the keyboard's <see cref="NewInput"/> (Caps Lock not counted): the BIOS's
+    /// shifted F-keys (<see cref="DosKeys.ExtendedScan"/>).</summary>
+    public bool NewShiftHeld => _newShiftHeld;
+
     public bool Pressed(GameAction a) => _pressed.Contains(a);
 
     /// <summary>The action's key or button is down this frame (pressed now or earlier and still held).</summary>
@@ -114,6 +119,7 @@ public sealed class ActionInput(InputBindings bindings)
                     _newInput = (InputDevice.Keyboard, Modified(keys, k.ToString()));
             }
         _newShifted = _newInput is (InputDevice.Keyboard, _) && ShiftDown(keys) != keys.CapsLock;
+        _newShiftHeld = _newInput is (InputDevice.Keyboard, _) && ShiftDown(keys);
         if (pad.IsConnected)
             foreach (var b in AllButtons)
                 if (pad.IsButtonDown(b) && !_prevPad.IsButtonDown(b))
@@ -225,7 +231,7 @@ public sealed class ActionInput(InputBindings bindings)
     /// <summary>A key or button press waiting in the buffer: its actions, its name, and the bytes the BIOS holds for it
     /// (<see cref="DosKeys.Of"/>; null for a pad button, a held key's repeat or a key the PC has no BIOS key for).</summary>
     private sealed record Waiting(HashSet<GameAction> Pressed, (InputDevice Device, string Name)? New, (byte Ascii, byte Scan)? Dos,
-        bool Shifted = false);
+        bool Shifted = false, bool ShiftHeld = false);
 
     /// <summary>The BIOS type-ahead buffer holds 15 keys; a key pressed when it is full is lost (DOSBox-X s24).</summary>
     public const int BufferSize = 15;
@@ -278,11 +284,13 @@ public sealed class ActionInput(InputBindings bindings)
             _pressed.Clear();
             _newInput = null;
             _newShifted = false;
+            _newShiftHeld = false;
             if (read is null)
                 return;
             _pressed.UnionWith(read.Pressed);
             _newInput = read.New;
             _newShifted = read.Shifted;
+            _newShiftHeld = read.ShiftHeld;
             if (read.New is { } n)
                 LastDevice = n.Device;
             return;
@@ -295,6 +303,7 @@ public sealed class ActionInput(InputBindings bindings)
         _clicks.Clear();
         _newInput = null;
         _newShifted = false;
+        _newShiftHeld = false;
     }
 
     private void ToggleSoundIfRead(Waiting key)
@@ -308,7 +317,7 @@ public sealed class ActionInput(InputBindings bindings)
         if (_waiting.Count >= BufferSize)
             return;
         var dos = _newInput is (InputDevice.Keyboard, var name) ? DosKeys.Of(name) : null;
-        _waiting.Add(new Waiting([.. _pressed], _newInput, dos, _newShifted));
+        _waiting.Add(new Waiting([.. _pressed], _newInput, dos, _newShifted, _newShiftHeld));
     }
 
     /// <summary>

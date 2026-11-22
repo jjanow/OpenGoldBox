@@ -188,6 +188,10 @@ public sealed class PartyMenuFlow(Func<PlayerRequest, object?> ask, PartyMenuTex
     /// <summary>The game's memory when the menu runs in the training hall (PROGRAM 0); null at start-up.</summary>
     public EclMemory? GameMemory { get; set; }
 
+    /// <summary>The program globals of the game the menu works on (the remembered cast target DS:6DB5 goes with a
+    /// removed member, s51), or null at start-up before a Load.</summary>
+    private GoldBox.Core.Game.SpellGlobals? Globals => (GameMemory ?? _loaded?.Memory)?.SpellGlobals;
+
     /// <summary>
     /// Whether the character page (View 0x21084, also Modify's) draws the portrait window: only with the portraits flag
     /// DS:49F5 set ($49FF bit 0) and the disk byte DS:5376 = 3 (0x21530–0x2153E). At start-up both hold (0xE965,
@@ -525,19 +529,33 @@ public sealed class PartyMenuFlow(Func<PlayerRequest, object?> ask, PartyMenuTex
                     ask(new DelayRequest(TimeSpan.FromMilliseconds(10 * s)) { Chained = true });
             },
         };
-        var t = new TradeContext
+        TradeContext t = null!;
+        t = new TradeContext
         {
             Dialog = new Dialog(ask, box),
             TalkOverItemsPage = on => TextOverPage = on ? box : null,
+            FrameOverItemsPage = on => TextOverPageFramed = on,
             Text = Resources?.Texts ?? new GameText(),
+            CombatTexts = CombatTexts,
             Party = Party,
             Pool = new uint[7],
+            // DS:49F3 = 0: Ready of an item with a handler (0x2250A → 0x2AEEA) runs it here too.
+            ItemEffects = () => new EffectHandlers(n => Random.Next(n))
+            {
+                List = () => Party.Members,
+                CurrentCharacter = () => Party.Current,
+            },
             Treasure = [],
             Random = n => Random.Next((ushort)n),
             Word =Resources?.ItemWord ?? (_ => null),
             IsScroll = Resources?.IsScroll ?? (_ => false),
             ItemTypes = items,
             Halt = Halt,
+            // S (0x21D05: 0x239D6 kind 0, action 0), the call every caller of 0x21AED makes: the memorised list on the
+            // list's own screen with Exit; S is in the redraw set, so the page comes back after it.
+            ShowMemorised = Resources is { Spells: { } table } r
+                ? () => SpellLists.ShowMemorised(t.Dialog, t.Text, r, new CampSpells(table, it => r.ItemSlot(it) is > 10 and < 14), t.Current)
+                : null,
             MessagesOnBottomLine = true,
             ItemsPage = (c, entries, row, name) => ItemsPage(c, entries, row, name),
             Coins = Coins,
@@ -596,6 +614,10 @@ public sealed class PartyMenuFlow(Func<PlayerRequest, object?> ask, PartyMenuTex
     /// drawn over the page, and the overlay stays up for the command's yes/no and row-24 messages. Null otherwise.
     /// </summary>
     public TextWindow? TextOverPage { get; set; }
+
+    /// <summary>While an item handler's text (Ready → 0x2AEEA → START 0x16EC) shows over the Items page: the text window
+    /// framed again and (1, 17)–(38, 22) its own, not only the box rows 21–22.</summary>
+    public bool TextOverPageFramed { get; set; }
 
     /// <summary>Creation's developer lines drawn on row 24 so far in their block, in order, and the program's pen
     /// (<see cref="AmigaView.DeveloperBlocks"/>), during their pauses; null otherwise.</summary>
@@ -663,7 +685,7 @@ public sealed class PartyMenuFlow(Func<PlayerRequest, object?> ask, PartyMenuTex
             return;
         AmigaView.SaveNames([cur]); // the Amiga's Remove saves through hunk 16 +0x49C (hunk 10 +0x9AC)
         roster.Save(cur, Party);
-        PartyMenu.RemoveCurrent(Party);
+        PartyMenu.RemoveCurrent(Party, Globals);
     }
 
     /// <summary>Drop (0x1B8B6): asked twice, then the character leaves for good (its file stays, off the list).</summary>
@@ -674,7 +696,7 @@ public sealed class PartyMenuFlow(Func<PlayerRequest, object?> ask, PartyMenuTex
         if (YesNo(texts.DropForever(c.Name)) && YesNo(texts.AreYouSure))
         {
             _notice = c[PartyMenu.InPlay] == 0 ? texts.DumpOutBack(c.Name) : texts.BidsFarewell(c.Name);
-            PartyMenu.RemoveCurrent(Party);
+            PartyMenu.RemoveCurrent(Party, Globals);
         }
         else
             _notice = texts.SighOfRelief(c.Name);

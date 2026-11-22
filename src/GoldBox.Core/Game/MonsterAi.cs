@@ -899,40 +899,8 @@ public sealed class MonsterAi : IFightController
     public void Toggle(Fight f, EclCharacter c, byte[] item) => ToggleReady(f, c, item, ItemHandler);
 
     /// <summary>0x2250A as <see cref="Toggle"/>, with the item handler 0x2AEEA given (null = none). Returns the
-    /// refusal: 0 done, 1 class, 2 slot taken, 3 hands full (the message 0x2250A shows), 4 cursed.</summary>
-    public static int ToggleReady(Fight f, EclCharacter c, byte[] item, Action<EclCharacter, byte[], bool>? itemHandler)
-    {
-        bool magic = item[0x3E] > 0x7F;
-        if (item[CombatRules.ItemEquipped] != 0)
-        {
-            if (item[0x36] != 0)
-                return 4;
-            item[CombatRules.ItemEquipped] = 0;
-            if (magic)
-                itemHandler?.Invoke(c, item, true);
-            return 0;
-        }
-        var eq = FightRules.Equipment(c, f.Items);
-        int t = item[0x2E];
-        int result = 0;
-        if (c[HandsUsed] + f.Items[t, 1] > 2)
-            result = 3;
-        byte slot = f.Items[t, BaseItemTable.Slot];
-        if (slot <= 8 && eq[slot] is not null)
-            result = 2;
-        else if (slot == 9 && eq[10] is not null)
-            result = 2;
-        if (t == 0x49 && eq[FightRules.SlotArrows] is not null)
-            result = 2;
-        if (t == 0x1C && eq[FightRules.SlotBolts] is not null)
-            result = 2;
-        if ((f.Items[t, 13] & c[ClassMask]) == 0)
-            result = 1;
-        if (result != 0)
-            return result; // messages only
-        item[CombatRules.ItemEquipped] = 1;
-        if (magic)
-            itemHandler?.Invoke(c, item, false);
-        return 0;
-    }
+    /// refusal: 0 done, 1 class, 2 slot taken, 3 hands full (the message 0x2250A shows), 4 cursed
+    /// (<see cref="ItemCommands.Ready"/>).</summary>
+    public static int ToggleReady(Fight f, EclCharacter c, byte[] item, Action<EclCharacter, byte[], bool>? itemHandler) =>
+        (int)ItemCommands.Ready(f.Items, c, item, FightItemScreens.InFight, itemHandler).Refusal;
 }
