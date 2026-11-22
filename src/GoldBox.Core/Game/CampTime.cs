@@ -43,11 +43,23 @@ public sealed class CampState
                                 RestTime[CampTime.TenMinutes] > 0 || RestTime[CampTime.Minutes] > 0;
 }
 
-/// <summary>The rest-time arithmetic and the clock advance with effect timeouts (GAME.OVR 0x23DCC–0x24331).</summary>
+/// <summary>The rest-time arithmetic and the clock advance with effect timeouts (GAME.OVR 0x23DCC–0x24330), and the
+/// rest-time digits (0x24331).</summary>
 public static class CampTime
 {
     public const int Minutes = GameClock.Minutes, TenMinutes = GameClock.TenMinutes, Hours = GameClock.Hours,
         Days = GameClock.Days, Months = GameClock.Months;
+
+    /// <summary>
+    /// 0x24331(v: byte): string, the rest-time line's numbers (its only caller is 0x243BC): the decimal text of
+    /// <paramref name="v"/> (START 0x1BD7), a "0" put before it when v &lt; 10, then its first two characters (Copy 1, 2):
+    /// 7 → "07", 42 → "42", 123 → "12". Checked under emulation for 0..255 (CombatCastProgramTests).
+    /// </summary>
+    public static string TwoDigits(byte v)
+    {
+        var s = v.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        return (v < 10 ? "0" + s : s)[..2];
+    }
 
     /// <summary>
     /// 0x2416F: the rest time carried (0x240BE, the game clock's carry; a year overflow ages the party, as for the

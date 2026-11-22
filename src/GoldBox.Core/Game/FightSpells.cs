@@ -44,6 +44,9 @@ public sealed class SpellTable
     public SpellInfo this[int id] => id is >= 0 and <= Count ? _e[id] : default;
 }
 
+/// <summary>What 0x14C0F does with a known spell (<see cref="FightSpells.CombatCastStep"/>).</summary>
+public enum CombatCastOutcome { None, CampOnly, CastNow, Begun }
+
 /// <summary>
 /// The combat map's target list (0x3045B: the list DS:6718 built around a square with a radius and an icon size, its
 /// slots mapped to creatures through DS:65B9). Implemented by the combat-map code. [?] Its rule is not read here.
@@ -91,12 +94,19 @@ public sealed partial class FightSpells : IFightSpells
     /// rebound moves it too).</summary>
     public (int X, int Y) Aim { get; set; }
 
+    /// <summary>
+    /// DS:6B84 entry 0, the procedure variable the breath of handler 88 calls for its target pick (0x148BE in a fight,
+    /// <see cref="PickAuto"/>). Null = <see cref="PickAuto"/>; the handler oracle tests put a scripted pick here, as
+    /// the oracle traps the procedure.
+    /// </summary>
+    internal Func<Fight, EclCharacter, int, bool>? TargetPick { get; set; }
+
     public event Action<EclCharacter, int, EffectEvent>? Event;
     /// <summary>[Display hook] 0x27D48: the cast message (caster, spell) shown before the target pick when the spell
     /// is not cast from an item or scroll (DS:6DBF = 0).</summary>
     public Action<EclCharacter, int>? Announce { get; set; }
-    /// <summary>[Display hook] The end of a cast that ran its routine (0x27F44–0x27F5C): START 0x2383 clears the
-    /// message rows 10–21 and, in a fight, row 23 (the spell label) is cleared.</summary>
+    /// <summary>[Display hook] The end of a cast, after its routine or after the abort (0x27F44–0x27F5C, every way out of
+    /// 0x27C38): START 0x2383 clears the message rows 10–21 and, in a fight, row 23 (the spell label) is cleared.</summary>
     public Action<EclCharacter>? CastDone { get; set; }
     /// <summary>[Display hook] 0x22B58: an item with a power (DS:6DBF = 1, not a scroll) is about to be used (user, item).</summary>
     public Action<EclCharacter, byte[]>? ItemUsed { get; set; }
@@ -126,21 +136,22 @@ public sealed partial class FightSpells : IFightSpells
     // ---- Spell lists --------------------------------------------------------------------------------------------
 
     /// <summary>
-    /// Spell ids the creature can cast now: with its combat record's cast allowed (+1) set, every distinct memorised id
-    /// (0x17..0x2B, non-zero, bit 7 clear) the table allows in a fight (+11 ≠ 0). [?] The menu's own list (0x239D6) is
-    /// not read; this is the filter the cast path applies (0x14C0F refuses +11 = 0).
+    /// The combat Cast's list (0x14C0F → 0x239D6 kind 0, built by 0x275B4): every memorised slot 0x17..0x2B whose byte
+    /// is 1..0x7F, in slot order, duplicates kept (0x272A5 appends each, a level heading before a change of level, and
+    /// stores the id AND 0x7F at DS:476A). No "when" filter (0x14C0F refuses a camp-only spell after the pick) and no
+    /// cast-allowed test (the menu offers Cast only with +1 set, 0x9B21). Checked under emulation
+    /// (CombatCastProgramTests, list cases).
     /// </summary>
-    public IReadOnlyList<int> Castable(Fight fight, EclCharacter caster)
+    public IReadOnlyList<int> Castable(Fight fight, EclCharacter caster) => MemorisedList(caster);
+
+    /// <summary>0x275B4(0): the memorised list's ids (see <see cref="Castable"/>).</summary>
+    public static List<int> MemorisedList(EclCharacter caster)
     {
-        if (fight.Record(caster)[CombatRecord.CastAllowed] == 0)
-            return [];
         var ids = new List<int>();
         for (int i = 0; i < MemorisedSlots; i++)
         {
             byte s = caster[Memorised + i];
-            if (s == 0 || (s & 0x80) != 0 || ids.Contains(s))
-                continue;
-            if (Table[s].WhenCast != 0)
+            if (s is > 0 and < 0x80)
                 ids.Add(s);
         }
         return ids;
@@ -274,22 +285,52 @@ public sealed partial class FightSpells : IFightSpells
     private bool Begin(Fight fight, EclCharacter caster, int spell, Func<bool> pick)
     {
         Bind(fight);
-        if (spell <= 0 || Table[spell].WhenCast == 0)
-            return false;
         var rec = fight.Record(caster);
-        int delay = Table[spell].CastTime / 3;
-        if (delay == 0)
+        switch (CombatCastStep(this, rec, spell, out sbyte initiative))
         {
-            CastNow(fight, caster, spell, pick);
-            FightRules.EndActions(rec);
-            return true;
+            case CombatCastOutcome.CastNow:
+                CastNow(fight, caster, spell, pick);
+                FightRules.EndActions(rec); // START 0x31D7: done = its result, always 1, picked or not
+                return true;
+            case CombatCastOutcome.Begun:
+                Event?.Invoke(caster, spell, EffectEvent.BeginsCasting);
+                // The turn ends with the actions not over: the creature is picked again this round (an AI cast too,
+                // DOSBox fight_casts q29 → q30: the charmed cleric's Bless).
+                fight.Postpone(caster, initiative);
+                return true;
+            default:
+                // CampOnly: the program shows its camp-only message for ai = 1 too; the AI never gets here (0xB105 →
+                // 0xAEAB: every camp-only spell has AI priority 0, below the lowest pass).
+                return false;
         }
-        Event?.Invoke(caster, spell, EffectEvent.BeginsCasting);
+    }
+
+    /// <summary>
+    /// 0x14C0F(spell, ai, var done) once the spell is known (the menu's list pick, or the AI's): spell 0 → nothing
+    /// (done 0). Table byte 11 ("when", DS:3205 + 16·spell) = 0 → <see cref="CombatCastOutcome.CampOnly"/> (the
+    /// camp-only message, START 0x2233; done 0). Delay = byte 12 (DS:3206) div 3; 0 → <see cref="CombatCastOutcome.CastNow"/>:
+    /// the caller runs 0x27C38(spell, ai, 1, var done) and START 0x31D7 (actions end, done := 1). Else
+    /// <see cref="CombatCastOutcome.Begun"/>: done := 1, the begins-casting message (START 0x228C, colour 10, pause),
+    /// +0 := spell (set here) and <paramref name="initiative"/> := +3 − delay when +3 (signed) &gt; delay, else 1, for
+    /// the caller to store. With ai = 0 the program redraws after the pick and before any of this (START 0x3728, the
+    /// map 0x319D2(caster, 3, 1), START 0x1583(caster)): the Client's. Ids above 67 read past the table in the program;
+    /// the table here gives them 0 (camp only) [?] (the list never holds one; the program's AI might draw a pending
+    /// 0x80 + id byte, which Core's AI never picks: spells-effects.md "Combat cast").
+    /// Checked under emulation for ids 0..67 (CombatCastProgramTests).
+    /// </summary>
+    public static CombatCastOutcome CombatCastStep(IFightSpells spells, CombatRecord rec, int spell, out sbyte initiative)
+    {
+        initiative = rec.InitiativeValue;
+        if (spell <= 0)
+            return CombatCastOutcome.None;
+        if (!spells.UsableInCombat(spell))
+            return CombatCastOutcome.CampOnly;
+        int delay = spells.CastingTime(spell);
+        if (delay == 0)
+            return CombatCastOutcome.CastNow;
         rec[CombatRecord.SpellCast] = (byte)spell;
-        // The turn ends with the actions not over: the creature is picked again this round (an AI cast too, DOSBox
-        // fight_casts q29 → q30: the charmed cleric's Bless).
-        fight.Postpone(caster, rec.InitiativeValue > delay ? (sbyte)(rec.InitiativeValue - delay) : (sbyte)1);
-        return true;
+        initiative = rec.InitiativeValue > delay ? (sbyte)(rec.InitiativeValue - delay) : (sbyte)1;
+        return CombatCastOutcome.Begun;
     }
 
     /// <summary>
@@ -312,6 +353,7 @@ public sealed partial class FightSpells : IFightSpells
                 Event?.Invoke(caster, spell, EffectEvent.SpellAborted);
                 if (!UsingItem)
                     RemoveSpell(caster, spell);
+                CastDone?.Invoke(caster); // 0x27F41 → 0x27F44: the way out is the same as after a routine
                 return false;
             }
             // 0x27D9C–0x27E00 (in a fight): the caster faces the aimed square DS:6DB9/6DBA, the first direction whose
@@ -642,12 +684,14 @@ public sealed partial class FightSpells : IFightSpells
 
     /// <summary>
     /// 0x282BD: Strength 18 with the exceptional part (DS:4845) by casting level (1 → 0, 2 → 1, 3 → 51, 4 → 76, 5 → 91,
-    /// 6 → 100; other levels keep what DS:4845 holds: the last Enlarge's value, or the last effect level Dispel Magic
-    /// looked at); 0x2C046 raises the first target (message when it rose); effect 0x0C is added for the duration with
+    /// 6 → 100; other levels (a class-2 caster's 12, an unknown class byte's unset level) keep what DS:4845 holds: the
+    /// last Enlarge's value, Sleep's last target cost or the last effect level Dispel Magic looked at, in any earlier
+    /// fight or camp of the run); DS:4844 := 18 first; 0x2C046 raises the first target (message when it rose); effect 0x0C is added for the duration with
     /// the code 0x2C046 returned, removal on.
     /// </summary>
     private void Enlarge(int spell)
     {
+        Globals.Ds4844 = 0x12;
         byte lvl = CasterLevel(spell);
         Ds4845 = lvl switch { 1 => 0, 2 => 1, 3 => 0x33, 4 => 0x4C, 5 => 0x5B, 6 => 0x64, _ => Ds4845 };
         if (First is not { } t)
@@ -666,24 +710,26 @@ public sealed partial class FightSpells : IFightSpells
     private void Sleep(int spell, EclCharacter caster)
     {
         Effects.Cells.MultiTarget = 1;
-        int budget = Dice(4, 4);
+        // The budget and each cost live in the program globals DS:4844 / DS:4845 (0x28549, 0x2857F–0x285CF): the last
+        // cost stays in DS:4845 for a later Enlarge whose casting level is outside 1–6 (0x282BD).
+        Globals.Ds4844 = Dice(4, 4);
         for (int i = 0; i < Targets.Count; i++)
         {
             var t = Targets[i];
             if (t is null)
-                continue;
+                continue; // [?] the program reads the slot's record through a nil pointer; Core skips it
             sbyte hd = (sbyte)t[HitDice];
-            int cost = hd switch
+            Ds4845 = hd switch
             {
                 >= 0 and <= 1 => 1,
                 2 => 2,
                 3 => 4,
                 4 => 6,
-                5 => t[EffectHandlers.Race] == 0 ? 10 : 20,
+                5 => t[EffectHandlers.Race] == 0 ? (byte)10 : (byte)20,
                 _ => 20,
             };
-            if (t[EffectHandlers.Status] != 1 && EffectHandlers.FindEffect(t, 0x35) is null && budget >= cost)
-                budget -= cost;
+            if (t[EffectHandlers.Status] != 1 && EffectHandlers.FindEffect(t, 0x35) is null && Globals.Ds4844 >= Ds4845)
+                Globals.Ds4844 -= Ds4845;
             else
                 Targets[i] = null;
         }

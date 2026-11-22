@@ -74,4 +74,30 @@ public sealed class SettingToggle
                 (saved ?? settings.Save)();
             },
             ["FASTEST: INSTANT PLUS GAME SPEED 0", "(CAMP ALTER>SPEED, FIGHT DONE>SPEED)"]);
+
+    /// <summary>
+    /// QoL <see cref="ClientSettings.AmigaAltKeys"/>: OFF (the Amiga program's ';' / F8 and F6 only) or ON (DOS's
+    /// Alt-M / Alt-Q too under the Amiga art). Each change is saved and handed to <paramref name="apply"/>.
+    /// </summary>
+    public static SettingToggle AmigaAltKeys(ClientSettings settings, Action<bool>? apply = null, Action? saved = null) =>
+        new("AMIGA ALT-M/Q", ["OFF", "ON"], () => settings.AmigaAltKeys ? 1 : 0, i =>
+        {
+            settings.AmigaAltKeys = i != 0;
+            apply?.Invoke(settings.AmigaAltKeys);
+            (saved ?? settings.Save)();
+        },
+            ["AMIGA ART: FIGHTS TAKE ALT-M / ALT-Q", "TOO (OFF: ; F8 AND F6 ONLY)"]);
+
+    /// <summary>
+    /// QoL <see cref="ClientSettings.AmigaGridOffText"/>: OVER TEXT (off: the letter grid of a script's text input
+    /// covers the text window) or OFF TEXT (under the Amiga art it is drawn over the view and party list).
+    /// </summary>
+    public static SettingToggle AmigaGridOffText(ClientSettings settings, Action<bool>? apply = null, Action? saved = null) =>
+        new("AMIGA INPUT GRID", ["OVER TEXT", "OFF TEXT"], () => settings.AmigaGridOffText ? 1 : 0, i =>
+        {
+            settings.AmigaGridOffText = i != 0;
+            apply?.Invoke(settings.AmigaGridOffText);
+            (saved ?? settings.Save)();
+        },
+            ["AMIGA ART: THE LETTER GRID OF A TEXT", "INPUT LEAVES THE SCRIPT'S TEXT SHOWN"]);
 }

@@ -51,11 +51,18 @@ public sealed class ActionInput(InputBindings bindings)
 
     private bool UseAmigaKeys => AmigaKeys ?? Play.AmigaView.On;
 
-    /// <summary>The keyboard names that trigger <paramref name="a"/>: the bindings', or the Amiga program's fixed keys.</summary>
-    public IReadOnlyList<string> KeysOf(GameAction a) => KeysOf(Bindings, a, UseAmigaKeys);
+    /// <summary>
+    /// QoL (<see cref="ClientSettings.AmigaAltKeys"/>, user s48), off = original: with <see cref="AmigaFightKeys"/> in
+    /// force the bindings' keys (DOS's Alt-M / Alt-Q) trigger those actions too.
+    /// </summary>
+    public bool AmigaAltKeys { get; set; }
 
-    private static IReadOnlyList<string> KeysOf(InputBindings bindings, GameAction a, bool amiga) =>
-        amiga && AmigaFightKeys.TryGetValue(a, out var k) ? k : bindings.Keys(a);
+    /// <summary>The keyboard names that trigger <paramref name="a"/>: the bindings', or the Amiga program's fixed keys
+    /// (with <see cref="AmigaAltKeys"/> both).</summary>
+    public IReadOnlyList<string> KeysOf(GameAction a) => KeysOf(Bindings, a, UseAmigaKeys, AmigaAltKeys);
+
+    private static IReadOnlyList<string> KeysOf(InputBindings bindings, GameAction a, bool amiga, bool altToo) =>
+        amiga && AmigaFightKeys.TryGetValue(a, out var k) ? altToo ? [.. k, .. bindings.Keys(a)] : k : bindings.Keys(a);
 
     public InputBindings Bindings { get; set; } = bindings;
 
@@ -265,7 +272,7 @@ public sealed class ActionInput(InputBindings bindings)
                 read = ResolveSingle(first.Scan);
             else
             {
-                read = Resolve(_waiting, Bindings, UseAmigaKeys);
+                read = Resolve(_waiting, Bindings, UseAmigaKeys, AmigaAltKeys);
                 Discard();
             }
             _pressed.Clear();
@@ -313,7 +320,7 @@ public sealed class ActionInput(InputBindings bindings)
     /// A single press, or a last one with no BIOS bytes (a pad button), is read as itself; a byte no key gives reads
     /// as nothing.
     /// </summary>
-    private static Waiting? Resolve(List<Waiting> waiting, InputBindings bindings, bool amiga)
+    private static Waiting? Resolve(List<Waiting> waiting, InputBindings bindings, bool amiga, bool altToo)
     {
         var last = waiting[^1];
         if (waiting.Count == 1 || last.Dos is not { } l)
@@ -327,7 +334,7 @@ public sealed class ActionInput(InputBindings bindings)
             return null;
         var pressed = new HashSet<GameAction>();
         foreach (var a in Enum.GetValues<GameAction>())
-            if (KeysOf(bindings, a, amiga).Contains(name))
+            if (KeysOf(bindings, a, amiga, altToo).Contains(name))
                 pressed.Add(a);
         return new Waiting(pressed, (InputDevice.Keyboard, name), DosKeys.Of(name));
     }
@@ -371,7 +378,7 @@ public sealed class ActionInput(InputBindings bindings)
             return 0;
         ToggleSoundIfRead(_waiting[0]);
         bool amiga = UseAmigaKeys;
-        var read = Resolve(_waiting, Bindings, amiga);
+        var read = Resolve(_waiting, Bindings, amiga, AmigaAltKeys);
         Discard();
         if (read is null)
             return 0;

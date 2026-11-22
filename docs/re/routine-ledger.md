@@ -6,15 +6,15 @@ Every routine of the v1.3 program (`START.EXE` and `GAME.OVR`) that the game run
 
 | Status | Meaning | Count |
 |---|---|---|
-| **W** ported whole | the Core / Client code follows the routine | 697 |
-| … W by execution | an oracle runs it (or runs its caller, for state routines), the ECL golden captures cover it, or it is empty | 330 |
-| … W by citation | the C# names its entry and the spec reads it with no open `[?]` on those lines: read and ported per the comments, not verified branch by branch | 367 |
-| **P** patched by symptom | partly built: the C# names only inside addresses, or the spec lines carry `[?]`, or the behaviour was built from emulator observations | 40 |
-| **U** unchecked | no evidence that the engine matches it (not cited, or read in a spec but not ported) | 54 |
-| N not ported by design | platform work the module format replaces: DAX reading (the importer), disk numbers, memory release, the code wheel | 21 |
+| **W** ported whole | the Core / Client code follows the routine | 718 |
+| … W by execution | an oracle runs it (or runs its caller, for state routines), the ECL golden captures cover it, or it is empty | 355 |
+| … W by citation | the C# names its entry and the spec reads it with no open `[?]` on those lines: read and ported per the comments, not verified branch by branch | 363 |
+| **P** patched by symptom | partly built: the C# names only inside addresses, or the spec lines carry `[?]`, or the behaviour was built from emulator observations | 21 |
+| **U** unchecked | no evidence that the engine matches it (not cited, or read in a spec but not ported) | 48 |
+| N not ported by design | platform work the module format replaces: DAX reading (the importer), disk numbers, memory release, the code wheel | 25 |
 | L library | Turbo Pascal run-time library, overlay manager, Crt and DOS units (one line per segment below) | 143 |
 
-Total: 955 routines (280 START, 675 GAME.OVR). W + P + U = 791 game routines.
+Total: 955 routines (280 START, 675 GAME.OVR). W + P + U = 787 game routines.
 
 Evidence column: `oracle` = a `tools/scripts/por_*_oracle.py` runs the routine under unicorn and a Core test compares (`oracle (caller)`: run inside a called routine, not trapped; drawing, text and sound callees excluded since the oracles compare state, not pixels); `golden` = an ECL handler or VM helper covered by the golden DOSBox captures EclVm matches; `C#` / `C# (inside)` = a C# comment names the entry / only addresses inside it; `spec` / `spec (inside)` = the same for `docs/*.md`; `[?]`×n = spec lines on the entry with an open question; `seen only` = every spec line on the entry is a DOSBox-X / FS-UAE observation. Port = the C# type.member whose comment names the entry. Kind: **play** = rules, state or branching; **pres** = drawing, text, sound, input timing.
 
@@ -26,7 +26,7 @@ The generator scripts are in `tools/scripts/ledger/` (copied as used in s47; set
 2. Recursive descent with capstone (16-bit) from the entry point (START 0x0006), every stub entry and the sound timer interrupt (START 0x9ECA, installed through INT 21h 25h): near calls stay in the segment / unit, far calls resolve through the stubs, and decoding stops at stub paragraphs. Then a sweep for routine prologues (`55 89 E5`, `55 8B EC`) not yet covered. What stays uncovered is string constants kept in the code segments.
 3. Indirect calls: the program has three, all through tables it fills at run time: the spell routines (DS:6B84, built by 0x2A42B, called from 0x27C38; its entry 0 is a procedure variable, the target pick 0x148BE, stored by the fight at 0x988C and by the builders at 0x11EB6 / 0x2A479 and called at 0x27D88), the effect handlers (DS:6828, built by 0x11DFD, called from 0x2AEEA) and the TP run-time. The tables were read by running the two builders (`por_spell_oracle.py` set-up). The ECL dispatcher (0x3C73) is a compare chain of near calls; its opcode → handler map is in the ECL section below.
 4. Citations: every `0x` number in `docs/*.md`, `docs/re/*.md` (surveys and prior art left out) and in C# comments under `src/`: after `START` / `START.EXE` (and numbers chained to it, unless no START routine holds the number) a START address, `SSSS:OOOO` resolved by segment or stub, a range `0xA–0xB` counts for every entry inside it, otherwise a GAME.OVR offset (4–5 digits, or an exact routine entry); numbers after `+`, `$`, `DS:`, `hunk n` or `Amiga` are skipped. A citation counts for the routine whose decoded instructions hold it; "entry" means the routine's first address. The oracles were read by hand (their `e.call` targets count, trapped routines do not).
-5. Rows marked with a note in the gap lists were checked by hand; the rest follow the rule in "Statuses". The count is 181 START and about 1990 GAME.OVR addresses cited, on 731 routines.
+5. Rows marked with a note in the gap lists were checked by hand; the rest follow the rule in "Statuses". The count is 190 START and 2105 GAME.OVR addresses cited, on 740 routines.
 
 ## Title to ending: screens and paths
 
@@ -34,19 +34,19 @@ Each path's root routines and everything they call, without entering another pat
 
 | Code | Path | Roots | Routines | W | P | U | Play gaps (P + U, kind play) |
 |---|---|---|---|---|---|---|---|
-| Su | Start-up, title, introduction | START 0x0006, START 0x4354, 0x06FB, 0x0AA9, 0x2EA4C, 0xE600 | 92 | 64 | 3 | 25 | START 0x0006, 0x00B4 |
-| Pm | Party menu, creation, Modify, icons, roster | 0x19AE0, 0x19EEB, 0x1BA1E, 0x1D1AC, 0x1E684, 0x1EAD2 | 461 | 393 | 26 | 42 | 0xF91E, 0x10AD2, 0x11134, 0x112E5, 0x1E294, 0x21AED, 0x22F8C, 0x23819, 0x27466, 0x27534, 0x27C38, 0x282BD, 0x2A0F1 |
-| Ex | Area loop, 3D view, area map, overland, doors | 0x403E, 0x17054, 0x17438, 0x2DCF4, 0x2EEF4, 0x2DE38 | 470 | 400 | 26 | 44 | 0xF91E, 0x10AD2, 0x11134, 0x112E5, 0x21AED, 0x22F8C, 0x23819, 0x27466, 0x27534, 0x27C38, 0x282BD, 0x2A0F1 |
-| Ecl | ECL VM and host opcodes | 0x3C73, 0x3EB7, 0x7689, 0x7814 | 391 | 334 | 19 | 38 | 0xF91E, 0x10AD2, 0x11134, 0x112E5, 0x202BB, 0x23819, 0x2A0F1 |
-| Enc | Encounters (monsters, close-up, menu, parley, surprise) | 0x2C3E, 0x3311, 0x155D, 0x240F, 0x236F, 0x1196, 0x10FA, 0x1EEAA, 0x7A21 | 88 | 59 | 6 | 23 | 0x23819 |
-| Cb | Combat (map, menu, moves, AI, spells, effects, items, after combat) | 0x24E1, 0x9881, 0x6AA5 | 523 | 456 | 29 | 38 | 0x9938, 0xF91E, 0x10AD2, 0x11134, 0x112E5, 0x127FB, 0x12F0D, 0x14C0F, 0x1638E, 0x21AED, 0x22F8C, 0x23819, 0x27466, 0x27534, 0x27C38, 0x282BD, 0x2A0F1 |
-| Cp | Camp (all menus, rest, Memorize, Scribe, Cast, Alter) | 0x196A0, 0x24A66 | 467 | 403 | 26 | 38 | 0xF91E, 0x10AD2, 0x11134, 0x112E5, 0x18668, 0x21AED, 0x22F8C, 0x23819, 0x24331, 0x27466, 0x27534, 0x27C38, 0x282BD, 0x2A0F1 |
-| Sh | Shops, temples, venues (PROGRAM, CALL) | 0x7212, 0x5280, 0x3B56, 0x3A15 | 474 | 411 | 25 | 38 | 0x4864, 0xF91E, 0x10AD2, 0x11134, 0x112E5, 0x21AED, 0x22F8C, 0x23819, 0x27466, 0x27534, 0x27C38, 0x282BD, 0x2A0F1 |
+| Su | Start-up, title, introduction | START 0x0006, START 0x4354, 0x06FB, 0x0AA9, 0x2EA4C, 0xE600 | 91 | 64 | 3 | 24 | START 0x0006 |
+| Pm | Party menu, creation, Modify, icons, roster | 0x19AE0, 0x19EEB, 0x1BA1E, 0x1D1AC, 0x1E684, 0x1EAD2 | 460 | 407 | 14 | 39 | 0x21AED |
+| Ex | Area loop, 3D view, area map, overland, doors | 0x403E, 0x17054, 0x17438, 0x2DCF4, 0x2EEF4, 0x2DE38 | 470 | 414 | 14 | 42 | 0x21AED |
+| Ecl | ECL VM and host opcodes | 0x3C73, 0x3EB7, 0x7689, 0x7814 | 390 | 344 | 10 | 36 | — |
+| Enc | Encounters (monsters, close-up, menu, parley, surprise) | 0x2C3E, 0x3311, 0x155D, 0x240F, 0x236F, 0x1196, 0x10FA, 0x1EEAA, 0x7A21 | 88 | 61 | 5 | 22 | — |
+| Cb | Combat (map, menu, moves, AI, spells, effects, items, after combat) | 0x24E1, 0x9881, 0x6AA5 | 523 | 474 | 13 | 36 | 0x1638E, 0x21AED |
+| Cp | Camp (all menus, rest, Memorize, Scribe, Cast, Alter) | 0x196A0, 0x24A66 | 467 | 418 | 13 | 36 | 0x18668, 0x21AED |
+| Sh | Shops, temples, venues (PROGRAM, CALL) | 0x7212, 0x5280, 0x3B56, 0x3A15 | 474 | 426 | 12 | 36 | 0x21AED |
 | Tl | Treasure and loot | 0x26F6 | 32 | 27 | 0 | 5 | — |
-| Lv | Training and level up | 0x1C32D, 0x2AA87 | 69 | 43 | 4 | 22 | 0x27466, 0x27534 |
-| Sv | Save and load | 0x1FD3E, 0x1F5E8 | 47 | 25 | 2 | 20 | 0x1E294 |
+| Lv | Training and level up | 0x1C32D, 0x2AA87 | 69 | 45 | 3 | 21 | — |
+| Sv | Save and load | 0x1FD3E, 0x1F5E8 | 46 | 25 | 2 | 19 | — |
 | End | End game | 0x20941, 0x206A3 | 55 | 29 | 4 | 22 | — |
-| Kd | Party killed / destroyed | 0x34BB, 0x5A47 | 290 | 256 | 13 | 21 | 0xF91E, 0x10AD2, 0x11134, 0x112E5, 0x2A0F1 |
+| Kd | Party killed / destroyed | 0x34BB, 0x5A47 | 290 | 264 | 6 | 20 | — |
 
 The Paths column of the unit tables below uses these codes (the paths whose closure holds the routine).
 
@@ -58,31 +58,10 @@ Ranked by how much of play they can change (rules, state, branching), then by si
 
 | # | Routine | Role | St | Why it is open |
 |---|---|---|---|---|
-| 1 | 0x27C38 | cast a spell (pick, aim, routine call) | P | every spell cast, fight and camp; open: whether bit 7 of a scroll pick is kept (`combat-ai.md`). Read the routine whole, oracle it (scroll and memorised casts, aim abort) |
-| 2 | 0x127FB | start of round (per creature) | P | start of round per creature, marked "not read" in `combat-format.md`; it sets what each creature may do this round |
-| 3 | 0x9938 | next creature to act | P | turn order picks; the RNG contract of a round's start depends on it (`combat-format.md` "Start of round") |
-| 4 | 0x12F0D | one-square move (cost, step) | P | one-square move: cost, attacks of opportunity hand-off, terrain effects 0x2B9D1 `[?]` (`combat-map.md`) |
-| 5 | 0x14C0F | AI: spell choice and cast | P | AI and menu combat cast: spell 0 → the spell list 0x239D6 `[?]` (`spells-effects.md` "Combat cast") |
-| 6 | 0xF91E | effect handler 40 | P | handler 40: stinking cloud cells of the arena `[?]` (map side) |
-| 7 | 0x10AD2 | effect handler 84 | P | handler 84 charm gaze: its range reads an uninitialised stack word `[?]` |
-| 8 | 0x2A0F1 | effect handler 88 | P | handler 88 lightning breath: built from a DOSBox-X run plus a read; recheck the whole routine |
-| 9 | 0x11134 | effect handler 90 | P | handler 90: Constitution save bonus `[?]` on the spec line |
-| 10 | 0x112E5 | effect handler 97 | P | handler 97: as 90 |
-| 11 | 0x282BD | spell routine for spell 12 | P | spell 12 Enlarge: levels outside 1–6 keep the previous value `[?]` |
-| 12 | 0x27466 | scroll spell list (readable items) | P | reading a scroll: the scroll list `[?]` (`item-format.md`) |
-| 13 | 0x27534 | [?] scroll read helper: sets DS:6B80 / 6B82 and DS:4843 around 0x27466 | U | scroll read helper, never cited: sets DS:6B80 / 6B82 and DS:4843 around 0x27466 |
-| 14 | 0x4864 | temple cure 1: six effects (DS:0114) | P | temple cure 1: DS:681F = 1 meanwhile `[?]` (what the flag changes in 0x2AF10) |
-| 15 | 0x21AED | View menu (character page) | P | View's menu: which entries it offers per caller (`combat-format.md`) |
-| 16 | 0x22F8C | shop Sell / Id box | P | shop Id / Sell box `[?]` (`combat-menu.md`) |
-| 17 | 0x23819 | party member selection (Next / Prev member) | P | party member selection (Home / End, camp and party menu): wrapping `[?]`, "not read" in `view3d.md` |
-| 18 | 0x202BB | [?] NEWECL helper: disk number DS:5376 check, writes DS:6AAD / 6AAE, may ask through the menu 0x2CC8C and save 0x1FD3E | U | NEWECL helper, never cited: disk number check, DS:6AAD / 6AAE, a menu and the save routine; may decide what a script change does on a disk swap |
-| 19 | 0x24331 | camp time: time text / clock advance helper | P | camp time helper: C# only (CampTime), no spec line |
-| 20 | 0x1E294 | [?] file-error report (DS:537A / 537B) with a key prompt, for the roster and save routines | U | roster / save file-error report, never cited (error path only) |
-| 21 | 0x00B4 | [?] start-up: sets DS:4414 / DS:4416 (unit 0x16) | U | start-up: sets DS:4414 / DS:4416, never cited |
-| 22 | 0x004A | [?] no caller found (unit 0x16): disk prompt then the game save 0x1FD3E; reached through a procedure variable or dead | U | no direct caller (unit 0x16): a disk prompt, then the game save; find how it is reached |
-| 23 | 0x18668 | [?] list buffer allocation for Memorize / Scribe pages (0x187ED) | P | Memorize / Scribe page buffer allocation (memory only; likely nothing to port) |
-| 24 | 0x1638E | Alt-X debugging switch | P | Alt-X debugging switch (needs the start word; no effect in normal play) |
-| 25 | START 0x0006 | main program: unit inits, configuration, introduction, code wheel, party menu, view colours, area loop, party-destroyed exit | P | main program: the order is in `start-menu.md` §1 and Program.cs, cited only inside |
+| 1 | 0x21AED | View menu (character page) | P | read whole s49: the entries follow the record and DS:49F3 = 5 only, the same for every caller (combat-menu.md "View / Use"); Spells shows the memorised list from seven callers, the party menu's View (0x19D23) still gives the Client's notice |
+| 2 | 0x18668 | [?] list buffer allocation for Memorize / Scribe pages (0x187ED) | P | Memorize / Scribe page buffer allocation (memory only; likely nothing to port) |
+| 3 | 0x1638E | Alt-X debugging switch | P | Alt-X debugging switch (needs the start word; no effect in normal play) |
+| 4 | START 0x0006 | main program: unit inits, configuration, introduction, code wheel, party menu, view colours, area loop, party-destroyed exit | P | main program: the order is in `start-menu.md` §1 and Program.cs, cited only inside |
 
 ### Presentation only (drawing, text, sound, input timing)
 
@@ -95,17 +74,45 @@ Ranked by how much of play they can change (rules, state, branching), then by si
 | 5 | 0x239D6 | spell list window (type, action) | P | spell list window: four `[?]` lines; the Client draws its own page |
 | 6 | 0x2CC8C | menu routine (horizontal words) | P | menu routine (every horizontal menu): one `[?]` line; its key handling is run by the oracles but its drawing is not compared |
 | 7 | START 0x1307 | party list redraw | P | party list redraw and its colour helpers 0x148F, 0x1513, the creature panel 0x1583, the icon flash 0x257E, the View text helper 0x1C4D: run under the oracles, drawing compared only in DOSBox-X |
-| 8 | START 0x228C | combat / status message line | P | combat / status message line: C# cites only inside |
-| 9 | START 0x2B8B | effect message (text and pause) | P | effect message and pause |
-| 10 | 0x2EEF4 | 3D view draw (Draw3DView) | W | 3D view internals 0x2E8F7, 0x2EA6B, 0x2EB08, 0x2EEEA never cited, the piece draw 0x32392 cited only inside: the view is pixel-equal to DOSBox-X from the formats (`view3d.md`), so only a check |
-| 11 | 0x20D50 | [?] after a load or a script switch: overland / area picture set-up (calls 0x2DE38, picture draw) | U | after a load or script switch, never cited: overland / picture set-up (calls 0x2DE38 and the picture draw) |
-| 12 | START 0x4751 | picture block read (DAX block → buffer) | U | pictures, START segment 0464 (0x4640–0x6C72): read, decode, draw, recolour, free; the importer decodes the formats and the Client draws them (`por-art-formats.md`); only some draw entries are cited |
-| 13 | 0x1E468 | combat icon slot: picks a free slot 0..7 and builds its picture | P | combat icon slots and their builders 0x1E315, 0x1CE5E, 0x1CF3D (icon editor preview, recolour) |
-| 14 | 0x32123 | [?] text page with a key prompt (level drain path; trapped by the spell oracle) | U | text page with a key prompt on the level-drain path, never cited (trapped by the spell oracle) |
-| 15 | 0x2E0CE | picture frame draw | U | picture frame draw / free (0x2E0CE, 0x2E55D) and the sprite renderer 0x2E7D6: spec lines only |
-| 16 | START 0x8C85 | sound: tune cue | U | sound API (cue 0x8C85, device set-up 0x8C5B, driver start 0x8BBC and helpers): the driver itself is oracle-checked, the game-side calls are spec only |
-| 17 | START 0x4354 | start-up configuration: command line, video mode, sound device, installer flags (only the `F` line read) | P | start-up configuration (video, sound, installer lines), read in part |
-| 18 | START 0x7D3B | [?] text / box helper (Items page, View) | U | text helpers 0x7090, 0x7101, 0x7130, 0x7147, 0x720C, 0x7D3B never cited |
+| 8 | START 0x2B8B | effect message (text and pause) | P | effect message and pause |
+| 9 | 0x2EEF4 | 3D view draw (Draw3DView) | W | 3D view internals 0x2E8F7, 0x2EA6B, 0x2EB08, 0x2EEEA never cited, the piece draw 0x32392 cited only inside: the view is pixel-equal to DOSBox-X from the formats (`view3d.md`), so only a check |
+| 10 | 0x20D50 | [?] after a load or a script switch: overland / area picture set-up (calls 0x2DE38, picture draw) | U | after a load or script switch, never cited: overland / picture set-up (calls 0x2DE38 and the picture draw) |
+| 11 | START 0x4751 | picture block read (DAX block → buffer) | U | pictures, START segment 0464 (0x4640–0x6C72): read, decode, draw, recolour, free; the importer decodes the formats and the Client draws them (`por-art-formats.md`); only some draw entries are cited |
+| 12 | 0x1E468 | combat icon slot: picks a free slot 0..7 and builds its picture | P | combat icon slots and their builders 0x1E315, 0x1CE5E, 0x1CF3D (icon editor preview, recolour) |
+| 13 | 0x32123 | [?] text page with a key prompt (level drain path; trapped by the spell oracle) | U | text page with a key prompt on the level-drain path, never cited (trapped by the spell oracle) |
+| 14 | 0x2E0CE | picture frame draw | U | picture frame draw / free (0x2E0CE, 0x2E55D) and the sprite renderer 0x2E7D6: spec lines only |
+| 15 | START 0x8C85 | sound: tune cue | U | sound API (cue 0x8C85, device set-up 0x8C5B, driver start 0x8BBC and helpers): the driver itself is oracle-checked, the game-side calls are spec only |
+| 16 | START 0x4354 | start-up configuration: command line, video mode, sound device, installer flags (only the `F` line read) | P | start-up configuration (video, sound, installer lines), read in part |
+| 17 | START 0x7D3B | [?] text / box helper (Items page, View) | U | text helpers 0x7090, 0x7101, 0x7130, 0x7147, 0x720C, 0x7D3B never cited |
+
+### Closed in s49
+
+Rows that left the ranked lists this session, with the lane notes (their status stays in the unit tables).
+
+| Routine | Role | St | Note |
+|---|---|---|---|
+| 0x27C38 | cast a spell (pick, aim, routine call) | W | done s49: read whole, oracle `por_spellcast_oracle.py` (memorised, item and scroll casts, aim abort, combat-only questions; Core driven out of a fight, the fight branch checked against the program's rules only); bit 7 of a scroll pick is not kept; out-of-fight branch `CampCast.Run`, fight branch `FightSpells.CastNow` + `FightMenu.CastNow` (the loot menu's D caller 0x6605 not wired in the Client) |
+| 0x127FB | start of round (per creature) | W | s49: read whole and run under emulation with its callees and the trigger-0x12 effects (`por_round_oracle.py`, `RoundProgramTests`); the C# already matched |
+| 0x9938 | next creature to act | W | s49: read whole, run under emulation on every initiative byte and after real round starts (`RoundProgramTests`) |
+| 0x12F0D | one-square move (cost, step) | W | s49: read whole with the guards 0x12E22, the callers' hand-off and 0x2B9D1, run under emulation (`RoundProgramTests`); the step is now drawn inside the routine (`Fight.StepDrawn`) |
+| 0x14C0F | AI: spell choice and cast | W | done s49 (P3): ported whole, oracle `por_cast_oracle.py` (ids 0..67, ai 0 / 1, the list 0x275B4 kind 0); `[?]` left: ids above 67 read past the table (`spells-effects.md` "Combat cast") |
+| 0xF91E | effect handler 40 | W | s49: ported whole, by execution (`por_handler_oracle.py`, bodies under the clouds) |
+| 0x10AD2 | effect handler 84 | W | s49: by execution; the range word is stack residue, 0x3E58 at 18 of 18 DOSBox-X gazes (no range in practice; sampled, not proven) |
+| 0x2A0F1 | effect handler 88 | W | s49: whole routine rechecked, by execution (the pick at DS:6B84 entry 0 scripted) |
+| 0x11134 | effect handler 90 | W | s49: by execution inside the saving throw 0x2BC4D; Constitution outside 4..20 adds stack residue that varies (DOSBox-X 0x1F, 0x00), 0 taken `[?]`, reached after enough temple raises (Con − 1 each, 0x4B85) or handler 7 at Con 20 |
+| 0x112E5 | effect handler 97 | W | s49: as 90 |
+| 0x282BD | spell routine for spell 12 | W | done s49: other levels keep DS:4845 as Enlarge, Sleep or Dispel Magic last left it, shared for the run (`spells-effects.md` "Spell globals"); start value `[?]` (uninitialised data) |
+| 0x27466 | scroll spell list (readable items) | W | done s49: read whole, oracle `por_spellcast_oracle.py`; signed cleric level; DS:4843 / DS:476A overflows `[U]` (`item-format.md`) |
+| 0x27534 | scroll lists of modes 3 / 6: clears DS:477F / DS:4843, 0x27466 per readable item | W | done s49: read whole, oracle `por_spellcast_oracle.py` (`item-format.md`) |
+| 0x4864 | temple cure 1: six effects (DS:0114) removed through 0x2AF10 under the lock DS:681F | W | W by execution s49 (`por_venue_oracle.py`, VenueProgramTests): DS:681F stops the removal handlers' re-add (shop-format.md "Temple") |
+| 0x22F8C | shop Id box | W | W by execution s49 (`por_venue_oracle.py`, VenueProgramTests; DOSBox-X s42) |
+| 0x23819 | party member selection (Home / End; any other key → the first member) | W | W by execution s49 (`por_venue_oracle.py`, VenueProgramTests; Core PartySelection); other extended keys → first member not wired in the Client (shop-format.md "Party selection") |
+| 0x202BB | NEWECL helper: when ECL<disk>.dax is missing, the save-and-exit / insert-disk menu; S steps the party back one square, saves and quits | N | read s49 (ecl-format.md NEWECL): disk prompt only; a module holds every script, so it never runs. Not ported by design |
+| 0x24331 | rest-time two-digit number text | W | done s49 (P3): a text routine, not the clock (kind pres); ported (`CampTime.TwoDigits`), spec in `camp.md`, oracle for 0..255 |
+| 0x1E294 | save directory check: MkDir of the save path DS:537A, IOResult other than 0 / 5 → the save-disk prompt (drive DS:537B), again | N | read s49 (start-menu.md §5): disks and paths; the Client makes its own save folders. Not ported by design |
+| 0x00B4 | unit 0x16 init (START 0xF1): installs 0x004A as Turbo Pascal's HeapError (DS:4414 / 4416) | N | read s49 (start-menu.md §1): memory handler set-up. Not ported by design |
+| 0x004A | HeapError handler (installed by 0x00B4): out of memory → warning, the game save while DS:49D0 ≠ 0 until it succeeds, then quit | N | read s49 (start-menu.md §1): reached through DS:4414 from GetMem (START 0xB343), not dead; .NET has no fixed heap. Not ported by design |
+| START 0x228C | combat / status message line | W | W by citation after s49: the C# now names the entry (FightSpells.CombatCastStep) |
 
 Not gaps: the N rows (DAX reader START segment 0802, disk numbers, memory release, the code wheel) and the library segments, which the module format and .NET replace.
 
@@ -113,6 +120,8 @@ Not gaps: the N rows (DAX reader START segment 0802, disk numbers, memory releas
 
 | Routine | St | Why |
 |---|---|---|
+| 0x004A | N | HeapError handler (out of memory), installed by 0x00B4 through DS:4414; .NET has no fixed heap (start-menu.md §1, s49) |
+| 0x00B4 | N | installs the HeapError handler 0x004A (start-menu.md §1, s49) |
 | 0x00D4 | W | Intro.cs waits read from the program (start-menu.md §1a) |
 | 0x0AA9 | N | skipped by design (Program.cs: straight to the party menu) |
 | 0x211D | W | part of CHKPARTY (golden captures) |
@@ -122,8 +131,13 @@ Not gaps: the N rows (DAX reader START segment 0802, disk numbers, memory releas
 | 0x16901 | W | geo-format.md door menu; DoorRules builds the same test |
 | 0x16CB9 | W | geo-format.md door menu; DoorRules.KnockSpell |
 | 0x1997F | N | memory release (no port needed) |
+| 0x1E294 | N | save directory MkDir and save-disk prompt (start-menu.md §5, s49) |
+| 0x202BB | N | NEWECL's missing-file disk prompt; a module holds every script (ecl-format.md NEWECL, s49) |
+| 0x21AED | P | read whole s49 (combat-menu.md "View / Use"); the party menu's View still shows no memorised list for S |
 | 0x2EA4C | P | spec cites it; the Client sets the same colours from the redraw, routine not cited |
+| START 0x2383 | W | the `[?]` on its camp.md line is the placing of START 0xFE2's text, not this routine (s49 rebuild) |
 | START 0x4354 | P | the controls screen copies the choices; the routine itself read in part (start-menu.md) |
+| START 0x7E4E | W | the `[?]` on its spec line (ecl-format.md DELAY) is the Amiga side, not this routine (s49 rebuild) |
 | START 0x896A | N | disk swap is platform; the module has no disks |
 | START 0x897D | N | disk swap is platform |
 
@@ -205,7 +219,7 @@ Library segments (status L, not listed one by one):
 |---|---|---|---|---|---|---|
 | START 0x0006 | main program: unit inits, configuration, introduction, code wheel, party menu, view colours, area loop, party-destroyed exit | P | play | Su | C# (inside), spec (inside) | Program, ExploreScreen |
 
-#### Segment 00BA: game core helpers (stats, messages, distance, lists, screen redraws) (52 routines: W 43 (30 by execution), P 8, U 1)
+#### Segment 00BA: game core helpers (stats, messages, distance, lists, screen redraws) (52 routines: W 45 (30 by execution), P 6, U 1)
 
 | Address | Role | St | Kind | Paths | Evidence | Port (C#) |
 |---|---|---|---|---|---|---|
@@ -213,14 +227,14 @@ Library segments (status L, not listed one by one):
 | START 0x0D9B | stat recalculation: armour movement | W | play | Pm Ex Ecl Cb Cp Sh Kd | oracle (caller), C#, spec | StatRecalc, StatRecalc.ArmourMove |
 | START 0x0E22 | stat recalculation: AC from readied items | W | play | Pm Ex Ecl Cb Cp Sh Kd | oracle (caller), C#, spec | StatRecalc, StatRecalc.AcItem |
 | START 0x0F40 | stat recalculation: encumbrance | W | play | Pm Ex Ecl Cb Cp Sh Kd | oracle (caller), C#, spec | StatRecalc, StatRecalc.Encumbrance |
-| START 0x0FE2 | item name (cached name build) | W | play | Pm Ex Ecl Cb Cp Sh Tl Kd | oracle (caller), C#, spec, `[?]`×1 | TradeContext.StoredItemName, EncounterHost.Treasure, ItemNames |
+| START 0x0FE2 | item name (cached name build) | W | play | Pm Ex Ecl Cb Cp Sh Tl Kd | oracle (caller), C#, spec, `[?]`×2 | TradeContext.StoredItemName, RestUi.UseItem, EncounterHost.Treasure |
 | START 0x1307 | party list redraw | P | pres | Pm Ex Ecl Enc Cb Cp Sh End Kd | oracle (caller), C#, spec, `[?]`×2 | HallPicture, HallScreens.Run, ClientPlayer.DrawInterface |
 | START 0x148F | party list: name / AC column colour | P | pres | Pm Ex Ecl Enc Cb Cp Sh End Kd | oracle (caller), C# | FramePiece.PartyList |
 | START 0x1513 | party list: HP number colour | P | pres | Pm Ex Ecl Enc Cb Cp Sh End Kd | oracle (caller), C# | CombatScreen.DrawPanel, FramePiece.PartyList |
 | START 0x1583 | creature icon and status panel redraw | P | pres | Pm Ex Ecl Cb Cp Sh Kd | oracle (caller), C#, spec, `[?]`×1 | PorTextCatalog.Image, CombatView.ShownLines, CombatView.ShowLines |
 | START 0x1713 | creature is helpless (status / effects) | W | play | Pm Ex Ecl Cb Cp Sh Kd | oracle (caller), C#, spec, `[?]`×1 | CombatScreen.DrawPanel, FightRules.HelplessEffects, FightRules.IsHelpless |
 | START 0x1758 | stat recalculation | W | play | Pm Ex Ecl Cb Cp Sh Kd | oracle, C#, spec, `[?]`×1 | ClientResources.ItemTypes, CharacterView.Run, CharacterView.Items |
-| START 0x1BD7 | [?] small arithmetic helper (no spec line; run under the oracles) | W | play | Pm Ex Ecl Enc Cb Cp Sh Tl Lv End Kd | oracle (caller) | — |
+| START 0x1BD7 | [?] small arithmetic helper (no spec line; run under the oracles) | W | play | Pm Ex Ecl Enc Cb Cp Sh Tl Lv End Kd | oracle (caller), C#, spec | CampTime.TwoDigits |
 | START 0x1C13 | number to text (Str of an unsigned word) | W | pres | Pm Ex Ecl Cb Cp Sh End | oracle (caller), C#, spec | EclVm.Execute |
 | START 0x1C4D | [?] text helper used by View (no spec line) | U | pres | Pm Ex Cb Cp Sh | oracle (caller) | — |
 | START 0x1C86 | AC from Dexterity | W | play | Pm Ex Ecl Cb Cp Sh Kd | oracle (caller), C#, spec | StatRecalc, StatRecalc.DexAc |
@@ -230,31 +244,31 @@ Library segments (status L, not listed one by one):
 | START 0x1EC5 | Strength damage bonus | W | play | Pm Ex Ecl Cb Cp Sh Kd | oracle (caller), C#, spec | StatRecalc, StatRecalc.StrDamage |
 | START 0x1F4B | carrying allowance by strength code | W | play | Pm Ex Ecl Cb Cp Sh Kd | oracle (caller), C#, spec | Carrying, Carrying.AllowanceForCode, Carrying.StrengthAllowance |
 | START 0x202B | remove a memorised spell | W | play | Pm Ex Ecl Cb Cp Sh Kd | oracle (caller), C#, spec | FightRules.ApplyAttackDamage, FightSpells, FightSpells.RemoveSpell |
-| START 0x20A9 | unlink and free an item | W | play | Pm Ex Ecl Cb Cp Sh Kd | oracle (caller), C#, spec | DropSpentWeapon, FightSpells.UseItemNow, FightSpells.RemoveScrollSpell |
+| START 0x20A9 | unlink and free an item | W | play | Pm Ex Ecl Cb Cp Sh Kd | oracle (caller), C#, spec | DropSpentWeapon, FightSpells.UseItemNow, FightSpells.SpendItem |
 | START 0x2197 | append an item copy to a character | W | play | Pm Ex Ecl Cb Cp Sh Kd | oracle (caller), C#, spec | TradeRules.GiveItem, EffectHandlers.SpiritualHammer |
-| START 0x2233 | row-24 message | W | pres | Pm Ex Ecl Cb Cp Sh Lv Kd | C#, spec | HallPicture.HallState, HallScreens.Password, CharacterView.RowMessage |
-| START 0x228C | combat / status message line | P | pres | Pm Ex Ecl Cb Cp Sh Kd | C# (inside), spec | CampScreens |
-| START 0x2383 | clear the message window | W | pres | Pm Ex Ecl Cb Cp Sh Kd | C#, spec | CombatChooser.TurnStarted, CombatChooser.PrintCreatureMessage, CombatChooser.ClearMessageWindow |
+| START 0x2233 | row-24 message | W | pres | Pm Ex Ecl Cb Cp Sh Lv Kd | C#, spec | HallPicture.HallState, HallScreens.Password, CombatView.KeptList |
+| START 0x228C | combat / status message line | W | pres | Pm Ex Ecl Cb Cp Sh Kd | C#, spec | FightSpells.CombatCastStep |
+| START 0x2383 | clear the message window | W | pres | Pm Ex Ecl Cb Cp Sh Kd | C#, spec, `[?]`×1 | CombatChooser.TurnStarted, CombatChooser.PrintCreatureMessage, CombatChooser.ClearMessageWindow |
 | START 0x23B6 | character name in its colour (in play, hostile) | W | pres | Pm Ex Ecl Enc Cb Cp Sh Lv End Kd | oracle (caller), C#, spec | PorAmigaText, CombatChooser.NameColour, CharacterView.LetGoOnPage |
 | START 0x2432 | draw an icon at a cell (picture, slot, mirror) | W | pres | Pm Ex Ecl Cb Cp Sh Kd | oracle (caller), C#, spec | FlightAnimation, FlightAnimation.SpellBlock, FlightAnimation.AimCursor |
-| START 0x257E | hit / effect icon flash with delays | P | pres | Pm Ex Ecl Cb Cp Sh Kd | oracle (caller), C#, spec, `[?]`×1 | CombatChooser.ShowHit, FightSpells.CastNow, FightSpells.HoldPerson |
+| START 0x257E | hit / effect icon flash with delays | W | pres | Pm Ex Ecl Cb Cp Sh Kd | oracle (caller), C#, spec | CombatChooser.ShowHit, FightSpells.CastNow, FightSpells.HoldPerson |
 | START 0x25C9 | moving icon (flight path) | W | pres | Pm Ex Ecl Cb Cp Sh Kd | oracle (caller), C#, spec | CombatView.Flying, CombatChooser.FlightPathMax, CombatChooser.Flight |
 | START 0x2B8B | effect message (text and pause) | P | pres | Pm Ex Ecl Cb Cp Sh Kd | C#, spec, `[?]`×1 | PorTextCatalog, CombatChooser.EffectMessage, CombatChooser.EffectTextMessage |
-| START 0x2D39 | find a creature's effect record by id | W | play | Pm Ex Ecl Enc Cb Cp Sh Tl Lv Kd | oracle (caller), C#, spec | MonsterAi.CrossingEffects, EffectHandlers.TriggerEffect, EffectHandlers.FindEffect |
+| START 0x2D39 | find a creature's effect record by id | W | play | Pm Ex Ecl Enc Cb Cp Sh Tl Lv Kd | oracle (caller), C#, spec | MonsterAi.CrossingEffects, EffectHandlers.CharmGaze, EffectHandlers.TriggerEffect |
 | START 0x2DC8 | what a hit does (HP, status) | W | play | Pm Ex Ecl Cb Cp Sh Kd | oracle (caller), C#, spec | FightRules.InflictDamage, EffectHandlers.NonWeaponDamage, EclPartyRules.Apply |
 | START 0x2EEA | healed-amount message | W | pres | Pm Ex Ecl Cb Cp Sh Kd | C#, spec | PorTextCatalog.Image, CombatChooser.HealedWords, CombatChooser.EffectMessage |
 | START 0x2F57 | opposite side test (attack-ally check) | W | play | Pm Ex Ecl Cb Cp Sh Kd | oracle (caller), C#, spec | FightSpells.AimAuto, FightSpells.EnemiesBeside, FightSpells.Routine |
-| START 0x2F7B | count the teams (DS:6814 / 6815) | W | play | Pm Ex Ecl Cb Cp Sh Kd | oracle (caller), C#, spec, `[?]`×1 | CountTeams, TurnUndead.Run, EffectHandlers.Revive |
+| START 0x2F7B | count the teams (DS:6814 / 6815) | W | play | Pm Ex Ecl Cb Cp Sh Kd | oracle (caller), C#, spec | CountTeams, TurnUndead.Run, EffectHandlers.Revive |
 | START 0x2FD3 | count enemies within range | W | play | Pm Ex Cb Cp Sh | oracle, C#, spec | FightSpells.CastOneSide, FightSpells.EnemiesBeside, MonsterAi.EnemiesWithin |
 | START 0x30FB | distance between two creatures | W | play | Pm Ex Ecl Cb Cp Sh Kd | oracle, C#, spec | NoFightEffects.IFightGeometry, IFightGeometry, FightRules.RangePenalty |
 | START 0x31D7 | end a creature's actions | W | play | Pm Ex Ecl Cb Cp Sh Kd | oracle (caller), C#, spec | FightRules.EndActions, FightSpells.ContinueCastingAuto, FightSpells.UseItemNow |
 | START 0x3226 | Guard | W | play | Cb | C#, spec | PorTextCatalog.Image, CombatChooser.Attach, MonsterAi.FinishRound |
 | START 0x3262 | spell table entry (DS:31FA + 16·id) | W | play | Pm Ex Ecl Cb Cp Sh Kd | oracle (caller), C#, spec | PorSpellData.Spells, FightSpells, FightSpells.CasterLevel |
-| START 0x32CA | 3D layout frame (inner boxes) | W | pres | Pm Ex Ecl Cb Cp Sh End | C#, spec | ClientPlayer.DrawInterface, Draw, OverlandBoxed |
+| START 0x32CA | 3D layout frame (inner boxes) | W | pres | Pm Ex Ecl Cb Cp Sh End | C#, spec | ClientPlayer.DrawInterface, ClientPlayer.WindowsDrawn, Draw |
 | START 0x3379 | screen redraw by case (hall, camp, loot, shop pictures and boxes) | P | pres | Pm Ex Ecl Cb Cp Sh End | C#, spec, `[?]`×2 | ClientPlayer, ExploreScreen |
 | START 0x34AB | position line | W | pres | Pm Ex Ecl Cb Cp Sh End | C#, spec | ClientPlayer.DrawInterface, PositionLineDrawn, ShownStatusLine |
 | START 0x36FE | overland interface redraw | W | pres | Ex | C#, spec | PorGame.RunLoadedEntry, ClientPlayer.OtherLayout, AreaLoop.OverlandInterfacePending |
-| START 0x3728 | screen clear | W | pres | Pm Ex Ecl Cb Cp Sh Kd | C#, spec | EffectHandlers.CallMoreHandlers |
+| START 0x3728 | screen clear | W | pres | Pm Ex Ecl Cb Cp Sh Kd | C#, spec | CombatChooser.Notice, FightSpells.CombatCastStep, FightMenu.Cast |
 | START 0x37E8 | ask whom (member pick prompt) | W | pres | Pm Ex Ecl Cb Cp Sh | C#, spec | PorTextCatalog.Image, MemberPick, RestUi.PickTarget |
 | START 0x39A3 | has a ranged weapon | W | play | Pm Ex Ecl Cb Cp Sh Kd | oracle (caller), C#, spec | FightRules.HasRangedWeapon |
 | START 0x39E6 | has a throwable weapon | W | play | Pm Ex Ecl Cb Cp Sh Kd | oracle (caller), C#, spec | FightRules.HasThrowableWeapon, DropSpentWeapon |
@@ -302,7 +316,7 @@ Library segments (status L, not listed one by one):
 | START 0x704D | palette register flash (INT 10h) | W | pres | Su Pm Ex Ecl Cb Cp Sh Kd | C#, spec | Intro.FlashRegister |
 | START 0x708A | empty routine (unit init or empty handler) | W | pres | Su | — | — |
 
-#### Segment 0709: text, input, time (20 routines: W 11 (1 by execution), P 2, U 7)
+#### Segment 0709: text, input, time (20 routines: W 13 (1 by execution), P 1, U 6)
 
 | Address | Role | St | Kind | Paths | Evidence | Port (C#) |
 |---|---|---|---|---|---|---|
@@ -311,20 +325,20 @@ Library segments (status L, not listed one by one):
 | START 0x7130 | [?] text set-up helper | U | pres | Su Pm Ex Ecl Enc Cb Cp Sh Lv End Kd | — | — |
 | START 0x7147 | [?] window / box fill helper | U | pres | Su Pm Ex Ecl Enc Cb Cp Sh Lv End Kd | — | — |
 | START 0x720C | [?] palette / colour set-up (start-up) | U | pres | Su | — | — |
-| START 0x726F | glyph draw | W | pres | Su Pm Ex Ecl Enc Cb Cp Sh Tl Lv Sv End Kd | C#, spec | PorAmigaRunes, TextWindow, ClientPlayer.DrawGlyphs |
+| START 0x726F | glyph draw | W | pres | Su Pm Ex Ecl Enc Cb Cp Sh Tl Lv Sv End Kd | C#, spec | PorAmigaRunes, TextWindow, TextWindow.ScreenRight |
 | START 0x767B | see `combat-map.md` Start messages | W | pres | Su Pm Ex Ecl Enc Cb Cp Sh Tl Lv Sv Kd | C#, spec | CombatChooser.BattleBegins, ClientPlayer.Flash |
-| START 0x76B6 | string draw (column, row, colour) | W | pres | Su Pm Ex Ecl Enc Cb Cp Sh Tl Lv Sv End Kd | C#, spec | CombatChooser.BattleBegins, SpellPageLayout.WholeTitle, VenueScreens.Summary |
-| START 0x7737 | see `combat-menu.md` The combat screen (Client) | W | pres | Pm Ex Ecl Enc Cb Cp Sh Kd | C#, spec | TextWindow.Typed, TextWindow.Put, TextWindow.Glyph |
-| START 0x77A4 | text window helper (typing state) | U | pres | Pm Ex Ecl Enc Cb Cp Sh Kd | spec | — |
-| START 0x77F8 | text window (typing, paging) | P | pres | Pm Ex Ecl Enc Cb Cp Sh Kd | C#, spec, `[?]`×1 | Calls.KeyPagePen, PorProgram.PagePrompt, CombatView.Panel |
+| START 0x76B6 | string draw (column, row, colour) | W | pres | Su Pm Ex Ecl Enc Cb Cp Sh Tl Lv Sv End Kd | C#, spec | CombatChooser.BattleBegins, SpellPageLayout.WholeTitle, VenueScreens.HealTitlePen |
+| START 0x7737 | see `combat-menu.md` The combat screen (Client) | W | pres | Pm Ex Ecl Enc Cb Cp Sh Kd | C#, spec | TextWindow.Typed, TextWindow.OriginalWordEndHang, TextWindow.PrintDos |
+| START 0x77A4 | text window helper (typing state) | W | pres | Pm Ex Ecl Enc Cb Cp Sh Kd | C#, spec | TextWindow.PrintDos |
+| START 0x77F8 | text window (typing, paging) | P | pres | Pm Ex Ecl Enc Cb Cp Sh Kd | C#, spec, `[?]`×1 | Calls.KeyPagePen, PorProgram.PagePrompt, CombatView.Panel, TextWindow.PrintDos (s48: the 255-character hang fixed, the original behind TextWindow.OriginalWordEndHang) |
 | START 0x7A73 | line input (INPUTSTR, names) | W | pres | Su Pm Ecl | C#, spec | AmigaMenuPens.DrawTypedLine |
-| START 0x7BF6 | number input (INPUTNUM) | P | pres | Ecl | C# (inside), spec | ClientPlayer |
+| START 0x7BF6 | number input (INPUTNUM) | W | pres | Ecl | C#, spec | AmigaView.Number |
 | START 0x7C85 | row-24 key prompt | W | pres | Pm Ex Ecl Enc Cb Cp Sh Tl Sv Kd | C#, spec | PorAmigaText, Setup.PenSites, Calls.KeyPagePen |
 | START 0x7CCF | GetTime (hundredths) | W | pres | Su Pm Ex Ecl Enc Cb Cp Sh Lv Sv End | C#, spec | PictureAnimation, EndGamePicture.EndGameAnimation, DosClock |
 | START 0x7D3B | [?] text / box helper (Items page, View) | U | pres | Pm Ex Cb Cp Sh | — | — |
-| START 0x7DF8 | bottom-line message for game speed × 225 ms | W | pres | Pm Ex Lv | C#, spec | HallPicture.HallState, HallScreens.Message, HallContext.HallTrainer |
-| START 0x7E4E | game-speed delay | W | pres | Pm Ex Ecl Cb Cp Sh Lv Sv End Kd | C#, spec | CombatChooser.MessageMs, CharacterView.PauseOnly, OutsideEffectMessages.Pause |
-| START 0x7E63 | box blank after a pick | W | pres | Pm Ex Ecl Enc Cb Cp Sh End Kd | C#, spec | TextWindow.Clear, ClientPlayer.ClearBox, ClientPlayer.VerticalMenu |
+| START 0x7DF8 | bottom-line message for game speed × 225 ms | W | pres | Pm Ex Lv | C#, spec | Calls.TimedWarnPen, HallPicture.HallState, HallScreens.Message |
+| START 0x7E4E | game-speed delay | W | pres | Pm Ex Ecl Cb Cp Sh Lv Sv End Kd | C#, spec, `[?]`×1 | CombatChooser.MessageMs, AmigaView.MessagePause, CharacterView.PauseOnly |
+| START 0x7E63 | box blank after a pick | W | pres | Pm Ex Ecl Enc Cb Cp Sh End Kd | C#, spec | TextWindow.Clear, TextWindow.ClearRect, TextWindow.PrintDos |
 | START 0x8012 | empty routine (unit init or empty handler) | W | pres | Su | — | — |
 
 #### Segment 0802: DAX archive reader (open, index, block read, unpack) (18 routines: N 18)
@@ -339,7 +353,7 @@ Library segments (status L, not listed one by one):
 | START 0x81B3 | [?] not read; called by START 0x827D, START 0x8736 | N | pres | — | spec (inside) | — |
 | START 0x8232 | [?] not read; called by START 0x4354 | N | pres | Su | spec (inside) | — |
 | START 0x827D | [?] not read; called by 0x1EAD2, 0x1F5E8 | N | pres | Su Pm Sv | — | — |
-| START 0x830B | [?] not read; called by 0x1DFF6, 0x1E684 | N | pres | Pm Ecl Sv | — | — |
+| START 0x830B | see `ecl-format.md` Other handlers read in the program (2026-11-17) | N | pres | Pm Sv | spec | — |
 | START 0x8376 | [?] not read; called by 0x1E684, 0x1F5E8 | N | pres | Pm Sv | — | — |
 | START 0x8445 | [?] not read; called by 0x1E684, 0x1EAD2 | N | pres | Pm Sv | — | — |
 | START 0x852F | [?] not read; called by START 0x8736 | N | pres | — | — | — |
@@ -347,7 +361,7 @@ Library segments (status L, not listed one by one):
 | START 0x8707 | [?] not read; called by START 0x8736 | N | pres | — | — | — |
 | START 0x8736 | [?] not read; called by 0x1EEAA, 0x26F6 | N | pres | Su Pm Ex Ecl Enc Cb Cp Sh Tl Sv End | — | — |
 | START 0x896A | disk number set (DS:5376 / 5377) | N | play | Pm Ecl Enc Sv | spec | — |
-| START 0x897D | [?] disk helper | N | play | Pm Ecl Sv | — | — |
+| START 0x897D | [?] disk helper | N | play | Pm Ecl Sv | spec | — |
 | START 0x8988 | empty routine (unit init or empty handler) | N | pres | Su | — | — |
 
 #### Segment 0899: disk number, keys while busy, sound stop (5 routines: W 5 (1 by execution))
@@ -356,7 +370,7 @@ Library segments (status L, not listed one by one):
 |---|---|---|---|---|---|---|
 | START 0x8990 | sound stop command | W | pres | Su Pm Ex Ecl Enc Cb Cp Sh Tl Lv Sv End Kd | oracle (caller), C#, spec | PartyMenuFlow.Run |
 | START 0x89E9 | keys while busy (toggles) | W | pres | Su Pm Ex Ecl Enc Cb Cp Sh Tl Lv Sv End Kd | oracle (caller), C#, spec | Waiting.ReadingKeys |
-| START 0x8A94 | key flush | W | pres | Su Pm Ex Ecl Enc Cb Cp Sh Sv End Kd | oracle (caller), C#, spec | IntroLine.Intro, Intro.Key |
+| START 0x8A94 | key flush | W | pres | Su Pm Ex Ecl Enc Cb Cp Sh Sv End Kd | oracle (caller), C#, spec | TextWindow.PrintDos, IntroLine.Intro, Intro.Key |
 | START 0x8AB2 | key poll (no action) | W | pres | Cb | C#, spec | Waiting.Discard, FightKit.AiKey, FightKit.Create |
 | START 0x8ACC | empty routine (unit init or empty handler) | W | play | Su | — | — |
 
@@ -383,12 +397,12 @@ Library segments (status L, not listed one by one):
 
 ### GAME.OVR
 
-#### Unit 0x0008–0x00C5 (stub 16): start-up odds and ends (2 routines: U 2)
+#### Unit 0x0008–0x00C5 (stub 16): start-up odds and ends (2 routines: N 2)
 
 | Address | Role | St | Kind | Paths | Evidence | Port (C#) |
 |---|---|---|---|---|---|---|
-| 0x004A | [?] no caller found (unit 0x16): disk prompt then the game save 0x1FD3E; reached through a procedure variable or dead | U | play | — | spec (inside) | — |
-| 0x00B4 | [?] start-up: sets DS:4414 / DS:4416 (unit 0x16) | U | play | Su | spec (inside) | — |
+| 0x004A | HeapError handler (installed by 0x00B4): out of memory → warning, the game save while DS:49D0 ≠ 0 until it succeeds, then quit | N | play | — | spec | — |
+| 0x00B4 | unit 0x16 init (START 0xF1): installs 0x004A as Turbo Pascal's HeapError (DS:4414 / 4416) | N | play | Su | spec | — |
 
 #### Unit 0x00D4–0x08E1 (stub 19): introduction (4 routines: W 4 (1 by execution))
 
@@ -441,7 +455,7 @@ Library segments (status L, not listed one by one):
 | 0x217B | ECL CHKPARTY handler | W | play | Ecl | golden, C#, spec | EclVm, EclPartyRules, EclPartyRules.CheckParty |
 | 0x236F | ECL PSURPRISE handler | W | play | Enc | golden, C#, spec (inside) | OutsideEffectMessages.Message |
 | 0x240F | ECL SURPRISE handler | W | play | Enc | golden, C#, spec | EclVm.Execute |
-| 0x24E1 | ECL COMBAT handler | W | play | Cb | golden, C#, spec | IEncounterUi.ICombatRunner |
+| 0x24E1 | ECL COMBAT handler | W | play | Cb | golden, C#, spec | EncounterHost.Combat, IEncounterUi.ICombatRunner |
 | 0x263E | ECL ONGOTO/ONGOSUB handler | W | play | Ecl | golden, C#, spec | CombatChooser.Flight, EclVm.Execute, EclVm.LoadVariadic |
 | 0x26F6 | ECL TREASURE handler | W | play | Tl | golden, C#, spec | CombatChooser.Flight |
 | 0x2AF7 | ECL ROB handler | W | play | Ecl | golden, C#, spec | CombatChooser.Flight, EclVm, EclPartyRules |
@@ -461,27 +475,27 @@ Library segments (status L, not listed one by one):
 | 0x3B19 | see `camp.md` The camp: rest, magic, save and alter (Pool of Radiance, DOS v1.3) | W | play | Ex Sh | C#, spec | AreaCommand, AreaLoop.Encamp |
 | 0x3B56 | ECL PROGRAM handler | W | play | Sh | golden, C#, spec | ClientPlayer.Program, EclVm, EclProfiles.Por13 |
 | 0x3BC3 | ECL PROTECT handler | W | play | Ecl | golden, C#, spec | ClientPlayer.DrawGlyphs, EclVm, IEclHost |
-| 0x3C73 | ECL opcode dispatcher (compare chain on DS:6F7F) | W | play | Ecl | C# (inside) | PorOverland, IScreen |
+| 0x3C73 | ECL opcode dispatcher (compare chain on DS:6F7F) | W | play | Ecl | C# (inside), spec (inside) | EffectHandlers.Holds, PorOverland |
 | 0x3EB7 | ECL run loop | W | play | Ecl | C#, spec | EncounterHost.Vm, EclVm.RunVector, UnhandledOpcodeMode |
 | 0x3EFA | after a script switch: vector 4, then 0 and 1 | W | play | Ex | C#, spec | AreaLoop.Run, OverlandStep.Overland, EclVm.FollowScriptChanges |
 | 0x403E | area loop (vectors 0/1, steps, party-defeated exit) | W | play | Ex | C#, spec | PorGame.LoadInHall, PorGame.RunLoadedEntry, PorGame.NewGameScript |
 | 0x424E | empty routine (unit init or empty handler) | W | play | Su | C# (inside) | EclVm, EclOpcodes |
 
-#### Unit 0x4577–0x54AD (stub 22): temple (12 routines: W 11 (1 by execution), P 1)
+#### Unit 0x4577–0x54AD (stub 22): temple (12 routines: W 12 (2 by execution))
 
 | Address | Role | St | Kind | Paths | Evidence | Port (C#) |
 |---|---|---|---|---|---|---|
 | 0x458A | see `shop-format.md` Temple | W | play | Sh | C#, spec | VenueScreens.HealList, VenueScreens.Heal, TempleRules |
 | 0x4636 | see `shop-format.md` Price checks | W | play | Sh | C#, spec | VenueScreens.HealList, VenueScreens.PayColours, Payer.Pay |
 | 0x47C0 | 1000 | W | play | Sh | C#, spec | TempleRules |
-| 0x4864 | temple cure 1: six effects (DS:0114) | P | play | Sh | C#, spec, `[?]`×1 | TempleRules, Cure.DiseaseEffects |
+| 0x4864 | temple cure 1: six effects (DS:0114) removed through 0x2AF10 under the lock DS:681F | W | play | Sh | oracle, C#, spec | TempleRules.CureDisease |
 | 0x4978 | temple cures 2–4: heal 1d8 / 2d8+1 / 3d8+3 | W | play | Sh | C#, spec | TempleRules |
 | 0x4A87 | temple raise dead | W | play | Sh | C#, spec | TempleRules |
 | 0x4CC8 | 1000 | W | play | Sh | C#, spec | TempleRules, Cure.PoisonEffects |
 | 0x4DB1 | temple remove curse | W | play | Sh | C#, spec | TempleRules |
 | 0x4E9F | 2000 | W | play | Sh | C#, spec | TempleRules |
 | 0x4F4E | temple heal list | W | play | Sh | C#, spec | PorProgram.TempleNames, SpellPageLayout.WholeTitle, VenueScreens.Temple |
-| 0x5280 | temple | W | play | Sh | C#, spec | VenueScreens, VenueScreens.PriceField, ICombatRunner |
+| 0x5280 | temple | W | play | Sh | C#, spec | VenueScreens, VenueScreens.PriceField, EncounterHost.Combat, MoneyScreens.StayForMoney (s48: the go-back question no longer clears the priest's message) |
 | 0x54A9 | empty routine (unit init or empty handler) | W | play | Su | — | — |
 
 #### Unit 0x557E–0x6BF3 (stub 25): after combat (share, award, removal, party defeated) (12 routines: W 12 (1 by execution))
@@ -491,14 +505,14 @@ Library segments (status L, not listed one by one):
 | 0x557E | after combat: experience share | W | play | Kd | C#, spec | AfterCombat.Share |
 | 0x58D3 | after combat: award | W | play | Kd | C#, spec | CombatRules.ExperienceFor, CombatRules.AwardExperience |
 | 0x5A47 | see `start-menu.md` After combat | W | play | Kd | C#, spec | ClientPlayer.KeepsCombatRow24, EncounterHost.Vm, AfterCombat |
-| 0x5E94 | see `combat-format.md` After combat | W | play | Cb | C#, spec | VenueScreens, VenueScreens.Heal, VenueScreens.Loot |
+| 0x5E94 | see `combat-format.md` After combat | W | play | Cb | C#, spec | VenueScreens, VenueScreens.MemberMessage, VenueScreens.Loot |
 | 0x6092 | see `por-art-formats.md` Amiga program reads (s19; hunks numbered from 0 in file order) | W | pres | Cb | C#, spec | VenueScreens.ItemPage |
 | 0x6184 | see `combat-format.md` After combat | W | play | Cb | C#, spec | VenueScreens.TakeItems, ShopRules.GiveCopy |
 | 0x62B6 | see `combat-format.md` Loot menu | W | play | Cb | C#, spec | PorTextCatalog, VenueScreens.LootTake |
 | 0x644B | see `combat-format.md` After combat | W | play | Cb | C#, spec | PorTextCatalog, TradeContext.VenueRedrawn, VenueScreens |
 | 0x672A | after combat: removal of the monsters | W | play | Cb | C#, spec | ClientPlayer.KeepsCombatRow24, ClientPlayer.Trade, EncounterState.Monsters |
-| 0x6866 | see `combat-format.md` After combat | W | play | Cb | C#, spec | VenueScreens.Heal, ClientPlayer.Trade, EndOfRoundCreature |
-| 0x6AA5 | after combat | W | play | Cb | C#, spec | ClientPlayer.KeepsCombatRow24, Draw, EncounterHost.AfterCombatStep |
+| 0x6866 | see `combat-format.md` After combat | W | play | Cb | C#, spec | VenueScreens.MemberMessage, ClientPlayer.Trade, EndOfRoundCreature |
+| 0x6AA5 | after combat | W | play | Cb | C#, spec | ClientPlayer.KeepsCombatRow24, Draw, EncounterHost.Combat |
 | 0x6BEF | empty routine (unit init or empty handler) | W | play | Su | — | — |
 
 #### Unit 0x6CD4–0x7470 (stub 28): shop (5 routines: W 5 (2 by execution))
@@ -508,7 +522,7 @@ Library segments (status L, not listed one by one):
 | 0x6D04 | see `por-art-formats.md` Amiga program reads (s19; hunks numbered from 0 in file order) | W | play | Sh | C#, spec | TradeContext.StoredItemName, VenueScreens.Buy, VenueScreens.ItemPage |
 | 0x6F0D | see `shop-format.md` Shop menu | W | play | Cb Sh | oracle, C#, spec | VenueScreens.Buy, VenueScreens.TakeItems, ShopRules.GiveCopy |
 | 0x7035 | see `combat-format.md` Shop | W | play | Sh | C#, spec | VenueScreens.Buy, ShopRules.GiveCopy, BuyResult.Buy |
-| 0x7212 | shop | W | play | Sh | C#, spec | VenueScreens, VenueScreens.MemberLetters, ShopRules |
+| 0x7212 | shop | W | play | Sh | C#, spec | VenueScreens, VenueScreens.MemberLetters, EncounterHost.Combat |
 | 0x746C | empty routine (unit init or empty handler) | W | play | Su | — | — |
 
 #### Unit 0x74D3–0x96EC (stub 2B): ECL VM helpers (operands, VM memory, text), script loader, encounter draw (33 routines: W 33 (31 by execution))
@@ -518,9 +532,9 @@ Library segments (status L, not listed one by one):
 | 0x74D3 | operand loader | W | play | Ecl Enc Sh Tl Kd | golden, C#, spec | EclVm.NormaliseInput, EclVm.LoadVariadic |
 | 0x7609 | see `ecl-format.md` Operand encoding | W | play | Ecl Enc Sh Tl Kd | golden, C#, spec | EclVm.NormaliseInput |
 | 0x7689 | script init | W | play | Ecl | golden, C#, spec | EclVm.InitScript, EclCells.InitWrites |
-| 0x7814 | script file loader (ECL<d>) | W | play | Ecl | golden, C#, spec | PorGame.RunNewGameEntry, ClientPlayer.ScriptChanging, Draw |
+| 0x7814 | script file loader (ECL<d>) | W | play | Ecl | golden, C#, spec | PorGame.RunNewGameEntry, TextWindow.PrintDos, ClientPlayer.ScriptChanging |
 | 0x78E4 | [?] not read; called by 0x1196 | W | play | Enc | golden, spec (inside) | — |
-| 0x7955 | see `ecl-format.md` View distance | W | play | Enc Cb | golden, C#, spec | EncounterHost.ViewDistance, EncounterRules.ViewDistance |
+| 0x7955 | see `ecl-format.md` View distance | W | play | Enc Cb | golden, C#, spec | EncounterHost.ViewDistance, EncounterHost.Combat, EncounterRules.ViewDistance |
 | 0x79E4 | see `combat-format.md` Shop | W | play | Ecl Enc | golden, C#, spec | ViewPictures.DrawVenuePortrait, ClientPlayer.ShowEncounter, ClientPlayer.ShowPicture |
 | 0x7A21 | encounter draw | W | pres | Enc | golden, C#, spec | EncounterHost.Draw, IEncounterUi, EclMemory.EncounterSpriteUp |
 | 0x7B82 | lo/hi → word | W | play | Ecl Enc Sh Tl Kd | golden, spec | — |
@@ -532,10 +546,10 @@ Library segments (status L, not listed one by one):
 | 0x814A | see `ecl-format.md` Other handlers read in the program (2026-11-17) | W | play | Ecl Enc | golden, C#, spec | IEclHost, EclMemory.SpecialWrites, EclMemory.SpecialNoOpWrites |
 | 0x82DF | see `ecl-format.md` VM memory map | W | play | Ecl Enc Sh Tl Kd | golden, C#, spec | EclMemory.SpecialReads, EclMemory.Read |
 | 0x8426 | see `ecl-format.md` SAVE of text | W | play | Ecl | golden, C#, spec | EclMemory.WriteText |
-| 0x8626 | see `ecl-format.md` Operand encoding | W | play | Ecl Enc Sh Tl Kd | golden, spec | — |
+| 0x8626 | see `ecl-format.md` Operand encoding | W | play | Ecl Enc Sh Tl Kd | golden, C#, spec | EclText.Slot |
 | 0x87CE | see `ecl-format.md` Operand encoding | W | play | Ecl Enc Sh Tl Kd | golden, C#, spec | EclMemory.ReadText |
 | 0x8A40 | see `por-art-formats.md` Amiga program reads (s19; hunks numbered from 0 in file order) | W | pres | Ecl Enc Cb Sh | golden, C#, spec | AmigaView.TildeCase |
-| 0x8B57 | see `view3d.md` Text window ; program read s12) | W | play | Ecl Enc Cb Sh | golden, C#, spec | VenueScreens.LootMenu |
+| 0x8B57 | see `combat-format.md` After combat | W | play | Ecl Enc Cb Sh | golden, C#, spec | MoneyScreens.StayAtExit, Dialog.MenuHelper (s48: Return answers the lit word) |
 | 0x8C5B | see `ecl-format.md` Other handlers read in the program (2026-11-17) | W | play | Ecl | golden, C#, spec | ChoiceRequest.ListRow, ClientPlayer.VerticalMenu |
 | 0x8CE8 | see `ecl-format.md` Instructions and control flow | W | play | Ecl | golden, C#, spec | EclVm.DoCompare |
 | 0x8DBE | see `ecl-format.md` Instructions and control flow | W | play | Ecl | golden, C#, spec | EclVm.DoCompare |
@@ -549,13 +563,13 @@ Library segments (status L, not listed one by one):
 | 0x959F | see `ecl-format.md` Party, damage and text-box opcodes (program read s11, 2026-11-17) | W | play | Kd | golden, C#, spec | Calls.KeyDamagePen, Calls.DamageLinePen, PorTextCatalog.Overlay |
 | 0x96E8 | empty routine (unit init or empty handler) | W | play | Su | golden | — |
 
-#### Unit 0x9807–0xAA85 (stub 35): the fight (top level, clean-up, round loop) (14 routines: W 12 (1 by execution), P 1, N 1)
+#### Unit 0x9807–0xAA85 (stub 35): the fight (top level, clean-up, round loop) (14 routines: W 13 (2 by execution), N 1)
 
 | Address | Role | St | Kind | Paths | Evidence | Port (C#) |
 |---|---|---|---|---|---|---|
 | 0x9807 | fight clean-up: frees the creature list and the arena | N | play | Cb | C# (inside), spec | EclMemory, EclProfile |
-| 0x9881 | the fight (top level) | W | play | Cb | C#, spec | CombatChooser.BattleBegins, ICombatRunner, EndActionsController.Fight |
-| 0x9938 | next creature to act | P | play | Cb | C#, spec, `[?]`×1 | CombatRules.NextCreature, EndActionsController.Fight, Fight.NextCreature |
+| 0x9881 | the fight (top level) | W | play | Cb | C#, spec | CombatChooser.BattleBegins, EncounterHost.Combat, ICombatRunner |
+| 0x9938 | next creature to act | W | play | Cb | oracle, C#, spec, `[?]`×1 | CombatRules.NextCreature, EndActionsController.Fight, Fight.NextCreature |
 | 0x99FD | see `combat-format.md` Data the combat code uses | W | play | Cb | C#, spec | CombatChooser.TurnStarted, CombatChooser.TurnEnded, EndActionsController.Fight |
 | 0x9B21 | see `combat-format.md` The fight | W | play | Cb | C#, spec | GameAction, CombatView.CombatChooser, CombatChooser.TurnStarted |
 | 0x9E6D | see `combat-format.md` Program units of the fight | W | play | Cb | C#, spec | CombatMsg, FightCommand, IFightMenuChooser |
@@ -623,12 +637,12 @@ Library segments (status L, not listed one by one):
 | 0xE600 | game start-up: VM zones, start values, tables | W | play | Su | C#, spec | PorGame.NewGameScript, PorGame.NewGameState, MenuHighlight.ListTop |
 | 0xEBE8 | empty routine (unit init or empty handler) | W | play | Su | — | — |
 
-#### Unit 0xEC5B–0x12508 (stub 41): effect handlers (127 routines: W 123 (14 by execution), P 4)
+#### Unit 0xEC5B–0x12508 (stub 41): effect handlers (127 routines: W 127 (18 by execution))
 
 | Address | Role | St | Kind | Paths | Evidence | Port (C#) |
 |---|---|---|---|---|---|---|
 | 0xEC5B | CS:1C8D of unit | W | play | Pm Ex Ecl Cb Cp Sh Kd | C#, spec | PorTextCatalog, EffectHandlers.More, EffectHandlers.Holds |
-| 0xEC7A | see `spells-effects.md` Spells | W | play | Pm Ex Ecl Cb Cp Sh Kd | C#, spec | EffectHandlers.AddEffectIfNoLock |
+| 0xEC7A | see `spells-effects.md` Data-segment cells | W | play | Pm Ex Ecl Cb Cp Sh Kd | C#, spec | EffectHandlers.AddEffectIfNoLock, Cure.CureDisease |
 | 0xECB3 | see `combat-menu.md` The combat screen (Client) | W | play | Pm Ex Ecl Cb Cp Sh Kd | oracle (caller), C#, spec, `[?]`×1 | PorTextCatalog, CombatChooser.AttackEnd, CombatChooser.EffectMessage |
 | 0xED68 | effect handler 1 | W | play | Pm Ex Ecl Cb Cp Sh Kd | C#, spec | EffectHandlers.CallHandler |
 | 0xED78 | effect handler 2 | W | play | Pm Ex Ecl Cb Cp Sh Kd | C#, spec | EffectHandlers.CallHandler |
@@ -654,7 +668,7 @@ Library segments (status L, not listed one by one):
 | 0xF5A2 | effect handler 26 | W | play | Pm Ex Ecl Cb Cp Sh Kd | C#, spec | EffectHandlers.CallHandler |
 | 0xF61B | effect handler 28 | W | play | Pm Ex Ecl Cb Cp Sh Kd | C#, spec, seen only | EffectHandlers.CallHandler |
 | 0xF698 | effect handler 29 | W | play | Pm Ex Ecl Cb Cp Sh Kd | C#, spec | EffectHandlers.CallHandler |
-| 0xF6C0 | effect handler 30 | W | play | Pm Ex Ecl Cb Cp Sh Kd | C#, spec | EffectHandlers.CallHandler |
+| 0xF6C0 | effect handler 30 | W | play | Pm Ex Ecl Cb Cp Sh Kd | C#, spec | EffectHandlers.CallHandler, EffectHandlers.TerrainCheck |
 | 0xF776 | effect handler 32 | W | play | Pm Ex Ecl Cb Cp Sh Kd | C#, spec | EffectHandlers.CallHandler |
 | 0xF807 | effect handler 33 | W | play | Pm Ex Ecl Cb Cp Sh Kd | C#, spec | EffectHandlers.CallHandler |
 | 0xF82A | effect handler 34 | W | play | Pm Ex Ecl Cb Cp Sh Kd | C#, spec | EffectHandlers.CallHandler |
@@ -662,7 +676,7 @@ Library segments (status L, not listed one by one):
 | 0xF870 | effect handler 36 | W | play | Pm Ex Ecl Cb Cp Sh Kd | C#, spec | EffectHandlers.CallHandler |
 | 0xF881 | effect handler 37 | W | play | Pm Ex Ecl Cb Cp Sh Kd | C#, spec | EffectHandlers.CallHandler |
 | 0xF8A6 | effect handler 39 | W | play | Pm Ex Ecl Cb Cp Sh Kd | C#, spec | EffectHandlers.CallHandler |
-| 0xF91E | effect handler 40 | P | play | Pm Ex Ecl Cb Cp Sh Kd | C#, spec, `[?]`×1 | EffectHandlers.CallHoldHandlers, EffectHandlers.CloudGone |
+| 0xF91E | effect handler 40 | W | play | Pm Ex Ecl Cb Cp Sh Kd | oracle, C#, spec | EffectHandlers.CallHoldHandlers, EffectHandlers.CloudGone |
 | 0xFC07 | see `spells-effects.md` Missile dodge | W | play | Pm Ex Ecl Cb Cp Sh Kd | C#, spec | EffectHandlers.CallMoreHandlers, EffectHandlers.DodgeMissile |
 | 0xFC78 | see `spells-effects.md` Handlers 1–72 | W | play | Pm Ex Ecl Cb Cp Sh Kd | C#, spec | EffectHandlers.MissileOf |
 | 0xFCE1 | effect handler 41 | W | play | Pm Ex Ecl Cb Cp Sh Kd | C#, spec | EffectHandlers.CallHandler |
@@ -673,7 +687,7 @@ Library segments (status L, not listed one by one):
 | 0xFED1 | effect handler 48 | W | play | Pm Ex Ecl Cb Cp Sh Kd | C#, spec | EffectHandlers.CallHandler |
 | 0xFF0D | effect handler 49 | W | play | Pm Ex Ecl Cb Cp Sh Kd | C#, spec | EffectHandlers.CallHandler |
 | 0xFF56 | effect handler 50 | W | play | Pm Ex Ecl Cb Cp Sh Kd | C#, spec | EffectHandlers.CallHandler |
-| 0xFF9A | effect handlers 31, 51, 52, 53 | W | play | Pm Ex Ecl Cb Cp Sh Kd | C#, spec | EffectHandlers.CallHandler |
+| 0xFF9A | effect handlers 31, 51, 52, 53 | W | play | Pm Ex Ecl Cb Cp Sh Kd | C#, spec | EffectHandlers.CallHandler, EffectHandlers.TerrainCheck |
 | 0xFFB0 | effect handler 54; empty routine (unit init or empty handler) | W | play | Pm Ex Ecl Cb Cp Sh Kd | — | — |
 | 0xFFB7 | effect handler 55; empty routine (unit init or empty handler) | W | play | Pm Ex Ecl Cb Cp Sh Kd | — | — |
 | 0xFFBE | effect handler 56 | W | play | Pm Ex Ecl Cb Cp Sh Kd | C#, spec | EffectHandlers.CallHandler |
@@ -702,20 +716,20 @@ Library segments (status L, not listed one by one):
 | 0x10705 | effect handler 81 | W | play | Pm Ex Ecl Cb Cp Sh Kd | oracle, C#, spec | EffectHandlers.CallHoldHandlers, EffectHandlers.FearAura |
 | 0x10803 | effect handler 82 | W | play | Pm Ex Ecl Cb Cp Sh Kd | oracle, C#, spec | EffectHandlers.CallHoldHandlers, EffectHandlers.ParalysingAura |
 | 0x10908 | effect handler 83 | W | play | Pm Ex Ecl Cb Cp Sh Kd | oracle, C#, spec | CombatMsg, EffectHandlers.CallHoldHandlers, EffectHandlers.Gaze |
-| 0x10AD2 | effect handler 84 | P | play | Pm Ex Ecl Cb Cp Sh Kd | C#, spec, `[?]`×1 | CombatMsg, EffectHandlers.CallHoldHandlers, EffectHandlers.CharmGaze |
+| 0x10AD2 | effect handler 84 | W | play | Pm Ex Ecl Cb Cp Sh Kd | oracle, C#, spec | CombatMsg, EffectHandlers.CallHoldHandlers, EffectHandlers.CharmGaze |
 | 0x10C5D | see `spells-effects.md` Handlers 73–139 | W | play | Pm Ex Ecl Cb Cp Sh Kd | oracle (caller), C#, spec, `[?]`×1 | EffectHandlers.LevelDrain, EffectHandlers.TopClass |
 | 0x10D7D | see `spells-effects.md` Handlers 73–139 | W | play | Pm Ex Ecl Cb Cp Sh Kd | oracle (caller), C#, spec, `[?]`×1 | PorTextCatalog, EffectHandlers.CallHoldHandlers, EffectHandlers.LevelDrain |
 | 0x10FFF | effect handler 85 | W | play | Pm Ex Ecl Cb Cp Sh Kd | oracle, C#, spec, `[?]`×1 | EffectHandlers.CallHoldHandlers |
 | 0x1101D | effect handler 86 | W | play | Pm Ex Ecl Cb Cp Sh Kd | oracle, C#, spec, `[?]`×1 | EffectHandlers.CallHoldHandlers |
 | 0x11047 | effect handler 87 | W | play | Pm Ex Ecl Cb Cp Sh Kd | C#, spec | EffectHandlers.CallMoreHandlers |
 | 0x110EB | effect handler 89 | W | play | Pm Ex Ecl Cb Cp Sh Kd | C#, spec | EffectHandlers.CallMoreHandlers |
-| 0x11134 | effect handler 90 | P | play | Pm Ex Ecl Cb Cp Sh Kd | C#, spec, `[?]`×1 | EffectHandlers.CallMoreHandlers, EffectHandlers.ConSaveBonus |
+| 0x11134 | effect handler 90 | W | play | Pm Ex Ecl Cb Cp Sh Kd | oracle, C#, spec | EffectHandlers.CallMoreHandlers, EffectHandlers.ConSaveBonus |
 | 0x111B1 | effect handler 91 | W | play | Pm Ex Ecl Cb Cp Sh Kd | C#, spec | EffectHandlers.CallMoreHandlers |
 | 0x111FD | effect handler 93 | W | play | Pm Ex Ecl Cb Cp Sh Kd | C#, spec | EffectHandlers.CallMoreHandlers |
 | 0x11217 | effect handler 94 | W | play | Pm Ex Ecl Cb Cp Sh Kd | C#, spec | EffectHandlers.CallMoreHandlers |
 | 0x1126B | effect handler 95 | W | play | Pm Ex Ecl Cb Cp Sh Kd | C#, spec | EffectHandlers.CallMoreHandlers |
 | 0x112A6 | effect handler 96 | W | play | Pm Ex Ecl Cb Cp Sh Kd | C#, spec | EffectHandlers.CallMoreHandlers |
-| 0x112E5 | effect handler 97 | P | play | Pm Ex Ecl Cb Cp Sh Kd | C#, spec, `[?]`×1 | EffectHandlers.CallMoreHandlers, EffectHandlers.ConSaveBonus |
+| 0x112E5 | effect handler 97 | W | play | Pm Ex Ecl Cb Cp Sh Kd | oracle, C#, spec | EffectHandlers.CallMoreHandlers, EffectHandlers.ConSaveBonus |
 | 0x1135B | effect handler 98 | W | play | Pm Ex Ecl Cb Cp Sh Kd | C#, spec | EffectHandlers.CallMoreHandlers |
 | 0x1138B | effect handler 99 | W | play | Pm Ex Ecl Cb Cp Sh Kd | C#, spec | EffectHandlers.CallMoreHandlers |
 | 0x11434 | effect handler 100 | W | play | Pm Ex Ecl Cb Cp Sh Kd | C#, spec | EffectHandlers.CallMoreHandlers |
@@ -752,25 +766,25 @@ Library segments (status L, not listed one by one):
 | 0x11D8F | effect handler 135 | W | play | Pm Ex Ecl Cb Cp Sh Kd | C#, spec | EffectHandlers.CallMoreHandlers |
 | 0x11DD5 | effect handler 137 | W | play | Pm Ex Ecl Cb Cp Sh Kd | C#, spec | EffectHandlers.CallMoreHandlers |
 | 0x11DF6 | effect handlers 5, 13, 19, 24, 27, 60, 63, 92, 127; empty routine (unit init or empty handler) | W | play | Pm Ex Ecl Cb Cp Sh Kd | C#, spec | EffectHandlers.EmptyHandlers |
-| 0x11DFD | see `por-art-formats.md` Amiga program reads (s19; hunks numbered from 0 in file order) | W | play | Su | oracle, C#, spec, `[?]`×1 | EffectHandlers.Holds, EffectHandlers.LightningBreath, EffectHandlers |
+| 0x11DFD | see `por-art-formats.md` Amiga program reads (s19; hunks numbered from 0 in file order) | W | play | Su | oracle, C#, spec | EffectHandlers.Holds, EffectHandlers.LightningBreath, EffectHandlers |
 | 0x12504 | empty routine (unit init or empty handler) | W | play | Su | spec | — |
 
-#### Unit 0x127FB–0x1646C (stub 68): combat rules: round start, attacks, moves, turn undead, AI casts (39 routines: W 35 (23 by execution), P 4)
+#### Unit 0x127FB–0x1646C (stub 68): combat rules: round start, attacks, moves, turn undead, AI casts (39 routines: W 38 (30 by execution), P 1)
 
 | Address | Role | St | Kind | Paths | Evidence | Port (C#) |
 |---|---|---|---|---|---|---|
-| 0x127FB | start of round (per creature) | P | play | Cb | C#, spec, `[?]`×1 | PorTextCatalog, FightRules.FindRangedAmmo, FightRules.BeginRound |
-| 0x1291E | see `combat-format.md` Start of round | W | play | Cb | C#, spec | FightRules.CreatureMovement, MonsterAi.HighestEnemyMovement, FightMoves.Flee |
+| 0x127FB | start of round (per creature) | W | play | Cb | oracle, C#, spec | PorTextCatalog, FightRules.FindRangedAmmo, FightRules.BeginRound |
+| 0x1291E | see `combat-format.md` Start of round | W | play | Cb | oracle (caller), C#, spec | FightRules.CreatureMovement, MonsterAi.HighestEnemyMovement, FightMoves.Flee |
 | 0x1298C | see `combat-format.md` Damage | W | play | Pm Ex Ecl Cb Cp Sh Kd | oracle (caller), C#, spec | FightRules.WeaponDamage |
 | 0x12AF4 | see `combat-format.md` What a hit does | W | play | Pm Ex Ecl Cb Cp Sh Kd | oracle (caller), C#, spec | CombatChooser.Say, CombatChooser.AttackMessage, CombatChooser.AttackEnd |
-| 0x12E22 | see `combat-format.md` Attacks | W | play | Cb | C#, spec | FightSeams, FightMoves, FightMoves.GuardsAttack |
-| 0x12F0D | one-square move (cost, step) | P | play | Cb | C#, spec, `[?]`×1 | CombatChooser.Stepped, FightMenu.Move, FightSeams |
+| 0x12E22 | see `combat-format.md` Attacks | W | play | Cb | oracle (caller), C#, spec | CombatChooser.GuardAttacking, FightSeams, Fight.GuardAttacking |
+| 0x12F0D | one-square move (cost, step) | W | play | Cb | oracle, C#, spec | CombatChooser.Stepped, FightMoves.MoveOne, FightSeams |
 | 0x130AD | see `combat-format.md` Open `[?]` | W | play | Cb | C#, spec | FightMenu.Move, FightSeams, IFightMoves.IFightMap |
 | 0x13465 | see `combat-format.md` Open `[?]` | W | play | Cb | C#, spec | CombatChooser.FleeMessage, CombatMsg, MonsterAi.MoveStep |
-| 0x1351E | see `combat-format.md` Start of round | W | play | Cb | C#, spec | FightRules.RecalcAttacksLeft |
-| 0x1364D | see `combat-format.md` Start of round | W | play | Cb | C#, spec | FightRules.AttacksFromRate |
+| 0x1351E | see `combat-format.md` Start of round | W | play | Cb | oracle (caller), C#, spec | FightRules.RecalcAttacksLeft |
+| 0x1364D | see `combat-format.md` Start of round | W | play | Cb | oracle (caller), C#, spec | FightRules.AttacksFromRate |
 | 0x1367D | see `combat-menu.md` The player's combat menu, sweep attacks and turn undead (Pool of Radiance, DOS v1.3) | W | play | Pm Ex Cb Cp Sh | oracle (caller), C#, spec | CombatMsg, MonsterAi.MoveAttack, IFightMoves.IFightMap |
-| 0x13880 | see `combat-menu.md` Combat record and DS cells used here | W | play | Pm Ex Ecl Cb Cp Sh Kd | oracle (caller), C#, spec, `[?]`×1 | MonsterAi.CanTarget, FightMenu.TriggerTargetDefender, FightMenu.Targetable |
+| 0x13880 | see `combat-menu.md` Combat record and DS cells used here | W | play | Pm Ex Ecl Cb Cp Sh Kd | oracle (caller), C#, spec | MonsterAi.CanTarget, FightMenu.TriggerTargetDefender, FightMenu.Targetable |
 | 0x13965 | see `combat-format.md` Attacks | W | play | Cb | C#, spec | CombatMsg, MonsterAi.TryTurnUndead, TurnUndead |
 | 0x13B4C | see `combat-menu.md` Turn undead , cleric) | W | play | Cb | C#, spec | MonsterAi.TryTurnUndead, TurnUndead.NextTarget |
 | 0x13C01 | see `combat-format.md` Attacks | W | play | Pm Ex Ecl Cb Cp Sh Kd | oracle (caller), C#, spec | RollAttacks, Fight.MakeAttack, EffectHandlers.Recalculate |
@@ -779,8 +793,8 @@ Library segments (status L, not listed one by one):
 | 0x14319 | see `combat-format.md` Range penalty | W | play | Pm Ex Ecl Cb Cp Sh Kd | oracle (caller), C#, spec | FightRules.RangePenalty |
 | 0x143F3 | see `combat-ai.md` Items, spells, turning | W | play | Pm Ex Cb Cp Sh | oracle, C#, spec | FightSpells.Ai, FightSpells.MaxHp, FightSpells.CureTarget |
 | 0x14611 | see `combat-menu.md` The player's aim for a spell | W | play | Pm Ex Cb Cp Sh | oracle (caller), C#, spec | CombatChooser.AimItem, FightSpells.Ai, FightSpells.FindCureTarget |
-| 0x148BE | see `combat-menu.md` The player's aim for a spell | W | play | Pm Ex Cb Cp Sh | oracle, C#, spec, `[?]`×1 | FightSpells.Ai, FightSpells, FightSpells.SquareOf |
-| 0x14C0F | AI: spell choice and cast | P | play | Cb | C#, spec, `[?]`×1 | CombatChooser.ChooseSpell, ListRequest.Grey, CombatMsg |
+| 0x148BE | see `combat-menu.md` The player's aim for a spell | W | play | Pm Ex Cb Cp Sh | oracle, C#, spec | FightSpells.Ai, FightSpells, FightSpells.SquareOf |
+| 0x14C0F | AI: spell choice and cast | W | play | Cb | oracle, C#, spec, `[?]`×1 (ids above 67) | FightSpells.CombatCastStep, FightMenu.Cast, FightSpells.CastAuto, FightSpells.Castable, CombatChooser.ChooseSpell |
 | 0x14D6F | see `combat-format.md` Backstab | W | play | Pm Ex Ecl Cb Cp Sh Kd | oracle (caller), C#, spec | FightRules.IsBackstab |
 | 0x14E38 | see `combat-format.md` Attacks | W | play | Pm Ex Ecl Cb Cp Sh Kd | oracle, C#, spec, `[?]`×1 | NoFightEffects.IFightGeometry, IFightGeometry, FightRules.IsBackstab |
 | 0x14EAB | see `combat-menu.md` A missile | W | play | Pm Ex Ecl Cb Cp Sh Kd | oracle (caller), C#, spec | FlightAnimation.Missile, Fight.MissileFlight, Fight.MakeAttack |
@@ -870,13 +884,13 @@ Library segments (status L, not listed one by one):
 | 0x1DC6C | see `training.md` Train Character | W | play | Lv | oracle (caller), C#, spec | Entry.Train, Entry.Pay |
 | 0x1DDD3 | empty routine (unit init or empty handler) | W | play | Su | — | — |
 
-#### Unit 0x1DFE6–0x203CA (stub 7C): roster and save files, monster loader (14 routines: W 10 (1 by execution), P 1, U 3)
+#### Unit 0x1DFE6–0x203CA (stub 7C): roster and save files, monster loader (14 routines: W 10 (1 by execution), P 1, U 1, N 2)
 
 | Address | Role | St | Kind | Paths | Evidence | Port (C#) |
 |---|---|---|---|---|---|---|
 | 0x1DFF6 | see `start-menu.md` Add | W | play | Pm | C#, spec | PorRoster, PorRoster.Mark, PorRoster.Entries |
 | 0x1E19E | see `start-menu.md` 4. Add, Remove, Drop, View | W | play | Pm | C#, spec | PorRoster.WriteEntries |
-| 0x1E294 | [?] file-error report (DS:537A / 537B) with a key prompt, for the roster and save routines | U | play | Pm Sv | — | — |
+| 0x1E294 | save directory check: MkDir of the save path DS:537A, IOResult other than 0 / 5 → the save-disk prompt (drive DS:537B), again | N | play | Pm Sv | spec | — |
 | 0x1E315 | [?] icon picture build per video mode (DS:4A1E) | U | pres | Pm Ecl Sv | — | — |
 | 0x1E468 | combat icon slot: picks a free slot 0..7 and builds its picture | P | pres | Pm Ecl Sv | C#, spec, `[?]`×1 | CombatScreen.Icon |
 | 0x1E684 | character save (roster file) | W | play | Pm | C#, spec | PorRoster, PorRoster.Save, HallTrainer.HallHooks |
@@ -884,9 +898,9 @@ Library segments (status L, not listed one by one):
 | 0x1EEAA | monster loader (MON<d>CHA / ITM / SPC) | W | play | Enc | C#, spec | EncounterHost.LoadMonsterRecord |
 | 0x1F248 | see `ecl-format.md` ADDNPC v1, v2 | W | play | Ecl | C#, spec | PorProgram.NpcPortraitBases, EncounterHost.CreateNpc, IEncounterData |
 | 0x1F42C | see `start-menu.md` 4. Add, Remove, Drop, View | W | play | Pm Ecl Sv | C#, spec | PorParty.RefreshOnLoad, HallScreens.Run, CombatScreen.Icon |
-| 0x1F5E8 | game load (from the party menu) | W | play | Sv | C#, spec | PorTextCatalog, PorGame.LoadAtPartyMenu, PorGame.Loaded |
+| 0x1F5E8 | game load (from the party menu) | W | play | Sv | C#, spec | PorTextCatalog, PorGame.LoadAtPartyMenu, PorGame.Loaded, PorGame.ReloadSavedMap (s48: a hall Load reloads the marker slots) |
 | 0x1FD3E | game save | W | play | Sv | C#, spec | PorSaveGame.Build, PorParty.Save, PorGame.UnstartedSave |
-| 0x202BB | [?] NEWECL helper: disk number DS:5376 check, writes DS:6AAD / 6AAE, may ask through the menu 0x2CC8C and save 0x1FD3E | U | play | Ecl | — | — |
+| 0x202BB | NEWECL helper: when ECL<disk>.dax is missing, the save-and-exit / insert-disk menu; S steps the party back one square, saves and quits | N | play | Ecl | spec | — |
 | 0x203C6 | empty routine (unit init or empty handler) | W | play | Su | — | — |
 
 #### Unit 0x2069D–0x20F97 (stub 82): end game (4 routines: W 3 (1 by execution), U 1)
@@ -895,10 +909,10 @@ Library segments (status L, not listed one by one):
 |---|---|---|---|---|---|---|
 | 0x206A3 | end-game animation | W | pres | End | C#, spec | DelayRequest.Chained, EndGamePicture.EndGameAnimation, EndGame.FrameTime |
 | 0x20941 | end game | W | play | End | C#, spec | PorTextCatalog, HallScreens.Learn, ClientPlayer.Program |
-| 0x20D50 | [?] after a load or a script switch: overland / area picture set-up (calls 0x2DE38, picture draw) | U | pres | Ex Sv | — | — |
+| 0x20D50 | [?] after a load or a script switch: overland / area picture set-up (calls 0x2DE38, picture draw) | U | pres | Ex Sv | spec | — |
 | 0x20F93 | empty routine (unit init or empty handler) | W | play | Su | — | — |
 
-#### Unit 0x2103A–0x23B4B (stub 85): items: View, Items page, Trade, use, halve / join (21 routines: W 17 (11 by execution), P 4)
+#### Unit 0x2103A–0x23B4B (stub 85): items: View, Items page, Trade, use, halve / join (21 routines: W 19 (13 by execution), P 2)
 
 | Address | Role | St | Kind | Paths | Evidence | Port (C#) |
 |---|---|---|---|---|---|---|
@@ -906,25 +920,25 @@ Library segments (status L, not listed one by one):
 | 0x21547 | see `start-menu.md` 4. Add, Remove, Drop, View | W | play | Pm Ex Cb Cp Sh | oracle (caller), C#, spec | ClientResources.Gender, CharacterView.Run, CharacterView.DropMoney |
 | 0x21642 | see `start-menu.md` After every key but Exit | W | play | Pm Ex Cb Cp Sh | oracle (caller), C#, spec | CharacterView.Run, CharacterView.TradeMoney, CombatChooser.ChooseView |
 | 0x2193B | see `start-menu.md` Modify | W | play | Pm Ex Cb Cp Sh | oracle (caller), C#, spec | CombatSheet, CombatSheet.Build, DrawSheet |
-| 0x21AED | View menu (character page) | P | play | Pm Ex Cb Cp Sh | C#, spec, `[?]`×1 | Program, GameAction, HallScreens.Run |
+| 0x21AED | View menu (character page) | P | play | Pm Ex Cb Cp Sh | C#, spec | Program, GameAction, HallScreens.Run |
 | 0x21DAA | see `camp.md` View from the camp, shop, temple and loot menu | W | play | Pm Ex Cb Cp Sh | C#, spec | CharacterView.ProgramItems, CharacterView.SellOnPage, CharacterView.LetGoOnPage |
 | 0x21F32 | see `start-menu.md` 4. Add, Remove, Drop, View | W | play | Pm Ex Cb Cp Sh | C#, spec | Program, CombatChooser.Choose, SheetRequest.CharacterPageRequest |
 | 0x2250A | see `combat-menu.md` View / Use | W | play | Pm Ex Cb Cp Sh | C#, spec | CombatMsg, FightKit.Create, MonsterAi.EquipWeapon |
 | 0x2276E | see `camp.md` View from the camp, shop, temple and loot menu | W | play | Pm Ex Cb Cp Sh | oracle, C#, spec | PorTextCatalog.Overlay, CharacterView, CharacterView.TradeItem |
 | 0x22827 | see `combat-menu.md` View / Use | W | play | Pm Ex Cb Cp Sh | oracle, C#, spec | CombatMsg, FightItemScreens.Use, FightItemScreens.Halve |
 | 0x228D7 | see `combat-menu.md` View / Use | W | play | Pm Ex Cb Cp Sh | oracle, C#, spec | FightItemScreens.Use, FightItemScreens.Join |
-| 0x22AC4 | see `combat-menu.md` View / Use | W | play | Pm Ex Cb Cp Sh | oracle, C#, spec | CombatMsg, CombatChooser.ChooseScrollSpell, FightSpells.Ai |
+| 0x22AC4 | see `camp.md` Magic menu | W | play | Pm Ex Cb Cp Sh | oracle, C#, spec | CombatMsg, TradeContext.UseItem, CombatChooser.ChooseScrollSpell |
 | 0x22D28 | see `camp.md` Sell and Id over the Items page | W | play | Pm Ex Cb Cp Sh | C#, spec | CharacterView.SellOnPage, TradeContext.TalkOverItemsPage, Draw |
-| 0x22F8C | shop Sell / Id box | P | play | Pm Ex Cb Cp Sh | C#, spec, `[?]`×1 | CharacterView.IdentifyOnPage, CharacterView.Identify, TradeContext.TalkOverItemsPage |
+| 0x22F8C | shop Id box | W | play | Pm Ex Cb Cp Sh | oracle, C#, spec | CharacterView.IdentifyOnPage, CharacterView.Identify, TradeContext.TalkOverItemsPage |
 | 0x23190 | see `start-menu.md` 4. Add, Remove, Drop, View | W | play | Pm Ex Cb Cp Sh | C#, spec | PorTextCatalog.Overlay, PartyMenuFlow.Coins, CharacterView |
 | 0x234E1 | see `start-menu.md` 4. Add, Remove, Drop, View | W | play | Pm Ex Cb Cp Sh | C#, spec | Program, SheetRequest.CharacterPageRequest, CharacterPageRequest.PickRows |
 | 0x23795 | see `camp.md` View from the camp, shop, temple and loot menu | W | play | Pm Ex Cb Cp Sh | oracle (caller), C#, spec | TradeRules.GiveItem, ShopRules.CanCarry, ShopRules.GiveCopy |
-| 0x23819 | party member selection (Next / Prev member) | P | play | Pm Ex Ecl Enc Cb Cp Sh | C#, spec, `[?]`×2 | PartyMenuFlow.ViewPage, ChoiceRequest.PreviousMember, TradeContext.SelectMember |
+| 0x23819 | party member selection (Home / End; any other key → the first member) | W | play | Pm Ex Ecl Enc Cb Cp Sh | oracle, C#, spec | PartySelection.Select |
 | 0x238F8 | see `shop-format.md` Gold total | W | play | Pm Ex Cb Cp Sh Lv | oracle (caller), C#, spec | Money, Money.CharacterGold |
-| 0x239D6 | spell list window (type, action) | P | pres | Pm Ex Cb Cp Sh Lv | C#, spec, `[?]`×4 | PorTextCatalog, HallScreens.Learn, CombatChooser.ChooseSpell |
+| 0x239D6 | spell list window (type, action) | P | pres | Pm Ex Cb Cp Sh Lv | C#, spec, `[?]`×1 | PorTextCatalog, HallScreens.Learn, CombatChooser.ChooseSpell |
 | 0x23B47 | empty routine (unit init or empty handler) | W | play | Su | — | — |
 
-#### Unit 0x23DCC–0x24C30 (stub 8C): effect timeouts, camp time, rest (15 routines: W 14 (1 by execution), P 1)
+#### Unit 0x23DCC–0x24C30 (stub 8C): effect timeouts, camp time, rest (15 routines: W 15 (2 by execution))
 
 | Address | Role | St | Kind | Paths | Evidence | Port (C#) |
 |---|---|---|---|---|---|---|
@@ -933,8 +947,8 @@ Library segments (status L, not listed one by one):
 | 0x2416F | see `camp.md` Rest → | W | play | Cp | C#, spec | CampTime, CampState.CampTime, CampTime.Validate |
 | 0x241A1 | see `camp.md` Rest → | W | play | Ex Ecl Cb Cp | C#, spec | PorGame, GameClock, GameClock.Advance |
 | 0x24246 | see `camp.md` Rest → | W | play | Cp | C#, spec | CampTime, CampState.CampTime, CampTime.Decrement |
-| 0x24331 | camp time: time text / clock advance helper | P | play | Cp | C# | CampState.CampTime |
-| 0x243BC | see `camp.md` Rest → | W | play | Cp | C#, spec | RestUi.Draw, ICampRestUi, Key.Shown |
+| 0x24331 | rest-time two-digit number text | W | pres | Cp | oracle, C#, spec | CampTime.TwoDigits, CampScreens.RestUi.Two |
+| 0x243BC | see `camp.md` Rest → | W | play | Cp | C#, spec | RestUi.Draw, CampTime.TwoDigits, ICampRestUi |
 | 0x244ED | see `camp.md` Rest-time menu | W | play | Cp | C#, spec | ChoiceRequest.LeftAnswer, RestUi.ChooseRestTime, ICampRestUi |
 | 0x2463D | see `camp.md` Rest → | W | play | Cp | C#, spec | RestUi.PartyHealed, CampState.HealTicks, ICampRestUi |
 | 0x246F1 | see `camp.md` Rest → | W | play | Cp | C#, spec | ICampRestUi, CampRest.PrepTick, CampSpells |
@@ -944,7 +958,7 @@ Library segments (status L, not listed one by one):
 | 0x24A66 | rest loop | W | play | Cp | C#, spec | TradeContext.HoldPositionLine, SpellLists.CampScreens, CampScreens.Save |
 | 0x24C2C | empty routine (unit init or empty handler) | W | play | Su | — | — |
 
-#### Unit 0x24C89–0x26EE3 (stub 8F): money, treasure and loot (22 routines: W 21 (5 by execution), P 1)
+#### Unit 0x24C89–0x26EE3 (stub 8F): money, treasure and loot (22 routines: W 21 (8 by execution), P 1)
 
 | Address | Role | St | Kind | Paths | Evidence | Port (C#) |
 |---|---|---|---|---|---|---|
@@ -952,11 +966,11 @@ Library segments (status L, not listed one by one):
 | 0x24CA9 | see `camp.md` View from the camp, shop, temple and loot menu | W | play | Pm Ex Cb Cp Sh | oracle (caller), C#, spec | FightItemScreens.DropCoins, TradeRules.GiveCoins, Money |
 | 0x24CC3 | see `camp.md` View from the camp, shop, temple and loot menu | W | play | Pm Ex Cb Cp Sh | oracle (caller), C#, spec | TradeRules.GiveCoins, Money |
 | 0x24CDD | see `camp.md` View from the camp, shop, temple and loot menu | W | play | Pm Ex Cb Cp Sh | C#, spec | CharacterView.SellOnPage, Money, Money.Overloaded |
-| 0x24D31 | see `shop-format.md` Gold total | W | play | Pm Ex Cb Cp Sh | C#, spec | Money, Money.PoolGoldTotal |
-| 0x24DB9 | see `shop-format.md` Paying | W | play | Pm Ex Cb Cp Sh | C#, spec | Money, Money.SetCharacterGold |
-| 0x24E0E | see `shop-format.md` Money | W | play | Pm Ex Cb Cp Sh | C#, spec | Money, Money.SetPoolGold |
+| 0x24D31 | see `shop-format.md` Gold total | W | play | Pm Ex Cb Cp Sh | oracle (caller), C#, spec | Money, Money.PoolGoldTotal |
+| 0x24DB9 | see `shop-format.md` Paying | W | play | Pm Ex Cb Cp Sh | oracle (caller), C#, spec | Money, Money.SetCharacterGold |
+| 0x24E0E | see `shop-format.md` Money | W | play | Pm Ex Cb Cp Sh | oracle (caller), C#, spec | Money, Money.SetPoolGold |
 | 0x24E8C | see `shop-format.md` Add platinum | W | play | Sh | C#, spec | Money, Money.AddPlatinum |
-| 0x24F1D | see `camp.md` View from the camp, shop, temple and loot menu | W | play | Pm Ex Cb Cp Sh | C#, spec | PartyMenuFlow.Coins, TextRequest.Maximum, CharacterView.TradeMoney |
+| 0x24F1D | see `camp.md` View from the camp, shop, temple and loot menu | W | play | Pm Ex Cb Cp Sh | C#, spec | PartyMenuFlow.Coins, AmigaView.Number, TextRequest.Maximum |
 | 0x250D5 | see `camp.md` View from the camp, shop, temple and loot menu | W | play | Pm Ex Cb Cp Sh | oracle, C#, spec | CharacterView.TradeMoney, PartyMenuScreen.HandOver, TradeRules.GiveCoins |
 | 0x25191 | see `combat-format.md` Loot menu | W | play | Cb Sh | C#, spec | CoinTexts.MoneyScreens, MoneyScreens.Pool, IdentifyResult.PoolMoney |
 | 0x25269 | see `shop-format.md` Shop menu | W | play | Cb Sh | C#, spec | IdentifyResult.Share |
@@ -964,38 +978,38 @@ Library segments (status L, not listed one by one):
 | 0x2568A | see `combat-menu.md` View / Use | W | play | Pm Ex Cb Cp Sh | C#, spec | CharacterView.DropMoney, FightItemScreens.DropMoney, FightItemScreens.DropCoins |
 | 0x25711 | see `shop-format.md` Take | W | play | Cb Sh | C#, spec | MoneyScreens.Take, IdentifyResult.Take |
 | 0x2581C | [?] number / money text builder | P | pres | Pm Ex Cb Cp Sh | C# | GameText |
-| 0x25974 | see `combat-format.md` After combat | W | play | Cb Sh | C#, spec | CoinTexts.MoneyScreens, MoneyScreens.Take |
-| 0x25C07 | see `combat-format.md` After combat | W | play | Cb Sh | C#, spec | TradeContext.PoolHasMoney, VenueScreens.Shop |
+| 0x25974 | see `combat-format.md` After combat | W | play | Cb Sh | C#, spec | CoinTexts.MoneyScreens, MoneyScreens.Take, MoneyScreens.TakeMaximum (s48: the maximum is the pool up to 65535) |
+| 0x25C07 | see `combat-format.md` After combat | W | play | Cb Sh | C#, spec | TradeContext.PoolHasMoney, MoneyScreens.StayForMoney, VenueScreens.Shop |
 | 0x25C5B | see `item-format.md` Types 1–59, 73, 77, 93 | W | play | Tl | C#, spec | TreasureMaker.PlusRoll |
 | 0x25C99 | see `ecl-format.md` Encounters (program read 2026-11-17) | W | play | Tl | C#, spec | ClientPlayer.MakeRandomItem, EncounterHost.ItemMaker, TreasureMaker |
 | 0x2663B | see `combat-format.md` Shop | W | play | Sh | C#, spec | CoinTexts.MoneyScreens, MoneyScreens.Appraise, VenueScreens.Appraise |
 | 0x26EDF | empty routine (unit init or empty handler) | W | play | Su | — | — |
 
-#### Unit 0x27018–0x2A7CC (stub 96): spells: cast, spell lists, spell routines 1–67 (74 routines: W 69 (33 by execution), P 4, U 1)
+#### Unit 0x27018–0x2A7CC (stub 96): spells: cast, spell lists, spell routines 1–67 (74 routines: W 74 (39 by execution))
 
 | Address | Role | St | Kind | Paths | Evidence | Port (C#) |
 |---|---|---|---|---|---|---|
 | 0x270A2 | see `combat-menu.md` The combat screen (Client) | W | play | Pm Ex Cb Cp Sh Lv | C#, spec | HallScreens.Learn, ListRequest.Spell, ListRequest.SpellPageLayout |
-| 0x272A5 | see `combat-menu.md` The combat screen (Client) | W | play | Pm Ex Cb Cp Sh Lv | C#, spec | ListKind.ScrollList |
-| 0x27466 | scroll spell list (readable items) | P | play | Pm Ex Cb Cp Sh Lv | C#, spec, `[?]`×1 | ListKind.ScrollList |
-| 0x27534 | [?] scroll read helper: sets DS:6B80 / 6B82 and DS:4843 around 0x27466 | U | play | Pm Ex Cb Cp Sh Lv | — | — |
-| 0x275B4 | see `combat-menu.md` The combat screen (Client) | W | play | Pm Ex Cb Cp Sh Lv | C#, spec | ListKind.ScrollList, Entry.Learnable |
+| 0x272A5 | see `combat-menu.md` The combat screen (Client) | W | play | Pm Ex Cb Cp Sh Lv | oracle (caller), C#, spec | FightSpells.Castable, ListKind.ScrollList |
+| 0x27466 | scroll spell list (readable items) | W | play | Pm Ex Cb Cp Sh Lv | oracle (caller), C#, spec | CampSpells.ScrollList, CampSpells.List |
+| 0x27534 | scroll lists of modes 3 / 6: clears DS:477F / DS:4843, 0x27466 per readable item | W | play | Pm Ex Cb Cp Sh Lv | oracle (caller), spec | CampSpells.List |
+| 0x275B4 | see `combat-menu.md` The combat screen (Client) | W | play | Pm Ex Cb Cp Sh Lv | oracle, C#, spec | RestUi.SpellPage, FightSpells.Castable, FightSpells.MemorisedList |
 | 0x27741 | see `combat-menu.md` Cast , from the menu with no spell) | W | play | Pm Ex Cb Cp Sh | oracle (caller), C#, spec | FightSpells.AimAuto, FightSpells, FightSpells.Range |
 | 0x277EE | see `spells-effects.md` Duration | W | play | Pm Ex Cb Cp Sh | oracle (caller), C#, spec | FightSpells, FightSpells.Duration |
 | 0x278DB | see `combat-menu.md` The combat screen (Client) | W | play | Pm Ex Cb Cp Sh | oracle (caller), C#, spec | PorTextCatalog, FightSpells, FightSpells.Around |
-| 0x27AA9 | spell routine for spell 0 | W | play | Pm Ex Cb Cp Sh | C#, spec | MemberPick, RestUi.PickTarget, CampCast |
-| 0x27C38 | cast a spell (pick, aim, routine call) | P | play | Pm Ex Cb Cp Sh | C#, spec, `[?]`×1 | CombatChooser.ChooseAim, CombatChooser.ChooseSpell, CombatMsg |
+| 0x27AA9 | spell routine for spell 0 | W | play | Pm Ex Cb Cp Sh | C#, spec | MemberPick, RestUi.PickTarget, RestUi.UseItem |
+| 0x27C38 | cast a spell (pick, aim, routine call) | W | play | Pm Ex Cb Cp Sh | oracle (out of a fight; the fight branch against the program's rules, Core by citation), C#, spec | CampCast.Run, FightSpells.CastNow, FightMenu.CastNow |
 | 0x27F67 | see `spells-effects.md` Spells | W | play | Pm Ex Cb Cp Sh | C#, spec | FightSpells.CastOneSide, EffectTexts, EffectTexts.BySpell |
 | 0x28027 | spell routine for spell 1 | W | play | Pm Ex Cb Cp Sh | C#, spec | FightSpells.Routine |
 | 0x28058 | spell routine for spell 2 | W | play | Pm Ex Cb Cp Sh | C#, spec | FightSpells.Routine |
-| 0x28083 | spell routine for spell 3 | W | play | Pm Ex Cb Cp Sh | C#, spec | OutsideEffectMessages.Show, CombatChooser.SpellEvent, RestUi.CastOne |
+| 0x28083 | spell routine for spell 3 | W | play | Pm Ex Cb Cp Sh | C#, spec | OutsideEffectMessages.Show, CombatChooser.SpellEvent, RestUi.WithCastMessages |
 | 0x280BF | spell routine for spell 4 | W | play | Pm Ex Cb Cp Sh | C#, spec | FightSpells.Routine |
 | 0x28101 | spell routine for spells 5, 11, 18, 22, 29 | W | play | Pm Ex Cb Cp Sh | C#, spec (inside) | FightSpells.Routine, EffectTexts.BySpell |
 | 0x2813B | spell routine for spells 6, 7, 16, 17, 52, 53, 54 | W | play | Pm Ex Cb Cp Sh | C#, spec (inside) | FightSpells.Routine, EffectTexts.BySpell |
 | 0x2817A | spell routine for spell 8 | W | play | Pm Ex Cb Cp Sh | C#, spec (inside) | FightSpells.Routine, EffectTexts.BySpell |
 | 0x281A8 | spell routine for spell 9 | W | play | Pm Ex Cb Cp Sh | C#, spec | FightSpells.Routine |
 | 0x281F5 | spell routine for spell 10 | W | play | Pm Ex Cb Cp Sh | C#, spec | FightSpells.Routine, FightSpells.CharmPerson, EffectTexts.BySpell |
-| 0x282BD | spell routine for spell 12 | P | play | Pm Ex Cb Cp Sh | C#, spec, `[?]`×1 | FightSpells.Routine, FightSpells.Enlarge |
+| 0x282BD | spell routine for spell 12 | W | play | Pm Ex Cb Cp Sh | C#, spec | FightSpells.Routine, FightSpells.Enlarge, FightSpells.Sleep |
 | 0x28386 | spell routine for spell 13 | W | play | Pm Ex Cb Cp Sh | C#, spec | FightSpells.Routine |
 | 0x283F0 | spell routine for spell 14 | W | play | Pm Ex Cb Cp Sh | C#, spec | FightSpells.Routine, EffectTexts.BySpell |
 | 0x28451 | spell routine for spell 15 | W | play | Pm Ex Cb Cp Sh | C#, spec, seen only | FightSpells.Routine |
@@ -1028,8 +1042,8 @@ Library segments (status L, not listed one by one):
 | 0x29683 | spell routine for spells 47, 64 | W | play | Pm Ex Cb Cp Sh | oracle, C#, spec | FightSpells.FireballRangeCell, FightSpells.MoreRoutine, FightSpells.Fireball |
 | 0x2977C | see `spells-effects.md` Spells | W | play | Pm Ex Cb Cp Sh | oracle (caller), C#, spec | EffectTexts, EffectTexts.BySpell, FightSpells.OneSideRate |
 | 0x298AA | spell routine for spell 48 | W | play | Pm Ex Cb Cp Sh | oracle, C#, spec | EffectTexts.BySpell, FightSpells.MoreRoutine |
-| 0x298D4 | see `spells-effects.md` Handlers 73–139 | W | play | Pm Ex Ecl Cb Cp Sh Kd | oracle (caller), C#, spec, `[?]`×2 | FightSpells.BoltHit |
-| 0x29973 | see `combat-menu.md` The combat screen (Client) | W | play | Pm Ex Ecl Cb Cp Sh Kd | oracle (caller), C#, spec, `[?]`×1 | Body.LineWalk, FlightAnimation.Bolt, FightSpells.Bolt |
+| 0x298D4 | see `spells-effects.md` Handlers 73–139 | W | play | Pm Ex Ecl Cb Cp Sh Kd | oracle (caller), C#, spec | FightSpells.BoltHit |
+| 0x29973 | see `combat-menu.md` The combat screen (Client) | W | play | Pm Ex Ecl Cb Cp Sh Kd | oracle (caller), C#, spec | Body.LineWalk, FlightAnimation.Bolt, FightSpells.Bolt |
 | 0x29BCF | spell routine for spell 51 | W | play | Pm Ex Cb Cp Sh | oracle, C#, spec | FightSpells.MoreRoutine |
 | 0x29C21 | spell routine for spell 55 | W | play | Pm Ex Cb Cp Sh | oracle, C#, spec | EffectTexts.BySpell, FightSpells.MoreRoutine |
 | 0x29C5B | spell routine for spell 56 | W | play | Pm Ex Cb Cp Sh | oracle, C#, spec | FightSpells.MoreRoutine, FightSpells.RestorationResidueIndex |
@@ -1043,11 +1057,11 @@ Library segments (status L, not listed one by one):
 | 0x2A070 | spell routine for spell 65 | W | play | Pm Ex Cb Cp Sh | oracle, C#, spec | FightSpells.MoreRoutine |
 | 0x2A0AA | spell routine for spell 66; empty routine (unit init or empty handler) | W | play | Pm Ex Cb Cp Sh | C#, spec | FightSpells.MoreRoutine |
 | 0x2A0BA | spell routine for spell 67 | W | play | Pm Ex Cb Cp Sh | oracle, C#, spec | EffectTexts.BySpell, FightSpells.MoreRoutine |
-| 0x2A0F1 | effect handler 88 | P | play | Pm Ex Ecl Cb Cp Sh Kd | C#, spec, `[?]`×1 | PorTextCatalog, CombatMsg, EffectHandlers.CallHoldHandlers |
+| 0x2A0F1 | effect handler 88 | W | play | Pm Ex Ecl Cb Cp Sh Kd | oracle, C#, spec | PorTextCatalog, CombatMsg, EffectHandlers.CallHoldHandlers |
 | 0x2A255 | see `combat-menu.md` View / Use | W | play | Pm Ex Cb Cp Sh Lv | oracle (caller), C#, spec | TradeContext.IsScroll, FightSpells.IsScroll, FightSpells.UseItemNow |
-| 0x2A2A2 | see `camp.md` Rest → | W | play | Pm Ex Cb Cp Sh | oracle (caller), C#, spec, `[?]`×1 | FightSpells.UseItemNow, FightSpells.RemoveScrollSpell, ListKind.RemoveFromScroll |
-| 0x2A332 | see `combat-menu.md` The combat screen (Client) | W | play | Pm Ex Cb Cp Sh | C#, spec | CombatMsg, CombatChooser.SayCast |
-| 0x2A42B | see `spells-effects.md` Data-segment cells | W | play | Su | oracle, C#, spec, `[?]`×1 | FightSpells |
+| 0x2A2A2 | see `camp.md` Rest → | W | play | Pm Ex Cb Cp Sh | oracle (caller), C#, spec | FightSpells.UseItemNow, FightSpells.SpendItem, FightSpells.RemoveScrollSpell |
+| 0x2A332 | see `combat-menu.md` The combat screen (Client) | W | play | Pm Ex Cb Cp Sh | C#, spec | CombatMsg, CombatChooser.SayCast, RestUi.CastOne |
+| 0x2A42B | see `spells-effects.md` Data-segment cells | W | play | Su | oracle, C#, spec | RestUi.UseItem, FightSpells |
 | 0x2A7C8 | empty routine (unit init or empty handler) | W | play | Su | — | — |
 
 #### Unit 0x2AA87–0x2AEE9 (stub AC): level stats (5 routines: W 5 (5 by execution))
@@ -1066,23 +1080,23 @@ Library segments (status L, not listed one by one):
 |---|---|---|---|---|---|---|
 | 0x2AEEA | see `combat-format.md` The fight | W | play | Pm Ex Ecl Cb Cp Sh Kd | oracle, C#, spec | PorTextCatalog, FightKit.Create, MonsterAi.ItemHandler |
 | 0x2AF10 | see `camp.md` Rest → | W | play | Pm Ex Ecl Cb Cp Sh Kd | oracle, C#, spec | PorGame.OutsideEffects, CampScreens.Rest, IFightEffects |
-| 0x2B04A | see `combat-format.md` The fight | W | play | Pm Ex Ecl Cb Cp Sh Kd | oracle (caller), C#, spec | InAuraRange, EffectHandlers, EffectHandlers.AuraEffects |
-| 0x2B1E4 | see `combat-format.md` The fight | W | play | Pm Ex Ecl Cb Cp Sh Kd | oracle (caller), C#, spec, `[?]`×1 | BaseItemTable.IFightEffects, IFightEffects, FightRules.TriggerDamageAttacker |
-| 0x2B9D1 | see `combat-format.md` The fight | W | play | Pm Ex Cb Cp Sh | oracle (caller), C#, spec, `[?]`×2 | IFightEffects, EndOfRoundCreature, FightMenu.Move |
+| 0x2B04A | see `combat-format.md` The fight | W | play | Pm Ex Ecl Cb Cp Sh Kd | oracle (caller), C#, spec | InAuraRange, EffectHandlers.CharmGazeRangeResidue, EffectHandlers |
+| 0x2B1E4 | see `combat-format.md` The fight | W | play | Pm Ex Ecl Cb Cp Sh Kd | oracle (caller), C#, spec | BaseItemTable.IFightEffects, IFightEffects, FightRules.TriggerDamageAttacker |
+| 0x2B9D1 | terrain effects (stinking cloud) after a step and at the end of round | W | play | Pm Ex Cb Cp Sh | oracle, C#, spec | IFightEffects, EndOfRoundCreature, FightMenu.Move |
 | 0x2BB39 | see `combat-format.md` The fight | W | play | Kd | C#, spec | FightRules.AttackRollNoAttacker, EclPartyRules.Hits |
 | 0x2BBA1 | see `combat-format.md` The fight | W | play | Pm Ex Ecl Cb Cp Sh Kd | oracle (caller), C#, spec | FightRules.AttackRoll, FightSpells.Resolve |
-| 0x2BC4D | see `combat-format.md` The fight | W | play | Pm Ex Ecl Cb Cp Sh Kd | oracle (caller), C#, spec | EffectHandlers, EffectCells.SaveRoll, EffectHandlers.SavingThrow |
+| 0x2BC4D | see `combat-format.md` The fight | W | play | Pm Ex Ecl Cb Cp Sh Kd | oracle, C#, spec | EffectHandlers, EffectCells.SaveRoll, EffectHandlers.SavingThrow |
 | 0x2BCCD | see `camp.md` Rest → | W | play | Pm Ex Ecl Enc Cb Cp Sh Tl Lv Kd | oracle (caller), C#, spec | IFightGeometry.FightRules, FightRules.Dice, AiMessage.MonsterAi |
 | 0x2BD18 | see `combat-format.md` The fight | W | play | Pm Ex Ecl Cb Cp Sh Kd | oracle (caller), C#, spec | FightRules.WeaponDamage, EffectHandlers.CallMoreHandlers, EffectHandlers.DamageDiceRoll |
 | 0x2BD3C | see `start-menu.md` 3. Create | W | play | Pm Ex Ecl Cb Cp Sh Kd | oracle (caller), C#, spec | EffectHandlers.PoisonAttack, EffectHandlers, EffectHandlers.FindEffect |
 | 0x2BDF0 | see `combat-format.md` The fight | W | play | Pm Ex Ecl Cb Cp Sh Kd | C#, spec | CombatChooser.FleeMessage, CombatMsg, CombatChooser.AiSays |
-| 0x2BEBC | see `camp.md` Magic menu | W | play | Pm Ex Ecl Cb Cp Sh Kd | oracle (caller), C#, spec, `[?]`×1 | FightRules.InvisibilityEffect, FightRules.AttackRoll, FightRules.RemoveInvisibility |
+| 0x2BEBC | see `camp.md` Magic menu | W | play | Pm Ex Ecl Cb Cp Sh Kd | oracle (caller), C#, spec | FightRules.InvisibilityEffect, FightRules.AttackRoll, FightRules.RemoveInvisibility |
 | 0x2BEF4 | see `combat-format.md` The fight | W | play | Pm Ex Ecl Cb Cp Sh Kd | oracle (caller), C#, spec, `[?]`×2 | CombatChooser.AttackEnd, CombatChooser.EffectMessage, FightRules.DroppedEffects |
 | 0x2BF2B | see `combat-format.md` The fight | W | play | Cb | C#, spec | MonsterAi.MoraleEffects |
 | 0x2BF6B | see `combat-format.md` The fight | W | play | Pm Ex Cb Cp Sh | oracle (caller), C#, spec | FightSpells.Routine, FightSpells.RemoveWithMessage |
 | 0x2BFCE | see `combat-format.md` The fight | W | play | Pm Ex Ecl Cb Cp Sh Kd | oracle (caller), C#, spec | EffectHandlers.StrengthCode |
 | 0x2BFF7 | see `combat-format.md` The fight | W | play | Pm Ex Ecl Cb Cp Sh Kd | oracle (caller), C#, spec | EffectHandlers.StrengthFromCode |
-| 0x2C046 | see `combat-format.md` The fight | W | play | Pm Ex Ecl Cb Cp Sh Kd | oracle (caller), C#, spec, `[?]`×2 | FightSpells.Enlarge, EffectHandlers.RaiseStrength, EffectHandlers.Gauntlets |
+| 0x2C046 | see `combat-format.md` The fight | W | play | Pm Ex Ecl Cb Cp Sh Kd | oracle (caller), C#, spec, `[?]`×1 | FightSpells.Enlarge, EffectHandlers.RaiseStrength, EffectHandlers.Gauntlets |
 | 0x2C22E | see `combat-format.md` The fight | W | play | Pm Ex Ecl Cb Cp Sh Kd | oracle (caller), C#, spec | CombatChooser.AttackMade, CombatChooser.EffectMessage, CombatMsg |
 | 0x2C540 | see `camp.md` Magic menu | W | play | Pm Ex Ecl Cb Cp Sh Kd | oracle (caller), C#, spec | PorTextCatalog, CombatChooser.AttackMade, CombatChooser.EffectMessage |
 | 0x2C647 | see `camp.md` Heal | W | play | Pm Ex Ecl Cb Cp Sh Kd | oracle (caller), C#, spec | CampScreens.Rest, FightSpells.Routine, EffectHandlers.CallHandler |
@@ -1170,13 +1184,13 @@ Library segments (status L, not listed one by one):
 
 | Address | Role | St | Kind | Paths | Evidence | Port (C#) |
 |---|---|---|---|---|---|---|
-| 0x2FB52 | see `spells-effects.md` Handlers 73–139 | W | play | Pm Ex Ecl Cb Cp Sh Kd | oracle (caller), C#, spec, `[?]`×1 | CombatMap, FightSpells.LightningBreath |
+| 0x2FB52 | see `spells-effects.md` Handlers 73–139 | W | play | Pm Ex Ecl Cb Cp Sh Kd | oracle (caller), C#, spec | CombatMap, FightSpells.LightningBreath |
 | 0x2FB80 | see `combat-map.md` Combat map: arena, placement, lines, moves (Pool of Radiance, DOS v1.3) | W | play | Pm Ex Ecl Cb Cp Sh Kd | oracle (caller), C#, spec | BuildTargetList, SortTargets |
 | 0x2FCF2 | see `combat-menu.md` The combat screen (Client) | W | play | Pm Ex Ecl Cb Cp Sh Kd | oracle (caller), C#, spec | CombatChooser.Flight, Body.LineWalk, LineWalk.Start |
 | 0x2FE1E | see `combat-menu.md` The combat screen (Client) | W | play | Pm Ex Ecl Cb Cp Sh Kd | oracle (caller), C#, spec | CombatChooser.Flight, Body.LineWalk, LineWalk.Next |
-| 0x2FF74 | see `combat-menu.md` Aim | W | play | Pm Ex Ecl Cb Cp Sh Kd | oracle (caller), C#, spec, `[?]`×2 | ManualView, ManualView.LineReached, FightMenu.Manual |
+| 0x2FF74 | see `combat-menu.md` Aim | W | play | Pm Ex Ecl Cb Cp Sh Kd | oracle (caller), C#, spec, `[?]`×1 | ManualView, ManualView.LineReached, FightMenu.Manual |
 | 0x300CD | see `combat-menu.md` Cast , from the menu with no spell) | W | play | Pm Ex Ecl Cb Cp Sh Kd | oracle, C#, spec | FightSpells.CastNow, Body.IsDirToward |
-| 0x3045B | see `combat-menu.md` Candidates | W | play | Pm Ex Ecl Cb Cp Sh Kd | oracle, C#, spec | FightSpells.AimAuto, SpellTable.IFightTargetList, MonsterAi.AreaAround |
+| 0x3045B | see `combat-menu.md` Candidates | W | play | Pm Ex Ecl Cb Cp Sh Kd | oracle, C#, spec | FightSpells.AimAuto, CombatCastOutcome.IFightTargetList, MonsterAi.AreaAround |
 | 0x3072B | empty routine (unit init or empty handler) | W | play | Su | spec | — |
 
 #### Unit 0x3073A–0x31A39 (stub 3E0): combat arena: cells, targets, icons, distance (23 routines: W 23 (19 by execution))
@@ -1191,7 +1205,7 @@ Library segments (status L, not listed one by one):
 | 0x30A0F | see `combat-menu.md` The combat screen (Client) | W | play | Pm Ex Ecl Cb Cp Sh Kd | C#, spec | CombatView.Scroll, CombatChooser.Downed, Fight.TurnEnded |
 | 0x30ADA | see `spells-effects.md` Spells | W | play | Pm Ex Ecl Cb Cp Sh Kd | oracle, C#, spec | EffectHandlers.PutOutOfPlay, CombatMap, CombatMap.Rebuild |
 | 0x30BF8 | see `combat-menu.md` Aim | W | play | Pm Ex Ecl Cb Cp Sh Kd | oracle (caller), C#, spec | FightSpells.CureTarget, CombatMap.Contents, FightSpells.StinkingCloud |
-| 0x30C65 | see `spells-effects.md` Spells | W | play | Pm Ex Ecl Cb Cp Sh Kd | oracle (caller), C#, spec | EffectHandlers.PutOutOfPlay |
+| 0x30C65 | see `spells-effects.md` Spells | W | play | Pm Ex Ecl Cb Cp Sh Kd | oracle (caller), C#, spec | CombatChooser.StepDrawing, EffectHandlers.PutOutOfPlay, Fight.StepDrawing |
 | 0x30E23 | see `combat-menu.md` The combat screen (Client) | W | play | Pm Ex Ecl Cb Cp Sh Kd | oracle (caller), C#, spec | CombatView.InView |
 | 0x30E54 | see `combat-menu.md` The combat screen (Client) | W | play | Pm Ex Ecl Cb Cp Sh Kd | oracle (caller), C#, spec | CombatChooser.DefenderTurned, CombatChooser.FacingDrawn, CombatChooser.AnyCellInView |
 | 0x30F0E | see `combat-menu.md` View scrolling | W | play | Pm Ex Ecl Cb Cp Sh Kd | oracle (caller), C#, spec | CombatView.Rebuild |

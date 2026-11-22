@@ -230,6 +230,9 @@ square itself; DS:2736 / DS:273F), each looked up with 0x30BF8 (slot, ground):
 Used by the AI (0xAFA4) and the Items screen's Use (`combat-menu.md` "View / Use"). Code: `FightSpells.UseItemNow`.
 
 1. DS:6DBF = 0. A scroll (0x2A255): DS:6B80 = the item, the spell is chosen from it (spell list 0x239D6, mode 2).
+   The list returns DS:476A[row], which the row routine 0x272A5 stores as the byte AND 0x7F (0x2744F; 0x270A2 reads
+   it at 0x27265): **bit 7 of a scroll pick is not kept** (settled s49, oracle `por_spellcast_oracle.py`), so 0x27C38 and
+   0x2A2A2 get the plain spell number.
    Else an item with power 0x3D > 0 and kind 0x3E < 0x80: DS:6DBF = 1, spell = 0x3D. No spell → done = 0, return.
 2. A player in a fight (0x10F = 0): START 0x3728 (screen). Non-scrolls: spell above 0x38 → − 0x17 (item powers
    57–67). A message naming the user and the item (drawing).
@@ -306,4 +309,3 @@ done, combat record, item list after); 160 Halve / Join cases. All match.
 - 0x14E38 with a nil target.
 - No DOSBox capture of an AI cast or item use yet (no casts in `fight_quick`: no NPCs, quick magic off); the rules
   below "Casts by the AI" and "Item use" are checked under emulation only.
-- The spell 0x239D6 returns for a scroll, as 0x2A2A2 and 0x27C38 get it (bit 7 kept or not `[?]`).

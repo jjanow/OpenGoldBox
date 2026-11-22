@@ -144,6 +144,16 @@ not built), after the Trade the same final page as DOSBox-X. The Amiga View does
 equipment pointers at record +0xCE, item count +0xC9, hands +0x102, weight +0x104; called from seven hunks) on the
 current creature first; the View loop (+0x52E8) draws the page on entry (+0x531A) and after I, T, S (+0x5540–0x5554),
 not after D (+0x54F6: the money lines +0x4DB6 only) or R. The Client's shared loop is right for both.
+**View's Spells outside a fight (P s49, D s49).** S runs the spell list 0x239D6 in show mode (0x21D05: kind 0, action
+0, the position word −1): the member's memorised list on the list's screen with Exit only; its exit draws the View page
+again (S is in the redraw set) with the shared highlight on the first word (the list routine stored 1). Before s49 the
+Client gave its not-built notice. Client: `TradeContext.ShowMemorised` → `CampScreens.ShowMemorised` (the camp's,
+shop's, temple's, loot menu's and command line's View; the party menu's View still gives the notice). **D** (s49, save
+A, camp, Brother Sean: End ×3, E, V, S, E): the list (title, level heading, three rows with the last lit, Exit) and
+the View page after it equal to DOSBox-X by eye.
+**Member selection in the camp (D s49).** Home on the first member lights the last, End on the last the first; Up (any
+extended key but Home / End) makes the first member current, and PgUp on the 3D command line too (`shop-format.md`
+"Party selection"): seen in DOSBox-X; the Client wires Home / End only.
 
 **Items and Drop from View** (P + D, s39). Items is 0x21F32 in every venue: its page (0x221DE–0x2229B: braid rows 0, 2,
 23; the name with "'S" and the title on row 1, the heading on row 3, the list window (1,5)–(38,22)) and the item list
@@ -221,7 +231,11 @@ Then the text box is cleared and DS:6DDA := 0.
 
 **Rest-time menu 0x244ED**: highlighted word starts at 2 (minutes). Shows its label (0x243AF) at column 1, row 17, then days
 and hours (two digits each, with a colon between), then minutes as 10 × ten-minutes + minutes; the highlighted word in white
-(0x243BC). Menu (0x244A5): Rest, Days (hotkey Y), Hours, Mins, Inc, Dec, Exit. Extended keys: Up = Inc, Down = Dec, Left = the next word up
+(0x243BC). **The digits (0x24331, v: byte) — W, E**: a string function, called only from 0x243BC (twice; no stub entry):
+the decimal text of v (START 0x1BD7), a 0 put before it when v < 10, then its first two characters (Copy 1, 2), so 7
+gives two digits with a leading zero and 123 gives its first two digits. 0x243BC pushes the low byte of each value:
+days (DS:6DCA), hours (DS:6DC8), and 10 × DS:6DC6 + DS:6DC4 for minutes. Core `CampTime.TwoDigits`, the Client's
+`RestUi.Two`; checked for 0..255 under unicorn (`tools/scripts/por_cast_oracle.py`, `CombatCastProgramTests`). Menu (0x244A5): Rest, Days (hotkey Y), Hours, Mins, Inc, Dec, Exit. Extended keys: Up = Inc, Down = Dec, Left = the next word up
 (past days back to minutes), Right = the next word down (past minutes to days); other extended keys do nothing.
 Enter = Rest. **D** (s38, 3000 cycles): Left / Right move the field on row 17 (minutes → days → hours → minutes for
 Right) and leave row 24's lit word as it is; a hotkey lights its word. The menu routine (0x2CC8C) lights an entry
@@ -299,10 +313,32 @@ table byte 7 = 0 → the spell name (row 19), the combat-only line 0x27BC6 (row 
 is removed, START 0x202B). The question is the yes/no routine 03C5:0039 at 0x27CCA with colours 13, 15, 10 (the words
 white, the lit word and the hotkeys green, as the temple's pay question). **D** (s47, save A, camp, Rhiannon's Sleep):
 "LOSE IT? YES NO" with Y green, ES white, NO green and No lit; the Client (`CampScreens.CastOne`) equal pixel for pixel
-on the whole screen. That branch runs when DS:6DBF = 0; with DS:6DBF ≠ 0 (a spell cast from an item, by its texts)
-the routine shows the item's combat-only lines instead (0x27CDE–0x27D13) and asks 0x27D30 with the same colours; Yes
-sets the caller's byte ([bp+6] := 1, 0x27D3C) `[?]`: what sets DS:6DBF and what the caller does with that byte are not
-read, and the Client does not build that branch. Else the cast message (0x27C16) and the spell name (a key), then the non-combat target handler **0x27AA9**: DS:6DB5
+on the whole screen. That branch runs when DS:6DBF = 0; with DS:6DBF ≠ 0 (an item casts: the item use 0x22AC4 sets it for every
+item, scrolls included) the routine shows the item's combat-only lines instead (0x27CDE–0x27D13) and asks 0x27D30 with
+the same colours; Yes sets done ([bp+6] := 1, 0x27D3C), which makes 0x22AC4 spend the item's charge or the scroll's
+spell with no effect; No leaves done at 0 and nothing is used (read s49, `spells-effects.md` "Cast").
+
+**Use on the Items page outside a fight** (0x222F0, DS:49F3 = 2–4: the camp and the command line's View; read s49,
+W): an item not readied → the must-be-readied message on row 24 (START 0x2233), nothing else; a scroll, or power
+0x3D > 0 with kind 0x3E < 0x80 → the item use 0x22AC4 with the page's done (0 here); afterwards done := 0 (0x22351), so
+the Items page stays. 0x22AC4: DS:6DBF := 0; a scroll: DS:6B80 := the item and the spell from its list (0x239D6
+mode 2, action Cast; the row's byte AND 0x7F; none → nothing); else power item: DS:6DBF := 1, spell = power (above
+0x38: − 0x17), then its message: START 0x16EC(user, the uses-an-item words, 10, no pause), the item label and name
+through START 0xFE2 at row 22 `[?]` (exact placing not read), PauseOnly, START 0x2383. Then DS:6DBF := 1 and the cast
+0x27C38(spell, the user's 0x10F, announce 0, var done), DS:6DBF := 0. Done → a scroll loses the spell (0x2A2A2), a
+charged stack one item, a single item one charge (none left: it leaves the list, START 0x20A9). Casting level 6, no
+memorised copy used. Core `CampCast.UseItem`; Client `CampScreens.UseItem` from `CharacterView`'s Items page.
+**D** (s49, save A with a readied wand of magic missiles and a clerical scroll of Snake Charm, Silence and Bless added
+to Thrender by `fight_save.py --item`, camp View → Items, End to the row, U): the wand gave the item's two lines over
+the Items page in the framed text box and the use-it question on row 24; Yes went back to the page with the wand lit
+and the charge spent (20 → 19 in the save written to slot B). The scroll opened its spell list (kind 2, Bless lit
+first); Snake Charm gave the item's lines over the list (no frame) and No kept it; Bless blessed the members one by
+one in the framed box over the list, with no cast message, and the scroll was left with two spells (its third byte
+cleared). Client (s49, same copy, `--save A`): the scroll list, its title, headings and lit row equal; the scroll's
+combat-only lines and question equal except that the Client draws the text box's frame over the list already `[?]`.
+Over the Items page (the wand) the Client shows the question but not the two lines nor the box's frame, and its yes/no
+words take other colours (Y white, ES green, NO white; the program: Y green, ES white, NO green) `[?]`: the Items
+page's own text area is rows 21–22 only (`CharacterView` / the party-menu page renderer); open. Else the cast message (0x27C16) and the spell name (a key), then the non-combat target handler **0x27AA9**: DS:6DB5
 defaults to the caster; the target list is the caster; mode 1: done; mode 2: the member pick (prompt 0x27A96,
 starting at DS:6DB5; giving up clears the targets and DS:6DB5 and nothing is cast); mode 4: every creature of the list;
 other modes: nothing. On a pick: invisibility leaves the caster (0x2BEBC), the memorised spell is used up (START

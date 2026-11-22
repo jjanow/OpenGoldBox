@@ -35,6 +35,14 @@ START's main program (image 0x00F6): start-up 0xE600; unless the first argument 
   (0x1FB99), DS:49F8 still 0: Begin then runs `ECL<disk>` block $49F2 from the loaded memory as on a new game (section
   5a). Engine: `PorGame.LoadAtPartyMenu` (`LoadedInterfaceState`); Begin → `RunNewGameEntry(party)`.
 - **After the game loop** the main program quits to DOS (START 0x142 → 0899:0000): section 8 (the party destroyed).
+- **Out of memory (unit 0x16, read s49).** Among the unit inits (START 0xD8–0xF1) START 0xF1 calls 0x00B4, which
+  stores 0016:0025 (the stub entry of **0x004A**) in DS:4414 / 4416: Turbo Pascal's `HeapError` variable (the System
+  default 0x00A9 is set at START 0xAFB7; GetMem calls it at START 0xB337 with size 0 after a heap grow, result ignored,
+  and at START 0xB343 when a block does not fit: 0 → run-time error, 1 → nil, else retry, START 0xB347). 0x004A(size):
+  size 0 → returns (its result word is never set; the caller drops it). Otherwise, until done: the warning text in
+  colour 14 on row 24 with a key wait (START 0x7C85); while DS:49D0 ≠ 0 the game save 0x1FD3E runs and done := DS:557D
+  (saved), so a failed save asks again; with DS:49D0 = 0 done := 1 and the exiting text shows the same way. Then the
+  program quits (START 0x8990: the start video mode back, Halt). Not ported by design: .NET has no fixed heap.
 
 ## 1a. The introduction (0x06FB)
 
@@ -238,7 +246,8 @@ Enabled bytes (0x19B2D–0x19BA3), `PartyMenu.Enabled`:
 | 3 Train | on when $6DA8 ≠ 0 or the debug flag DS:470C (J, training.md); never cleared in this branch | off |
 | 7 Load | off | on |
 
-Home / End select the previous / next member (0x23819, shared with the camp; wrapping `[?]`). Any key but E and S
+Home / End select the previous / next member (0x23819, shared with the camp: the head wraps to the last, the last to
+the head; read and run under emulation s49, `shop-format.md` "Party selection"). Any key but E and S
 clears DS:557D (saved since the last change). Exit asks yes/no (`PartyMsg.QuitToDos`); with a party it saves until a
 save succeeds (DS:557D), then quits (section 5a). The training hall (ECL PROGRAM 0) runs the same routine; there $6DA8 holds the
 hall's classes and Train is offered.
@@ -468,6 +477,12 @@ Engine (`PorRoster`, the Client's `por-saves/characters/`): the same list file; 
 save's party-entry shape (`SavedCharacter`, module-format §15). A DOS `NAME.CHA` (+ `.ITM`, `.SPC`) is read when no
 JSON file has the name. `[?]` The program's file name is the name through its 8.3 clean-up; ours keeps letters, digits,
 '-' and '_'.
+
+**Save directory check (0x1E294, read s49).** The roster and save routines (0x1E00A, 0x1E1A6, 0x1E7D3, 0x1F5F0,
+0x1F9CD, 0x1FDA7) call it before their files: MkDir (START 0xC756, INT 21h AH = 39h) on the save path DS:537A minus
+its last character (the trailing backslash), then IOResult. 0 (made) or 5 (access denied: it exists) → done; any other
+→ the save-disk text with the drive letter (DS:537B, the path's first character) and a colon, colour 14 on row 24 with
+a key wait (START 0x7C85), and again. Not ported by design (disks and paths): the Client makes its save folders itself.
 
 ## 5a. Save before Begin, Exit with a party (0x19D9C, 0x19E0E)
 

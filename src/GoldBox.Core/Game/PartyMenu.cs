@@ -112,12 +112,8 @@ public static class PartyMenu
         party.CurrentIndex = i == 0 ? (party.Members.Count > 0 ? 0 : -1) : i - 1;
     }
 
-    /// <summary>Home / End on the menu (0x19C9E → 0x23819): the previous / next member, wrapping [?] (the routine is shared with the camp).</summary>
-    public static void Select(EclParty party, int step)
-    {
-        int n = party.Members.Count;
-        if (n == 0)
-            return;
-        party.CurrentIndex = ((party.CurrentIndex + step) % n + n) % n;
-    }
+    /// <summary>Home / End on the menu (0x19C9E → 0x23819, <see cref="PartySelection.Select"/>): the previous member
+    /// (the head wraps to the last) for a negative step, else the next (the last wraps to the head).</summary>
+    public static void Select(EclParty party, int step) =>
+        PartySelection.Select(party, step < 0 ? PartySelection.Home : PartySelection.End);
 }

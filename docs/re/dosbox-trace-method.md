@@ -102,6 +102,17 @@ reads them:
   class to raise". Note: in this DOSBox-X build, loading a state (F12+L) after the probe was loaded crashed the
   emulator twice (malloc error); the runs were redone from the boot instead.
 
+## Handler residue probe (s49)
+
+`tools/dosbox/handlerprobe.s` (HPROBE.COM, built as RESIDUE.COM, copied into the test copy and started before START:
+`dosbox_xvfb.sh start :N COPY $'HPROBE\nSTART'` with `bochs debug port e9 = true` and a `[log] logfile` in
+`CONF_EXTRA`) logs the uninitialised locals of effect handlers 84 (`G bbbb wwww`: BP, the range word [bp−2]), 90 and 97
+(`N` / `V bbbb rr cc`: BP, [bp−1], Constitution). Patch the copy's GAME.OVR by hand (4 bytes each, INT 66h + site id +
+NOP): 0x10AEB `89 16 28 68` → `CD 66 07 90`, 0x11144 and 0x112FC `26 8A 45 14` → `CD 66 08 90` / `CD 66 09 90`; the
+handler redoes the replaced store or load. Results: `spells-effects.md` "Handlers 40, 84, 88, 90, 97 under emulation".
+Quick (Q) at each member's combat menu lets a fight run alone; pressing D and then Q at the combat menu dropped the
+game to DOS.
+
 ## Screen checks with test saves (s22)
 
 For screens that only show at the end of a long play (the party destroyed, the end game, a shop), build a save whose

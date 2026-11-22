@@ -62,13 +62,6 @@ public sealed record ChoiceRequest(string? Prompt, IReadOnlyList<string> Items, 
     /// </summary>
     public string? Hotkeys { get; init; }
 
-    /// <summary>
-    /// The keyboard's Return does nothing: the caller loops on the menu routine's 13 (the menu helper 0x8B57 with its
-    /// Return flag [bp+8] = 0: the venue exit questions). The pad's Confirm and a click still answer the lit item, so the
-    /// menu stays playable without a keyboard.
-    /// </summary>
-    public bool KeyboardEnterIgnored { get; init; }
-
     /// <summary>The item highlighted first (the program's yes/no for a drop starts on No; the combat screen).</summary>
     public int Selected { get; init; }
 
@@ -309,6 +302,13 @@ public sealed record ListAnswer(int Action, int Row, int Top = 0);
 /// <summary>A line typed by the player: digits only when <paramref name="Numeric"/>. The answer is the string.</summary>
 public sealed record TextRequest(string Prompt, bool Numeric, int MaxLength) : PlayerRequest
 {
+    /// <summary>
+    /// An area script's line input (INPUTSTR / INPUTNUM, <see cref="ClientPlayer.InputString"/> /
+    /// <see cref="ClientPlayer.InputNumber"/>): the one whose letter grid the Amiga QoL option
+    /// <see cref="AmigaView.GridOffText"/> places off the text window. Other inputs keep the grid where it was.
+    /// </summary>
+    public bool ScriptInput { get; init; }
+
     /// <summary>
     /// A numeric input's largest value (the money input 0x24F1D: a number typed above it becomes it, Escape answers an
     /// empty line); null: none.

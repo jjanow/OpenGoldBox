@@ -242,16 +242,18 @@ public sealed class PorGame
     /// an area whose vector 4 loads no wall sets still shows the saved walls (DOSBox-X s22). With location type &gt; 1
     /// (0x1FBC9–0x1FBE6; the Amiga's Load hunk 16 +0x1488–0x14A0, the same) it loads ICON block 0 into icon slot 11
     /// instead: the marker's third animation slot (<see cref="AreaLoop.MarkerSlots"/>), which the overland interface
-    /// had filled with block 2. Until the next interface load (the command routine's, only after a 3D area: DS:49F9
-    /// &lt; 2) marker counters 4 and 5 draw ICON blocks 0 and 128, as after the icon editor (a program bug, kept). After
-    /// a start-up Load the first command's interface loads the slots again; after a training-hall Load of a game save
-    /// nothing does (FS-UAE s47: the marker after a same-area hall Load showed block 0 at counter 4).
+    /// had filled with block 2. In the program, until the next interface load (the command routine's, only after a 3D
+    /// area: DS:49F9 &lt; 2) marker counters 4 and 5 then draw ICON blocks 0 and 128, as after the icon editor; after a
+    /// start-up Load the first command's interface loads the slots again, after a training-hall Load of a game save
+    /// nothing does (FS-UAE s47: the marker after a same-area hall Load showed block 0 at counter 4). <b>An original
+    /// bug, fixed (user, s48)</b>: the Client loads the marker's three slots again as the overland interface does
+    /// (ICON 0, 1, 2 into slots 9, 10, 11), so the marker animates as before the Load (geo-format.md).
     /// </summary>
     private void ReloadSavedMap()
     {
         if (Memory.ViewMode >= 2)
         {
-            Loop.MarkerSlots[2] = 0;
+            Loop.ReloadMarkerSlots();
             return;
         }
         Loop.LoadMap(Memory.Read(0x49C5));

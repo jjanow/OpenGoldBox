@@ -323,10 +323,18 @@ public sealed class TextWindow
     public const int ScreenRight = 39, ScreenBottom = 24;
 
     /// <summary>
-    /// Called when DOS's print never returns (<see cref="PrintDos"/>: a 255-character text, or a box narrower than one
-    /// cell): the program hangs there, so the owner parks the game for good. Null (tests): the print returns.
+    /// Called when DOS's print never returns (<see cref="PrintDos"/>: a box narrower than one cell; with
+    /// <see cref="OriginalWordEndHang"/> also a 255-character text): the program hangs there, so the owner parks the game
+    /// for good. Null (tests): the print returns.
     /// </summary>
     public Action? Hang { get; set; }
+
+    /// <summary>
+    /// The original's hang on a word ending at character 255 (0x7737's byte counter wraps; view3d.md "Text window"
+    /// step 4). <b>An original bug, fixed (user, s48)</b>: off (the default) the word ends and the print returns, as for
+    /// any shorter text. On only to compare with the program (PrintProgramTests' oracle).
+    /// </summary>
+    public bool OriginalWordEndHang { get; set; }
 
     /// <summary>
     /// START 0x77F8 whole (P s47; tools/scripts/por_print_oracle.py, PrintProgramTests). Its counters (position p, word
@@ -344,7 +352,8 @@ public sealed class TextWindow
     /// The loop runs while p ≤ i with p a byte: a word ending at character 255 never ends (p wraps to 0). The program
     /// then draws the length byte (character 255: glyph 63, '?') and the text again from its start, the column wrapping
     /// at 256, for ever; after one lap of 256 every cell it reaches (columns 0–39 of that row) holds what it keeps, so
-    /// one lap is drawn and the print hangs (<see cref="Hang"/>).</item>
+    /// one lap is drawn and the print hangs (<see cref="Hang"/>). Fixed (s48): p counts on past 255 and the word ends,
+    /// unless <see cref="OriginalWordEndHang"/>.</item>
     /// <item>A box with x1 &lt; x0 whose last word is one character counts the row on for ever and draws nothing (hang).</item>
     /// <item>After the text a cursor past x1 goes to column x0 of the next row.</item>
     /// </list>
@@ -418,15 +427,16 @@ public sealed class TextWindow
     }
 
     /// <summary>
-    /// 0x7737: characters p..i at the cursor, one glyph each (<see cref="DrawGlyph"/>); p ends at i + 1. False when p
-    /// wrapped (i = 255): one lap of the run-on is drawn, then <see cref="Hang"/>.
+    /// 0x7737: characters p..i at the cursor, one glyph each (<see cref="DrawGlyph"/>); p ends at i + 1. With
+    /// <see cref="OriginalWordEndHang"/> p is a byte: false when it wrapped (i = 255), one lap of the run-on drawn, then
+    /// <see cref="Hang"/>. Without it (the s48 fix) p reaches 256 and the text ends.
     /// </summary>
     private bool PutDos(Func<int, char> s, ref int p, int i, byte colour)
     {
         while (p <= i)
         {
             DrawGlyph(s(p), colour);
-            p = (p + 1) & 0xFF;
+            p = OriginalWordEndHang ? (p + 1) & 0xFF : p + 1;
             if (p == 0)
             {
                 for (int k = 0; k <= 0xFF; k++)

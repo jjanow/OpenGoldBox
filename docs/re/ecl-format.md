@@ -144,7 +144,8 @@ DS:70C8 + 256·k string slots; index from 1), and leaves the program counter on 
   next slot's first byte (`EclText.SlotAmiga` under `AmigaTextRules`). So a direct read of that slot (PRINT, SAVE)
   after a later text operand of the same instruction filled the next slot would run on into it (an original bug,
   latent: no v1.3 text reaches 255 characters; COMPARE's 256-byte copies cut it back; not modelled). Its print (hunk 25 +0x10EC) walks the C string
-  to its NUL with no byte counter: a 255-character text types out and the script goes on (DOS's run-on is DOS's own). Lee 12.3.2 describes the same scheme.
+  to its NUL with no byte counter: a 255-character text types out and the script goes on (DOS's run-on is DOS's own, an original bug fixed in the
+  Client, s48: `view3d.md` "Text window" step 4). Lee 12.3.2 describes the same scheme.
 - **String slots count text operands only** (loader 0x74D3): the k-th operand of type 0x80 or 0x81 *in one
   loader call* (for a fixed-count opcode: in the instruction) goes to slot k (DS:6FC8 + 256·k), whatever its
   operand position. A variadic tail is a second call and starts again at slot 1. A type-0x80 text of length 0 gives an
@@ -258,6 +259,12 @@ area loop 0x403E (checks at 0x4118–0x423B), which clears it on exit (0x4245); 
   - The view is redrawn once a LOADFILES and a LOADPIECES have both run since the area was entered (DS:4433/4434).
 - **NEWECL** (0x1917): $49F2 = current script id, then loads `ECL<d>.DAX` block v (0x7814; retries until the block
   reads) and runs the script init 0x7689 at once.
+  Before the load (0x198D) the file name `ECL<DS:5376>.dax` goes to **0x202BB** (read s49): when the file opens
+  (START 0x830B: Reset, IOResult 0 and a non-empty name) nothing more. Otherwise the menu routine with an empty prompt,
+  keypad flag 0 and the line of the save-and-exit word and the insert-disk word with the disk number DS:5376; a
+  non-extended S moves the party one square back (DS:6AAD −= DS:2736[facing], DS:6AAE −= DS:273F[facing], the forward
+  steps; below 0 → 15, above 15 → 0), swaps disks (START 0x897D), saves (0x1FD3E) and quits (START 0x8990); any other
+  answer returns and the load goes on. Not ported by design: a module holds every script, so the file is never missing.
 - **PARTYSTR** (0x200C): sum over party members of (HP + 5·max(AC byte − 60, 0) + 5·max(THAC0 byte − 39, 0)
   + 8·magic-user level + 4·cleric level) / 10 (integer, per member), using record bytes 0x11B, 0x111, 0x110, 0x9B,
   0x96 (`character-format.md`); the byte total is written to a.

@@ -871,6 +871,16 @@ public sealed class CombatScreen
                 Palette(f);
             return;
         }
+        if (_runner.Pending is DelayRequest && _view.KeptList is { } kept && _view.PageMessage is { } keptMsg)
+        {
+            // The spell list under 0x14C0F's camp-only message: every row green, row 24 the message (DOSBox-X s49).
+            _list.Draw(f, _font, kept, input, highlight: false);
+            Chrome.Clear(f, 0, MenuRow, 40);
+            Text(f, 0, MenuRow, Fit(keptMsg, 40), Chrome.Green);
+            if (kept.Grey)
+                Palette(f);
+            return;
+        }
         if (_view.Page is { } cp)
         {
             DrawPage(f, cp, input);

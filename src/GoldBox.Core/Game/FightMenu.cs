@@ -890,10 +890,14 @@ public sealed class FightMenu
     // ---- Cast (0x14C0F) --------------------------------------------------------------------------------------------
 
     /// <summary>
-    /// 0x14C0F from the menu: a spell from the list (<see cref="IFightSpells.Castable"/>; none → not done). One not
-    /// usable in a fight: "camp only", not done. Casting time 0: cast now (<see cref="CastNow"/>: the player aims, then
-    /// <see cref="IFightSpells.Cast"/> / <see cref="IFightSpells.CastOn"/> with what was aimed at), actions end. Else "begins casting", +0 = the spell, initiative − the
-    /// casting time when larger, else 1 (<see cref="Fight.Postpone"/>): cast at the creature's next pick this round.
+    /// 0x14C0F(0, ai = 0) from the menu, ported whole (spells-effects.md "Combat cast"; checked under emulation,
+    /// CombatCastProgramTests): the spell list 0x239D6(kind 0, action 1, position −1) picks a memorised spell
+    /// (<see cref="IFightSpells.Castable"/>, the list's ids; Exit or an empty list → 0, not done). Then
+    /// <see cref="FightSpells.CombatCastStep"/>: camp only → the message, not done; casting time 0 → cast now
+    /// (<see cref="CastNow"/>: the player aims, then <see cref="IFightSpells.Cast"/> / <see cref="IFightSpells.CastOn"/>
+    /// with what was aimed at) and the actions end (START 0x31D7); else "begins casting", +0 = the spell, initiative −
+    /// the casting time when larger, else 1 (<see cref="Fight.Postpone"/>): cast at the creature's next pick this round.
+    /// The redraw the program does for ai = 0 after the pick (START 0x3728, 0x319D2, START 0x1583) is the Client's.
     /// </summary>
     public bool Cast()
     {
@@ -901,24 +905,22 @@ public sealed class FightMenu
         var castable = Fight.Spells.Castable(Fight, c);
         if (Chooser.ChooseSpell(this, castable) is not { } spell || spell <= 0)
             return false;
-        if (!Fight.Spells.UsableInCombat(spell))
+        switch (FightSpells.CombatCastStep(Fight.Spells, Record, spell, out sbyte initiative))
         {
-            Notice(FightNotice.CampOnlySpell);
-            return false;
+            case CombatCastOutcome.CastNow:
+                CastNow(spell, false);
+                Fight.EndActions(c);
+                return true;
+            case CombatCastOutcome.Begun:
+                Notice(FightNotice.BeginsCasting, c);
+                Fight.Postpone(c, initiative);
+                return true;
+            case CombatCastOutcome.CampOnly:
+                Notice(FightNotice.CampOnlySpell);
+                return false;
+            default:
+                return false;
         }
-        int time = Fight.Spells.CastingTime(spell);
-        if (time == 0)
-        {
-            CastNow(spell, false);
-            Fight.EndActions(c);
-            return true;
-        }
-        Notice(FightNotice.BeginsCasting, c);
-        var rec = Record;
-        rec[CombatRecord.SpellCast] = (byte)spell;
-        int init = rec.InitiativeValue;
-        Fight.Postpone(c, (sbyte)(init > time ? init - time : 1));
-        return true;
     }
 
     /// <summary>

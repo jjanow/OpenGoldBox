@@ -364,8 +364,11 @@ public sealed partial class EffectHandlers
     private byte[]? WeaponOf(EclCharacter a) => Items is null ? null : FightRules.Equipment(a, Items)[FightRules.SlotWeapon];
 
     /// <summary>
-    /// 0x11134 / 0x112E5: Constitution 0x14: 4–6 → 1, 7–10 → 2, 11–13 → 3, 14–17 → 4, 18–20 → 5. [?] Outside those
-    /// ranges the program adds an uninitialised stack byte; taken as 0.
+    /// 0x11134 / 0x112E5: Constitution 0x14: 4–6 → 1, 7–10 → 2, 11–13 → 3, 14–17 → 4, 18–20 → 5 (checked against the
+    /// program, por_handler_oracle.py). [?] Outside those ranges the program adds the handler's uninitialised [bp−1]
+    /// (the saving throw's BP − 0x125), stack residue from before the throw: DOSBox-X showed 0x1F and 0x00 on the same
+    /// path (spells-effects.md "Handlers 40, 84, 88, 90, 97 under emulation"); taken as 0. Carriers (created dwarves,
+    /// gnomes, halflings) leave 4..20 through the temple's raise (Constitution − 1 each, 0x4B85) or handler 7's + 1 at 20.
     /// </summary>
     private int ConSaveBonus(EclCharacter c)
     {
@@ -378,7 +381,7 @@ public sealed partial class EffectHandlers
             case >= 14 and <= 17: return 4;
             case >= 18 and <= 20: return 5;
         }
-        Diag("[?] Constitution save bonus outside 4..20 reads an uninitialised byte");
+        Diag("[?] Constitution save bonus outside 4..20 reads stack residue (varies); 0 taken");
         return 0;
     }
 

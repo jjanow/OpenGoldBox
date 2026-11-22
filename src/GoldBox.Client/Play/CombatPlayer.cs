@@ -114,6 +114,10 @@ public sealed class CombatView
     /// <summary>The message routine's line (START 0x1693: row 24, green) while a page waits out its pause.</summary>
     public string? PageMessage { get => _pageMessage; set { _pageMessage = value; if (value is not null) Row24Written(); } }
     private string? _pageMessage;
+    /// <summary>The spell list page a camp-only pick leaves on screen under its message (0x14C0F: START 0x2233 writes
+    /// row 24 over the list before the redraw; DOSBox-X s49), drawn with no highlighted row while
+    /// <see cref="PageMessage"/> shows.</summary>
+    public ListRequest? KeptList { get; set; }
 
     /// <summary>
     /// The view's band test and move (GAME.OVR 0x30F0E, read s19): the view's centre is (view x + 3, view y + 3); a
@@ -193,6 +197,7 @@ public sealed class CombatView
         Page = null;
         ItemEffectText = null;
         PageMessage = null;
+        KeptList = null;
         Mode = CombatMode.Watch;
     }
 }
@@ -251,7 +256,10 @@ public sealed partial class CombatChooser(Func<PlayerRequest, object?> ask, Comb
         fight.PartyMemberDying = () => PageSay(Text[CombatMsg.TeammateDying]); // 0xA134 (DOSBox-X s29: row 24, pause)
         fight.PanelShown = c => ShowPanel(c);
         fight.Guarded = _ => PageSay(Text[CombatMsg.Guarding]); // START 0x3226 (DOSBox-X s30: row 24, pause, cleared)
-        fight.Moves = new ShownMoves(fight.Moves, Stepping, Stepped);
+        fight.Moves = new ShownMoves(fight.Moves, Stepping);
+        fight.StepDrawing = StepDrawing;
+        fight.StepDrawn = Stepped;
+        fight.GuardAttacking = GuardAttacking;
         if (fight.Spells is FightSpells spells)
         {
             spells.Announce = Announce;
@@ -335,6 +343,9 @@ public sealed partial class CombatChooser(Func<PlayerRequest, object?> ask, Comb
         fight.State.Posed = null;
         fight.PartyMemberDying = null;
         fight.Guarded = null;
+        fight.StepDrawing = null;
+        fight.StepDrawn = null;
+        fight.GuardAttacking = null;
         fight.PanelShown = null;
         if (fight.Spells is FightSpells spells)
         {
@@ -535,25 +546,43 @@ public sealed partial class CombatChooser(Func<PlayerRequest, object?> ask, Comb
     }
 
     /// <summary>
-    /// A step (0x12F0D, read s19): the old cell is redrawn without the creature (a cursor box there goes); a player's
-    /// creature (0x10F = 0) then gets ScrollView(new square, 1); an AI's creature first ScrollView(old square, 2) when the
-    /// new square is off the view, then ScrollView(new square, 3). No wait of the program's own: the step is shown for
-    /// one frame.
+    /// A step's first half (0x12F0D, 0x12FB4–0x13011), the creature still on its old square: an AI's creature
+    /// (0x10F ≠ 0) gets ScrollView(old square, 2) when the new square is off the view; then the old cell is redrawn
+    /// (0x30C65: a cursor box there goes). Not shown as a frame of its own: DOSBox-X (s49) goes from the box on the
+    /// mover straight to the step.
     /// </summary>
-    private void Stepped(EclCharacter c, (int X, int Y)? from)
+    private void StepDrawing(EclCharacter c, (int X, int Y) to)
+    {
+        View.HitMarker = null;
+        if (Square(c) is not { } old)
+            return;
+        bool ai = c[CombatRules.AutoCombat] != 0;
+        if (ai && !View.InView(to.X, to.Y))
+            View.Scroll(old.X, old.Y, 2);
+        if (View.Cursor == old)
+            View.Cursor = null;
+    }
+
+    /// <summary>
+    /// A step's second half (0x1303F–0x1304E, read s19/s49), after the slot moved: ScrollView(new square, 1), or 3 for
+    /// an AI's creature. No wait of the program's own: the step is shown for one frame.
+    /// </summary>
+    private void Stepped(EclCharacter c, (int X, int Y) from)
     {
         Remember();
-        View.HitMarker = null;
         if (Square(c) is not { } p)
             return;
-        if (from is { } old && View.Cursor == old)
-            View.Cursor = null;
         bool ai = c[CombatRules.AutoCombat] != 0;
-        if (ai && from is { } o && !View.InView(p.X, p.Y))
-            View.Scroll(o.X, o.Y, 2);
         View.Scroll(p.X, p.Y, ai ? 3 : 1);
         if (ai)
             Frame();
+    }
+
+    /// <summary>0x12E22 before a guard's attack on a creature that stepped next to it: ScrollView(its square, 2).</summary>
+    private void GuardAttacking(EclCharacter mover)
+    {
+        if (Square(mover) is { } p)
+            View.Scroll(p.X, p.Y, 2);
     }
 
     /// <summary>A creature's name in a fight message: DOS upper case; the Amiga's name routine (hunk 13 +0x4AD4) draws it as stored.</summary>
@@ -1439,6 +1468,9 @@ public sealed partial class CombatChooser(Func<PlayerRequest, object?> ask, Comb
         if (a is null || a.Action != 0 || a.Row < 0 || a.Row >= ids.Count || ids[a.Row] == 0)
             return null;
         int spell = ids[a.Row];
+        // A camp-only pick: 0x14C0F's message comes over the list page (row 24), then the map is redrawn (Notice).
+        if (!menu.Fight.Spells.UsableInCombat(spell))
+            View.KeptList = req;
         // 0x27C38 shows the cast message before its target pick; the Core menu aims first and casts after, so a spell
         // cast now is announced here (before the aim) and its Announce call is skipped. A begun spell is announced at
         // its first aim (ChooseAim; DOSBox-X s41).
@@ -1455,6 +1487,14 @@ public sealed partial class CombatChooser(Func<PlayerRequest, object?> ask, Comb
         var t = Text;
         // Alt-M (0x9CD1 / 0x9CE7), Alt-X's refusal (0x9DC0) and Alt-X's own message (0x1638E) go through the message
         // routine START 0x1693: row 24 in green, the game-speed pause, row 24 cleared; the panel stays (DOSBox-X s24).
+        if (notice == FightNotice.CampOnlySpell)
+        {
+            // 0x14C0F → START 0x2233 (0x1693): row 24 in green over the spell list, the pause, then (ai = 0) the redraw
+            // START 0x3728, 0x319D2, START 0x1583 back to the map and the menu (DOSBox-X s49: Find Traps from the list).
+            PageSay(t[CombatMsg.CampOnlySpell]);
+            View.KeptList = null;
+            return;
+        }
         if (notice is FightNotice.MagicOn or FightNotice.MagicOff or FightNotice.DoesNotWork or FightNotice.GodsIntervene)
         {
             PageSay(notice switch
@@ -1507,18 +1547,16 @@ public sealed partial class CombatChooser(Func<PlayerRequest, object?> ask, Comb
     /// An <see cref="IFightMoves"/> that tells the screen after each step (so the AI's and the player's steps are seen);
     /// the moves themselves are the wrapped ones'.
     /// </summary>
-    public sealed class ShownMoves(IFightMoves inner, Action<EclCharacter> stepping, Action<EclCharacter, (int X, int Y)?> stepped)
-        : IFightMoves
+    public sealed class ShownMoves(IFightMoves inner, Action<EclCharacter> stepping) : IFightMoves
     {
         public IFightMoves Inner { get; } = inner;
 
+        /// <summary>The AI's move prompt before the step; the step itself is drawn by <see cref="Fight.StepDrawn"/>
+        /// inside 0x12F0D (nothing is drawn when the step does not happen).</summary>
         public StepResult Step(Fight fight, EclCharacter c, int direction)
         {
-            (int X, int Y)? from = fight.Map is CombatMap m && m.OnMap(c) ? m.Position(c) : null;
             stepping(c);
-            var r = Inner.Step(fight, c, direction);
-            stepped(c, from);
-            return r;
+            return Inner.Step(fight, c, direction);
         }
 
         public bool Flee(Fight fight, EclCharacter c) => Inner.Flee(fight, c);

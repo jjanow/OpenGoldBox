@@ -24,7 +24,11 @@ Exit keep their data-segment defaults (on).
 42-byte stride and shown flags): the program's own words, mixed case ("BEGIN Adventuring"), the last naming the
 Workbench where DOS names DOS. The Client takes them under the Amiga art from the strings the importer reads there
 (`PorAmigaText.PartyMenuKey`, as the start-up party menu already did; `HallText.Entry`). The quit question (E, hunk 10
-+0xA3C) still says "Quit to DOS " on the Amiga, with pens 24 / 28 / 16 (the warning pen), as DOS's; the camp's quit
++0xA3C) still names DOS on the Amiga, with pens 24 / 28 / 16 (the warning pen), as DOS's. **Original bug, fixed
+(user, s48)**: under the Amiga art the Client's question (the hall's and the start-up party menu's, one routine)
+names what the menu's Exit entry names, that entry's last word in place of DOS (`AmigaView.HallQuit`; the words
+come from the player's program at import, none in the source). Client s49 (`--art amiga`, test save C's hall, E):
+the question named the Workbench; the camp's quit
 after Save (hunk 1 +0x50B8) and the one when the last member leaves (+0x4B5E) are the Amiga's own Workbench wording,
 read at import (`PorAmigaText.CampQuitKey`, `DropQuitKey`; seen in the code, not run). Each entry: its first letter as a
 character through the string routine (pen 16, hunk 10 +0x794), then the rest from the next column (pen 28, +0x7EE),
@@ -121,7 +125,10 @@ from $4AFA–$4AFF as DOS (+0x14AC–0x1532, hunk 25 +0x359E); with $4AA2 ≠ 0 
 0, at the same point; not decoded `[?]`, it plays no marker or view draw); the IDCMP queue flushed (hunk 25 +0xA08) and
 row 24 cleared (hunk 19 +0x58A8). No draw of the view or the marker anywhere in it. DOS's Load (0x1F5E8–0x1FC9D) has
 the same tail in the same order (0x1FBB3 map, 0x1FBC9 ICON 0 → slot 11, 0x1FBEE walls, 0x1FC89 the $344 call).
-Client: `PorGame.ApplyInHall` / `ReloadSavedMap` (the slot since s47). FS-UAE s47: disk A with test saves (block
+Client: `PorGame.ApplyInHall` / `ReloadSavedMap`. Slot 11 left holding ICON 0 after a hall Load is an
+**original bug, fixed (user, s48)**: the Client loads the marker's three slots again (ICON 0, 1, 2 into 9, 10, 11, as
+the overland interface does), so the marker animates as before the Load (`geo-format.md` "A hall Load on the
+overland"). FS-UAE s47: disk A with test saves (block
 26's overland, vector 0 = PROGRAM 0; Remove × 6, Load C with vector 0's code an EXIT) ran as read:
 the camp screen ("CAMPING" after the position line), the step, and the marker of counter 4 drawn from ICON block 0.
 

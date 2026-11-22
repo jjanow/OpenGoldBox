@@ -40,7 +40,7 @@ public enum Msg
     SaveWhich, SaveSlots, Saving,
     // Spell lists and the cast (0x23973–0x27C16)
     SpellsWord, InMemory, InSpellBook, OnScroll, OnScrolls, ToBeMemorised, ToBeScribed, ChooseSpell, CastAction, MemoriseAction,
-    ScribeAction, CastOnWhom, CombatOnly, LoseIt, Casts,
+    ScribeAction, CastOnWhom, CombatOnly, LoseIt, Casts, ThatItem, CombatOnlyItem, UseIt,
     // Character view (0x2103A–0x21AC7)
     Age, Str, Int, Wis, Dex, Con, Cha, Level, Exp, Status, Encumbrance, Movement, ViewPrompt,
     NpcTag, WeaponLabel, ArmorLabel, AcLabel, HpLabel, Thac0Label, DamageLabel,
@@ -188,6 +188,9 @@ public sealed class GameText
         [Msg.CastOnWhom] = "Target",
         [Msg.CombatOnly] = "works only in a fight",
         [Msg.LoseIt] = "Forget it? ",
+        [Msg.ThatItem] = "This item",
+        [Msg.CombatOnlyItem] = "works only in a fight",
+        [Msg.UseIt] = "Spend it? ",
         [Msg.Casts] = "casts",
         [Msg.Age] = "AGE",
         [Msg.Str] = "STR",

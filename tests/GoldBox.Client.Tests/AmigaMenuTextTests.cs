@@ -230,4 +230,18 @@ public class AmigaMenuTextTests
         Assert.Equal(TimeSpan.FromMilliseconds(3000), AmigaView.PartyKilledHold(amiga: false));
         Assert.Null(AmigaView.PartyKilledHold(amiga: true));
     }
+
+    /// <summary>
+    /// s48 fix (training.md): the Amiga hall's quit question (hunk 10 +0xA3C) still named DOS; under the Amiga pages it
+    /// names what the menu's last entry names (its last word in place of DOS). Made-up words, not the game's.
+    /// </summary>
+    [Fact]
+    public void The_hall_quit_question_names_the_exit_entrys_place_under_amiga()
+    {
+        var strings = new Dictionary<string, string> { [PorAmigaText.PartyMenuKey + 10] = "Leave for Elsewhere" };
+        Assert.Equal("Off to Elsewhere ", AmigaView.HallQuit("Off to DOS ", amiga: true, strings));
+        Assert.Equal("Off to DOS ", AmigaView.HallQuit("Off to DOS ", amiga: false, strings));
+        Assert.Equal("Off to DOS ", AmigaView.HallQuit("Off to DOS ", amiga: true, new Dictionary<string, string>()));
+        Assert.Equal("OFF TO DOS ", AmigaView.HallQuit("OFF TO DOS "));   // AmigaView.On is off in tests
+    }
 }

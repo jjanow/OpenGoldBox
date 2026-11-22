@@ -389,6 +389,14 @@ public sealed class AreaLoop
     /// </summary>
     public int[] MarkerSlots { get; } = [0, 1, 2];
 
+    /// <summary>The overland interface's slot load (0x17285–0x172D5): ICON 0, 1, 2 into marker slots 9, 10, 11.</summary>
+    public void ReloadMarkerSlots()
+    {
+        MarkerSlots[0] = 0;
+        MarkerSlots[1] = 1;
+        MarkerSlots[2] = 2;
+    }
+
     /// <summary>
     /// The end of the icon editor 0x1D1AC (the camp's Alter Icon): with DS:49FA &gt; 1 (0x1D843) it loads ICON block 0
     /// into icon slot 11 and block 1 into slot 12 (0x1D84A–0x1D879; the editor itself used slot 12). Slot 11 is the

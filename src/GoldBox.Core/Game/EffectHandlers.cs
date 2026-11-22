@@ -601,7 +601,9 @@ public sealed partial class EffectHandlers : IFightEffects
     /// 0x2B9D1: a creature in play standing in a stinking cloud (terrain 0x1E) that has none of the effects 0x1E, 0x1F,
     /// 0x20, 0x6F, 0x7D saves vs. type 0 (no modifier). Saved: coughing (0x1E) for 1 minute; failed: helpless (0x1F) for
     /// 1d4 + 1 minutes (the dice are rolled after the save). Both are added with 0x2C540 (param 255, no removal call,
-    /// save does not negate) and their handler then runs.
+    /// save does not negate) and their handler then runs with a nil record: the program passes the out pointer of its last
+    /// effect search (0x7D, not found), not the record just added (0x2BAD7 / 0x2BB26). Handlers 30 (0xF6C0) and 31
+    /// (0xFF9A) read only the creature, so nothing depends on it.
     /// </summary>
     public void TerrainCheck(EclCharacter c)
     {
@@ -622,13 +624,13 @@ public sealed partial class EffectHandlers : IFightEffects
         if (saved)
         {
             AddEffectWithMessage(c, 0x1E, 1, 0xFF, false, 0, saved, EffectEvent.Coughing, EffectTexts.Coughs); // text 0x2BACB
-            CallHandler(0x1E, c, FindEffect(c, 0x1E), false);
+            CallHandler(0x1E, c, null, false);
         }
         else
         {
             ushort minutes = (ushort)(Dice(1, 4) + 1);
             AddEffectWithMessage(c, 0x1F, minutes, 0xFF, false, 0, saved, EffectEvent.EffectGained, EffectTexts.Nausea); // text 0x2BB1A
-            CallHandler(0x1F, c, FindEffect(c, 0x1F), false);
+            CallHandler(0x1F, c, null, false);
         }
     }
 

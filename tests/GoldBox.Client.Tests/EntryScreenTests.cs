@@ -119,6 +119,7 @@ public class EntryScreenTests
         r.Runner.Start(() => typed = r.Player.InputNumber());
         var t = Assert.IsType<TextRequest>(r.Runner.Pending);
         Assert.Equal("", t.Prompt);
+        Assert.True(t.ScriptInput);                       // the s48 QoL grid placement applies to the script's inputs only
         Key(r, Keys.D1);
         var f = Draw(r);
         Assert.Equal([0], Colours(f, 0, 24));             // column 0 blank

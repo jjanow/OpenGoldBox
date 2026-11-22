@@ -23,7 +23,7 @@ Code: `src/GoldBox.Core/Game/EffectHandlers*.cs` (`IFightEffects`, the DAMAGE ho
 | 681B | spell being cast (0 none) |
 | 681C | dice count of the last damage roll (0x2BD18) |
 | 681E | "may not be targeted" (invisible, blinking) |
-| 681F | effect lock (handlers do not re-add effects) |
+| 681F | effect lock (handlers do not re-add effects; set by the temple's cures 1, 5, 6 and four other writers; readers 0xEC7A, 0xF784, 0xFFFA only: `shop-format.md` "Temple", s49) |
 | 6820 | the spell has several targets |
 | 6822 | attack roll (signed byte; natural 20 = 100) |
 | 6823 | hits made in phase 1 |
@@ -141,8 +141,13 @@ all equal DOSBox-X's (with the begun spell's message moved before the aim, s41).
 **Terrain** (0x2B9D1, end of round after class 0x13, per creature in play): the terrain of its own square (0x313F3,
 direction 8) = 0x1E (stinking cloud) and none of 0x1E, 0x1F, 0x20, 0x6F, 0x7D: save vs. type 0 (no modifier); saved
 → coughing 0x1E for 1 minute; failed → helpless 0x1F for **1d4 + 1** minutes (rolled after the save); both through
-0x2C540 (param 255, no removal call, save does not negate), then their handler runs. `FightRules.EndOfRoundCreature`
-calls it through `IFightEffects.Terrain` (added, default empty).
+0x2C540 (param 255, no removal call, save does not negate), then their handler runs (0x2AEEA, whatever the add did)
+with a **nil record**: the program passes the out pointer of its last effect search (0x7D, not found), not the record
+just added; handlers 30 (0xF6C0) and 31 (0xFF9A) read only the creature. Also run after every step (menu 0xA4ED, AI
+0xB6E2). `FightRules.EndOfRoundCreature` calls it through `IFightEffects.Terrain` (added, default empty). **E** (s49,
+`por_round_oracle.py`, `RoundProgramTests`): 80 cases of 1–6 creatures on cloud and other cells, the five blocking
+effects, saves passed and failed: records, effect lists, combat records and RandSeed equal `TerrainCheck`; every handler
+call got nil.
 
 **Dice** (0x2BCCD): count × (Random(sides) + 1) summed as a byte, count 0 → 0. 0x2BD18 also stores the count in
 DS:681C.
@@ -200,7 +205,7 @@ the creature's combat record +0x0A. Ids 5, 13, 19, 24, 27, 60, 63, 92, 127 share
 | 67, 68, 69 | 0x10246 | paralysis: the target saves vs. type 0 (**modifier 0**: the −2 handler 69 passes is not used); failing: 0x34 for 2d8 / 63 / 1d9 + 10 minutes, param 12. 68 skips a target with race byte 2. The minutes are rolled **before** the save |
 | 71 | 0x1037A | no target, attack − 4 |
 | 72 | 0x1038B | 1d100 ≤ 95 → invisibility 0x19 for 1 minute |
-| 40 | 0xF91E | stinking cloud cells of the arena `[?]` (map) |
+| 40 | 0xF91E | stinking cloud cells of the arena (the line under "Handlers 73–139"; E s49) |
 
 **Missile dodge** (0xFC07, chance): the current character has a weapon and stands more than 1 square away (START
 0x30FB): 1d100 ≤ chance → (message) damage 0, attack roll −1, DS:6823 − 1. The missile (0xFC78): the ammunition
@@ -221,7 +226,7 @@ the program's data; `PorSpellData.Names` reads them from the player's program.
 | 80 | 0x106A7 | element 0x10; target takes 1d4 |
 | 87 | 0x11047 | target without rot gets 0x32 (14400 min) and 0x39 (43200 min, param 1d6 × 16 + 15), removal on (1d6); then its text on the target (s30, "Handler messages") |
 | 89 | 0x110EB | round 0 and attack roll 0 → param AND 0x0F; else first attack (bit 4 clear) → attack roll − 1, bit 4 set |
-| 90 / 97 | 0x11134 / 0x112E5 | save type 0 resp. 4 or 2 → save + Constitution bonus (4–6: 1, 7–10: 2, 11–13: 3, 14–17: 4, 18–20: 5; else an uninitialised byte `[?]`) |
+| 90 / 97 | 0x11134 / 0x112E5 | save type 0 resp. 4 or 2 → save + Constitution bonus (4–6: 1, 7–10: 2, 11–13: 3, 14–17: 4, 18–20: 5; else the handler's uninitialised [bp−1], see "Handlers 40, 84, 88, 90, 97 under emulation"). E s49 |
 | 91 | 0x111B1 | spell 15 → nullified (message); else element bit 2 → nullified |
 | 93, 114, 118 | 0x111FD, 0x116C8, 0x117BE | element bit 0 / 2 / 1 → damage ÷ 2 |
 | 94, 115 | 0x11217, 0x116E2 | attacker's missile with base byte 7 AND 0x81 (resp. byte 7 = 0 or bit 0) → damage ÷ 2 |
@@ -248,18 +253,18 @@ the program's data; `PorSpellData.Names` reads them from the player's program.
 | 132 | 0x11D00 | wrong alignment → unreadied, element 8, non-weapon damage 0x3D ÷ 16 |
 | 135 | 0x11D8F | Str < 19 → unreadied, its text through START 0x1693 (row 24; s30) |
 | 137 | 0x11DD5 | removed → effect 0x17 removed |
-| 40 | 0xF91E | (only as a removal call) the caster's cloud numbered param ÷ 16 (first match in DS:6DBB); none → nothing. (Message) each clouded cell gets 0x1F when a body (DS:66D6 + 7k, k ≤ DS:6715, pointer set) lies on it, else the terrain it covered; the node is unlinked and freed; every remaining cloud's cells are set to 0x1E again |
-| 73 | 0x161CD | (Amiga: the empty handler, hunk 7 +0x3270, s46; por-art-formats.md "Fight texts") rake: DS:6823 = 2 hits in phase 1 and the last target in play → combat +4 = 2, 0x114 = 2, 0x116 = 2, 0x118 = 4, 0x113 = 0 (two 2d4 attacks in phase 2), message, MakeAttack (0x1407F, defender turns), actions end |
-| 74 | 0x16281 | (Amiga: the empty handler, as 73) hold (from 77), victim = DS:65B9[param]: removed or either out of play → victim's 0x3A goes, and unless removed this record goes (byte 4 cleared first). Else one 3d4 attack (0x113 = 1, 0x114 = 0, 0x115 = 3, 0x117 = 4), MakeAttack with the defender not turning, actions end; victim out of play → the record goes |
+| 40 | 0xF91E | (only as a removal call; the "removed" argument is not read) the caster's cloud numbered param ÷ 16 (first match in DS:6DBB: caster pointer and byte +0x12); none → nothing. (Message, START 0x1693 with CS:0CA8) each clouded cell (+0x0B + i set; cell = the aim +0x10 / +0x11 plus direction DS:290D[i], byte sums) gets 0x1F when a body entry (DS:66D6 + 7k, k = 1..DS:6715, far pointer not nil, x +4 / y +5 compared signed) lies on it, else the terrain it covered (+7 + i); the node is unlinked (head, or the walk to its predecessor) and freed (FreeMem 0x13); every remaining cloud's used cells are set to 0x1E again. **E** s49 (bodies, emptied entries, overlapping clouds) |
+| 73 | 0x161CD | (Amiga: the empty handler, hunk 7 +0x3270, s46; por-art-formats.md "Fight texts"; not followed, DOS rules under every art, user s48) rake: DS:6823 = 2 hits in phase 1 and the last target in play → combat +4 = 2, 0x114 = 2, 0x116 = 2, 0x118 = 4, 0x113 = 0 (two 2d4 attacks in phase 2), message, MakeAttack (0x1407F, defender turns), actions end |
+| 74 | 0x16281 | (Amiga: the empty handler, as 73; not followed, user s48) hold (from 77), victim = DS:65B9[param]: removed or either out of play → victim's 0x3A goes, and unless removed this record goes (byte 4 cleared first). Else one 3d4 attack (0x113 = 1, 0x114 = 0, 0x115 = 3, 0x117 = 4), MakeAttack with the defender not turning, actions end; victim out of play → the record goes |
 | 75 | 0x103CA | blood drain (from 76), victim = DS:65B9[param]: removed or either out of play → victim's 0x3A goes, unless removed the record goes (byte 4 cleared), and with both in play combat +0x10 = 1. Else (message) 1d4 (count to 681C), element 0, non-weapon damage, actions end; victim in play and minutes ÷ 16 > damage → minutes − 16 × damage, else the record goes |
 | 76 | 0x10510 | attach: 0x4B on the creature (207 minutes, param = target's slot 0x31399, removal on); 0x3A on the target (permanent, param 255) and handler 58 on it |
 | 77 | 0x10590 | target Str < 19: 0x4A on the creature (permanent, slot, removal on), 0x3A on the target, handler 58, message |
 | 81 | 0x10705 | fight start: every creature in play on the other side (START 0x2F57) saves vs. 4 (one draw each); hit dice 0x73 0..3 → paralysis 0x34, 4–5 → Curse 2; permanent, param 12, save negates |
 | 82 | 0x10803 | fight start: each creature's first 0x52 goes (the carrier's too); in play on the other side: save vs. 0 with +1 when DS:6814 + its side ≥ 6 and +2 for race 7, then 0x34 for 1d4 min (after the save), param 12, save negates |
 | 83 | 0x10908 | gaze at the last target (message: gazer, row 10, no pause); gazer with 0x7F and a target's readied item with name word 0x76 (bytes 0x2F–0x31) → reflected (message: target, row 12, no pause), the gazer is the victim; victim fails a save vs. 1 → stone (0xECB3, status 7, its message: victim, row 10, no pause). **D** (s27, a medusa, MON5 49): the gaze message, the flight and the stone message on a member with no mirror; on Rhiannon with word 0x76 only on her armour and shield (not on the sword, her first readied item) the reflect message and the flight back, so any readied item counts (Core walks them all); the medusa then resisted |
-| 84 | 0x10AD2 | charm gaze: target check 0x13880 and sight 0x2FF74 (`[?]` range = an uninitialised stack byte; 255 taken); message; DS:681B = 10 and **left so** (a later weapon hit on a Mirror Image creature then counts as a spell, see 28); save vs. 4 with −2; charm 0x0B (permanent, param = hostile × 128 + 12, removal on, save negates); charm handler on it. Its own message (gazer, row 10, no pause) comes after the sight check and before the flight |
+| 84 | 0x10AD2 | charm gaze: DS:6826 = the last target; target check 0x13880 (gazer, target) and sight 0x2FF74 from the gazer's square, whose range is the handler's uninitialised word [bp−2]: **0x3E58** in DOSBox-X (s49), limit 2 × 0x3E58 + 1 half squares, so no range in practice ("Handlers 40, 84, 88, 90, 97 under emulation"); message; DS:681B = 10 and **left so** (a later weapon hit on a Mirror Image creature then counts as a spell, see 28); save vs. 4 with −2; charm 0x0B (permanent, param = hostile × 128 + 12, removal on, save negates); charm handler on it. Its own message (gazer, row 10, no pause) comes after the sight check and before the flight |
 | 85, 86 | 0x10FFF, 0x1101D | level drain (0x10D7D) of 1 / 2 on the last target: animated → gone (status 8), max HP 0. Else per level unless gone: 0x74 + 1; n = max HP ÷ Σ class levels (0 → divide error `[?]`); n × (max HP, 0xB1, HP − 1 floor 0; 0x75 + 1); 0x73 < 2 → gone, max HP 0, and draining 2 zeroes the top class's level; else the top class (0x10C5D: highest level, threshold ≥, last wins) − 1, HP 0 → dead, level stats 0x2AA87. Then 0x73 = top class level, XP 0xAC = its threshold (DS:409B, 0 for level ≤ 1), recalculation START 0x1758 |
-| 88 | 0x2A0F1 | lightning breath (read s26; the entry DS:6988 is written at 0x2A7B9 by the spell table builder 0x2A42B, not by 0x11DFD; MON5 id 66 carries it with byte 3 = 0xFF): round counter DS:6DE3 ≠ 0 and 1d100 ≤ 50 → nothing. Else message (CS:0x30CF, START 0x16EC from row 10 with the pause), the target pick DS:6B84 (0x148BE) for spell 0x33 with ai = 1 (its picked flag DS:70C6 not read); the aim DS:6DB9/6DBA := the breather's square + sign(aim − square) (0x2FB52) per axis, then + 1 more on an axis where it is square + 1 (so two squares toward +x / +y, one toward −x / −y, as read); invisibility off (0x2BEBC); the moving icon 0x257E(cell 0x13), breather → aim, 4 frames, 50 ms (0x2A1E4); bolt hit 0x298D4 on the aim and the bolt 0x29973 (length 10, no rebound bonus), damage = the breather's byte 0x32, save type 3; byte 3 > 0xFD → byte 3 − 1, else the record goes (so 0xFF breathes three times); actions end (START 0x2637). When the pick aims nowhere the aim stays on the breather's square: the flight draws nothing, 0x298D4 hits the breather's own slot and the bolt does nothing (as read, `[?]` not seen). **D** (s27, DOSBox-X): Tyranithraxus breathed on his first turn of round 0 (message, the pause, the flight to the nudged aim, the bolt's flights, 80 damage to the first member hit), the Client matched it to the next menu with the same seed. Its fear aura 81 ran at the fight start before it: the paralysis / unaffected messages on the combat screen, one per party member with the effect frames. Core: `EffectHandlers.LightningBreath`, `FightSpells.LightningBreath` |
+| 88 | 0x2A0F1 | lightning breath (read s26; the entry DS:6988 is written at 0x2A7B9 by the spell table builder 0x2A42B, not by 0x11DFD; MON5 id 66 carries it with byte 3 = 0xFF): round counter DS:6DE3 ≠ 0 and 1d100 ≤ 50 → nothing. Else message (CS:0x30CF, START 0x16EC from row 10 with the pause), the target pick DS:6B84 (0x148BE) for spell 0x33 with ai = 1 (its picked flag DS:70C6 not read); the aim DS:6DB9/6DBA := the breather's square + sign(aim − square) (0x2FB52) per axis, then + 1 more on an axis where it is square + 1 (so two squares toward +x / +y, one toward −x / −y, as read); invisibility off (0x2BEBC); the moving icon 0x257E(cell 0x13), breather → aim, 4 frames, 50 ms (0x2A1E4); bolt hit 0x298D4 on the aim and the bolt 0x29973 (length 10, no rebound bonus), damage = the breather's byte 0x32, save type 3; byte 3 > 0xFD → byte 3 − 1, else the record goes (so 0xFF breathes three times); actions end (START 0x2637). When the pick aims nowhere the aim stays on the breather's square: the flight draws nothing, 0x298D4 hits the breather's own slot (by execution, s49: the record and cells as the program leave them). 0x298D4's rebound flag (the handler's [bp−1]) is written 0 first, so no residue there. **E** s49 (whole routine, the pick scripted). **D** (s27, DOSBox-X): Tyranithraxus breathed on his first turn of round 0 (message, the pause, the flight to the nudged aim, the bolt's flights, 80 damage to the first member hit), the Client matched it to the next menu with the same seed. Its fear aura 81 ran at the fight start before it: the paralysis / unaffected messages on the combat screen, one per party member with the effect frames. Core: `EffectHandlers.LightningBreath`, `FightSpells.LightningBreath` |
 | 121 | 0x11877 | acid breath: 1d100 ≤ 25 and the target nearer than 4 (START 0x30FB): actions end, message (breather, row 10, with the pause), 8d4 (count to 681C), save vs. 3 (after the dice), non-weapon damage halved when saved (element left as it was); this record and the first 0x50 go |
 
 ## The stat recalculation — `[?]`
@@ -284,21 +289,78 @@ save type, effect id, when (0 not in a fight), casting time, AI priority, offens
 
 **Casting level** (START 0x3262): class 0 → current character's cleric level 0x96, 1 → magic-user level 0x9B, 2 →
 12; while an item is used (DS:6DBF) any class but 2 → 6. `[?]` another class leaves it unset.
+
+**Spell globals DS:4844 / DS:4845** (s49): written by Enlarge (DS:4844 := 18, DS:4845 := the exceptional part by
+level), Sleep (DS:4844 = the 4d4 budget, DS:4845 = each target's cost, the last one staying) and Dispel Magic
+(DS:4845 = an effect's level, DS:4844 = the chance) and by nothing else; never reset, so a value lasts from fight to
+camp to fight for the whole run (`EclMemory.SpellGlobals`, not saved). They lie in the uninitialised data, which the
+run-time does not clear: the value before the first writer is `[?]` (0 in Core).
 **Range** (0x27741): fixed + per level × level (byte), with an item per level × 6 + fixed; 0 with an area → 1; 255 → 1.
 **Duration** (0x277EE): spell 40 → 1d6 × 10; 57, 61 → 5d4; 59 → 1d4 × 10 + 40; 63 → in a fight 2d10 × 10, else
 (1d10 + 10) × 10; 67 → 1440; else fixed + per level × level.
 
-**Combat cast** (0x14C0F, spell, AI flag): spell 0 → the spell menu (0x239D6 `[?]`); a spell with "when" = 0 is
-refused. Delay = casting time ÷ 3. Delay 0: cast now (0x27C38) and the actions end (START 0x31D7). Else the caster
-begins casting: combat record +0 = spell, initiative − delay when above it, else 1; the turn ends with the actions
+**Combat cast** (0x14C0F(spell, ai, var done), read whole s49 — W, E): done := 0. Spell 0 → the spell list
+0x239D6(kind 0, action 1, position −1, flag 1), which returns the picked row's id from DS:476A (0x270A2), 0 on Exit or
+an empty list. The list (0x275B4 kind 0, appended by 0x272A5) is every memorised slot 0x17..0x2B whose byte is
+1..0x7F, in slot order, duplicates kept, a level heading before each change of level; no "when" filter and no +1
+test (the menu offers Cast only with +1 set). A spell with "when" (DS:3205 + 16·spell) = 0 → the camp-only message
+(START 0x2233, for ai = 1 too, though the AI never picks one: their AI priority is 0) and spell := 0. With ai = 0 the
+program then redraws whatever came of the list: START 0x3728, the map 0x319D2(caster, 3, 1), START 0x1583(caster).
+Spell 0 → return (done 0). Delay = byte DS:3206 + 16·spell div 3. Delay 0: cast now, 0x27C38(spell, ai, 1, var done),
+then done := START 0x31D7 (the actions end: +3, +0, +7, +6 := 0; always 1, so done is 1 even when the pick failed).
+Else done := 1, the begins-casting message (START 0x228C, colour 10, with its pause), combat record +0 = spell,
++3 (signed) − delay when above the delay, else 1; the turn ends with the actions
 not over, so the creature is picked again in the same round (D: `fight_casts` q29 → q30, the charmed Sean's AI Bless).
+`[?]` Ids above 67 index past the table. The menu's list never holds one (bytes ≥ 0x80 are left out, and Memorize writes
+only table ids), but the AI's list 0xB105 takes every memorised byte > 0 (unsigned compare), so a spell waiting to be
+memorised (0x80 + id) can be drawn. 0xAEAB then reads its AI priority past the table, DS:31FA + 16·id + 13: in the
+loaded image 60 of the ids 0x81–0xC3 have a non-zero byte there (DS:3A0A–3E39; whether the program writes that area
+at run time was not checked), so such an id could pass a priority pass and reach 0x14C0F and 0x27C38 (whose routine
+table it would index past too). Core's table gives those ids AI priority 0 and "when" 0, so the C# AI never picks one.
+A possible program bug for an NPC or quick-magic caster with pending spells; not followed further (s49). Checked under unicorn for ids
+0..67, ai 0 and 1, initiatives around the delay, and the list on random slots (`tools/scripts/por_cast_oracle.py`,
+`CombatCastProgramTests`). **D** (s49, `fight_save.py BASE OUT 1C0B00040001000224 --hp 200` with every member's
+memorised slots set to a camp-only cleric spell then Bless, `--spells I:22,1`): Rhiannon's Cast shows both (the camp-only one
+first, under its level heading); picking it writes the camp-only message on row 24 in green over the list (every row
+green), then after the pause the map and her menu come back (not done); Exit gives the map and menu at once; Bless
+redraws the map, types the begins-casting words in the panel, the next creature acts, and on her later turn in the
+round the aim menu comes with the spell's name on row 23. Client: the camp-only message is drawn over the kept list
+(`CombatView.KeptList`), as DOSBox-X. The AI's branches (ai = 1: no redraw; cast now; begun and picked again in the
+round) rest on the s13 captures `fight_casts` (monsters' Magic Missile, the charmed Sean's Bless, q29 → q30); an s49
+try with Darkstar's 0x84 = 0x80 and Quick gave a morale flight instead of a cast. Core: `FightSpells.CombatCastStep` (both callers), `FightMenu.Cast`, `FightSpells.CastAuto`,
+`FightSpells.Castable` / `MemorisedList`.
 On its later turn the menu (0x9B21) and the AI cast +0 (0x27C38) and the actions end. Damage before that clears +0 (0x12AF4 / 0x2C22E).
 
-**Cast** (0x27C38, in a fight): the target pick (DS:6B84 = 0x148BE). Not picked: the AI loses the spell at once
-(the menu asks first): message, memorised copy removed. Picked: the caster faces the aimed square (0x27D9C–0x27E00:
-the first direction whose cone 0x300CD holds it, 0x31232; its own square gives 0), animation, the caster's invisibility goes
-(0x2BEBC), the current character's first memorised copy is removed (START 0x202B; slots 0x17..0x2B, exact byte;
-not while an item is used), DS:681B = spell, the routine runs (DS:6B84 + 4·spell), DS:681B = DS:6820 = 0.
+**Cast** (0x27C38(spell, ai, announce, var done), W, read whole s49; oracle `por_spellcast_oracle.py` → `CastProgramTests`):
+the caster is the current character DS:5D92; DS:6DBF says whether an item casts (set by the item use 0x22AC4, scrolls
+included). Callers: the menu's spell begun earlier 0x9B6C (ai 0, announce 1), the AI's 0xAD13 (1, 1), the combat cast
+0x14CE6 (the AI flag, 1), the camp's Cast 0x17D4D (0, 1), the item use 0x22C17 (the user's 0x10F, 0) and the loot
+menu's D 0x6605 (0, 0; not built in the Client yet).
+1. **Outside a fight only** (DS:49F3 ≠ 5) and target mode (table byte 7) 0, combat only: with DS:6DBF = 0 the spell's
+   name at (1, 19) and the combat-only line at (1, 20) (START 0x76B6, colour 10) and the lose-it question (0x2D9A0 with
+   colours 13, 15, 10 in push order); Y removes the memorised copy (START 0x202B). With DS:6DBF ≠ 0 the item's two
+   lines (0x27BEA, 0x27BF4) at the same places and the use-it question 0x27C0D (same colours); Y sets done := 1, so the
+   item use spends the charge or the scroll's spell with no effect; N leaves done as it was (0 from the Items page).
+   Either way no cast; the routine goes to its end (step 4). In a fight byte 7 is not looked at.
+2. With announce ≠ 0 and DS:6DBF = 0: the cast message 0x2A332 (caster, the casts word, spell), once, before the
+   pick. Outside a fight it clears (1, 18)–(38, 22), the name at (1, 19), the word after it (column length + 2),
+   the spell's name at (1, 20) in colour 10, then PauseOnly and START 0x2383.
+3. The loop: the target pick DS:6B84 entry 0 (0x148BE in a fight, 0x27AA9 outside) with (spell, ai, var done).
+   **Picked**: in a fight the caster faces the aimed square (0x27D9C–0x27E00: the first direction whose cone 0x300CD
+   holds it, 0x31232; its own square gives 0), the icon cell 0x12 (START 0x257E), the cast tune (spell 47 DS:262A, 51
+   DS:2624, else DS:2618), the flight to the aim (START 0x25C9, 4 frames, 30), START 0x8C85(10), and when the caster is
+   visible (0x30E54) its pose drawn back (0x31232 twice). Then in and out of a fight: the caster's invisibility goes
+   (0x2BEBC), the first memorised copy is removed unless DS:6DBF ≠ 0 (START 0x202B; slots 0x17..0x2B, exact byte), DS:681B
+   = spell, the routine runs (DS:6B84 + 4·spell), DS:681B = DS:6820 = 0. **Not picked**: outside a fight the loop just
+   ends (nothing lost, no message). In a fight with ai = 0 the abort question 0x27C04 (0x2D9A0 with 14, 10, 15); N →
+   the pick again (no new cast message); Y, or ai ≠ 0 at once: the aborted message on row 24 (START 0x2233) and the
+   memorised copy removed unless DS:6DBF ≠ 0.
+4. Every way out (0x27F44): START 0x2383 (outside a fight it clears (1, 18)–(38, 22)), and in a fight row 23 cleared
+   (START 0x4047 with 0, 23, 39, 23).
+Core: `CampCast.Run` (outside a fight, whole), `FightSpells.CastNow` with the menu's loop `FightMenu.CastNow` (in a
+fight; the Client shows the cast message before the menu's aim). Checked under emulation: 300 generated casts (fight
+and not, item and not, scripted picks and answers): the outside-a-fight ones through `CampCast.Run` step for step, the
+fight ones against the rules above.
 
 **Target pick** (0x148BE): DS:6820 = 0, list cleared, caster's square to DS:6DB9/6DBA. Mode = area AND 0x0F:
 - 0: the caster.
@@ -399,7 +461,7 @@ pause, rows cleared, the one-frame flight, then the damage message), the gaze 83
 MON2 26) and the lightning breath 88 (Tyranithraxus: text, pause, flight, the bolt's flights and damage messages):
 every message frame equal pixel for pixel, with the typing, rows and pauses as in the table (the few frames that
 still differ are flight ends, an AI panel redraw and a skull's 3 pixels: combat-menu.md "s29 DOSBox-X checks", `[?]`). The 84 gaze came from the
-vampire four squares from its target (the `[?]` range byte stays unread).
+vampire four squares from its target (the range: "Handlers 40, 84, 88, 90, 97 under emulation", s49).
 
 **Status changes** (read s29, P): 0xECB3 (unit 0xEC5B, near calls only; no far caller in GAME.OVR or START.EXE)
 copies its text argument to a local (0xAF8:0x0B25, 40 characters) and calls START 0x16EC(creature, text, 10, 0)
@@ -569,7 +631,7 @@ monsters: dosbox-trace-method.md "Monsters of another disk"):
 | 4 Cause Light Wounds | 0x280BF | damage 1d8 (count to 681C), element 8 |
 | 9 Burning Hands | 0x281A8 | damage = casting level, element 9 |
 | 10 Charm Person | 0x281F5 | target type > 1 or size > 1 → unaffected; strength = level + caster hostile × 128; removal on; then the target's charm handler runs |
-| 12 Enlarge | 0x282BD | Str 18 / exceptional by level (1: 0, 2: 1, 3: 51, 4: 76, 5: 91, 6: 100; other levels keep the previous value `[?]`); raise (0x2C046); effect 0x0C, removal on, with the returned code |
+| 12 Enlarge | 0x282BD | DS:4844 := 18; exceptional part DS:4845 by casting level (1: 0, 2: 1, 3: 51, 4: 76, 5: 91, 6: 100; other levels keep DS:4845 as the last Enlarge, Sleep or Dispel Magic left it, "Spell globals" above: only a class-2 caster (level 12) or an unknown class byte gets there, items cast at 6); raise (0x2C046); effect 0x0C, removal on, with the returned code |
 | 13 Reduce | 0x28386 | first target fails a save vs. 4 and loses an Enlarge → message |
 | 14 Friends | 0x283F0 | first target's Charisma + 2d4, at most 25; strength = the old Charisma, removal on |
 | 15 Magic Missile | 0x28451 | damage (level ÷ 2)d4 + level ÷ 2 (count to 681C), element 8 — **0 at levels 0–1, no draw** (checked under emulation for levels 0–12, and with an item level 6 = 3d4 + 3; the resolution then sees damage 0, so element 0 and no 0x2C22E: nothing happens. DOSBox `fight_casts` b02 → b04, s13: no damage, no draw) |
@@ -616,8 +678,8 @@ line is walked back to the caster, and when the bonus is still on and that is �
 + 8; direction reversed, bonus off, last slot 0. Left − the line's **total** distance (not the part since the last
 hit), at least 0; without a rebound the same line goes on, else a new line. DS:6820 = 0.
 
-**Castable** (`FightSpells.Castable`): with cast allowed (+1), every distinct memorised id (bit 7 clear) whose "when"
-byte is not 0. `[?]` The menu's own list (0x239D6) is not read.
+**Castable** (`FightSpells.Castable`): the combat Cast's list, 0x275B4 kind 0 (see "Combat cast"): every memorised byte
+1..0x7F in slot order, duplicates kept; a camp-only pick is refused afterwards (s49; before, Core filtered it here).
 
 ## Where the data is (`PorSpellData`)
 
@@ -629,11 +691,12 @@ byte is not 0. `[?]` The menu's own list (0x239D6) is not read.
 
 ## Open `[?]`
 
-- The stat recalculation (above); START 0x2197 (where a created item goes, 0xC7); the spell menu (0x239D6; the camp's
-  out-of-combat cast and 0x27AA9 are in camp.md); the map target list 0x3045B (implemented by
+- The stat recalculation (above); START 0x2197 (where a created item goes, 0xC7); the spell menu's screen (0x239D6; its
+  pick is settled under "Combat cast"; the camp's out-of-combat cast and 0x27AA9 are in camp.md); the map target list 0x3045B (implemented by
   the map code through `IFightTargetList` / `IFightAuraRange`; without it auras in a fight are not found and area
   spells fall back to the map distance with a diagnostic).
-- Handler 84's sight range (an uninitialised stack byte; DOSBox-X s29 saw gazes at distance 4).
+- Handler 84's range word is a sampled residue (0x3E58 at 18 of 18 gazes, s49), not proven for every turn; handlers 90 / 97's
+  residue byte varies (only reached with Constitution outside 4..20).
 - Everything else here is **P**; the Sleep cast and Restoration's no-class index below are **D**; the routines under "Checked under emulation" are **E**.
 
 ## Restoration with no class to raise — D (s18)
@@ -750,8 +813,43 @@ lists, items, RandSeed (so the draws), and on a combat map the arena cells and t
 then handler 40 through the removal of 0x28), 35, 36, 37, 39, 41, 42, 43, 44, 46, 47, 48, 51, 55, 56, 57, 58, 59, 60,
 62, 64, 65, 67; handlers 81, 82, 83, 85, 86. Outside a fight (DS:49F3 = 0); text and drawing trapped; 0x2AA87 and
 START 0x1758 skipped, START 0x3AF7 answers "no limit" (the seams do the same). Restoration with the real limit and level stats:
-`por_restore_oracle.py` ("Restoration at the race limit"). Handlers 73–77, 84, 121 need the
-fight's slots and attack: hand tests (`EffectHandlersHoldsTests`). Magic Missile: levels 0–12 and the item path.
+`por_restore_oracle.py` ("Restoration at the race limit"). Handlers 73–77, 121 need the
+fight's slots and attack: hand tests (`EffectHandlersHoldsTests`); 40 with bodies, 84, 88, 90 and 97:
+`por_handler_oracle.py` ("Handlers 40, 84, 88, 90, 97 under emulation"). Magic Missile: levels 0–12 and the item path.
+
+## Handlers 40, 84, 88, 90, 97 under emulation — E, D (s49)
+
+`tools/scripts/por_handler_oracle.py` (fixture `program-v1.3/handlers.json`, 272 cases; `HandlerProgramTests`), set up
+as `por_spell_oracle.py` (outside a fight), compares record bytes, effects, RandSeed, arena cells, the aim and DS:681B:
+- **40**: one or two Stinking Clouds, then the first one's 0x28 removed, with party bodies in the list DS:66D6 (on
+  and beside the clouded cells, terrain kept 23, 2 or 0x1F, and emptied entries: 0x317E1 fills an entry's 7 bytes with
+  0). Equal in all 40 cases. Note (spell 34, not this handler): 0x28B29's body walk does not test the pointer, so an
+  emptied entry (x, y = 0, 0, terrain 0) would count for cell (0, 0); `FightSpells.StinkingCloud` skips emptied
+  entries. Cell (0, 0) is on the arena border, so no cloud reaches it in practice.
+- **84**: the range word set at the handler's entry: 0x3E58, values 0..0x18, 0x8000 + 0..0x18 (the 16-bit 2w + 1
+  wraps to a small limit) and 0xEEEE; class-1 effects (25, 37, 63, 71) on either side test the target check's order
+  (0x13880(gazer, target): the target's class-1 effects veto). Equal in all 60 cases.
+- **88**: param 0xFF / 0xFE / 0xFD / small, round counter 0 or not, the pick (DS:6B84 entry 0, trapped; C#
+  `FightSpells.TargetPick`) aiming at a creature, at a square or nowhere (the breather's square). Equal in all 60.
+- **90 / 97**: the saving throw 0x2BC4D whole on carriers of 90, 97 or both (in both orders), every type, Constitution
+  at each band edge: equal for 4..20. Outside (0, 3, 21, 255) the handler adds its [bp−1] (the throw's BP − 0x125:
+  0x2BC4D → 0x2B1E4 → 0x2B04A → 0x2AEEA → handler), which under the oracle is the stack filler 0xEE. Outside a fight
+  nothing in the throw reaches that cell, so the residue comes from before the throw; in a fight (DS:49F3 = 5) 0x2B04A's
+  aura search for ids 45, 46, 49 (before 90 / 97 in class 0x0C) builds the target list 0x3045B, whose frame covers the
+  cell, so it can be overwritten there first.
+
+**DOSBox-X** (s49, residue probe `tools/dosbox/handlerprobe.s`, `dosbox-trace-method.md` "Handler residue probe"; the
+s39 vampire fight `fight_save.py BASE OUT 1C0B00170001001724 --mon 4 --hp 200`, then with two large scorpions added,
+party on Quick): handler 84 ran 18 times, every time with BP 0x3D64 and [bp−2] = **0x3E58** (it looks like a saved
+frame pointer; its writer was not traced. The AI turn 0xABCF → 0xB6FC → class 0x0E is the handler's only path, at a
+fixed depth).
+C#: `EffectHandlers.CharmGazeRangeResidue`. Handler 97 ran twice on Thrender (dwarf, Con 16) for the charm gaze's save:
+[bp−1] = 0x1F once and 0x00 once (BP 0x3C10 both times), so the byte depends on what ran before; with Constitution in
+4..20 it is overwritten. Carriers are created dwarves, gnomes and halflings (race limits 12–19, 8–18, 10–19 at
+creation and in Modify, DS:3DA3). Writers of record +0x14 found by a byte scan of both files: handler 7 (0xEEB7, + 1,
+so 21 from 20) and the temple's raise (0x4B85: Constitution − 1 per raise, not below 0). So a carrier raised often
+enough reaches 3 and below, and the residue then decides its saves vs. poison (90) or spells and wands (97); the Core
+adds 0 there `[?]` (residue, varies).
 
 ## DOSBox — D
 

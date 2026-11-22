@@ -116,7 +116,7 @@ public interface IFightMoves
 /// </summary>
 public interface IFightSpells
 {
-    /// <summary>Spell ids the creature can cast now (memorised and allowed this round). Empty for none.</summary>
+    /// <summary>The combat Cast's list (0x275B4 kind 0): the memorised ids the spell list offers. Empty for none.</summary>
     IReadOnlyList<int> Castable(Fight fight, EclCharacter caster);
     /// <summary>Casts <paramref name="spell"/> at a creature target or a square (one of them, or neither for spells
     /// with no target). Returns false when the cast did not happen.</summary>

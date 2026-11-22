@@ -359,11 +359,9 @@ public static class CampScreens
             t.Put(17, x + 1, Two(10 * r[CampTime.TenMinutes] + r[CampTime.Minutes]), (byte)(highlight == CampTime.TenMinutes ? 15 : 10));
         }
 
-        private static string Two(int v)
-        {
-            var s = v.ToString(CultureInfo.InvariantCulture);
-            return (v < 10 ? "0" + s : s)[..2];
-        }
+        /// <summary>0x24331 (<see cref="CampTime.TwoDigits"/>) on the value's low byte, as the program pushes it: days and
+        /// hours from their words, minutes = 10 × ten-minutes + minutes (DS:6DC6, DS:6DC4).</summary>
+        private static string Two(int v) => CampTime.TwoDigits((byte)v);
 
         private const int FieldLeft = -30, FieldRight = -31;
 
@@ -583,12 +581,16 @@ public static class CampScreens
     /// before each list (0x17CDC, 0x17D52), so its list starts afresh.
     /// </summary>
     private static (int Spell, bool NotEmpty) SpellPage(CampContext c, CampSpells.ListKind kind, Msg? action,
-        IReadOnlyList<ListLine>? extra = null, ListPlace? place = null, IReadOnlyList<WindowLine>? box = null)
+        IReadOnlyList<ListLine>? extra = null, ListPlace? place = null, IReadOnlyList<WindowLine>? box = null,
+        byte[]? scroll = null)
     {
         c.LastPage = null;
         if (c.Party.Current is not { } who)
             return (0, false);
-        var list = c.Spells.List(who, kind, it => c.Resources.ItemSlot(it));
+        // List kind 2 (a scroll's spells, 0x275B4 → 0x27466(0)) when a scroll is given.
+        var list = scroll is not null
+            ? CampSpells.ScrollList(c.Spells.Table, who, scroll, c.Resources.ItemSlot(scroll))
+            : c.Spells.List(who, kind, it => c.Resources.ItemSlot(it));
         if (list.Count == 0)
             return (0, false);
         var rows = new List<string>();
@@ -605,7 +607,7 @@ public static class CampScreens
             rows.Add((r.Pending ? " *" : "  ") + SpellName(c, r.Spell));
             ids.Add(r.Spell);
         }
-        Msg suffix = kind switch
+        Msg suffix = scroll is not null ? Msg.OnScroll : kind switch
         {
             CampSpells.ListKind.InMemory => Msg.InMemory,
             CampSpells.ListKind.SpellBook => Msg.InSpellBook,
@@ -636,6 +638,10 @@ public static class CampScreens
             return (0, true);
         return (ids[a.Row], true);
     }
+
+    /// <summary>View's Spells (0x21AED → 0x239D6 kind 0, action 0): the current member's memorised list with only Exit
+    /// (and Next / Prev); nothing changes.</summary>
+    public static void ShowMemorised(CampContext c) => SpellPage(c, CampSpells.ListKind.InMemory, null);
 
     /// <summary>
     /// Cast (0x17CD2): the remembered target cleared; refused per 0x17B9D; else the memorised list (Cast) until none
@@ -725,7 +731,8 @@ public static class CampScreens
         // "casts" and the spell name (PrintCastSpellMsg), then the target and the routine. DOSBox-X s29 (Brother Sean's
         // Bless in camp, speed 4): the name and the casts word on row 19, the spell name on row 20 (one row below the
         // effect messages' name row), drawn at once (not typed), then the game-speed pause (no key) and the rows
-        // cleared; the effect messages follow. [?] The routine is not read (0x27D48 outside a fight).
+        // cleared; the effect messages follow. Read s49: 0x2A332 outside a fight clears (1, 18)–(38, 22), the name at
+        // (1, 19), the word at column length + 2, the spell name at (1, 20) in colour 10, PauseOnly, START 0x2383.
         var name = AmigaView.Case(who.Name);
         var w = c.Dialog.Text;
         w.ClearRect(TextWindow.Left, TextWindow.Top, TextWindow.Right, TextWindow.Bottom);
@@ -735,6 +742,87 @@ public static class CampScreens
         if (c.Memory.GameSpeed > 0)
             c.Dialog.Ask(new DelayRequest(TimeSpan.FromMilliseconds(225 * c.Memory.GameSpeed)));
         w.ClearRect(TextWindow.Left, TextWindow.Top + 1, TextWindow.Right, TextWindow.Bottom);
+        WithCastMessages(c, cast, () => cast.Cast(spell, remembered => PickTarget(c, remembered)));
+    }
+
+    /// <summary>
+    /// The Items page's Use outside a fight (0x222F0 with DS:49F3 = 2–4, read s49): an item not readied gets the
+    /// must-be-readied message on row 24 (START 0x2233); a usable one (a scroll, or power 0x3D &gt; 0 with kind 0x3E
+    /// &lt; 0x80) goes to the item use 0x22AC4 (<see cref="CampCast.UseItem"/>): a scroll's spell from its list (kind 2,
+    /// action Cast); a power item's message (START 0x16EC with the uses-an-item words and no pause, the "Item:" label
+    /// and the item's name through START 0xFE2 at row 22, PauseOnly, START 0x2383); the cast 0x27C38 with DS:6DBF = 1:
+    /// a combat-only spell shows the item's two lines and asks "Use it?" (Yes spends the charge or the scroll's spell
+    /// with no effect); else the target pick (0x27AA9) and the spell's routine with its messages (no cast message:
+    /// the item use passes announce 0). [?] START 0xFE2's exact placing of the item name (row 22, after the label).
+    /// D s49 (save A + a wand of magic missiles and a clerical scroll on Thrender, camp View → Items): the wand's
+    /// "Use it?" Yes took a charge (20 → 19, saved to B), the page stayed with the wand lit; the scroll's Snake Charm
+    /// gave the item's lines and No kept it; its Bless blessed the party and left the scroll with two spells.
+    /// </summary>
+    internal static void UseItem(CampContext c, EclCharacter who, byte[] item)
+    {
+        if (item[0x34] == 0)
+        {
+            CharacterView.RowMessage(c.Trade, c.Resources.CombatTexts[CombatMsg.MustBeReadied]);
+            return;
+        }
+        if (c.Cast is not { } cast || c.Trade.ItemTypes is not { } types || !FightSpells.IsUsable(types, item))
+            return;
+        if (!ReferenceEquals(c.Party.Current, who))
+            c.Party.SetCurrent(who);
+        // DS:6DB5 (the remembered target) is not cleared by Use: only the Cast menu (0x17CE4), the camp's end
+        // (0x197EA) and the spell-table builder 0x2A42B (0x2A448) clear it. [?] The command line's View builds a new
+        // CampCast each time (Remembered starts empty there); the program keeps DS:6DB5 until one of those.
+        var w = c.Dialog.Text;
+        void ItemMessage(EclCharacter user, byte[] used)
+        {
+            PanelMessage(c, user, c.Resources.CombatTexts[CombatMsg.UsesAnItem], pause: false);
+            string label = c.Resources.CombatTexts[CombatMsg.ItemLabel];
+            w.Put(22, 1, label, TextWindow.ScriptColour);
+            w.Put(22, 1 + label.Length, c.Trade.ItemName(used), TextWindow.ScriptColour);
+            if (AmigaView.MessagePause(c.Memory.GameSpeed) is { Ticks: > 0 } wait)
+                c.Dialog.Ask(new DelayRequest(wait));
+            w.ClearRect(TextWindow.Left, TextWindow.Top + 1, TextWindow.Right, TextWindow.Bottom);
+        }
+        bool CombatOnly(int spell, bool fromItem)
+        {
+            w.ClearRect(TextWindow.Left, TextWindow.Top, TextWindow.Right, TextWindow.Bottom);
+            w.Put(19, 1, fromItem ? c.Text[Msg.ThatItem] : SpellName(c, spell), 10);
+            w.Put(20, 1, c.Text[fromItem ? Msg.CombatOnlyItem : Msg.CombatOnly], 10);
+            bool yes = c.Dialog.YesNo(c.Text[fromItem ? Msg.UseIt : Msg.LoseIt], colours: VenueScreens.PayColours); // 0x27D30 / 0x27CCA: 13, 15, 10
+            return yes;
+        }
+        var hooks = new CampCast.Hooks
+        {
+            CombatOnly = CombatOnly,
+            PickMember = remembered => PickTarget(c, remembered),
+            End = () => w.ClearRect(TextWindow.Left, TextWindow.Top + 1, TextWindow.Right, TextWindow.Bottom), // START 0x2383
+        };
+        int ScrollSpell()
+        {
+            // The scroll's list stays on the screen through the cast (D s49: the item's combat-only lines over it with
+            // the question on row 24; Bless's effect messages in the text box, its frame drawn by START 0x16EC). [?]
+            // The Client shows the box's frame from the start (the program draws none under the combat-only lines).
+            int spell = SpellPage(c, CampSpells.ListKind.InMemory, Msg.CastAction, scroll: item).Spell;
+            if (spell != 0)
+                c.Trade.ShowPageUnder(c.LastPage);
+            return spell;
+        }
+        try
+        {
+            WithCastMessages(c, cast, () => cast.UseItem(types, item, ScrollSpell, ItemMessage, hooks));
+        }
+        finally
+        {
+            c.Trade.ShowPageUnder(null);
+        }
+    }
+
+    /// <summary>
+    /// A spell routine run outside a fight with its messages shown as the program's (the routines' events through
+    /// START 0x16EC's camp branch, 0x2C540's texts); what is not matched yet is listed in our words afterwards.
+    /// </summary>
+    private static void WithCastMessages(CampContext c, CampCast cast, Action run)
+    {
         var heard = new List<string>();
         var shown = c.OutsideMessages(resting: false);
         void OnSpell(EclCharacter t, int s, EffectEvent e)
@@ -768,7 +856,7 @@ public static class CampScreens
         cast.Spells.Effects.Event += OnEffect;
         try
         {
-            cast.Cast(spell, remembered => PickTarget(c, remembered));
+            run();
         }
         finally
         {
@@ -908,7 +996,7 @@ public static class CampScreens
         }
         finally
         {
-            c.Trade.ShowPageAlone(null);
+            c.Trade.ShowPageUnder(null);
         }
     }
 

@@ -78,7 +78,11 @@ public sealed class FightMoves(CombatMap map) : IFightMoves
     /// 0x12F0D: cost 3 for a diagonal (odd direction), else 2. Cost above the movement left (+6): +6 = 0 and no move
     /// (false). Else +6 − cost, the slot moves one cell, the grid is rebuilt, the flank counters +0x0F and +0x12 = 0,
     /// the guards attack (<see cref="GuardsAttack"/>), and a creature then out of play or helpless has movement 0. The
-    /// terrain's own cost only gates the step (the menu's test); it is not spent.
+    /// terrain's own cost only gates the step (the menu's test); it is not spent. The step is drawn in
+    /// two halves: <see cref="Fight.StepDrawing"/> before the slot moves (old-square scroll, old cell redrawn) and
+    /// <see cref="Fight.StepDrawn"/> after the grid rebuild (new-square scroll), before the step sound (0x1306D) and the
+    /// guards.
+    /// Every branch run under emulation (por_round_oracle.py, RoundProgramTests).
     /// </summary>
     public bool MoveOne(Fight fight, EclCharacter c, int direction)
     {
@@ -92,8 +96,11 @@ public sealed class FightMoves(CombatMap map) : IFightMoves
         rec[CombatRecord.Movement] -= cost;
         int slot = Map.Slot(c);
         var (x, y) = Map.SlotPosition(slot);
-        Map.SetSlotPosition(slot, (sbyte)(byte)(x + CombatTables.DirDx[direction & 0xFF]), (sbyte)(byte)(y + CombatTables.DirDy[direction & 0xFF]));
+        int nx = (sbyte)(byte)(x + CombatTables.DirDx[direction & 0xFF]), ny = (sbyte)(byte)(y + CombatTables.DirDy[direction & 0xFF]);
+        fight.StepDrawing?.Invoke(c, (nx, ny)); // 0x12FB4–0x13011: old-square scroll (AI), old cell redrawn
+        Map.SetSlotPosition(slot, nx, ny);
         Map.Rebuild();
+        fight.StepDrawn?.Invoke(c, (x, y)); // 0x1303F–0x1304E: new-square scroll, before the sound and the guards
         rec[CombatRecord.FlankCount] = 0;
         rec[CombatRecord.FlankSpread] = 0;
         fight.State.Sound.Cue(Sound.SoundCue.Step); // 0x1306D
@@ -121,6 +128,7 @@ public sealed class FightMoves(CombatMap map) : IFightMoves
             var g = fight.Record(guard);
             if (g[CombatRecord.Guarding] == 0 || FightRules.IsHelpless(guard))
                 continue;
+            fight.GuardAttacking?.Invoke(c); // 0x12E9E–0x12EBC: ScrollView(mover's square, 2, 8)
             g[CombatRecord.Guarding] = 0;
             fight.Attack(guard, c);
         }

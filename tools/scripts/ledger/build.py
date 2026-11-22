@@ -173,6 +173,22 @@ ORACLES = {
     'train': ([O_(0x1C32D)], [S_(x) for x in (0x7DF8, 0x76B6, 0x4047, 0x23B6, 0x2233, 0x41F8, 0xBA8B, 0xB062)]
               + [O_(0x2D9A0), O_(0x239D6)] + ALLOC),
 }
+# s49 oracles; their base classes (por_spell_oracle.Oracle, por_ai_oracle.AiOracle) keep their own traps
+SPELL_TRAPS = ORACLES['spell'][1]
+AI_TRAPS = [O_(0x2AEEA), O_(0x30A0F)]
+ORACLES.update({
+    'venue': ([O_(x) for x in (0x23819, 0x4864, 0x22F8C)],
+              [O_(x) for x in (0x458A, 0x4636, 0x2D9A0)] + [S_(x) for x in (0xFE2, 0x77F8, 0x4047, 0x2233, 0x7E4E)] + SPELL_TRAPS),
+    'round': ([O_(x) for x in (0x127FB, 0x9938, 0x12F0D, 0x2B9D1)],
+              [O_(0x30C65), S_(0x8BBC), O_(0x1407F)] + SPELL_TRAPS),
+    'handler': ([O_(x) for x in (0xF91E, 0x10AD2, 0x2A0F1, 0x11134, 0x112E5, 0x2BC4D)],
+                [O_(0x27AA9)] + SPELL_TRAPS),  # DS:6B84 entry 0 (the pick) scripted
+    'spellcast': ([O_(0x27C38), O_(0x275B4)],
+                  [O_(x) for x in (0x2D9A0, 0x2A332, 0x2BEBC, 0x31321, 0x31349, 0x300CD, 0x31232, 0x30E54)]
+                  + [S_(x) for x in (0x76B6, 0x2233, 0x2383, 0x4047, 0x257E, 0x8C85, 0x8BBC, 0x25C9)] + AI_TRAPS + SPELL_TRAPS),
+    'cast': ([O_(x) for x in (0x14C0F, 0x275B4, 0x24331)],
+             [O_(x) for x in (0x239D6, 0x27C38, 0x319D2)] + [S_(x) for x in (0x2233, 0x228C, 0x3728, 0x1583)] + AI_TRAPS + SPELL_TRAPS),
+})
 via_oracle = {}
 for name, (roots, traps) in ORACLES.items():
     traps = set(traps)

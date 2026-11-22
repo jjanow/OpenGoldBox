@@ -349,6 +349,36 @@ public class KeyBufferTests
         Assert.False(dos.Pressed(GameAction.FightQuickMagic));
     }
 
+    /// <summary>
+    /// QoL (user s48, off = original): with <see cref="ActionInput.AmigaAltKeys"/> the Amiga art's fight also takes
+    /// DOS's Alt-M / Alt-Q, the Amiga's own keys still working; Alt-X stays off.
+    /// </summary>
+    [Fact]
+    public void The_amiga_alt_keys_option_adds_alt_m_and_alt_q()
+    {
+        var i = new ActionInput(InputBindings.Defaults()) { AmigaKeys = true, AmigaAltKeys = true };
+        Frame(i);
+        Frame(i, Keys.LeftAlt, Keys.M);
+        Assert.True(i.Pressed(GameAction.FightQuickMagic));
+        Frame(i);
+        Frame(i, Keys.LeftAlt, Keys.Q);
+        Assert.True(i.Pressed(GameAction.FightAllQuick));
+        Frame(i);
+        Frame(i, Keys.F8);
+        Assert.True(i.Pressed(GameAction.FightQuickMagic));
+        Frame(i);
+        Frame(i, Keys.F6);
+        Assert.True(i.Pressed(GameAction.FightAllQuick));
+        Frame(i);
+        Frame(i, Keys.LeftAlt, Keys.M);
+        i.ReadingKeys(false);
+        Assert.Equal(0x32, i.TakeAiKey());   // the AI's key check takes it as the toggle too
+        Frame(i);
+        Frame(i, Keys.LeftAlt, Keys.X);
+        i.ReadingKeys(false);
+        Assert.Equal(0, i.TakeAiKey());      // no Alt-X on the Amiga
+    }
+
     [Fact]
     public void The_triggers_toggle_magic_and_all_quick_on_the_pad()
     {

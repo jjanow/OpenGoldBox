@@ -219,7 +219,9 @@ Code: `GoldBox.Core.Explore.AreaLoop` (one command at a time), `GameClock`, `Are
   - E (Encamp): returns;
   - arrows: Left/Right/Down turn (facing + 6 / + 2 / + 4, wall ahead read again, view redrawn, no script, no time);
     Up calls the forward key 0x16D58 and returns;
-  - other keys: 0x23819 (party member selection `[?]`, not read).
+  - other keys: 0x23819 (party member selection, read s49 `shop-format.md` "Party selection"): Home / End the
+    previous / next member; any other extended key (PgUp, PgDn, Ins, Del, the F-keys, Alt-letters, the digit keys 3 / 5 / 9 and
+    backslash of either row) makes the **first** member current (PgUp seen in DOSBox-X s49). The Client wires Home / End only (see that section).
 - **Area loop 0x40DB.** After a command returns, $49F2 = the current block. While $6DCA > 1 or the key was E (and
   DS:49FF is clear): E runs the camp (0x3B19); otherwise $6DCA bit 0 is kept, $6DCA = 1, the view redrawn, vector 1
   runs alone, then $6DCA = the kept bit (Look). Else vector 0 runs; unless the script changed or the party is
@@ -392,8 +394,13 @@ EXIT: (1, 17), no clear). Every counter of the routine is a **byte**: the positi
    prompt, then "TEXT FOR THE ?LONG TEST TEXT FOR THE PR" on row 18 from column 0 to 39, unchanged 25 s later and
    after Return; the WAIT menu never came. The same text cut to 254 characters printed and reached the menu. The ECL
    texts of v1.3 are at most 205 characters (ECL6 block 19 $9B70, all blocks scanned s47) and memory texts stop at 255
-   cells, so the shipped scripts never reach it. **Original bug** (proposal, not fixed in the translation: a byte
-   counter in a loop up to 255). The ECL unpacker cuts a longer text to 255 (`ecl-format.md` "Text packing").
+   cells, so the shipped scripts never reach it. **Original bug, fixed (user, s48)**: the Client's counter goes past
+   255, so the word ends and the print returns (a byte counter in a loop up to 255 was the bug); the text is still
+   cut to 255 characters. The program's hang stays available to the oracle comparison only
+   (`TextWindow.OriginalWordEndHang`, `PrintProgramTests`). Client s49 (test save `long-text` of
+   `por_test_saves.py`: PRINTCLR of a 255-character text, then HMENU "WAIT"): both pages printed, the last word
+   ending at character 255, and the WAIT menu came. The narrow-box hang above is not changed (no caller passes such
+   a box). The ECL unpacker cuts a longer text to 255 (`ecl-format.md` "Text packing").
    **Typing state** (P, s29; combat-menu.md "The panel's text" lists the writers): DS:4A00 is 1 from the start-up
    (0xE974) and again after every fight (0x6BAF); PRINT / PRINTCLR set 1 for their text and leave 0 (0x1763 / 0x17DC);
    ENCMENU sets 1 for its loop and leaves 0 (0x2C4F / 0x32E0). So PRINT and ENCMENU's texts (the distance text and

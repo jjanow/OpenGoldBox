@@ -7,7 +7,7 @@ namespace GoldBox.Client.Play;
 /// <summary>
 /// View (GAME.OVR 0x21AED): the character page with its menu (Items, Spells, Trade, Drop, Exit), and the items page
 /// whose menu adds Sell and Id in a shop or temple (DS:49F3 = 1; 0x22104–0x2217E). Only Sell, Id and the member
-/// selection do real work, and Trade (the item's 0x2276E, the money's 0x23190; <see cref="TradeRules"/>); the other item
+/// selection do real work, Use outside a fight (<see cref="TradeContext.UseItem"/>), and Trade (the item's 0x2276E, the money's 0x23190; <see cref="TradeRules"/>); the other item
 /// commands say they are not built yet (TODO: Ready 0x2207B, Use 0x2D669, Drop 0x234B2, Halve, Join, Spells). The character page is the program's (0x21084,
 /// <see cref="CombatSheet"/>) through <see cref="TradeContext.ViewPage"/>; our list page (<see cref="Sheet(TradeContext,
 /// EclCharacter)"/>) only when the Client has no party pages. [?] The items page is still ours, not 0x21F32's.
@@ -71,6 +71,9 @@ public static class CharacterView
                     break;
                 case ViewEntry.Rename:
                     shown = Rename(t, c, onPage);
+                    break;
+                case ViewEntry.Spells when t.ShowMemorised is { } showSpells:
+                    showSpells(); // 0x21D05: 0x239D6 shows the memorised list; S is in the redraw set, the page again
                     break;
                 case ViewEntry.Spells or ViewEntry.Trade or ViewEntry.Drop:
                     // Over the program's page there is no text window: the notice goes on its bottom line.
@@ -189,7 +192,7 @@ public static class CharacterView
     /// <summary>
     /// The items page: the item list (readied column, name) with Ready, Use, Trade, Drop, Halve, Join, (Sell, Id)
     /// and Exit. Sell is added for a member with 0x84 &lt; 0x80, and for others only when in play = 0 or status = 1
-    /// (0x22104–0x2217E, [?] intent).
+    /// (0x22104–0x2217E; the same gate as Trade, settled s15).
     /// </summary>
     public static void Items(TradeContext t, Venue venue)
     {
@@ -312,6 +315,18 @@ public static class CharacterView
                     }
                     if (letGo)
                         TradeItem(t, c, item);
+                    break;
+                case ItemsEntry.Use when t.UseItem is { } use:
+                    // 0x222F0 outside a fight: done is cleared after the use (0x22351), so the page stays.
+                    t.TalkOverItemsPage(true);
+                    try
+                    {
+                        use(c, item);
+                    }
+                    finally
+                    {
+                        t.TalkOverItemsPage(false);
+                    }
                     break;
                 case var e:
                     NotBuilt(t, e.ToString().ToUpperInvariant(), bottomLine: true);
@@ -544,7 +559,7 @@ public static class CharacterView
                 d.Say(GameText.Cat(t.Text[Msg.NothingNew], t.ItemName(item)));
                 break;
             default:
-                d.Say(t.ItemName(item)); // the item is renamed (item-format.md "Identify"); [?] the program's wording here
+                d.Say(GameText.Cat(t.Text[Msg.LooksLike], t.ItemName(item))); // 0x23112: the looks-like words, the new name
                 break;
         }
     }

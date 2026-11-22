@@ -180,7 +180,9 @@ public static class VenueScreens
                 case "SHARE": MoneyScreens.Share(t); break;
                 case "APPRAISE": Appraise(t); break;
                 default:
-                    if (!MoneyScreens.StayForMoney(t, Msg.TempleMoneyLeft, Msg.TempleGoBack, questionClears: true))
+                    // 0x53E8 passes the clear flag 1 with the question, wiping the priest's message as soon as it is
+                    // typed: an original bug, fixed (user, s48): the question runs on after it, in the temple's colour 10.
+                    if (!MoneyScreens.StayForMoney(t, Msg.TempleMoneyLeft, Msg.TempleGoBack, goBackColour: TextWindow.ScriptColour))
                     {
                         t.RosterDrawn(); // the pass's list comes before the exit test
                         return;
@@ -322,7 +324,7 @@ public static class VenueScreens
         // the name on row 18, the text from row 19, the pause and the rows blanked (Amiga hunk 25 +0x3AF0–0x3B06).
         d.Text.ClearRect(TextWindow.Left, TextWindow.Top + 1, TextWindow.Right, TextWindow.Bottom);
         MemberMessage(t, c, who, t.Text[Msg.IsCured], pause: true);
-        TempleRules.Apply(cure, c, t.Random);
+        TempleRules.Apply(cure, c, t.Random, t.Effects);
     }
 
     /// <summary>

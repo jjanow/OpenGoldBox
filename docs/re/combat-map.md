@@ -187,12 +187,13 @@ diagonal 1.5, rounded down over the line); the entries are put back **but not th
 count). When b is not listed the search stops at the last entry and uses its distance `[?]`. So the range penalty
 (0x14319) sees 1 for an adjacent diagonal, 4 for three diagonal squares.
 
-## Moves (stub 0x68) — P; D for plain steps
+## Moves (stub 0x68) — P, E; D for plain steps
 
 Both the player's move menu (0xA3CF–0xA512) and the AI (0xB663–0xB6E2) do: face the direction (0x31232, combat record
 +9 = d), then — the menu after probing: a creature there → melee attack (0xA54C); terrain 0 (edge) → the flee question
 → 0x13465 on yes; terrain cost above movement +6 → the step is refused with a message — free attacks (0x130AD), actions end if the mover is out of
-play, the move (0x12F0D), actions end if out of play, the terrain effects (0x2B9D1 `[?]`); the menu also ends the actions
+play, the move (0x12F0D), actions end if out of play, the terrain effects (0x2B9D1, run after a step refused for want
+of movement too, not after free attacks that dropped the mover; `spells-effects.md` "Terrain"); the menu also ends the actions
 of a helpless mover. The AI's own test (0xB235) differs: it steps only when the terrain cost is strictly below +6, and
 it flees (0x13465) on its own choice (combat record +0x14 set and the edge ahead). `FightMoves.Step` is the menu's
 sequence (a step off the edge is the flee, `StepResult.Fled` when away); `FightMoves.MoveAfterChecks` is the part both
@@ -200,14 +201,40 @@ share (free attacks, move, terrain effects). The menu loops while +6 > 1 and set
 (0x317E1), +6 and facing (`fight_moves` m05: the whole move is undone).
 
 **One square 0x12F0D**: cost 3 for an odd (diagonal) direction, else 2; cost above +6 → +6 = 0 and no move (the free
-attacks were already taken); else +6 − cost, the slot moves, the grid is rebuilt, +0x0F and +0x12 (flank counters) = 0,
-the guards attack (0x12E22), and out of play or helpless → +6 = 0. Terrain cost only gates the step; it is not spent.
+attacks were already taken); else +6 − cost, the slot moves (x, y + the signed direction tables DS:2736 / DS:273F, as
+bytes), the grid is rebuilt (0x30ADA), +0x0F and +0x12 (flank counters) = 0, the step sound (START 0x8BBC with DS:2628),
+the guards attack (0x12E22), and out of play or helpless (START 0x1713) → +6 = 0. Terrain cost only gates the step; it
+is not spent. **Drawing**, in two halves: before the slot write (0x12FB4–0x13011) mode 1, or for a computer-controlled
+mover (0x10F ≠ 0) mode 3 and ScrollView(old square, 2) when the new square is outside the 7 × 7 view (0x30E23 on the
+offsets from the view origin, arena +2 / +3), then the old cell redrawn (0x30C65, drawing only: a box there goes);
+after the grid rebuild (0x1303F–0x1304E) ScrollView(new square, mode). `Fight.StepDrawing` and `Fight.StepDrawn` are
+those points; the Client draws the step there (before the guards' attacks and the terrain messages), and nothing
+when the step does not happen. DOSBox-X shows no frame of the first half alone (box on the mover, then the step).
 DOSBox `fight_moves` m02–m04: three steps of Darkstar (S, S, N) give 29,15 / 29,16 / 29,15, +6 0x18 → 0x16 → 0x14 →
 0x12, facing 4, 4, 0, no draws — reproduced.
 
-**Guards 0x12E22** (after a move): the adjacent enemies (range 1), in list order while the mover is in play: one with
-+7 ≠ 0 and not helpless (START 0x1713) gets +7 = 0, notes the attack (0x13FF1) and attacks (MakeAttack 0x1407F) — i.e.
-`Fight.Attack`.
+**Guards 0x12E22** (after a move): the adjacent enemies (range 1, START 0x2FD3: its count and the slots DS:6DE4 + i,
+read once; nothing MakeAttack calls rebuilds that list), in that order while the mover is in play: one with +7 ≠ 0 and
+not helpless (START 0x1713) gets ScrollView(mover's square, 2) (display, `Fight.GuardAttacking`), +7 = 0, notes the
+attack (0x13FF1(guard, mover): the mover's +0x0F / +0x12) and attacks (MakeAttack 0x1407F(guard, mover, not from behind,
+no ammunition)) — i.e. `Fight.Attack`.
+
+**Checked under emulation** (s49, `tools/scripts/por_round_oracle.py`, `RoundProgramTests`): 200 one-square moves on
+random arenas (movement left 0–5, 12, 0x18, 255 around the costs, all 8 directions, player and computer movers, up to 9
+neighbours with guards set, helpless or out of play, MakeAttack trapped and logged; a scripted guard attack putting the
+mover out of play or helpless): slots, the cell grid, records, +6, +7, +0x0F, +0x12 and the guard attacks in order
+equal `FightMoves.MoveOne`; no draws. 80 terrain checks 0x2B9D1 (see `spells-effects.md` "Terrain"). The callers'
+hand-off (menu 0xA48F–0xA512, AI 0xB678–0xB6E2) read whole: both as `FightMoves.MoveAfterChecks`.
+
+**D** (s49, guards after a step): `fight_save.py BASE OUT 1C0B0004000400042400 --hp 200` (save A, 4 orcs of MON2),
+RandSeed 12345 written into a state, every party member Guard on its Done menu (Quit when Guard is not offered), 60
+keys, the same keys on both sides (`fight_frames.py`). An orc stepping next to Bakshi on guard: the step is drawn, then
+Bakshi's guard attack (0x12E22) and its messages. With `Fight.StepDrawing` / `StepDrawn` / `GuardAttacking` 738 of 743
+Client frames are found among DOSBox-X's (the guard sequence all found); the Client before the change 737 of 742. The
+compare looks each Client frame up among DOSBox-X's; it does not check their order, so this does not by itself show the
+order change. A first try that showed the first half as a frame of its own gave a frame DOSBox-X never shows (dropped).
+Misses, the same in every build: the first frame, the panel's name box three times, and one frame with the cursor box
+on an orc after a step where DOSBox-X's same scene has none `[?]` (not traced).
 
 **Free attacks 0x130AD** (before a move): the adjacent enemies now, minus those still adjacent from the cell one step on
 (the slot is moved for that count and back). Each remaining one, while the mover is in play: not helpless, may attack
@@ -257,7 +284,7 @@ No random draws.
 
 ## Open `[?]`
 
-- Terrain effects 0x2B9D1 after a step; the area-spell list DS:6DBB; the 9th body; body test via DS:70C7.
+- The area-spell list DS:6DBB; the 9th body; body test via DS:70C7.
 - Direction to or from a cell off the arena (endless loop); distance to a creature not on the map; the class of an
   unlisted wilderness code (residue).
 - The menu's undo (0x317E1) and the AI's own step choice are left to their callers (`CombatMap.TryPlace`).

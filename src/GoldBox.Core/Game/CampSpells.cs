@@ -263,7 +263,7 @@ public sealed class CampSpells(SpellTable table, Func<byte[], bool> readable)
                 {
                     if (!Readable(it))
                         continue;
-                    if (c.HasEffect(0x10) || (c[ClericLevel] > 0 && itemSlot?.Invoke(it) == 12))
+                    if (c.HasEffect(0x10) || ((sbyte)c[ClericLevel] > 0 && itemSlot?.Invoke(it) == 12))
                         it[Hidden] = 0;
                     if (it[Hidden] != 0)
                         continue;
@@ -287,7 +287,7 @@ public sealed class CampSpells(SpellTable table, Func<byte[], bool> readable)
     /// </summary>
     public static List<CampSpellRow> ScrollList(SpellTable table, EclCharacter c, byte[] scroll, int slot)
     {
-        if (c.HasEffect(0x10) || (c[ClericLevel] > 0 && slot == 12))
+        if (c.HasEffect(0x10) || ((sbyte)c[ClericLevel] > 0 && slot == 12))
             scroll[Hidden] = 0;
         var rows = new List<(int Spell, bool Pending, byte[]? Scroll)>();
         if (scroll[Hidden] == 0)

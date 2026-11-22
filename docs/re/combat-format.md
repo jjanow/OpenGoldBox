@@ -5,7 +5,8 @@ What the ECL COMBAT opcode hands over to (`ecl-format.md` "Encounters", COMBAT 0
 session 10 (2026-11-17); addresses are GAME.OVR file offsets unless marked START (offsets in the unpacked
 `START.EXE` image). Far calls resolve through the overlay stubs as `ecl-format.md` "Program references" describes.
 
-Status marks as elsewhere: **P** read in the program, **D** checked against DOSBox-X, `[?]` not settled. Prior art
+Status marks as elsewhere: **P** read in the program, **E** also run under emulation (unicorn oracle), **D** checked
+against DOSBox-X, `[?]` not settled. Prior art
 (talonius' source, Lee's FAQ) was used only to find routines; every rule below is from the disassembly.
 
 Code: `src/GoldBox.Core/Game/` — `CombatRules` (pure rules), `FightRules` (start of round, attacks, damage, NPC
@@ -30,7 +31,7 @@ temples are behind `IFightController`, `IFightGeometry` and `ICombatRunner`.
 1. DS:49F3 = 5 (combat screen); the spell-target handler DS:6B84 points at the combat version; fight start
    (0xE402, below).
 2. Done at once if DS:6814 = 0 or DS:6815 = 0. Else, per round until done:
-   - START 0x2F7B (count the teams); for every creature 0x127FB (start of round `[?]` not read); VM $6DCB = 0.
+   - START 0x2F7B (count the teams); for every creature in list order 0x127FB (start of round, below); VM $6DCB = 0.
    - Repeat: pick the next creature (0x9938) and let it act (0x99FD) until no creature is picked.
    - End of round (0xA087).
 3. Clean-up (0x9807): frees the list at DS:6DBB (19-byte records) and the arena DS:6716 (0x4E9 bytes), frees the
@@ -46,10 +47,13 @@ stat recalculation (START 0x1758; this is where combat monsters get their moveme
 and morale (0x84 AND 0x7F) 0 or > 102 gets 0x84 = $6DC6 + 0x80. Placement, the arena and the turn-start effects
 are not read `[?]`.
 
-**Next creature** (0x9938, P, D below): walks the whole list and rolls **1d100 for every creature on every pick** (dice
+**Next creature** (0x9938, P, E, D below): walks the whole list and rolls **1d100 for every creature on every pick** (dice
 0x2BCCD). With `best` = 0 and `bestRoll` = 0 at the start: if the creature's initiative > best, bestRoll = its roll;
 then if initiative ≥ best and roll ≥ bestRoll, it becomes the pick (best = initiative, bestRoll = roll). A full tie
-goes to the later creature. No pick when best stays 0. So the number of random draws per round depends on the list
+goes to the later creature. The best is kept as an unsigned byte and each initiative is compared sign-extended, so
+a creature with initiative 0x80–0xFF (negative) is never picked. The result pointer is written only on a pick, and set
+to nil at the end when best stayed 0 (a creature with initiative 0 can be the pick along the way, then nil).
+No pick when best stays 0. So the number of random draws per round depends on the list
 length and the number of turns; a fight replay must follow this order.
 
 **A creature's turn** (0x99FD, P structure): combat record +0x0F, +0x12, +0x07 = 0; effects with trigger 7
@@ -63,7 +67,7 @@ the loop, menu and end of round; stub 0x38 (0xABC0–0xC4E7) the AI; stub 0x68 (
 attacks, spells' targets; stub 0xB0 (0x2AEEA–0x2C821) effects, attack and saving rolls, dice; START 0x1713–0x3B40
 helpers (helpless, damage, equipment).
 
-### Start of round (0x127FB) — P, D
+### Start of round (0x127FB) — P, E, D
 
 For every creature in list order, before the first pick (the loop then sets VM $6DCB = 0):
 
@@ -89,6 +93,16 @@ every creature's initiative (60 values; the surprised goblins' round-0 rolls of 
 attacks 0x114, the creature whose menu showed and the RandSeed (`FightRoundCaptureTests`). In round 0 the second
 and third menus (two and three picks with no draws in between: the turns were ended with Done, Quit) also follow
 the pick rule, including a tie of two initiatives 8 settled by the 1d100. **D** for the round start and the pick.
+
+**Checked under emulation** (s49, `tools/scripts/por_round_oracle.py`, fixture
+`tests/fixtures-private/por/program-v1.3/round.json`, `RoundProgramTests`): 160 rounds of 1–14 creatures (Dex 0–25 and
+stray bytes, in and out of play, hostile 0/1/2/0xFF, 0x11C 0/1/96/97/255, $6E72 and $6DCB words, DS:6DE3 odd and
+even, combat record +8 set or clear, melee, bows with arrows, crossbows with bolts, thrown and flags-0x0A weapons with
+counts 0–20, effects 39 haste, 42 slow and 58 run for real (haste's first-time ageing, two records of one id)): every
+creature's record, effect list and all 22 combat-record bytes after 0x127FB, the RandSeed, then the picks 0x9938 to
+the end of the round (each pick's initiative set to 0); and 200 runs of 0x9938 alone on initiative bytes 0x00–0xFF
+(the signed path, ties). All equal to `FightRules.BeginRound` and `CombatRules.NextCreature`. The whole routine was
+read (s49): nothing in it is left out.
 
 **Whole attacks** (0x1364D): (rate + 1 when the round counter DS:6DE3 is odd, byte add) shr 1.
 
@@ -185,7 +199,7 @@ spell 0xB105, weapon 0xBF8A, target search 0x15FDF, move/attack 0xB6FC, step 0xB
 **End of round** (0xA087, P): one minute passes (clock routine 0x241A1, count 1, unit 1, which runs the effect
 timeout 0x23DCC over the whole list: camp.md "Effect timeout"; D: `fight_casts`); DS:6DE3 + 1; 0x15074 (enemy hit
 points, below); for every
-creature effects with trigger 0x13 (0x2B1E4) and 0x2B9D1 `[?]`; a creature with status 5 (dying) adds 1 to combat
+creature effects with trigger 0x13 (0x2B1E4) and the terrain effects 0x2B9D1 (`spells-effects.md` "Terrain"); a creature with status 5 (dying) adds 1 to combat
 record +0x0E and becomes dead (6) when that exceeds 9; a message when a party member is dying (0xA806); team counts
 again; the fight is done when either count is 0. When the party side is left and the enemy side is empty and DS:49F4
 = 0, a yes/no question offers to go on fighting (yes = not done). DS:49F4 is cleared at start-up (0xE99E) and never
@@ -339,7 +353,8 @@ Exit when there are items and the current character has spell 5 or 11 among its 
 Exit; with nothing left View, Pool, Exit. P pools only for a non-extended key (0x50 is also Down's scan code). E (or
 the key 0) with money or items left (0x25C07 asked again): the exit question (0x6636–0x66DB, P + D s47): the first
 text in colour 10 with the box cleared, the second in 15 running on after it (0709:0768), then "~Yes ~No" through the
-menu helper 0x8B57 (`shop-format.md` "Exit"). Answer 1 (No) ends the menu with the question left in the box; any
+menu helper 0x8B57 (`shop-format.md` "Exit"; in the Client the keyboard's Return answers the lit word too, a
+deliberate difference, s48). Answer 1 (No) ends the menu with the question left in the box; any
 other answer blanks the box (0709:0DD3 with 1, 17, 38, 22) and the menu runs again. Nothing left: the menu ends.
 **Take** (0x62B6): money and items → a "Take:" menu (Money, Items, Exit) until Exit; money only → the coin take
 0x25974; items only → the item take 0x6184 (`shop-format.md`). **Summary** (0x5E94, s12): the text box is cleared, then one
@@ -366,7 +381,7 @@ the position line come back with the step, and the command line opens on the sha
 (Exit, entry 4: Search). Client: the view box blank and no position line while `Venue.Shop`; pixel-equal apart
 from its help lines. **With a picture still armed** (DOSBox-X s24, test saves: PICTURE 2 then the shop or the temple
 with no CLRMON): the view box is just as empty on entry and again after View → Exit, and Exit shows the 3D view with
-the step, as with CLRMON (settled, was `[?]`). Between menus: View's menu offers only the entries 0x21AED builds
+the step, as with CLRMON (settled s24). Between menus: View's menu offers only the entries 0x21AED builds
 (a fighter with items and money: Items, Trade, Drop, Exit), so its Exit leaves the shared highlight on the shop menu's
 4th entry, Appraise (DOSBox-X); the Client's View page uses the same entries since s24 (it offered Spells always).
 As the first menu after a Load (vector 4 opening the shop) with $4AFF set, the menu runs a loaded picture in the box
@@ -414,7 +429,7 @@ CALL $2C90 and the search vector. The `encmenu_flee` capture is replayed with no
 
 - Placement, the arena, direction/distance and moves (fight start 0xE402, 0x12E22–0x13465, 0x14E38, START 0x30FB)
   are read in `combat-map.md`; the menu, sweep and turn undead in `combat-menu.md`; the AI in its own spec.
-- Spells (0x14C0F, 0x27C38); the effect handlers (0x2B1E4
-  triggers; terrain 0x2B9D1); the stat recalculation's effect on THAC0/AC during a fight.
+- Spells (0x14C0F, 0x27C38); the effect handlers (0x2B1E4 triggers); the stat recalculation's effect on THAC0/AC
+  during a fight.
 - Summary screen (0x5E94): byte 0000:0013 in the no-fight case (rows settled s21).
 - Shop/temple: see `shop-format.md` "Open".

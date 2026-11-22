@@ -269,4 +269,45 @@ public class CampScreenTests
         Assert.Equal(0, a[0x17]);
         Assert.Equal(0, s.Left);
     }
+
+    /// <summary>The Items page's Use outside a fight (0x222F0 → 0x22AC4 → 0x27C38 with DS:6DBF = 1, s49): a readied
+    /// wand of the combat-only spell 15 asks "Use it?"; Yes spends a charge with no effect, No keeps it; an item not
+    /// readied only gets the message.</summary>
+    [Theory]
+    [InlineData(0, 1)]
+    [InlineData(1, 2)]
+    public void A_combat_only_item_asks_use_it_and_yes_spends_a_charge(int answer, int chargesLeft)
+    {
+        var a = Member("ANNA");
+        var types = new byte[BaseItemTable.EntrySize * BaseItemTable.Count];
+        types[7 * BaseItemTable.EntrySize + BaseItemTable.Slot] = 2;
+        var wand = new byte[63];
+        (wand[0x2E], wand[0x34], wand[0x3D], wand[0x3C], wand[0x39]) = (7, 1, 15, 2, 1);
+        a.Items.Add(wand);
+        var s = new Script(null, answer); // the item message's pause, Use it?
+        var p = new EclParty();
+        p.Members.Add(a);
+        p.CurrentIndex = 0;
+        var t = new TradeContext
+        {
+            Dialog = new Dialog(s.Ask, new TextWindow()),
+            Text = new GameText(),
+            Party = p,
+            Pool = new uint[7],
+            Treasure = [],
+            Random = n => 0,
+            ItemTypes = new BaseItemTable(types),
+        };
+        var camp = Camp(t);
+        CampScreens.UseItem(camp, a, wand);
+        Assert.Equal(chargesLeft, wand[0x3C]);
+        Assert.Equal(0, s.Left);
+        var yesNo = s.Asked.OfType<ChoiceRequest>().Single();
+        Assert.Contains(t.Text[Msg.UseIt].Trim(), yesNo.ToString() ?? "");
+
+        wand[0x34] = 0; // not readied: the message only
+        CampScreens.UseItem(camp, a, wand);
+        Assert.Equal(chargesLeft, wand[0x3C]);
+        Assert.Equal(0, s.Left);
+    }
 }

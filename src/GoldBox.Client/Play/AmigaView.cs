@@ -29,6 +29,13 @@ public static class AmigaView
     /// Client with the art setting, false in tests.</summary>
     public static bool On { get; set; }
 
+    /// <summary>
+    /// QoL (<see cref="ClientSettings.AmigaGridOffText"/>, user s48), off = original: under the Amiga pages the explore
+    /// screen's pad / mouse letter grid of a script's text input is drawn over the view and party list, not over the
+    /// text window.
+    /// </summary>
+    public static bool GridOffText { get; set; }
+
     public const int NameRow = 2, NpcTagRow = 1;
     /// <summary>The requester's MaxChars for Rename (hunk 10 +0x551A: 16, the end mark included).</summary>
     public const int RenameLength = 15;
@@ -93,6 +100,24 @@ public static class AmigaView
     /// <summary>Texts the Amiga words otherwise than DOS (<see cref="GoldBox.Data.Module.Por.PorAmigaText.Calls"/>), from
     /// the module; empty without them.</summary>
     public static IReadOnlyDictionary<string, string> Strings { get; set; } = new Dictionary<string, string>();
+
+    /// <summary>
+    /// The party menu's / hall's quit question (DOS 0x19AB5; the Amiga's hunk 10 +0xA3C keeps DOS's words, naming DOS).
+    /// <b>An original bug, fixed (user, s48)</b>: under the Amiga pages, where the menu's last entry names the Workbench
+    /// (<see cref="GoldBox.Data.Module.Por.PorAmigaText.PartyMenuKey"/> + 10), the question names what that entry names:
+    /// its last word takes the place of "DOS" (training.md). Unchanged under DOS or without the Amiga strings.
+    /// </summary>
+    public static string HallQuit(string question) => HallQuit(question, On, Strings);
+
+    /// <summary><see cref="HallQuit(string)"/> with the setting and strings given (tests).</summary>
+    public static string HallQuit(string question, bool amiga, IReadOnlyDictionary<string, string> strings)
+    {
+        if (!amiga || !strings.TryGetValue(GoldBox.Data.Module.Por.PorAmigaText.PartyMenuKey + 10, out var exit)
+            || exit.TrimEnd().Split(' ') is not { Length: > 1 } words)
+            return question;
+        int at = question.IndexOf("DOS", StringComparison.OrdinalIgnoreCase);
+        return at < 0 ? question : question[..at] + words[^1] + question[(at + 3)..];
+    }
 
     /// <summary>A camp line the Amiga words otherwise than DOS (<see cref="GoldBox.Data.Module.Por.PorAmigaText.RestMenuKey"/>,
     /// …), under the Amiga pages only; null otherwise or when the module has none.</summary>

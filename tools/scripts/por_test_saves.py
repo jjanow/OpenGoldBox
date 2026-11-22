@@ -22,6 +22,8 @@ SLOT=NAME writes the named save into slot B..I instead (the program loads A..J; 
 
     loot-shop    CLRMON, TREASURE 100 copper, COMBAT (a loot), then TREASURE (no items), SAVE 1 -> $6E6C, COMBAT: a shop
     loot-temple  the same loot, then SAVE 1 -> $6DE2, COMBAT: a temple
+    inputstr     PRINT a question, INPUTSTR into $9F00, PRINT, a one-word HMENU: the text input's screen
+    long-text    PRINTCLR of a 255-character text, then a one-word HMENU: the text routine's 255 case (START 0x77F8)
 
 The texts written by I are this tool's own. Nothing from the game is stored in this file.
 The folder can stay GOLDBOX_POR_DIR afterwards: the tests that count the release's files read a copy without these.
@@ -35,6 +37,7 @@ SCRIPT = 5121      # save offset of $9900
 STEMS = 12809      # 8 x string[40]: the members' file stems
 DAMAGE, PROGRAM, CLRMON, LOADMON, COMBAT, TREASURE, ADDNPC, SAVE, PICTURE, PRINT, HMENU = (
     0x2E, 0x38, 0x1C, 0x0B, 0x24, 0x27, 0x36, 0x09, 0x0E, 0x11, 0x2B)
+INPUTSTR, PRINTCLR = 0x10, 0x12
 
 
 def imm(*vals):
@@ -56,6 +59,10 @@ NAMED = {
     'loot-shop': LOOT + bytes([TREASURE]) + imm(0, 0, 0, 0, 0, 0, 0, 255) + bytes([SAVE]) + imm(1) + b'\x01\x6c\x6e'
     + bytes([COMBAT]),
     'loot-temple': LOOT + bytes([SAVE]) + imm(1) + b'\x01\xe2\x6d' + bytes([COMBAT]),
+    'inputstr': bytes([PRINT]) + text('A QUESTION ABOVE THE TEXT INPUT.') + bytes([INPUTSTR]) + imm(40) + b'\x01\x00\x9f'
+    + bytes([PRINT]) + text('DONE.') + bytes([HMENU]) + b'\x01\x82\x6e' + imm(1) + text('WAIT'),
+    'long-text': bytes([PRINTCLR]) + text(('LONG TEST TEXT FOR THE PRINT ' * 9)[:255]) + bytes([HMENU]) + b'\x01\x82\x6e'
+    + imm(1) + text('WAIT'),
 }
 
 

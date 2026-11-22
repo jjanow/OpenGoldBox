@@ -266,6 +266,26 @@ public sealed class Fight
     /// <summary>Display hook (no game state): START 0x3226's message after a creature guards.</summary>
     public Action<EclCharacter>? Guarded { get; set; }
 
+    /// <summary>
+    /// Display hook (no game state): the first half of the step's drawing inside 0x12F0D, before the slot moves
+    /// (0x12FB4–0x13011): an AI mover's ScrollView(old square, 2) when the new square is off the view, then the old cell
+    /// redrawn (0x30C65, a cursor box there goes). Arguments: the mover (still on its old square) and the new square.
+    /// </summary>
+    public Action<EclCharacter, (int X, int Y)>? StepDrawing { get; set; }
+
+    /// <summary>
+    /// Display hook (no game state): the second half, after the slot write and the grid rebuild (0x1303F–0x1304E):
+    /// ScrollView(new square, 1, or 3 for a computer-controlled mover); before the step sound and the guards' attacks.
+    /// Arguments: the mover and its old square.
+    /// </summary>
+    public Action<EclCharacter, (int X, int Y)>? StepDrawn { get; set; }
+
+    /// <summary>
+    /// Display hook (no game state): 0x12E22's ScrollView(mover's square, 2, 8) before each guard's attack after a step
+    /// (0x12E9E–0x12EBC). Argument: the mover.
+    /// </summary>
+    public Action<EclCharacter>? GuardAttacking { get; set; }
+
     /// <summary>Done menu, Delay: initiative 1 (acts again after everyone else this round).</summary>
     public void Delay(EclCharacter c)
     {

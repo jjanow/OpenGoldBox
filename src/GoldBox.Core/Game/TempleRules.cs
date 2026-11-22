@@ -52,11 +52,13 @@ public static class TempleRules
 
     /// <summary>
     /// The effect after payment. <paramref name="random"/> answers Random(n) (used only by cures 2–4: 1d8, 2d8 + 1,
-    /// 3d8 + 3). Effect removal goes
-    /// through the program's remove routine 0x2AF10 (with DS:681F = 1 for entries 1, 5, 6 [?] what that flag
-    /// changes); here the matching effect records are dropped.
+    /// 3d8 + 3). Effect removal goes through the program's remove routine 0x2AF10, which runs the effect's handler
+    /// first when the record's byte 4 is set. Entry 1 (0x4864, ported whole s49) does that through
+    /// <paramref name="effects"/> (the game's effect engine outside a fight) under the effect lock DS:681F = 1; without
+    /// an engine the records are only dropped. Entries 5 and 6 also set the lock (0x4D45, 0x4B22) but still only drop
+    /// the records here.
     /// </summary>
-    public static void Apply(Cure cure, EclCharacter c, Func<int, int> random)
+    public static void Apply(Cure cure, EclCharacter c, Func<int, int> random, EffectHandlers? effects = null)
     {
         switch (cure)
         {
@@ -64,7 +66,10 @@ public static class TempleRules
                 RemoveEffects(c, 33);
                 break;
             case Cure.Disease:
-                RemoveEffects(c, DiseaseEffects);
+                if (effects is not null)
+                    CureDisease(c, effects);
+                else
+                    RemoveEffects(c, DiseaseEffects);
                 break;
             case Cure.CureLight or Cure.CureSerious or Cure.CureCritical:
             {
@@ -169,6 +174,23 @@ public static class TempleRules
         var item = c.Items.FirstOrDefault(i => i[0x36] != 0);
         if (item is not null)
             item[0x36] = 0;
+    }
+
+    /// <summary>
+    /// 0x4864 after payment (0x48FD–0x4934): DS:681F := 1; for each id of DS:0114 (31, 34, 43, 44, 50, 57) the remove
+    /// routine 0x2AF10(creature, id, nil): the first record with the id leaves, its handler running first with
+    /// "removed" when byte 4 is set; DS:681F := 0. 0x2AF10 never reads the lock; the handlers do: 43, 44 and 50 (and 34
+    /// through 43 and 44) re-add themselves through 0xEC7A, which adds nothing while the lock is set, and their harm (a
+    /// Strength point, a hit point, the healing) is done only when the re-add happened; 57 does nothing under the
+    /// lock. Without the lock a removal would put the disease straight back. 31 ends the creature's actions on its
+    /// combat record (START 0x31D7) whatever the lock.
+    /// </summary>
+    public static void CureDisease(EclCharacter c, EffectHandlers effects)
+    {
+        effects.Cells.Lock = 1;
+        foreach (var id in DiseaseEffects)
+            effects.RemoveEffect(c, id);
+        effects.Cells.Lock = 0; // 0x4934 writes 0, not the value it found
     }
 
     private static void RemoveEffects(EclCharacter c, params byte[] ids)

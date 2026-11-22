@@ -11,8 +11,13 @@ public sealed partial class FightSpells
     /// so outdoors Fireball reaches range 2 (a 5-square diameter).</summary>
     public const ushort FireballRangeCell = 0x49E6;
 
-    /// <summary>DS:4845: the exceptional Strength Enlarge gives, also written by Dispel Magic (an effect's level).</summary>
-    public byte Ds4845 { get; set; }
+    /// <summary>The program's DS:4844 / DS:4845, shared by every fight and camp of a run (<see cref="EclMemory.SpellGlobals"/>;
+    /// FightKit and the camp hand the game's in).</summary>
+    public SpellGlobals Globals { get; set; } = new();
+
+    /// <summary>DS:4845: the exceptional Strength Enlarge gives (0x282BD), also written by Sleep (each target's cost,
+    /// 0x2857F–0x285CF) and Dispel Magic (an effect's level, 0x29420).</summary>
+    public byte Ds4845 { get => Globals.Ds4845; set => Globals.Ds4845 = value; }
 
     private bool MoreRoutine(int spell, EclCharacter caster)
     {
@@ -323,6 +328,7 @@ public sealed partial class FightSpells
                 Ds4845 = (byte)(node[3] & 0x0F);
                 byte chance = lvl > Ds4845 ? (byte)((lvl - Ds4845) * 5 + 0x32)
                     : lvl < Ds4845 ? (byte)(0x32 - (Ds4845 - lvl) * 2) : (byte)0x32;
+                Globals.Ds4844 = chance; // 0x29446 / 0x2946B / 0x29470
                 if (Dice(1, 100) <= chance)
                 {
                     Effects.RemoveEffect(t, node[0], node);
@@ -534,7 +540,7 @@ public sealed partial class FightSpells
             return;
         }
         var (px, py) = map.Position(c);
-        PickAuto(fight, c, 0x33); // 0x2A14C–0x2A157
+        (TargetPick ?? PickAuto)(fight, c, 0x33); // 0x2A14C–0x2A157: lcall [DS:6B84]
         int ax = (sbyte)(byte)(px + Math.Sign(Aim.X - px)), ay = (sbyte)(byte)(py + Math.Sign(Aim.Y - py));
         if (ax == px + 1)
             ax++;
@@ -640,4 +646,16 @@ public sealed partial class FightSpells
         if (Effects.RestoreHitPoints(t, (byte)(Dice(1, 4) + 8), false))
             Event?.Invoke(t, 58, EffectEvent.Healed);
     }
+}
+
+/// <summary>
+/// Program globals of the spell routines that are never reset by a fight or a camp: DS:4844 (Enlarge's Strength 18,
+/// Sleep's 4d4 budget, Dispel Magic's scratch) and DS:4845 (Enlarge's exceptional part, Sleep's last target cost,
+/// Dispel Magic's last effect level). Both lie in the uninitialised data (the run-time does not clear it): the value
+/// before the first writer is `[?]` (0 here, as DOSBox-X's fresh memory).
+/// </summary>
+public sealed class SpellGlobals
+{
+    public byte Ds4844 { get; set; }
+    public byte Ds4845 { get; set; }
 }

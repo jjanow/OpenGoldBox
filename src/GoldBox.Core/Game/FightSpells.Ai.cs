@@ -259,6 +259,17 @@ public sealed partial class FightSpells
         }
         if (!done)
             return false;
+        SpendItem(user, item, scroll, spell);
+        return true;
+    }
+
+    /// <summary>
+    /// 0x22C4D–0x22CBF, the end of the item use 0x22AC4 when done: a scroll loses the spell (0x2A2A2); else with charges
+    /// 0x3C &gt; 0 a stack (count 0x39 &gt; 1) loses one, a single item one charge, and at 0 charges the item leaves the
+    /// list (START 0x20A9; 0xC7 is not rewritten here).
+    /// </summary>
+    public static void SpendItem(EclCharacter user, byte[] item, bool scroll, int spell)
+    {
         if (scroll)
             RemoveScrollSpell(user, item, spell);
         else if (item[ItemCharges] > 0)
@@ -268,7 +279,6 @@ public sealed partial class FightSpells
             else if (--item[ItemCharges] == 0)
                 user.Items.Remove(item);
         }
-        return true;
     }
 
     /// <summary>

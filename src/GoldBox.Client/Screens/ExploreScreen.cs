@@ -594,16 +594,35 @@ public sealed class ExploreScreen : IScreen
     // ---------------------------------------------------------------------------------------------------------------
 
     private const string Digits = "0123456789";
-    private const int GridCols = CharGrid.Columns, GridFirstRow = TextRow + 1;
+    private const int GridCols = CharGrid.Columns;
+
+    /// <summary>
+    /// The grid's heading row: the text window's first (the grid over the text window), or for an area script's input
+    /// with the Amiga QoL option (<see cref="GridOffText"/>) <see cref="OffTextRow"/>, over the view and the party
+    /// list, so the script's text stays shown.
+    /// </summary>
+    private static int GridTop(TextRequest t) => GridOffText(t) ? OffTextRow : TextRow;
+
+    /// <summary>The heading row of the grid placed off the text window (rows 2–7: the view and the party list).</summary>
+    internal const int OffTextRow = 2;
+
+    /// <summary>The columns the off-text grid's panel blanks (0–32: up to the party list's AC column).</summary>
+    private const int OffTextColumns = 33;
+
+    /// <summary>The QoL placement applies: an area script's input (<see cref="TextRequest.ScriptInput"/>) under the
+    /// Amiga pages with <see cref="AmigaView.GridOffText"/> on.</summary>
+    private static bool GridOffText(TextRequest t) => t.ScriptInput && AmigaView.On && AmigaView.GridOffText;
+
+    private static int GridFirstRow(TextRequest t) => GridTop(t) + 1;
 
     private static string Charset(TextRequest t) => t.Numeric ? Digits : CharGrid.Letters;
 
     /// <summary>Grid cells (<see cref="CharGrid"/>'s layout): the characters, then DEL and OK.</summary>
-    private static (int Col, int Row, string Label) Cell(TextRequest t, int k) => CharGrid.Cell(Charset(t), GridFirstRow, k);
+    private static (int Col, int Row, string Label) Cell(TextRequest t, int k) => CharGrid.Cell(Charset(t), GridFirstRow(t), k);
 
     private static int CellCount(TextRequest t) => CharGrid.CellCount(Charset(t));
 
-    private static int? CellAt(TextRequest t, int col, int row) => CharGrid.CellAt(Charset(t), GridFirstRow, col, row);
+    private static int? CellAt(TextRequest t, int col, int row) => CharGrid.CellAt(Charset(t), GridFirstRow(t), col, row);
 
     private void Backspace()
     {
@@ -870,7 +889,7 @@ public sealed class ExploreScreen : IScreen
                 bool fwd = input.Pressed(c.Vertical ? GameAction.MenuDown : GameAction.MenuRight);
                 if (back) _selected = (_selected + n - 1) % n;
                 if (fwd) _selected = (_selected + 1) % n;
-                if (input.Pressed(GameAction.Confirm) && !(c.KeyboardEnterIgnored && input.NewInput is (InputDevice.Keyboard, _)))
+                if (input.Pressed(GameAction.Confirm))
                     return new Reply(c.ConfirmAnswer ?? _selected);
                 if (input.Pressed(GameAction.Cancel) && c.CancelIndex is { } ci)
                     return new Reply(ci);
@@ -1124,6 +1143,8 @@ public sealed class ExploreScreen : IScreen
                 DrawVertical(f, font, v);
                 break;
             case TextRequest t:
+                if (GridOffText(t))
+                    DrawTextWindow(f, font); // the QoL option: the script's text stays, the grid goes above it
                 DrawTextEntry(f, font, t);
                 break;
             default:
@@ -1353,9 +1374,7 @@ public sealed class ExploreScreen : IScreen
             return c.CancelIndex is null ? "CLICK: CHOOSE" : "CLICK / RIGHT CLICK";
         string L(GameAction a) => PromptLabels.For(input.Bindings, a, d);
         string pick = c.Vertical ? (d == InputDevice.Gamepad ? "DPAD " : "UP/DN ") : "";
-        // Return does nothing there (the menu helper 0x8B57): the keyboard answers by the hotkeys alone.
-        string s = c.KeyboardEnterIgnored && d == InputDevice.Keyboard ? "KEYS " + string.Join("/", c.Items.Select((_, i) => c.HotkeyOf(i)))
-            : $"{pick}{L(GameAction.Confirm)} OK";
+        string s = $"{pick}{L(GameAction.Confirm)} OK";
         return c.CancelIndex is null ? s : $"{s} {L(GameAction.Cancel)} BACK";
     }
 
@@ -1704,7 +1723,15 @@ public sealed class ExploreScreen : IScreen
 
     private void DrawTextEntry(IndexedFrame f, TextFont font, TextRequest t)
     {
-        Chrome.Text(f, font, 1, TextRow, "TYPE, OR PICK BELOW:", Chrome.Grey);
+        if (GridOffText(t))
+        {
+            // A black panel behind the grid (its heading, the character rows and DEL / OK), one row round, as wide as
+            // the party list's name column (the lit name's bar ends there).
+            int last = Cell(t, CellCount(t) - 1).Row;
+            for (int r = GridTop(t) - 1; r <= last + 1; r++)
+                Chrome.Clear(f, 0, r, OffTextColumns);
+        }
+        Chrome.Text(f, font, 1, GridTop(t), "TYPE, OR PICK BELOW:", Chrome.Grey);
         for (int k = 0; k < CellCount(t); k++)
         {
             var (c, r, label) = Cell(t, k);

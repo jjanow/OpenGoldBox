@@ -381,11 +381,26 @@ public sealed partial class EffectHandlers
     }
 
     /// <summary>
-    /// 0x10AD2 (class 0x0E): the last target must pass the target check (0x13880) and be in sight (0x2FF74 from the
-    /// gazer's square; [?] the range passed is an uninitialised stack byte, taken as 255 here). Then (message, the moving
-    /// icon 0x257E(cell 0x12) from the gazer to the target, 4 frames, 45 ms, 0x10BC6) DS:681B =
-    /// 10 (Charm Person; not reset afterwards), the target saves vs. type 4 with −2 and gets charm 0x0B (permanent,
-    /// param = gazer's hostile × 128 + 12, removal on, a save negates); with a charm now on it its handler runs.
+    /// The range word handler 84 passes to the sight routine: its local [bp−2] is never written before the call, so the
+    /// routine gets what the stack held there. DOSBox-X (s49, residue probe <c>tools/dosbox/handlerprobe.s</c>) read
+    /// 0x3E58 at every one of 12 gazes in two vampire fights (handler BP 0x3D64 each time: the AI turn 0xABCF → 0xB6FC
+    /// → class 0x0E → 0x2B04A → 0x2AEEA, the only path to the handler); it looks like a saved frame pointer (its writer
+    /// was not traced). The sight limit 2 × 0x3E58 + 1 = 0x7CB1 half squares is never reached on a 50 × 25 arena, so in
+    /// practice the gaze has no range. Sampled, not proven for every turn.
+    /// </summary>
+    public const int CharmGazeRangeResidue = 0x3E58;
+
+    /// <summary>The range word handler 84 uses (<see cref="CharmGazeRangeResidue"/>); the handler oracle tests set
+    /// other residues.</summary>
+    internal int CharmGazeRange { get; set; } = CharmGazeRangeResidue;
+
+    /// <summary>
+    /// 0x10AD2 (class 0x0E): DS:6826 = the last target (combat record +0x0A); the gazer must be able to target it
+    /// (0x13880, the gazer as the attacker) and it must be in sight (0x2FF74 from the gazer's square, with the uninitialised range word
+    /// <see cref="CharmGazeRangeResidue"/>). Then (message, the moving icon 0x257E(cell 0x12) from the gazer to the
+    /// target, 4 frames, 45 ms, 0x10BC6) DS:681B = 10 (Charm Person; not reset afterwards), the target saves vs. type 4
+    /// with −2 (rolled before the effect is added) and gets charm 0x0B (permanent, param = gazer's hostile × 128 + 12,
+    /// removal on, a save negates); with a charm now on it (START 0x2D39) its handler runs (0x2AEEA, not removed).
     /// </summary>
     private void CharmGaze(EclCharacter c, CombatRecord rec)
     {
@@ -396,14 +411,13 @@ public sealed partial class EffectHandlers
             Diag("[?] handler 84 needs the fight (target check 0x13880)");
             return;
         }
-        if (!FightMoves.CanTarget(f, c, o))
+        if (!FightMoves.CanTarget(f, c, o)) // 0x10B1D: 0x13880(gazer, DS:6826)
             return;
         if (Map is { } m)
         {
             var (cx, cy) = m.Position(c);
             var (ox, oy) = m.Position(o!);
-            int dist = 0xFF;
-            Diag("[?] handler 84's sight range is an uninitialised byte; 255 taken");
+            int dist = CharmGazeRange; // [bp−2], never written: stack residue (sampled in DOSBox-X)
             if (!m.WalkLine(cx, cy, ref ox, ref oy, ref dist))
                 return;
         }

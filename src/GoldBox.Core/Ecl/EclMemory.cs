@@ -54,6 +54,10 @@ public sealed class EclMemory
     /// <summary>The party and the current character (record redirection, PARTYSTR, PSURPRISE, FINDITEM).</summary>
     public EclParty? Party { get; set; }
 
+    /// <summary>The spell routines' program globals that outlive a fight or a camp (DS:4844 / DS:4845); run time only,
+    /// not saved (they are not in the save files).</summary>
+    public Game.SpellGlobals SpellGlobals { get; } = new();
+
     /// <summary>Disk number byte DS:5376 (VM $6E12): the digit of ECL/GEO/WALLDEF file names.</summary>
     public byte Disk { get; set; }
     /// <summary>Previous disk number DS:5377 (set on a write to $6E12).</summary>

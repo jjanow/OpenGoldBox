@@ -11,7 +11,8 @@ ROOT = _ROOT
 W = _WORK
 rows = {r['key']: r for r in json.load(open(W + 'rows.json'))}
 cg = json.load(open(W + 'cg.json'))
-cites = json.load(open(W + 'cites.json'))['cites']
+_cj = json.load(open(W + 'cites.json'))
+cites, RAW = _cj['cites'], _cj.get('raw', {})
 
 LIB = {0xaf8: 'Turbo Pascal System unit: heap (GetMem / FreeMem), strings, sets, longint and real arithmetic, file I/O, Halt',
        0xaa2: 'Turbo Pascal overlay manager (INT 3Fh handler, overlay buffer, reads from GAME.OVR)',
@@ -62,7 +63,7 @@ def clean(t):
     t = re.sub(r'`[^`]*`', lambda m: m.group(0), t)
     t = re.sub(r'\(?(?:GAME\.OVR |START(?:\.EXE)? )?0x[0-9A-Fa-f]+(?:\s*[–-]\s*0x[0-9A-Fa-f]+)?\)?', '', t)
     t = re.sub(r'\b[0-9A-F]{2,4}:[0-9A-F]{2,4}\b', '', t)
-    t = re.sub(r'\*\*|\(\s*\)|—\s*[PDE](?:,\s*[PDE])*\b.*$', '', t)
+    t = re.sub(r'\*\*|\(\s*\)|—\s*[PDEW](?:,\s*[PDEW])*\b.*$', '', t)
     t = re.sub(r'\s+', ' ', t).strip(' ,:;–-=(')
     return t
 
@@ -185,20 +186,32 @@ EVSHORT = {'oracle': 'oracle', 'oracle via caller': 'oracle (caller)', 'golden':
 
 
 def ev(k):
+    # OV 'ev' replaces the cell (hand-written evidence prose), 'ev_add' appends to the generated one
     r = rows[k]
+    o = OV.get(k, {})
+    if o.get('ev'):
+        return o['ev']
     e = [EVSHORT[x] for x in r['ev']]
     if r['q']:
         e.append('`[?]`×%d' % r['q'])
-    if r['seen'] and r['seen'] >= max(1, sum(cites.get(k, {}).get('entry_docs', {}).values())):
+    if r['seen'] and 'oracle' not in r['ev'] and r['seen'] >= max(1, sum(cites.get(k, {}).get('entry_docs', {}).values())):
         e.append('seen only')
+    if o.get('ev_add'):
+        e.append(o['ev_add'])
     return ', '.join(e) or '—'
 
 
 def port(k):
+    # OV 'port' replaces the cell (members a lane named by hand), 'port_add' appends a member / note
     r = rows[k]
+    o = OV.get(k, {})
+    if o.get('port'):
+        return o['port']
     ms = [m.replace('struct.', '').replace('record.', '') for m in r['members'] if not m.startswith('Msg')][:3]
     if not ms:
         ms = r['cs'][:2]
+    if o.get('port_add'):
+        ms = [m for m in ms if m != o['port_add'].split(' ')[0]] + [o['port_add']]
     return ', '.join(ms) or '—'
 
 
@@ -287,6 +300,10 @@ P('Evidence column: `oracle` = a `tools/scripts/por_*_oracle.py` runs the routin
 P('')
 P('## How it was built (to rebuild after a session)')
 P('')
+P('The generator scripts are in `tools/scripts/ledger/` (copied as used in s47; set `GOLDBOX_POR_DIR` to a v1.3 copy '
+  'and `LEDGER_WORK` to a scratch folder, run them with the unicorn + capstone venv; `cg.py` first, then the citation, '
+  'table and dispatcher passes, then `build.py` and `render.py`; check each script\'s inputs at its top).')
+P('')
 P('1. Load the program with `tools/scripts/por_emu.py` `load_image` (EXEPACK expanded); the overlay stubs are the '
   'paragraphs starting `CD 3F 00 00` (dword GAME.OVR offset at +4, word code size at +8, entry count at +0x0C, '
   'entries of 5 bytes from +0x20: `CD 3F` + the routine offset in the unit).')
@@ -307,7 +324,8 @@ P('4. Citations: every `0x` number in `docs/*.md`, `docs/re/*.md` (surveys and p
   'routine whose decoded instructions hold it; "entry" means the routine\'s first address. The oracles were read '
   'by hand (their `e.call` targets count, trapped routines do not).')
 P('5. Rows marked with a note in the gap lists were checked by hand; the rest follow the rule in "Statuses". The '
-  'count is 181 START and about 1990 GAME.OVR addresses cited, on %d routines.' % sum(1 for k in rows if k in cites))
+  'count is %d START and %d GAME.OVR addresses cited, on %d routines.' % (RAW.get('S', 0), RAW.get('O', 0),
+                                                                          sum(1 for k in rows if k in cites)))
 P('')
 
 # ---- paths ----

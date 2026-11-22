@@ -292,7 +292,7 @@ public sealed class PartyMenuFlow(Func<PlayerRequest, object?> ask, PartyMenuTex
                         _saved = SaveMenu();
                     break;
                 case PartyMenuItem.Exit:
-                    if (YesNo(texts.QuitToDos))
+                    if (YesNo(AmigaView.HallQuit(texts.QuitToDos))) // the Amiga names the Workbench (s48 fix)
                     {
                         // 0x19E0E: with a party, the save (slot menu, Escape asks again) until one is written, unless
                         // one was since the last other key (DS:557D); then the quit 0899:0000.

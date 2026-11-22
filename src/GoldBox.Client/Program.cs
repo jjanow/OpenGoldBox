@@ -19,8 +19,11 @@ catch (Exception e) when (e is ArgumentException or FormatException)
 
 var settings = ClientSettings.Load();
 if (options.GameDirectory is not null || options.Stretch43 is not null || options.AmigaDirectory is not null
-    || options.Art is not null || options.Sound is not null || options.ProgramWord is not null || options.AnimationSpeed is not null)
+    || options.Art is not null || options.Sound is not null || options.ProgramWord is not null || options.AnimationSpeed is not null
+    || options.AmigaAltKeys is not null || options.AmigaGridOffText is not null)
 {
+    settings.AmigaAltKeys = options.AmigaAltKeys ?? settings.AmigaAltKeys;
+    settings.AmigaGridOffText = options.AmigaGridOffText ?? settings.AmigaGridOffText;
     if (options.AnimationSpeed is { } anim)
         settings.AnimationSpeedChoice = anim;
     if (options.ProgramWord is not null)
@@ -364,6 +367,7 @@ if (problem is not null)
 // The screens a game hands over to: the explore screen (with the hall's creation pages, a hall Load and the party menu
 // after a destroyed party), and the party menu (a new menu on an empty party, as after the program's game loop ends).
 // The controls screen's on/off settings (QoL, off = original), saved on each change.
+GoldBoxGame? windowRef = null; // the window, once made (the toggles apply to its input)
 IReadOnlyList<SettingToggle> toggles =
 [
     SettingToggle.AfterDefeat(settings),
@@ -373,6 +377,8 @@ IReadOnlyList<SettingToggle> toggles =
         if (audio is not null)
             audio.Instant = s == AnimationSpeed.Instant;
     }),
+    SettingToggle.AmigaAltKeys(settings, v => { if (windowRef is not null) windowRef.Input.AmigaAltKeys = v; }),
+    SettingToggle.AmigaGridOffText(settings, v => AmigaView.GridOffText = v),
 ];
 IScreen MenuScreen(PartyMenuFlow flow, IScreenHost host) =>
     new PartyMenuScreen(flow, runner, host, menuContent!.Font, player!.Resources, clientArt!, g => ExploreFor(g, 'A', host))
@@ -491,6 +497,9 @@ using var window = new GoldBoxGame(
     Palette = palette,
 };
 window.Input.SkipPauses = settings.SkipPauses;
+windowRef = window;
+window.Input.AmigaAltKeys = settings.AmigaAltKeys;
+AmigaView.GridOffText = settings.AmigaGridOffText;
 window.Input.ToggleSound = soundSetting.ToggleMute;
 if (player is not null)
     player.Quit = window.Exit;

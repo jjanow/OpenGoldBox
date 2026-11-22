@@ -476,11 +476,16 @@ Checked against DOSBox-X (PoR v1.3, EGA, save A put on the overland with `goldbo
     the five markers' light pixels give blocks 0, 128, 0, 128, 1 for counters 4, 5, 0, 1, 2 (the first equal to the
     third, the second to the fourth, the fifth to neither; "two extra draws" would give 0, 128, 1, 129, 2, and 128
     differs from 129). After a start-up Load the slot is loaded again by the first command's interface ($C0 < 2),
-    so only a hall Load leaves it (or a start-up Load's first-pass draws at counters 4 / 5, before the interface).
+    so only a hall Load leaves it (or a start-up Load's first-pass draws at counters 4 / 5, before the interface; the
+    s48 fix below covers both, since every Load with location type > 1 now reloads the three slots).
     Client (s47): `PorGame.ReloadSavedMap` (Load's tail) sets `AreaLoop.MarkerSlots[2] = 0` for location type > 1,
     as `IconEditorDone`; the Client's run of the same steps on DOS save A placed alike (`save-overland`, vector 0
     patched the same way, `--art amiga`): all five markers equal to FS-UAE's (0 of 57–64 light pixels differ at the
-    `ashot` offset (+2, −1)). A program bug, kept. DOS not run in DOSBox-X on this path (the same code read).
+    `ashot` offset (+2, −1)). DOS not run in DOSBox-X on this path (the same code read). **An original bug, fixed
+    (user, s48)**: since s49 `ReloadSavedMap` loads the three slots again (`AreaLoop.ReloadMarkerSlots`: ICON 0, 1, 2
+    into 9, 10, 11), so after a hall Load counters 4, 5, 0, 1, 2 draw blocks 2, 130, 0, 128, 1 as on any overland step
+    (test `OverlandViewTests.A_hall_load_on_the_overland_loads_the_marker_slots_again`; not re-run on screen). The icon
+    editor's slot-11 load (below) is not changed.
   The draw (0x2DC18–0x2DC30) takes icon slot 9 + counter / 2, frame counter % 2; the interface load puts ICON 0, 1, 2
   into slots 9, 10, 11 (0x17285–0x172D5, each slot block b and b + 128). The camp's Alter Icon on the overland ends by
   loading ICON 0 into slot 11 (and 1 into slot 12; icon editor 0x1D84A, start-menu.md §3), so until the next interface

@@ -141,13 +141,25 @@ item.name := s (max 40)
 **Identify** (verified unless marked). Shop identify (OVR 0x22F8C–0x23131; money rules `shop-format.md`), in this order: confirm prompt;
 if the selected character has ≥ 200 gp, deduct 200 from them, else if the pool DS:67F4 has
 ≥ 200, deduct it there (money rules: `shop-format.md`), else show a "not enough money" message and stop. Only after paying: if `hidden` = 0,
-show an "already identified" message (the 200 gp are not refunded in this routine; whether the UI ever offers
-this case is `[?]`); else `hidden` := 0 and re-run the naming routine. Reading a scroll (OVR 0x27466–0x274AC;
+show an "already identified" message (the 200 gp are not refunded in this routine; the Items page offers Id on
+every item, identified or not, so the case is reached: s49); else `hidden` := 0 and re-run the naming routine. Reading a scroll (OVR 0x27466(arg), read whole s49, W by execution: `por_spellcast_oracle.py`;
 reader = current character DS:5D92, scroll = DS:6B80) clears `hidden` if `HasEffect(reader, 0x10)` (any scroll;
 Lee: 0x10 = Read Magic) **or** (`reader+96h` > 0 signed **and** base slot = 12). Creature +96h is the cleric
 level (s8, −1/0 = none; creature spec). In plain terms: a scroll identifies itself when read by someone under
 Read Magic, and a cleric scroll also when read by anyone with a cleric level (druid, paladin and ranger levels do
 not count). Detect Magic (effect 5) only adds the `*` marker; it never clears `hidden`.
+The rest of 0x27466: a scroll still hidden adds nothing; else its bytes 0x3C, 0x3D, 0x3E in order, with arg = 0 every
+byte above 0 (a lone 0x80 lists as spell 0), with arg ≠ 0 only bytes above 0x80, each through the row routine 0x272A5
+(which stores the byte AND 0x7F in DS:476A[n], the n-th spell row, and adds a level heading when the level changes),
+then DS:477F[DS:4843] := the scroll and DS:4843 += 1. **0x27534(arg)** (modes 3 and 6 of the list 0x275B4; mode 2 calls
+0x27466(0) on DS:6B80 alone): clears DS:477F[0..48] (49 far pointers) and DS:4843, then walks the reader's items (0xC8,
+next at +0x2A) and calls 0x27466(arg) for each readable one (0x2A255); DS:6B80 is left nil. A pick in mode 3 sets
+DS:6B80 from DS:477F[row] (0x2727D). Two unbounded writes (original bugs, not fixed, `[U]`): DS:4843 is reset only by
+0x27534, so every mode-2 read (a scroll used through Use) adds its rows to it; after 49 rows since the last scroll
+list of modes 3 / 6 the pointer for row 49 lands on DS:4843–4846 (the count itself and the spell globals DS:4844 /
+DS:4845) and later ones on the globals after them. DS:476A holds 21 spell bytes: a list with more spell rows writes
+the extra bytes over the start of DS:477F (harmless outside mode 3; in mode 3 row 0's scroll pointer gets a spell
+byte from the 22nd row on). Core keeps rows and scrolls as lists and does not model either overflow.
 
 ## Base item table (`ITEMS`, 16 bytes per type)
 

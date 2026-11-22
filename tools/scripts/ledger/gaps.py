@@ -1,30 +1,34 @@
 # ---- hand-ranked gap lists (exec'd at the end of render.py) ----
 GAP_PLAY = [
-    ('O:27c38', 'every spell cast, fight and camp; open: whether bit 7 of a scroll pick is kept (`combat-ai.md`). Read the routine whole, oracle it (scroll and memorised casts, aim abort)'),
-    ('O:127fb', 'start of round per creature, marked "not read" in `combat-format.md`; it sets what each creature may do this round'),
-    ('O:9938', 'turn order picks; the RNG contract of a round\'s start depends on it (`combat-format.md` "Start of round")'),
-    ('O:12f0d', 'one-square move: cost, attacks of opportunity hand-off, terrain effects 0x2B9D1 `[?]` (`combat-map.md`)'),
-    ('O:14c0f', 'AI and menu combat cast: spell 0 → the spell list 0x239D6 `[?]` (`spells-effects.md` "Combat cast")'),
-    ('O:f91e', 'handler 40: stinking cloud cells of the arena `[?]` (map side)'),
-    ('O:10ad2', 'handler 84 charm gaze: its range reads an uninitialised stack word `[?]`'),
-    ('O:2a0f1', 'handler 88 lightning breath: built from a DOSBox-X run plus a read; recheck the whole routine'),
-    ('O:11134', 'handler 90: Constitution save bonus `[?]` on the spec line'),
-    ('O:112e5', 'handler 97: as 90'),
-    ('O:282bd', 'spell 12 Enlarge: levels outside 1–6 keep the previous value `[?]`'),
-    ('O:27466', 'reading a scroll: the scroll list `[?]` (`item-format.md`)'),
-    ('O:27534', 'scroll read helper, never cited: sets DS:6B80 / 6B82 and DS:4843 around 0x27466'),
-    ('O:4864', 'temple cure 1: DS:681F = 1 meanwhile `[?]` (what the flag changes in 0x2AF10)'),
-    ('O:21aed', 'View\'s menu: which entries it offers per caller (`combat-format.md`)'),
-    ('O:22f8c', 'shop Id / Sell box `[?]` (`combat-menu.md`)'),
-    ('O:23819', 'party member selection (Home / End, camp and party menu): wrapping `[?]`, "not read" in `view3d.md`'),
-    ('O:202bb', 'NEWECL helper, never cited: disk number check, DS:6AAD / 6AAE, a menu and the save routine; may decide what a script change does on a disk swap'),
-    ('O:24331', 'camp time helper: C# only (CampTime), no spec line'),
-    ('O:1e294', 'roster / save file-error report, never cited (error path only)'),
-    ('O:b4', 'start-up: sets DS:4414 / DS:4416, never cited'),
-    ('O:4a', 'no direct caller (unit 0x16): a disk prompt, then the game save; find how it is reached'),
+    ('O:21aed', 'read whole s49: the entries follow the record and DS:49F3 = 5 only, the same for every caller (combat-menu.md "View / Use"); Spells shows the memorised list from seven callers, the party menu\'s View (0x19D23) still gives the Client\'s notice'),
     ('O:18668', 'Memorize / Scribe page buffer allocation (memory only; likely nothing to port)'),
     ('O:1638e', 'Alt-X debugging switch (needs the start word; no effect in normal play)'),
     ('S:6', 'main program: the order is in `start-menu.md` §1 and Program.cs, cited only inside'),
+]
+# rows closed in s49 (W or N now): their hand notes, shown under "Closed in s49"; prune at the next session's rebuild
+GAP_DONE = [
+    ('O:27c38', 'done s49: read whole, oracle `por_spellcast_oracle.py` (memorised, item and scroll casts, aim abort, combat-only questions; Core driven out of a fight, the fight branch checked against the program\'s rules only); bit 7 of a scroll pick is not kept; out-of-fight branch `CampCast.Run`, fight branch `FightSpells.CastNow` + `FightMenu.CastNow` (the loot menu\'s D caller 0x6605 not wired in the Client)'),
+    ('O:127fb', 's49: read whole and run under emulation with its callees and the trigger-0x12 effects (`por_round_oracle.py`, `RoundProgramTests`); the C# already matched'),
+    ('O:9938', 's49: read whole, run under emulation on every initiative byte and after real round starts (`RoundProgramTests`)'),
+    ('O:12f0d', 's49: read whole with the guards 0x12E22, the callers\' hand-off and 0x2B9D1, run under emulation (`RoundProgramTests`); the step is now drawn inside the routine (`Fight.StepDrawn`)'),
+    ('O:14c0f', 'done s49 (P3): ported whole, oracle `por_cast_oracle.py` (ids 0..67, ai 0 / 1, the list 0x275B4 kind 0); `[?]` left: ids above 67 read past the table (`spells-effects.md` "Combat cast")'),
+    ('O:f91e', 's49: ported whole, by execution (`por_handler_oracle.py`, bodies under the clouds)'),
+    ('O:10ad2', 's49: by execution; the range word is stack residue, 0x3E58 at 18 of 18 DOSBox-X gazes (no range in practice; sampled, not proven)'),
+    ('O:2a0f1', 's49: whole routine rechecked, by execution (the pick at DS:6B84 entry 0 scripted)'),
+    ('O:11134', 's49: by execution inside the saving throw 0x2BC4D; Constitution outside 4..20 adds stack residue that varies (DOSBox-X 0x1F, 0x00), 0 taken `[?]`, reached after enough temple raises (Con − 1 each, 0x4B85) or handler 7 at Con 20'),
+    ('O:112e5', 's49: as 90'),
+    ('O:282bd', 'done s49: other levels keep DS:4845 as Enlarge, Sleep or Dispel Magic last left it, shared for the run (`spells-effects.md` "Spell globals"); start value `[?]` (uninitialised data)'),
+    ('O:27466', 'done s49: read whole, oracle `por_spellcast_oracle.py`; signed cleric level; DS:4843 / DS:476A overflows `[U]` (`item-format.md`)'),
+    ('O:27534', 'done s49: read whole, oracle `por_spellcast_oracle.py` (`item-format.md`)'),
+    ('O:4864', 'W by execution s49 (`por_venue_oracle.py`, VenueProgramTests): DS:681F stops the removal handlers\' re-add (shop-format.md "Temple")'),
+    ('O:22f8c', 'W by execution s49 (`por_venue_oracle.py`, VenueProgramTests; DOSBox-X s42)'),
+    ('O:23819', 'W by execution s49 (`por_venue_oracle.py`, VenueProgramTests; Core PartySelection); other extended keys → first member not wired in the Client (shop-format.md "Party selection")'),
+    ('O:202bb', 'read s49 (ecl-format.md NEWECL): disk prompt only; a module holds every script, so it never runs. Not ported by design'),
+    ('O:24331', 'done s49 (P3): a text routine, not the clock (kind pres); ported (`CampTime.TwoDigits`), spec in `camp.md`, oracle for 0..255'),
+    ('O:1e294', 'read s49 (start-menu.md §5): disks and paths; the Client makes its own save folders. Not ported by design'),
+    ('O:b4', 'read s49 (start-menu.md §1): memory handler set-up. Not ported by design'),
+    ('O:4a', 'read s49 (start-menu.md §1): reached through DS:4414 from GetMem (START 0xB343), not dead; .NET has no fixed heap. Not ported by design'),
+    ('S:228c', 'W by citation after s49: the C# now names the entry (FightSpells.CombatCastStep)'),
 ]
 GAP_PRES = [
     ('S:77f8', 'text window: typing and paging; open `[?]` on the 255-character case (PLAN "Next" (1))'),
@@ -34,7 +38,6 @@ GAP_PRES = [
     ('O:239d6', 'spell list window: four `[?]` lines; the Client draws its own page'),
     ('O:2cc8c', 'menu routine (every horizontal menu): one `[?]` line; its key handling is run by the oracles but its drawing is not compared'),
     ('S:1307', 'party list redraw and its colour helpers 0x148F, 0x1513, the creature panel 0x1583, the icon flash 0x257E, the View text helper 0x1C4D: run under the oracles, drawing compared only in DOSBox-X'),
-    ('S:228c', 'combat / status message line: C# cites only inside'),
     ('S:2b8b', 'effect message and pause'),
     ('O:2eef4', '3D view internals 0x2E8F7, 0x2EA6B, 0x2EB08, 0x2EEEA never cited, the piece draw 0x32392 cited only inside: the view is pixel-equal to DOSBox-X from the formats (`view3d.md`), so only a check'),
     ('O:20d50', 'after a load or script switch, never cited: overland / picture set-up (calls 0x2DE38 and the picture draw)'),
@@ -67,6 +70,15 @@ G.append('|---|---|---|---|---|')
 for i, (k, note) in enumerate(GAP_PRES, 1):
     G.append('| %d | %s | %s | %s | %s |' % (i, addr(k), role(k), ST[k], note))
 G.append('')
+G.append('### Closed in s49')
+G.append('')
+G.append('Rows that left the ranked lists this session, with the lane notes (their status stays in the unit tables).')
+G.append('')
+G.append('| Routine | Role | St | Note |')
+G.append('|---|---|---|---|')
+for k, note in GAP_DONE:
+    G.append('| %s | %s | %s | %s |' % (addr(k), role(k), ST[k], note))
+G.append('')
 G.append('Not gaps: the N rows (DAX reader START segment 0802, disk numbers, memory release, the code wheel) and the '
          'library segments, which the module format and .NET replace.')
 G.append('')
@@ -78,7 +90,10 @@ for k in sorted((k for k in OV if OV[k].get('status') and k in rows), key=lambda
     G.append('| %s | %s | %s |' % (addr(k), OV[k]['status'], OV[k].get('why', '')))
 G.append('')
 missing = [k for k in rows if ST[k] in 'PU' and KIND[k] == 'play' and k not in dict(GAP_PLAY)]
-print('play gaps not ranked:', missing)
+print('play gaps not ranked:', [addr(k) for k in missing])
+print('pres gaps not ranked:', [addr(k) for k in rows if ST[k] in 'PU' and KIND[k] == 'pres' and k not in dict(GAP_PRES)])
+print('ranked but not P / U:', [addr(k) for k, _ in GAP_PLAY + GAP_PRES if ST[k] not in 'PU'])
+print('closed but still P / U:', [addr(k) for k, _ in GAP_DONE if ST[k] in 'PU'])
 body = open(W + 'ledger_body.md').read()
 i = body.index('## ECL opcode handlers')
 doc = body[:i] + '\n'.join(G) + '\n' + body[i:]

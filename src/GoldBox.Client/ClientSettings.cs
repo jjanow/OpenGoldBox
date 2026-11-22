@@ -62,6 +62,23 @@ public sealed class ClientSettings
         set => AnimationSpeed = Play.AnimationTiming.Word(value);
     }
 
+    /// <summary>
+    /// QoL, off = original (user, s48): under the Amiga art the fight also takes DOS's Alt-M and Alt-Q (the bindings'
+    /// keys) besides the Amiga program's own ';' / F8 and F6 (docs/re/combat-menu.md "The Amiga's keys"; the Amiga
+    /// reads no Alt). Alt-X stays DOS-only. Changed with <c>--amiga-alt-keys</c> / <c>--no-amiga-alt-keys</c> or the
+    /// controls screen's AMIGA ALT-M/Q row.
+    /// </summary>
+    public bool AmigaAltKeys { get; set; }
+
+    /// <summary>
+    /// QoL, off = original (user, s48): under the Amiga art the Client's pad / mouse letter grid of an area script's
+    /// text input (INPUTSTR, INPUTNUM) is drawn over the view and party list instead of over the text window, so the
+    /// script's question stays readable (docs/re/por-art-formats.md "INPUTSTR"). Off: the grid covers the text window,
+    /// as under DOS. Changed with <c>--amiga-grid-off-text</c> / <c>--no-amiga-grid-off-text</c> or the controls
+    /// screen's AMIGA INPUT GRID row.
+    /// </summary>
+    public bool AmigaGridOffText { get; set; }
+
     /// <summary>QoL, off = original: show the 320×200 screen stretched to 4:3 (pixels 1.2 times taller, as on a CRT).</summary>
     public bool Stretch43 { get; set; }
 

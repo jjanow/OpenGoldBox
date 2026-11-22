@@ -115,6 +115,13 @@ public sealed class TradeContext
     }
     /// <summary>The temple's heal list names (program table), or null.</summary>
     public IReadOnlyList<string>? TempleNames { get; init; }
+    /// <summary>The game's effect engine outside a fight (<c>PorGame.OutsideEffects</c>): the temple's cure 1 removes the
+    /// disease effects through it (0x4864, <see cref="TempleRules.CureDisease"/>). Null: the records are only dropped.</summary>
+    public EffectHandlers? Effects { get; init; }
+
+    /// <summary>View's Spells outside a fight (0x21AED → 0x239D6 in show mode): the current member's memorised list, Exit
+    /// back to View. Null: not built here (our notice).</summary>
+    public Action? ShowMemorised { get; init; }
     /// <summary>
     /// Where the original program stops (a run-time error back to DOS): shows it and ends the game. Called on the logic
     /// thread; the exception is thrown on afterwards, so the screen that hit it never goes on.
@@ -139,6 +146,10 @@ public sealed class TradeContext
     /// the text box (1, 21)–(38, 22) of <see cref="Dialog"/>'s window, the yes/no and row-24 messages over the page).
     /// </summary>
     public Action<bool> TalkOverItemsPage { get; init; } = _ => { };
+
+    /// <summary>The Items page's Use outside a fight (0x222F0 → 0x22AC4; <see cref="CampScreens.UseItem"/>), set by
+    /// the camp and the command line's View; null: not offered here.</summary>
+    public Action<EclCharacter, byte[]>? UseItem { get; set; }
 
     /// <summary>
     /// View's coin list and amount (<see cref="PartyMenuFlow.Coins"/>): Drop's (0x234E1, texts null) and the money
@@ -179,20 +190,20 @@ public sealed class TradeContext
     /// <summary>The pool holds money (0x25C07, first answer).</summary>
     public bool PoolHasMoney => Pool.Any(v => v != 0);
 
-    /// <summary>Apply a member answer of a menu (previous / next, 0x23819; or a clicked name). Returns false for other answers.</summary>
+    /// <summary>Apply a member answer of a menu (previous / next: the program's 0x23819 with Home / End,
+    /// <see cref="PartySelection.Select"/>; or a clicked name). Returns false for other answers.</summary>
     public bool SelectMember(int answer)
     {
         int n = Party.Members.Count;
         if (n == 0)
             return false;
-        int cur = Math.Max(0, Party.CurrentIndex);
         switch (answer)
         {
             case ChoiceRequest.PreviousMember:
-                Party.CurrentIndex = (cur + n - 1) % n; // the head wraps to the last member
+                PartySelection.Select(Party, PartySelection.Home); // the head wraps to the last member
                 return true;
             case ChoiceRequest.NextMember:
-                Party.CurrentIndex = (cur + 1) % n;     // the last wraps to the head
+                PartySelection.Select(Party, PartySelection.End);  // the last wraps to the head
                 return true;
             case <= MemberPick when MemberPick - answer < n:
                 Party.CurrentIndex = MemberPick - answer;
@@ -271,7 +282,10 @@ public static class MoneyScreens
             int kind = kinds[a.Row];
             string prompt = AmigaView.AmountPrompt(GameText.Cat(GameText.Cat(t.Text[Msg.HowMuch], t.Text.Coin(kind)), t.Text[Msg.WillYouTake]));
             t.ShowPageAlone(page);
-            var typed = AmigaView.Number(t.Dialog.Ask, new TextRequest(prompt, true, 5) { Maximum = (ushort)(t.Pool[kind] & 0xFFFF) });
+            // The program caps the input at the pool's low word (0x25B89): an original bug, fixed (user, s48): the pool
+            // up to 65535 (the most the 5-digit input and the character's coin word take), so a pool of 65536 or more
+            // can still be taken (shop-format.md "Take").
+            var typed = AmigaView.Number(t.Dialog.Ask, new TextRequest(prompt, true, 5) { Maximum = TakeMaximum(t.Pool[kind]) });
             t.ShowPageAlone(null);
             // 0x24F1D answers 0 to Escape and to Return with nothing typed (Val of an empty string), and 0x25974 calls
             // 0x25711 with it all the same (0x25BAF): its carry test then refuses a member already over the limit (the
@@ -282,6 +296,12 @@ public static class MoneyScreens
                 VenueScreens.RowMessageOver(t, page, t.Text[Msg.Overloaded]); // 0x2573C: START 0x2233
         }
     }
+
+    /// <summary>
+    /// Take's amount maximum for a pool of <paramref name="pool"/> coins: at most 65535 (s48 fix; the program's
+    /// <c>pool &amp; 0xFFFF</c> made a pool of 65536 untakeable).
+    /// </summary>
+    public static ushort TakeMaximum(uint pool) => (ushort)Math.Min(pool, ushort.MaxValue);
 
     /// <summary>Take's coin-kind window (2, 2)–(15, 8): its first row, rows and column.</summary>
     public const int CoinKindsFirstRow = 2, CoinKindsRows = 7, CoinKindsColumn = 2;
@@ -343,28 +363,28 @@ public static class MoneyScreens
     /// <summary>
     /// The exit of the shop (0x7350–0x740D) and temple (0x5384–0x544A): with money in the pool (0x25C07's first answer)
     /// the two texts and "Yes No" through the menu helper (<see cref="StayAtExit"/>); returns true to stay. Pool items
-    /// alone do not ask. The shop prints its question in colour 15 running on after the message; the temple prints it
-    /// in colour 10 with the box cleared first (0x53E8: clear flag 1), so the priest's message is typed and at once
-    /// replaced (DOSBox-X s47).
+    /// alone do not ask. The shop prints its question in colour 15 running on after the message; the temple passes
+    /// colour 10 (<paramref name="goBackColour"/>). The temple's question also passes the clear flag 1 (0x53E8), so in
+    /// the program the priest's message is typed and at once replaced (DOSBox-X s47): an original bug, fixed (user,
+    /// s48): its question runs on after the message as the shop's does.
     /// </summary>
-    public static bool StayForMoney(TradeContext t, Msg leaving, Msg goBack, bool questionClears = false) =>
-        t.PoolHasMoney && StayAtExit(t, leaving, goBack, questionClears);
+    public static bool StayForMoney(TradeContext t, Msg leaving, Msg goBack, byte? goBackColour = null) =>
+        t.PoolHasMoney && StayAtExit(t, leaving, goBack, goBackColour);
 
     /// <summary>
     /// A venue's exit question (shop 0x736F, temple 0x53A3, loot menu 0x6636): the first text through the text routine in
-    /// the box (1, 17)–(38, 22), colour 10, cleared first; the second (0709:0768) in colour 15 running on after it, or
-    /// with <paramref name="questionClears"/> in colour 10 cleared first (the temple's); then "~Yes ~No" through the
-    /// menu helper 0x8B57 (<see cref="Dialog.MenuHelper"/>: the shared highlight, Return and Escape ignored, Home / End
-    /// pick a member and draw the party list). Answer 1 (No) leaves with the text left in the box (COMBAT's last call,
+    /// the box (1, 17)–(38, 22), colour 10, cleared first; the second (0709:0768) running on after it in colour 15 or
+    /// the caller's (<paramref name="goBackColour"/>: the temple's 10, the Amiga loot's pen 24); then "~Yes ~No" through
+    /// the menu helper 0x8B57 (<see cref="Dialog.MenuHelper"/>: the shared highlight, Escape ignored, Return answers
+    /// the lit word (s48), Home / End pick a member and draw the party list). Answer 1 (No) leaves with the text left in the box (COMBAT's last call,
     /// START 0x3379, clears it); any other answer blanks the box (0709:0DD3 with 1, 17, 38, 22) and stays. DOSBox-X s47
     /// (test saves J and K): the shop's and the loot's question run on after the message, both open on Yes after Exit,
     /// End during the question lit the next member and kept the question, Yes left the box empty.
     /// </summary>
-    public static bool StayAtExit(TradeContext t, Msg leaving, Msg goBack, bool questionClears = false, byte? goBackColour = null)
+    public static bool StayAtExit(TradeContext t, Msg leaving, Msg goBack, byte? goBackColour = null)
     {
         t.Dialog.Show(t.Text[leaving]);
-        t.Dialog.Show(t.Text[goBack], clear: questionClears,
-            colour: goBackColour ?? (questionClears ? TextWindow.ScriptColour : (byte)15));
+        t.Dialog.Show(t.Text[goBack], clear: false, colour: goBackColour ?? 15);
         int answer;
         while (t.SelectMember(answer = t.Dialog.MenuHelper(["YES", "NO"])))
             t.RosterDrawn(); // 0x8BD3: START 0x0767 after the selection

@@ -89,7 +89,7 @@ public sealed class FightKit
         effects.LeaveMap = c => map.Remove(c, shown: true);
         fight.Recalculate = c => StatRecalc.Recalculate(c, Items);
         effects.Recalculate = fight.Recalculate;
-        fight.Spells = new FightSpells(Spells, effects, random);
+        fight.Spells = new FightSpells(Spells, effects, random) { Globals = memory.SpellGlobals };
         effects.Attach(fight);
         WireClock(fight, effects, time ?? new CampState());
         FightPlacement.Start(fight, map, area, deferStartEffects);

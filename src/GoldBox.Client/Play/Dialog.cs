@@ -31,10 +31,12 @@ public sealed class Dialog(Func<PlayerRequest, object?> ask, TextWindow text)
     /// and Escape (0) loop; an extended key (Home / End) runs the party selection 0x23819 and the party list, then the
     /// menu again (answered here as <see cref="ChoiceRequest.PreviousMember"/> / <see cref="ChoiceRequest.NextMember"/>
     /// for the caller to apply). A letter that is no hotkey would answer 0xFF, but the menu routine ignores such keys
-    /// (DOSBox-X s47: X, Escape and Return at the loot's question changed nothing).
+    /// (DOSBox-X s47: X, Escape and Return at the loot's question changed nothing). <b>Deliberate difference (user,
+    /// s48)</b>: the keyboard's Return answers the lit word, as the pad's Confirm and a click do; Escape still does
+    /// nothing (shop-format.md "Exit").
     /// </summary>
     public int MenuHelper(IReadOnlyList<string> items) =>
-        ask(new ChoiceRequest(null, items, false) { PartySelect = true, KeyboardEnterIgnored = true }) is int i ? i : 0;
+        ask(new ChoiceRequest(null, items, false) { PartySelect = true }) is int i ? i : 0;
 
     /// <summary>A vertical list in the text window under <paramref name="prompt"/>; the answer is the index.</summary>
     public int List(string? prompt, IReadOnlyList<string> items, int? cancel = null) =>

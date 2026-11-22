@@ -174,13 +174,19 @@ ORACLE_O = {0x143F3: 'ai', 0x148BE: 'ai', 0xAEAB: 'ai', 0x22AC4: 'ai', 0x22827: 
             0x30ADA: 'combat', 0x313F3: 'combat', 0x300CD: 'combat', 0x3045B: 'combat', 0x14E38: 'combat',
             0x1D1AC: 'icon', 0x2AA87: 'level', 0x1BA1E: 'modify', 0x1D932: 'modify', 0x1DA0B: 'modify',
             0x29C5B: 'restore', 0x11DFD: 'spell', 0x2A42B: 'spell', 0x2AEEA: 'spell', 0x2AF10: 'spell',
-            0x250D5: 'trade', 0x2276E: 'trade', 0x6F0D: 'trade', 0x1C32D: 'train'}
+            0x250D5: 'trade', 0x2276E: 'trade', 0x6F0D: 'trade', 0x1C32D: 'train',
+            0x23819: 'venue', 0x4864: 'venue', 0x22F8C: 'venue',
+            # s49 oracles: por_round_oracle.py, por_handler_oracle.py, por_spellcast_oracle.py, por_cast_oracle.py
+            0x127FB: 'round', 0x9938: 'round', 0x12F0D: 'round', 0x2B9D1: 'round',
+            0x2BC4D: 'handler', 0x27C38: 'spellcast', 0x275B4: 'spellcast', 0x14C0F: 'cast', 0x24331: 'cast'}
 ORACLE_S = {0x9E5C: 'sound', 0x9ECA: 'sound', 0xA222: 'sound', 0xA28E: 'sound', 0x2FD3: 'combat', 0x30FB: 'combat', 0x3AF7: 'level', 0x1758: 'trade'}
 disp = json.load(open(_WORK + 'disp.json'))
 for sid in [35, 36, 37, 39, 41, 42, 43, 44, 46, 47, 48, 51, 55, 56, 57, 58, 59, 60, 62, 64, 65, 67, 34]:
     ORACLE_O[int(disp['spells'][str(sid)][2:], 16)] = 'spell'
 for hid in [81, 82, 83, 85, 86]:
     ORACLE_O[int(disp['handlers'][str(hid)][2:], 16)] = 'spell'
+for hid in [40, 84, 88, 90, 97]:  # por_handler_oracle.py (90 / 97 inside the saving throw 0x2BC4D)
+    ORACLE_O.setdefault(int(disp['handlers'][str(hid)][2:], 16), 'handler')
 oracle = {}
 for a, n in ORACLE_O.items():
     oracle['O:%x' % a] = n
@@ -189,7 +195,8 @@ for a, n in ORACLE_S.items():
 
 out = {'%s:%x' % k: {kk: (dict(v) if isinstance(v, collections.Counter) else v) for kk, v in c.items()}
        for k, c in cites.items()}
-json.dump({'cites': out, 'oracle': oracle}, open(_WORK + 'cites.json', 'w'), indent=0)
+json.dump({'cites': out, 'oracle': oracle, 'raw': {'S': sum(1 for k in raw if k[0] == 'S'), 'O': sum(1 for k in raw if k[0] == 'O')}},
+          open(_WORK + 'cites.json', 'w'), indent=0)
 print('distinct raw addrs S', sum(1 for k in raw if k[0] == 'S'), 'O', sum(1 for k in raw if k[0] == 'O'))
 print('routines cited S', sum(1 for k in cites if k[0] == 'S'), 'O', sum(1 for k in cites if k[0] == 'O'))
 print('routines entry-cited S', sum(1 for k, c in cites.items() if k[0] == 'S' and (c['entry_docs'] or c['entry_src'])),

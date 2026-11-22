@@ -124,7 +124,10 @@ or **0x3B, 0xAE and 0xE6 whatever the menu**; anything else is ignored. So:
 - The **all-quick key −26 (0xE6) is F6** (raw 0x55, +0x1DBA).
 - F7 gives 0xAE, which the fight menu's loop does not test: nothing (as DOS's Alt-R).
 - There is **no Alt-M or Alt-Q**: left Alt gives '1' (a digit: the fight menu drops it), and M or Q with Alt held are
-  Move and Quick. s46's "Alt-M exists" was read from the toggle's messages, not from its key.
+  Move and Quick. s46's "Alt-M exists" was read from the toggle's messages, not from its key. **QoL option (user,
+  s48; off = original)**: `ClientSettings.AmigaAltKeys` (`--amiga-alt-keys`, the controls screen's AMIGA ALT-M/Q)
+  lets the Client's fight under the Amiga art also take DOS's Alt-M / Alt-Q (the bindings' keys, menu and AI key
+  check), the Amiga's ';' / F8 and F6 still working; Alt-X stays off (`ActionInput.AmigaAltKeys`).
 - Left Shift alone gives '7' and left Alt '1' (keypad digits: on a 3D or overland command line those are the diagonal
   / turn keys DOS gives keypad 7 and 1 `[?]` not tried); the cursor keys give the keypad's digits.
 
@@ -257,9 +260,9 @@ Arguments: creature, range (0xFF = from the weapon), attack mode (1 from the men
 effects with trigger 1 on the defender; if still 0, the attacker's +0x0A is set to the defender for effects with
 trigger 0 on the attacker and restored; yes when DS:681E is still 0.
 
-### Cast (0x14C0F, from the menu with no spell) — P
+### Cast (0x14C0F, from the menu with no spell) — W, E (s49)
 
-The spell list (0x239D6) picks a spell. A spell whose table entry (16 bytes at DS:3200 + 16 × spell) has byte 5 = 0
+The whole routine and its unicorn check are in `spells-effects.md` "Combat cast". The spell list (0x239D6) picks a spell. A spell whose table entry (16 bytes at DS:3200 + 16 × spell) has byte 5 = 0
 can't be cast in a fight (a message that the spell is for camping only, nothing else). Casting time = byte 6 div 3:
 
 - 0: the spell is cast now (0x27C38, below) and the actions end (START 0x31D7).
@@ -362,7 +365,15 @@ interface). Both screens work on the current creature (DS:5D92; View copies it t
 DS:4716). DS:49F3 tells where the screen is open: 1 shop, 5 fight (2, 3, 4, 6 other places `[?]`). "NPC in play"
 below means 0x84 ≥ 0x80, in play (0x10D ≠ 0) and status ≠ 1.
 
-**View** (0x21AED, var done): done = 0; loop until the key is Exit (or 0) or done: the menu (0x2CC8C) with
+**View** (0x21AED, var done; read whole s49): in a fight (DS:49F3 = 5) 0x3083F on entry and 0x3081D on exit; key :=
+' ', done := 0, DS:471A := DS:5D92, the page 0x21084. Loop while the key is not in {0, 'E'} (the set at CS:0A4C of
+unit 0x2103A) and done = 0: the entries below are built afresh each pass from the record and DS:49F3 only (so every
+caller, the party menu 0x19D23, the camp 0x197B3, shop 0x730D, temple 0x5341, loot 0x65B4, the command line 0x17118 /
+0x17330 and the fight 0x9BC0, gets the same rule, the fight losing only Trade), then the menu routine with the View
+prompt, colours 13 / 10 / 15, keypad flag 0, no animation; the help position [bp−0x32] := −1; I → 0x21F32(done), S →
+the spell list 0x239D6 (show), T → 0x23190, D → 0x234E1 then the money lines 0x21547; when done is still 0 and the key
+is I, S or T (set CS:0A93) the page 0x21084 again. At the end START 0x3379 redraws the interface. Core
+`FightItemScreens.ViewEntries` / `View`, the Client's `CharacterView`. The menu (0x2CC8C) with
 
 | Entry | Shown when | Does |
 |---|---|---|
@@ -384,7 +395,7 @@ entries, then the item list (0x2D669: an entry key and the item under the cursor
 | Halve | 0xC7 < 16 | 0x22827 |
 | Join | always | 0x228D7 |
 | Sell | not an NPC in play, in a shop | 0x21DAA, then 0x22D28 (`shop-format.md`) |
-| Id | in a shop | 0x22F8C `[?]` |
+| Id | in a shop | 0x22F8C (`shop-format.md` "Id"; run under emulation s49, `por_venue_oracle.py`) |
 
 After every choice START 0x1758 recalculates the creature. So in a fight the Items screen offers Ready, Use (when
 allowed), Drop, Halve, Join; only Use can end the turn.

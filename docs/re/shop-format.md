@@ -62,6 +62,22 @@ without testing the menu's extended-key flag, so both G / O and Home / End reach
 are 0x47 and 0x4F). 0x23819: 0x47 → the previous member of the party list (the head wraps to the last), 0x4F → the
 next (the last wraps to the head), any other key → the head. The camp calls it only for extended keys (Home / End);
 the loot menu tests G / O like the shop, and pools only on a non-extended P.
+**0x23819 whole (W s49, run under emulation: `por_venue_oracle.py`, Core `PartySelection.Select`, test
+`VenueProgramTests`).** It walks the list from the head DS:5D96 (links at +0x104) and writes DS:5D92. Head nil →
+current nil. 0x47: current = head → the last member; else the member whose link is the current one (with no current
+member that is the last; a current record not in the list walks off the end → nil). 0x4F: the current member's link,
+or the head when the link is nil (with no current member it reads the link at 0000:0104, the interrupt table `[?]`;
+the engine leaves the current member as it is). Any other key → the head. Callers and the keys they pass: the shop
+(0x741D / 0x742C), temple (0x545A / 0x5469) and loot menu (0x6345 / 0x6354, 0x66ED / 0x670A) only 0x47 / 0x4F (G / O or
+Home / End); the party menu only extended keys in its set {G, O} (0x19C9E); the camp (0x19762), Magic (0x18C85), Alter
+(0x194E2), Order (0x1901E), the menu helper 0x8B57 (0x8BCE) and the 3D / overland command line (0x17254, 0x173C3, any
+extended key but the arrows it acts on) pass **every** extended key: their menus run with the keypad flag 1, so
+in those menus the arrows (not on the command line), PgUp, PgDn, Ins, Del, the F-keys, Alt-letters and the digit keys
+3 / 5 / 9 and backslash, either row (cursor codes 0x51, 0x20, 0x49, 0x37: the conversion takes the character)
+make the first member current there, and the digits 7 / 1 act as Home / End (the digits read, not seen; Up at the
+camp menu and PgUp on the 3D command line seen in DOSBox-X s49). The Client answers Home / End (and G / O
+where tested) through the routine; the other extended keys are not wired (the Client uses PgUp / PgDn and the
+keypad for steps and pages): a decision for the user.
 
 **Buy** (0x7035, P). An item picker over the treasure list (0x6D04) returns a key; B or Enter buys the highlighted
 item, any other key leaves. Price = the item's value word (0x3A). Before listing, the picker writes value 1 into
@@ -137,10 +153,15 @@ and does nothing for anyone else. DOSBox-X s47 (scratch save A, TREASURE 100 cop
 platinum and weight 60000): Take, Copper, Escape → "OVERLOADED" on row 24 over the dimmed list, then the list again
 with "Copper 100"; Return with nothing typed the same. The Client (`MoneyScreens.Take`) now passes 0 to
 `ShopRules.Take`; its screens equal DOSBox-X's at both points.
-**Original bug** (P s47, proposal, not fixed): the input's maximum is the pool's **low word** (0x25B89), so a pool of
-65536 or more of one coin (Pool can gather that from several members' 16-bit words) lets only `pool mod 65536` be
-taken at a time, and at exactly 65536 (or any multiple) the maximum is 0: every amount typed becomes 0 and that coin
-can never be taken (Share still divides it). The Client does the same (`TextRequest.Maximum` = the low word).
+**Original bug, fixed (user, s48)** (P s47): the program's input maximum is the pool's **low word** (0x25B89), so a
+pool of 65536 or more of one coin (Pool can gather that from several members' 16-bit words) lets only
+`pool mod 65536` be taken at a time, and at exactly 65536 (or any multiple) the maximum is 0: every amount typed
+becomes 0 and that coin can never be taken (Share still divides it). The Client's maximum is the pool, at most 65535
+(`MoneyScreens.TakeMaximum`; the five-digit input and the character's coin word hold no more), under every art.
+Left as the program has it (not part of the decision): 0x25711's carry test adds weight + amount in 16 bits and the
+coin word adds unchecked, so an amount above 65535 − weight passes the test and both words wrap. The program reaches
+that with a pool of about 63000 to 65535 (a member's weight is at most a few thousand); the fix makes
+it reachable from larger pools too `[U]`.
 
 **Pool** (0x25191, P): DS:6DC0 := 1; every party member whose 0x84 is 0 or 0xB3 adds its seven words to the pool,
 loses that much weight, and its seven words are zeroed. Other members (NPCs) keep their money.
@@ -179,8 +200,10 @@ ask. The shop prints its message through the text routine 0709:0768 in the box (
 first, and the question after it in colour 15 with no clear (it runs on after the message's two spaces, no line
 break). The **temple** passes the clear flag 1 and colour 10 for its question too (0x53E8), so the priest's message is
 typed and at once replaced by the question (DOSBox-X: the priest's parting message typed to its end, then the box
-cleared and the go-back question typed in green); probably meant as the shop's (an
-original quirk, kept; proposal only). Both then call the **menu helper 0x8B57** (002B:0061) with an empty prompt,
+cleared and the go-back question typed in green); probably meant as the shop's. **Original
+bug, fixed (user, s48)**: the Client prints the temple's question without the clear, running on after the priest's
+message as the shop's does, in the temple's colour 10 (Client s49, test save `loot-temple`, Pool, Exit: the message
+and the question both in the box). Both then call the **menu helper 0x8B57** (002B:0061) with an empty prompt,
 "~Yes ~No", colours 13 / 10 / 15 and its Return flag [bp+8] = 0: it runs the menu routine 0x2CC8C (keypad flag 1)
 on the **shared highlight** until the key is a letter or digit (the set at its CS:1664, 0x8BEF); a hotkey answers its
 index (0x8C11–0x8C49), any other letter 0xFF (unreachable: the menu routine ignores letters that are no hotkey);
@@ -189,9 +212,11 @@ selection 0x23819 and the party list (0x8BC2–0x8BE0) and loops. Answer 1 (No) 
 blanks the text box (0709:0DD3) and the menu runs again. DOSBox-X s47 (test saves `loot-shop` / `loot-temple`, Pool,
 then E): the question opens on Yes (the cell back to the first after Exit); Escape, Return and X changed nothing; End
 lit the next member and kept the question; Y left the box empty and the menu lit on its first word; N left. The Client
-(`MoneyScreens.StayAtExit`, `Dialog.MenuHelper`, `ChoiceRequest.KeyboardEnterIgnored`) equal on each screen but the
-help lines; the pad's Confirm and a click still answer the lit word (the keyboard's Return does nothing), and the
-cursor-pad meaning of the digits (keypad flag 1) is not modelled in the Client's menus.
+(`MoneyScreens.StayAtExit`, `Dialog.MenuHelper`) equal on each screen but the help lines. **Deliberate difference
+(user, s48)**: the keyboard's Return answers the lit word, as the pad's Confirm and a click do (the program loops on
+it); Escape still does nothing (Client s49: Return at the loot's question on Yes went back to the menu with the box
+blank, Right then Return left). The cursor-pad meaning of the digits (keypad flag 1) is not modelled in the Client's
+menus.
 
 **The entry and the redraws** (P s47): 0x7212 sets DS:49F3 = 1, calls START 0x3379 (case 1: the windows blanked
 inside, the venue box's head + body) and the party list, zeroes the pool and DS:6DC0, names every stock item (START
@@ -269,7 +294,7 @@ even for Raise Dead / Stone to Flesh on a target that does not qualify, which th
 | # | Routine | Price | Condition | Effect after payment |
 |---|---|---|---|---|
 | 0 | 0x47C0 | 1000 | effect 33 (blindness) | remove effect 33 (0x2AF10) |
-| 1 | 0x4864 | 1000 | any of effects 31, 34, 43, 44, 50, 57 (DS:0114) | remove all six (DS:681F = 1 meanwhile `[?]`) |
+| 1 | 0x4864 | 1000 | any of effects 31, 34, 43, 44, 50, 57 (DS:0114) | remove the first record of each of the six through 0x2AF10, DS:681F = 1 meanwhile (below) |
 | 2 | 0x4978(1) | 100 | none | heal 1d8 |
 | 3 | 0x4978(2) | 350 | none | heal 2d8 + 1 |
 | 4 | 0x4978(3) | 600 | none | heal 3d8 + 3 |
@@ -290,11 +315,25 @@ even for Raise Dead / Stone to Flesh on a target that does not qualify, which th
   else level (byte sum); d := d div s when s > 0; max HP −= d unless Con ≥ 17 and the fighter level ≤ 0. No dice,
   no survival roll, no ageing. `[?]` what this is meant to compute.
 - **Effect removal** (0x2AF10): the code removes one record per call (the model drops the first match); the
-  handler call on removal follows `item-format.md` "Effect record"; the role of DS:681F there is `[?]`.
+  handler call on removal follows `item-format.md` "Effect record". **DS:681F** (settled s49): 0x2AF10 never reads
+  it; the handlers do. Its readers in the whole program are 0xEC7A (the re-add every recurring handler uses: among them
+  15, 43, 44, 50, 62, and 34 through 43 / 44), 0xF784 (handler 32: no death) and 0xFFFA (handler 57: nothing at all). A disease handler that
+  runs on removal (byte 4 set) acts as on a timeout: it re-adds itself through 0xEC7A and only then does its harm
+  (Strength, a hit point, the 1-point heal), so without the lock a cure would put the disease straight back and harm
+  once more; with it the record just goes. Handler 31 (0xFF9A) ends the creature's actions on its combat record (START
+  0x31D7, record +0x108) whatever the lock.
+- **Cure 1 whole (0x4864, W s49, run under emulation: `por_venue_oracle.py`, test `VenueProgramTests`).** Found :=
+  any of the six ids on the character (START 0x2D39, DS:0114 + 1..6). Not found: the not-diseased text (CS:02CF) to
+  the "cure anyway" question 0x458A, its answer replacing the default Y. On Y: the price text (CS:02E0) and 1000 to the
+  pay question 0x4636; on its Y: DS:681F := 1, for i = 1..6 0x2AF10(DS:5D92, DS:0114[i], nil), DS:681F := 0 (written 0,
+  not restored). Core `TempleRules.CureDisease` with the game's effect engine outside a fight (`TradeContext.Effects`).
+  Entries 5 (0x4D45) and 6 (0x4B22) set the same lock around their removals; the engine still only drops their
+  records (not part of this port).
 
 ## Open `[?]`
 
-- Temple: effect handler 0x4E on a revived character, DS:681F, the intent of the raise dead hit-point rule.
+- Temple: effect handler 0x4E on a revived character, the intent of the raise dead hit-point rule; entries 5 and 6
+  removing through 0x2AF10 under the lock as cure 1 now does.
 
 ## The menu routine (0x2CC8C) — P (s15)
 
@@ -303,8 +342,9 @@ Arguments (Pascal order, as WHO's picker START 0x37E8 passes them): prompt, item
 (not read further), var extended [bp+6]. Keys (upper-cased by START 0xC7AA): Escape returns **0** (not extended);
 Enter returns 13 only when [bp+0x10] or [bp+0x0E] is non-zero (else it is ignored); ',' / '.' move the highlight
 back / on (wrapping); space returns ' '; a letter or digit that is an item's hotkey moves the highlight there and
-returns it; a zero-prefixed key returns its scan code (extended = 1 only with the keypad flag); with the keypad
-flag a digit that is no hotkey (or a backslash) returns a cursor-pad scan code (1 End, 2 Down, 3 PgDn, 4 Left, 5 ' ', 6 Right, 7 Home,
+returns it; a zero-prefixed key returns its scan code with extended = 1 only with the keypad flag (without it the
+key is ignored and the menu waits on, 0x2CE57–0x2CE68: read s49); with the keypad flag a digit 1–9 or a backslash
+returns a cursor-pad scan code, even when the digit was a hotkey (its highlight moved first, 0x2CF60: read s49) (1 End, 2 Down, 3 PgDn, 4 Left, 5 ' ', 6 Right, 7 Home,
 8 Up, 9 PgUp, backslash 0x37; table DS:288C) with extended = 1; other keys are ignored. The extended byte is also
 stored in DS:6B2C. This is the "output byte" the shop's G / O test does not look at.
 

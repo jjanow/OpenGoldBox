@@ -342,16 +342,19 @@ public class OverlandViewTests
 
     /// <summary>
     /// Load (0x1FBC9–0x1FBE6; Amiga hunk 16 +0x1488–0x14A0) with location type &gt; 1 loads ICON block 0 into the
-    /// marker's slot 11. A training-hall Load of a game save on the overland leaves it there (no interface load follows),
-    /// so counters 4, 5, 0, 1, 2 draw blocks 0, 128, 0, 128, 1 (FS-UAE s47: the step after the hall Load and four
-    /// more, the marker's pixels equal for the first and third and for the second and fourth).
+    /// marker's slot 11. In the program a training-hall Load of a game save on the overland leaves it there (no
+    /// interface load follows), so counters 4, 5, 0, 1, 2 draw blocks 0, 128, 0, 128, 1 (FS-UAE s47). An original bug,
+    /// fixed (user, s48): the Client loads the three slots again (0, 1, 2), so the marker draws 2, 130, 0, 128, 1 as
+    /// before the Load, even when the icon editor had left block 0 there.
     /// </summary>
     [PorFact]
-    public void A_hall_load_on_the_overland_puts_icon_0_into_the_third_marker_slot()
+    public void A_hall_load_on_the_overland_loads_the_marker_slots_again()
     {
         var game = OverlandViewTests.Load(26, "10,20,N", "");
         game.Loop.Execute(AreaCommand.TravelEast); // the interface loads the slots
         Assert.Equal([0, 1, 2], game.Loop.MarkerSlots);
+        game.Loop.IconEditorDone();                // slot 11 := block 0 (kept by the program until an interface load)
+        Assert.Equal([0, 1, 0], game.Loop.MarkerSlots);
         var content = PorData.Open();
         var bytes = PorSaveGame.PlaceOnOverland(File.ReadAllBytes(content.Find("SAVGAMA.DAT")!), content, 26, 10, 20, Facing.North);
         var tmp = Directory.CreateTempSubdirectory("goldbox-save-");
@@ -361,8 +364,8 @@ public class OverlandViewTests
             GoldBox.Data.Module.Por.PorEngineSave.Write(path, GoldBox.Data.Module.Por.PorEngineSave.FromFolders(bytes,
                 "SAVGAMB.DAT", GoldBox.Data.Module.Por.PorEngineSave.Identity(content), content.LoadBlock, [content.Root]));
             Assert.Equal(HallLoad.CarryOn, game.LoadInHall(path, new EclParty()));
-            Assert.Equal([0, 1, 0], game.Loop.MarkerSlots);
-            Assert.Equal([0, 128, 0, 128, 1],
+            Assert.Equal([0, 1, 2], game.Loop.MarkerSlots);
+            Assert.Equal([2, 130, 0, 128, 1],
                 new[] { 4, 5, 0, 1, 2 }.Select(c => Overland.MarkerFrame(c, 0, game.Loop.MarkerSlots).IconBlock));
         }
         finally

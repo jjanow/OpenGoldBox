@@ -365,7 +365,7 @@ public class VenueTests
         var q = Assert.IsType<ChoiceRequest>(s.Asked[1]);
         Assert.Equal(["YES", "NO"], q.Items);
         Assert.Null(q.CancelIndex);
-        Assert.True(q.KeyboardEnterIgnored);
+        Assert.Equal(0, q.Selected);                     // Return answers the lit word (s48), Yes after Exit
         Assert.True(q.PartySelect);
         Assert.Equal(["VIEW", "TAKE", "POOL", "EXIT"], Assert.IsType<ChoiceRequest>(s.Asked[2]).Items); // Yes: the menu again
         Assert.Same(b, t.Party.Current);                 // End during the question, then asked again
@@ -373,15 +373,29 @@ public class VenueTests
         Assert.False(Empty(t.Dialog.Text));              // No: the question stays until COMBAT's START 0x3379
         Assert.Equal(0, s.Left);
 
-        // The shop's question runs on after the message in colour 15; the temple's clears the box and prints in 10.
+        // The shop's question runs on after the message in colour 15. The temple's runs on too, in its colour 10: the
+        // program's clear flag there (0x53E8) wiped the priest's message, an original bug fixed (user, s48).
         var pool = new uint[] { 1, 0, 0, 0, 0, 0, 0 };
         (t, s) = Context(new Script(0), Party(a), pool: pool);
         Assert.True(MoneyScreens.StayForMoney(t, Msg.ShopMoneyLeft, Msg.ShopGoBack));
         Assert.True(Empty(t.Dialog.Text));               // Yes: the box blanked (0709:0DD3)
         (t, s) = Context(new Script(1), Party(a), pool: pool);
-        Assert.False(MoneyScreens.StayForMoney(t, Msg.TempleMoneyLeft, Msg.TempleGoBack, questionClears: true));
-        Assert.Equal(TextWindow.ScriptColour, t.Dialog.Text.Cell(TextWindow.Top, TextWindow.Left).Colour);
-        Assert.StartsWith(t.Text[Msg.TempleGoBack][..4], string.Concat(Enumerable.Range(TextWindow.Left, 4).Select(k => t.Dialog.Text.Cell(TextWindow.Top, k).Char)));
+        Assert.False(MoneyScreens.StayForMoney(t, Msg.TempleMoneyLeft, Msg.TempleGoBack, goBackColour: TextWindow.ScriptColour));
+        string top = string.Concat(Enumerable.Range(TextWindow.Left, 4).Select(k => t.Dialog.Text.Cell(TextWindow.Top, k).Char));
+        Assert.StartsWith(t.Text[Msg.TempleMoneyLeft].TrimStart()[..4], top);   // the priest's message kept at the top
+        var question = t.Text[Msg.TempleGoBack].Trim();
+        bool found = false;
+        for (int r = TextWindow.Top; r <= TextWindow.Bottom && !found; r++)
+        {
+            string row = string.Concat(Enumerable.Range(TextWindow.Left, 38).Select(k => t.Dialog.Text.Cell(r, k).Char));
+            int at = row.IndexOf(question.Split(' ')[0] + " ", StringComparison.Ordinal);
+            if (at >= 0 && (r > TextWindow.Top || at > 0))
+            {
+                found = true;
+                Assert.Equal(TextWindow.ScriptColour, t.Dialog.Text.Cell(r, TextWindow.Left + at).Colour);
+            }
+        }
+        Assert.True(found, "the go-back question runs on below the message");
     }
 
     [Fact]
@@ -397,6 +411,27 @@ public class VenueTests
         Assert.Equal(3, s.Asked.Count);
         Assert.Equal(0, Assert.IsType<ListRequest>(s.Asked[2]).Selected); // the position word kept
         Assert.Equal((ushort?)7, Assert.IsType<TextRequest>(s.Asked[1]).Maximum);  // at most the pool's count (0x25B89)
+        Assert.False(Assert.IsType<TextRequest>(s.Asked[1]).ScriptInput); // its grid stays put under the QoL option
+    }
+
+    /// <summary>
+    /// The original bug fixed (user, s48; shop-format.md "Take"): the program caps the amount at the pool's low word, so
+    /// a pool of 65536 gave a maximum of 0 and 70000 one of 4464. The Client caps at the pool, at most 65535.
+    /// </summary>
+    [Theory]
+    [InlineData(7u, 7)]
+    [InlineData(65535u, 65535)]
+    [InlineData(65536u, 65535)]
+    [InlineData(70000u, 65535)]
+    public void Take_maximum_is_the_pool_up_to_65535(uint pool, int max)
+    {
+        Assert.Equal((ushort)max, MoneyScreens.TakeMaximum(pool));
+        var c = Member("ANNA");
+        var coins = new uint[] { 0, 0, 0, pool, 0, 0, 0 };
+        var (t, s) = Context(new Script(new ListAnswer(ListRequest.RowPicked, 0), "5", new ListAnswer(0, 0)), Party(c), pool: coins);
+        MoneyScreens.Take(t);
+        Assert.Equal((ushort?)max, Assert.IsType<TextRequest>(s.Asked[1]).Maximum);
+        Assert.Equal(pool - 5, coins[3]);                // 5 taken even from a pool of exactly 65536
     }
 
     /// <summary>

@@ -32,8 +32,9 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
     }
 
     /// <summary>
-    /// DOS's print never returns (TextWindow.PrintDos: a 255-character text's last word, P + D s47, view3d.md "Text
-    /// window"): the program keeps drawing the same cells for ever and takes no key. The game logic parks here for good
+    /// DOS's print never returns (TextWindow.PrintDos: a box narrower than one cell, which no caller passes; the
+    /// 255-character hang of P + D s47 is fixed, s48, view3d.md "Text window"): the program keeps drawing for ever and
+    /// takes no key. The game logic parks here for good
     /// (the window can still be closed). Off with <see cref="TypesText"/> (tests).
     /// </summary>
     private void HangInPrint()
@@ -501,14 +502,14 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
     {
         // INPUTNUM (0x1697): the line input with an empty prompt (0x16B9) and 6 characters (START 0x7C1F); the Amiga's
         // requester takes 5 digits (hunk 25 +0x1092) and asks again for an empty line (AmigaView.Number).
-        var s = AmigaView.Number(runner.Ask, new TextRequest("", true, AmigaView.On ? AmigaView.InputNumberLength : 6)) ?? "";
+        var s = AmigaView.Number(runner.Ask, new TextRequest("", true, AmigaView.On ? AmigaView.InputNumberLength : 6) { ScriptInput = true }) ?? "";
         return int.TryParse(s, NumberStyles.None, CultureInfo.InvariantCulture, out var n) ? n : 0;
     }
 
     /// <summary>INPUTSTR's line: DOS's line input (the VM upper-cases it); the Amiga's requester types as its keymap
     /// does and the program keeps the case (<see cref="GoldBox.Core.Ecl.EclVm.AmigaTextRules"/>, read s47).</summary>
     public string InputString() =>
-        runner.Ask(new TextRequest("", false, AmigaView.On ? AmigaView.InputStringLength : 40) { KeepsCase = AmigaView.On }) as string ?? "";
+        runner.Ask(new TextRequest("", false, AmigaView.On ? AmigaView.InputStringLength : 40) { KeepsCase = AmigaView.On, ScriptInput = true }) as string ?? "";
 
     /// <summary>WHO through the default host path (not used: <see cref="PickCharacter"/> answers).</summary>
     public void Who(string prompt)
@@ -1208,9 +1209,12 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
         if (memory().Party is not { } party)
             return null;
         var game = Game();
-        return new TradeContext
+        TradeContext t = null!;
+        t = new TradeContext
         {
             Dialog = Dialog,
+            // View's S outside a fight (0x21D05: 0x239D6 in show mode): the memorised list as the camp draws it.
+            ShowMemorised = () => CampScreens.ShowMemorised(CampContextFor(t)),
             ShowWindow = w =>
             {
                 Window = w;
@@ -1244,6 +1248,7 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
             IsScroll = Resources.IsScroll,
             ItemTypes = Resources.ItemTypes,
             TempleNames = Resources.TempleNames,
+            Effects = game?.OutsideEffects,
             Halt = Halt,
             ViewPage = ViewPage,
             ItemsPage = ItemsPage,
@@ -1266,6 +1271,7 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
                 ReleaseRosterNames();
             },
         };
+        return t;
     }
 
     /// <summary>View's Items page and Drop's coin list (0x21F32, 0x234E1; the party menu's, <see cref="PartyMenuFlow"/>),
@@ -1508,7 +1514,9 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
         try
         {
             PlaySong?.Invoke(1);
-            return VenueScreens.Camp(CampContextFor(t), Resources.CampMenu);
+            var camp = CampContextFor(t);
+            t.UseItem = (who, item) => CampScreens.UseItem(camp, who, item);
+            return VenueScreens.Camp(camp, Resources.CampMenu);
         }
         finally
         {
@@ -1526,6 +1534,8 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
     {
         if (Trade(Game()?.Encounter.State) is not { } t)
             return;
+        var camp = CampContextFor(t, DrawInterface);
+        t.UseItem = (who, item) => CampScreens.UseItem(camp, who, item);
         CharacterView.Run(t, Venue.Explore);
         DrawInterface();
     }
@@ -1561,7 +1571,7 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
             Spells = spells,
             Rest = rest,
             Memory = mem,
-            Cast = Resources.Spells is null ? null : new CampCast(new FightSpells(table, effects, random), t.Party),
+            Cast = Resources.Spells is null ? null : new CampCast(new FightSpells(table, effects, random) { Globals = mem.SpellGlobals }, t.Party),
             Resources = Resources,
             Save = SaveGame,
             Quit = Quit,

@@ -24,7 +24,9 @@ namespace GoldBox.Client;
 /// Amiga wherever the module has it. <c>--param WORD</c> gives the program the word the DOS game takes after
 /// <c>START</c> on its command line (remembered; <c>--no-param</c> drops it; docs/re/training.md, the hall's J).
 /// <c>--anim-speed</c> sets the QoL animation speed (remembered; also on the controls screen; original = the program's
-/// timings).
+/// timings). <c>--amiga-alt-keys</c> / <c>--amiga-grid-off-text</c> switch on the two Amiga QoL options (remembered;
+/// <c>--no-…</c> switches each off; also on the controls screen; <see cref="ClientSettings.AmigaAltKeys"/>,
+/// <see cref="ClientSettings.AmigaGridOffText"/>).
 /// </summary>
 public sealed record ClientOptions
 {
@@ -50,8 +52,12 @@ public sealed record ClientOptions
     public Play.AnimationSpeed? AnimationSpeed { get; init; }
     /// <summary>--param WORD: the word after START on the DOS command line (remembered; --no-param clears it, as "").</summary>
     public string? ProgramWord { get; init; }
+    /// <summary>--amiga-alt-keys / --no-amiga-alt-keys: Alt-M / Alt-Q under the Amiga art (remembered; QoL).</summary>
+    public bool? AmigaAltKeys { get; init; }
+    /// <summary>--amiga-grid-off-text / --no-amiga-grid-off-text: the Amiga input grid off the text window (remembered; QoL).</summary>
+    public bool? AmigaGridOffText { get; init; }
 
-    public const string Usage = "usage: GoldBox.Client [--game DIR] [--amiga DIR] [--module DIR] [--art dos|best|amiga] [--save A|FILE] [--area N --at X,Y,F] [--scale K] [--stretch|--no-stretch] [--sound speaker|tandy|tandy-early|amiga|off] [--anim-speed slowest|slower|original|faster|fastest|instant] [--param WORD|--no-param] [--seed N]";
+    public const string Usage = "usage: GoldBox.Client [--game DIR] [--amiga DIR] [--module DIR] [--art dos|best|amiga] [--save A|FILE] [--area N --at X,Y,F] [--scale K] [--stretch|--no-stretch] [--sound speaker|tandy|tandy-early|amiga|off] [--anim-speed slowest|slower|original|faster|fastest|instant] [--param WORD|--no-param] [--amiga-alt-keys|--no-amiga-alt-keys] [--amiga-grid-off-text|--no-amiga-grid-off-text] [--seed N]";
 
     public static ClientOptions Parse(IReadOnlyList<string> args)
     {
@@ -73,6 +79,10 @@ public sealed record ClientOptions
                 "--amiga" => o with { AmigaDirectory = Next() },
                 "--param" => o with { ProgramWord = Next() },
                 "--no-param" => o with { ProgramWord = "" },
+                "--amiga-alt-keys" => o with { AmigaAltKeys = true },
+                "--no-amiga-alt-keys" => o with { AmigaAltKeys = false },
+                "--amiga-grid-off-text" => o with { AmigaGridOffText = true },
+                "--no-amiga-grid-off-text" => o with { AmigaGridOffText = false },
                 "--sound" => Next() is var sw && (Audio.ClientAudio.Parse(sw) is not null || sw.Equals("off", StringComparison.OrdinalIgnoreCase))
                     ? o with { Sound = Audio.ClientAudio.Word(Audio.ClientAudio.Parse(sw)) }
                     : throw new ArgumentException($"--sound {sw}: use speaker, tandy, tandy-early, amiga or off"),
