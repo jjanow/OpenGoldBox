@@ -134,7 +134,17 @@ DS:70C8 + 256·k string slots; index from 1), and leaves the program counter on 
   trailing partial group yields as many whole codes as it has bits for). Code 0 produces nothing; codes 1–31 map to
   characters 0x41–0x5F (code + 64: `A`..`Z`, `[`, `\`, `]`, `^`, `_`); codes 32–63 are ASCII 0x20–0x3F as is.
   Unpacker GAME.OVR 0x8626, character map 0x7BA6. So scripts only carry upper case, digits and punctuation.
-  The decoded text goes to a 255-byte string slot. Lee 12.3.2 describes the same scheme.
+  The decoded text goes to a 255-byte string slot: each character is appended with Turbo Pascal's Concat and the
+  result stored with at most 255 characters (0x873D–0x8757), so a text of more than 255 characters (the operand's 255
+  bytes hold up to 340 codes) keeps its first 255 (P s47, under emulation: 256, 300 and 340 codes gave length 255; Core
+  `EclText.Slot`). The longest v1.3 text has 205 characters. The Amiga (read s47, hunk 4 +0x13E8–0x1506) joins the
+  slot (255 bytes each from hunk 32 +0x1A75) and each character in a scratch buffer (hunk 27 +0x6F96: at most 255
+  bytes of the slot, one back, the character, a NUL) and copies it back with strncpy(256): past 254 characters each
+  new one replaces the 255th, so a long text keeps its first 254 and its **last** character, and its NUL lands on the
+  next slot's first byte (`EclText.SlotAmiga` under `AmigaTextRules`). So a direct read of that slot (PRINT, SAVE)
+  after a later text operand of the same instruction filled the next slot would run on into it (an original bug,
+  latent: no v1.3 text reaches 255 characters; COMPARE's 256-byte copies cut it back; not modelled). Its print (hunk 25 +0x10EC) walks the C string
+  to its NUL with no byte counter: a 255-character text types out and the script goes on (DOS's run-on is DOS's own). Lee 12.3.2 describes the same scheme.
 - **String slots count text operands only** (loader 0x74D3): the k-th operand of type 0x80 or 0x81 *in one
   loader call* (for a fixed-count opcode: in the instruction) goes to slot k (DS:6FC8 + 256·k), whatever its
   operand position. A variadic tail is a second call and starts again at slot 1. A type-0x80 text of length 0 gives an
@@ -185,7 +195,8 @@ area loop 0x403E (checks at 0x4118–0x423B), which clears it on exit (0x4245); 
   the shorter string is less; **case-sensitive**, no trimming. All six flags are set from that order. With one text
   and one number operand, slot 2 holds whatever the last text instruction left there (never done in v1.3: every
   text COMPARE has two text operands). INPUTSTR upper-cases what the player types, so compares against script text
-  work.
+  work. The Amiga keeps the typed case and upper-cases both texts in COMPARE instead, with a "≥" set whatever the
+  order (read s47, `por-art-formats.md` "Case of the typed name"; `EclVm.AmigaTextRules`).
 - **CMPAND** (0x1833) clears all six flags, then sets "=" if v1 = v2 **and** v3 = v4 (16-bit), else sets "≠". The
   other four flags stay 0.
 - **AND / OR** (0x1B35): result = low byte of (v1 AND/OR v2); flags are set by the flag setter from (0, result), so
@@ -279,8 +290,9 @@ area loop 0x403E (checks at 0x4118–0x423B), which clears it on exit (0x4245); 
   line while the first page types) until a menu, a message or another key line draws there. DOSBox-X s46 (scratch
   copy, save A with vector 0 = `PRINT` of a 249-character text, then `HMENU "WAIT"`): the first page, the prompt, a
   key, "LONG TEST TEXT FOR …" typed from row 17 with the prompt still on row 24, then "WAIT" over it. A decoded text
-  past 255 characters ran on with stray characters and the script never reached the menu (a string[255] limit `[?]`,
-  not followed). Client (`ClientPlayer.PagePromptStands`, s45): the first page with its prompt pixel-equal, the prompt
+  past 255 characters ran on with stray characters and the script never reached the menu: settled s47 (P + D), the
+  slot keeps 255 characters and the text routine's byte counter never ends a word that reaches character 255, an
+  original bug (`view3d.md` "Text window", step 4). Client (`ClientPlayer.PagePromptStands`, s45): the first page with its prompt pixel-equal, the prompt
   standing on row 24 while the next page types (as in DOSBox-X), and "WAIT" over it equal but the help line; the
   typing pace was not compared (the two captures were not timed against each other).
 - **INPUTNUM / INPUTSTR** (0x1697 / 0x16DA): the length operand is loaded but never fetched.
@@ -444,7 +456,10 @@ advance, parley), three texts (distance 0, 1, 2), move1, move2.
   $6DE2 = 0, temple; else the after-combat step alone. So shop and temple are checked only without monsters, shop first.
 - Else: $6DC1 = min($6DC1, view distance) (outdoors this leaves 2), fight, after-combat step, outdoors the outdoor
   picture and three icons are reloaded, DS:84D4 = 0.
-- Always: DS:49F3 = 4 (3D) or 3, $6DCA = $6DCA AND 1, DS:84C8/84C9 and DS:84E0 cleared.
+- Always: DS:49F3 = 4 (3D) or 3, $6DCA = $6DCA AND 1, DS:84C8/84C9 and DS:84E0 cleared, then START 0x3379 (0x2635;
+  read whole s47): every window drawn again blanked inside, the text box too, the view (0x2DCF4) and the party list,
+  after a fight, a loot, a shop and a temple alike (`combat-format.md` "Between a loot and the next venue"). Engine:
+  `EncounterHost.InterfaceRedraw` → `AreaLoop.DrawInterface`.
 
 **TREASURE v1..v8** (0x26F6): v1..v7 are stored (zero-extended) as the seven dwords at DS:67F4, replacing the old
 values (Lee: added). v8 (low byte) < 128: the records of `ITEM<d>.DAX` block v8 are put in front of the treasure
@@ -797,7 +812,7 @@ only. `[?]` = unknown or unconfirmed.
 | 37 | LOADPIECES | LOAD PIECES | 3 | 3 | v v v | Load wall sets for slots 1–3 (same handler as 21; see below) | P | 35 |
 | 38 | PROGRAM | PROGRAM | 1 | 1 | v | 0 training hall (0x19AE0), 8 end game (0x20941), 9 camp (then EXIT: the run ends, 0x3BBC); else nothing (training.md) | P | 4 |
 | 39 | WHO | WHO | 1 | 1 | s | Prompt, player picks a character (becomes current; survives EXIT) | P | 11 |
-| 3A | DELAY | DELAY | 0 | 0 | – | Pause for game speed (DS:49E2, 0–9) × 225 ms (Crt-style Delay, START.EXE 0x7E4E/0xA69C); speed 0 = none | P | 188 |
+| 3A | DELAY | DELAY | 0 | 0 | – | Pause for game speed (DS:49E2, 0–9) × 225 ms (Crt-style Delay, START.EXE 0x7E4E/0xA69C); speed 0 = none. Amiga (hunk 16 +0x43DA, read s47): a counter (hunk 32 +0xB4) + 1, then Delay(speed · 5 ticks), 100 ms per step; not built `[?]` | P | 188 |
 | 3B | SPELL | SPELL | 3 | 3 | v a a | Search the first member's spell bytes for v (skipped when the residue byte is non-zero, as in DOSBox: 0xCA at the v1.3 site); results written to $00xx (low address bytes only): no effect in v1.3 | P, D | 1 |
 | 3C | PROTECT | PROTECTION | 1 | 1 | a | Draw the glyph line at a (bytes + 1 until 0/255), used for rune texts | P | 12 |
 | 3D | CLEARBOX | CLEAR BOX | 0 | 0 | – | Clear the picture window (1,1)–(15,15); the next PROTECT starts inside it | P | 27 |

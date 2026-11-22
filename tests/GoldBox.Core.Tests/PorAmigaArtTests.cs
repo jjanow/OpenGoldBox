@@ -597,6 +597,16 @@ public class PorAmigaArtTests(ITestOutputHelper output)
             Assert.DoesNotContain('"', c.Strings[key]);
             Assert.Equal(2, c.Strings[key].Count(ch => ch == '\''));
         }
+        // s47: the camp's two quit questions name the Workbench (not "DOS"), with the program's trailing space / colon;
+        // the loot take's list prompt ends without the space the shop's passes; the claim question's pen is red 24.
+        foreach (var key in new[] { PorAmigaText.CampQuitKey, PorAmigaText.DropQuitKey })
+        {
+            Assert.DoesNotContain("DOS", c.Strings[key], StringComparison.OrdinalIgnoreCase);
+            Assert.EndsWith(" ", c.Strings[key]);
+        }
+        Assert.EndsWith(":", c.Strings[PorAmigaText.LootItemsPromptKey]);
+        Assert.Equal(24, c.Pens[PorAmigaText.TreasureClaimPen]);
+        Assert.DoesNotContain("DOS", c.Strings[PorAmigaText.PartyMenuKey + 10], StringComparison.OrdinalIgnoreCase);
         var hunks = AmigaHunks.Parse(program);
         var disagree = (byte[])program.Clone();
         disagree[hunks[4].DataOffset!.Value + 0x236D] = 0x1A;   // the two DAMAGE key waits no longer agree

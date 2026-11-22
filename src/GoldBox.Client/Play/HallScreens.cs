@@ -92,8 +92,14 @@ public sealed class HallText(PorProgramData? program)
     /// <summary>An end-game line (End.0 … End.12), or our marker when the game files lack it.</summary>
     public string End(int n) => Program?.Text("End." + n.ToString(CultureInfo.InvariantCulture)) ?? $"(END TEXT {n})";
 
-    /// <summary>A menu entry's text (DS:0619 + 42·i), or our words.</summary>
-    public string Entry(TrainingHall.Entry e) => PorTrainingTables.MenuEntry(Program, e) ?? OurEntries[(int)e];
+    /// <summary>
+    /// A menu entry's text (DS:0619 + 42·i), or our words. Under the Amiga art the Amiga program's own table (hunk 11
+    /// +0xD2, the same stride, copied by the one menu routine hunk 10 +0x64E that is both the start-up party menu and the
+    /// hall of PROGRAM 0): its last entry names the Workbench, not DOS (FS-UAE s47).
+    /// </summary>
+    public string Entry(TrainingHall.Entry e) =>
+        AmigaView.On && AmigaView.Strings.TryGetValue(GoldBox.Data.Module.Por.PorAmigaText.PartyMenuKey + (int)e, out var amiga) ? amiga
+        : PorTrainingTables.MenuEntry(Program, e) ?? OurEntries[(int)e];
 }
 
 /// <summary>
@@ -252,7 +258,8 @@ public static class HallScreens
         h.State.Message = (AmigaView.Case(text), colour);
         try
         {
-            h.Ask(new DelayRequest(TimeSpan.FromMilliseconds(h.GameSpeed * 225)));
+            // The Amiga's timed message (hunk 25 +0xE10, the hall's refusals hunk 10 +0x24FC …): speed · 100 ms.
+            h.Ask(new DelayRequest(AmigaView.MessagePause(h.GameSpeed)));
         }
         finally
         {

@@ -88,6 +88,17 @@ public static class Chrome
         }
     }
 
+    /// <summary>
+    /// A whole string through the Amiga string routine (hunk 25 +0xC3C: pass 1 in JAM2 over background 0, then pass 2)
+    /// under its text font, so its first cell's background covers a pass-2 pixel the cell before left; else as
+    /// <see cref="Text"/>.
+    /// </summary>
+    public static void Whole(IndexedFrame f, TextFont font, int col, int row, string text, byte colour)
+    {
+        if (!font.DrawString(f, col * 8, row * 8, text, colour, 0))
+            Text(f, font, col, row, text, colour);
+    }
+
     /// <summary>The menu routine's prompt on the bottom row: the Amiga way under its text font (<see cref="TextFont.DrawMenuPrompt"/>).</summary>
     public static void MenuPrompt(IndexedFrame f, TextFont font, int col, int row, string text, byte colour) =>
         font.DrawMenuPrompt(f, col * 8, row * 8, text, colour);

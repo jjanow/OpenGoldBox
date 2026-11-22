@@ -251,6 +251,23 @@ public static class PorAmigaText
     /// row 24's key wait +0xE78 in pen 18; DOS START 0x77F8 → 0x7C85 with its own longer string in colour 13).</summary>
     public const string KeyPagePen = "keyPage", PagePromptKey = "PagePrompt";
 
+    /// <summary>
+    /// The timed row-24 message's pen where DOS passes colour 14 (read s47): the Amiga's timed message (hunk 25 +0xE10,
+    /// the copy of DOS START 0x7DF8: 40 blank glyphs, the string routine at (0, 24) in the caller's pen,
+    /// Delay(speed · 5 ticks) at +0xD7A, 40 blanks) is passed <b>24</b> (red) by every caller read: "Not Here" (hunk 19
+    /// +0x2864), the river (+0x21A6) and the hall's refusals (hunk 10 +0x24F6, +0x2D6C, +0x2D9A, +0x305E, +0x3080),
+    /// where DOS passes 14 (yellow, whose text pen is 18). Read at "Not Here".
+    /// </summary>
+    public const string TimedWarnPen = "timedWarn";
+
+    /// <summary>
+    /// The loot's item take prompt (hunk 19 +0x862: the list routine, hunk 13 +0x2B76, with the prompt hunk 20 +0xE6 and
+    /// the word "Take"): "Items:" with no space, where Buy (hunk 22 +0x5454, hunk 23 +0x576) and DOS (0x6085 for both)
+    /// pass "Items: ". The menu routine starts the words at the prompt's length (hunk 19 +0x4EC8, +0x4F78), so the
+    /// take's words follow the colon with no gap. Read s47.
+    /// </summary>
+    public const string LootItemsPromptKey = "Loot.ItemsPrompt";
+
     /// <summary>DAMAGE's press-enter key waits (hunk 16 +0x46D2–0x46DC after the party-killed window, hunk 4
     /// +0x2364–0x236E before a hit line when the box is full: pen 28; DOS 0x34BB / 0x959F: colour 15).</summary>
     public const string KeyDamagePen = "keyDamage";
@@ -310,6 +327,21 @@ public static class PorAmigaText
     /// 22); quoted with ' where DOS 0x7194 / 0x5205 quote with ").
     /// </summary>
     public const string ShopMoneyLeftKey = "Msg.ShopMoneyLeft", TempleMoneyLeftKey = "Msg.TempleMoneyLeft";
+
+    /// <summary>
+    /// The camp's two quit questions (read s47), the Amiga's own words where DOS names DOS (DOS GAME.OVR 0x19693 after
+    /// the camp's Save, 0x190A8 when the last member leaves): the yes/no question (hunk 19 +0x58C8) after the camp's
+    /// Save at hunk 1 +0x50B8 and the one of the drop at +0x4B5E, both with pens 24 / 28 / 16 (the warning pen). The hall's
+    /// own quit question (hunk 10 +0xA3C) still says DOS on the Amiga, as DOS's, and is left alone.
+    /// </summary>
+    public const string CampQuitKey = "Msg.QuitToDos", DropQuitKey = "Msg.QuitToDosDrop";
+
+    /// <summary>
+    /// The loot's leave question (read s47, hunk 19 +0xC5A–0xC96; DOS 0x664A–0x66B3): "There is still treasure left."
+    /// through the text window's print in pen 28 with the clear flag, then "Do you want to go back…" running on in pen
+    /// <b>24</b> (red, FS-UAE s47) where DOS passes colour 15 (white).
+    /// </summary>
+    public const string TreasureClaimPen = "treasureClaim";
 
     /// <summary>
     /// The camp's rest-time menu line (hunk 1 +0x302C: the menu routine with an empty prompt, hunk 2 +0x298, and the
@@ -499,6 +531,21 @@ public static class PorAmigaText
         (1, 0x3EA0, "4879"),               // … pea the question.l, …
         (1, 0x3EA6, "4eba152c"),           // … jsr the stub at +0x53D4 …
         (1, 0x53D4, "4ef9"),               // … jmp the yes/no question (hunk 19 +0x58C8)
+        (1, 0x50A8, "4eba02e2"),           // camp Save (jsr the save, stub +0x538C), then …
+        (1, 0x50B8, "4879"),               // … pea the quit question.l, …
+        (1, 0x50BE, "4eba0314"),           // … jsr the yes/no question (stub +0x53D4)
+        (1, 0x4B5E, "4879"),               // drop's quit: pea the question.l, …
+        (1, 0x4B64, "4eba086e"),           // … jsr the yes/no question (stub +0x53D4)
+        (19, 0xC5A, "4879"),               // loot leave: pea the first text.l, …
+        (19, 0xC60, "7001"),               // … moveq #1 (clear), …
+        (19, 0xC7A, "4879"),               // … pea the claim question.l, …
+        (19, 0xC80, "42a74878"),           // … no clear; pea pen.w, …
+        (19, 0xC86, "487800164878002648780011487800014eba5aac"),   // … the box (1, 17)–(38, 22), jsr the print
+        (19, 0x6744, "4ef9"),              // … (stub → hunk 25 +0x10EC)
+        (19, 0x85C, "4879"),               // loot take: pea the word.l ("Take"), …
+        (19, 0x862, "4879"),               // … pea the prompt.l, …
+        (19, 0x86C, "4eba5e1c"),           // … jsr the stub at +0x668A …
+        (19, 0x668A, "4ef9"),              // … jmp the list routine (hunk 13 +0x2B76)
         (25, 0x3A72, "4878"),              // pay for cure: pea capitals.w, …
         (25, 0x3A76, "4878"),              // … pea others.w, …
         (25, 0x3A7A, "4878001a"),          // … pea prompt.w (26), …
@@ -508,6 +555,14 @@ public static class PorAmigaText
         (19, 0x58DA, "1e2d000f1c2d00131a2d0017"),   // the question: prompt, others, capitals …
         (19, 0x5902, "4879"),              // … with its "Yes No" words …
         (19, 0x590C, "6100f4c8"),          // … to the menu routine (+0x4DD6) as they came
+        (19, 0x2864, "4878"),              // "Not Here": pea pen.w, …
+        (19, 0x2868, "4879"),              // … pea the text.l, …
+        (19, 0x286E, "4eba3e74"),          // … jsr the stub at +0x66E4 …
+        (19, 0x66E4, "4ef9"),              // … jmp the timed message (hunk 25 +0xE10)
+        (19, 0x85C, "4879"),               // the loot's take: pea the word.l, …
+        (19, 0x862, "4879"),               // … pea the prompt.l, …
+        (19, 0x86C, "4eba5e1c"),           // … jsr the stub at +0x668A …
+        (19, 0x668A, "4ef9"),              // … jmp the list routine (hunk 13 +0x2B76)
     ];
 
     // (hunk, offset, target hunk, value): RELOC32 longs of the call-site reads.
@@ -526,6 +581,9 @@ public static class PorAmigaText
         (1, 0x4ECC, 32, 0xBC),
         (1, 0x53D6, 19, 0x58C8),
         (25, 0x497E, 19, 0x58C8),
+        (19, 0x66E6, 25, 0xE10),
+        (19, 0x668C, 13, 0x2B76),
+        (19, 0x6746, 25, 0x10EC),
     ];
 
     /// <summary>The call-site facts from the player's <c>program</c>, or null when its code is not laid out so.</summary>
@@ -588,6 +646,8 @@ public static class PorAmigaText
                 [YesNoWarnPen] = Word(1, 0x3E9E),
                 [YesNoSwappedWordsPen] = Word(25, 0x3A78),
                 [YesNoSwappedCapitalsPen] = Word(25, 0x3A74),
+                [TimedWarnPen] = Word(19, 0x2866),
+                [TreasureClaimPen] = Word(19, 0xC84),
             };
             // Both DAMAGE key waits pass the same pen; every pen is a register (the prompt's may be one of the low 16).
             if (Word(4, 0x236C) != pens[KeyDamagePen] || pens.Values.Any(p => p is < 0 or > 30))
@@ -604,6 +664,13 @@ public static class PorAmigaText
                 return null;
             strings[ShopMoneyLeftKey] = shopLeft;
             strings[TempleMoneyLeftKey] = templeLeft;
+            if (CString(Pointer(1, 0x50BA), 60) is not { Length: > 0 } campQuit
+                || CString(Pointer(1, 0x4B60), 60) is not { Length: > 0 } dropQuit
+                || CString(Pointer(19, 0x864), 40) is not { Length: > 0 } lootPrompt)
+                return null;
+            strings[CampQuitKey] = campQuit;
+            strings[DropQuitKey] = dropQuit;
+            strings[LootItemsPromptKey] = lootPrompt;
             if (Pointer(10, 0x674) is not var (th, table) || !In(th, table, PartyMenuEntries * PartyMenuStride))
                 return null;
             for (int i = 0; i < PartyMenuEntries; i++)

@@ -239,6 +239,19 @@ public class ShopRulesTests
         Assert.False(ShopRules.Take(Char(weight: 1500), pool, Money.PoolGold, 1, Allowance));
     }
 
+    [Fact]
+    public void Take_of_nothing_refuses_only_a_member_already_overloaded()
+    {
+        // 0x25711 tests weight + amount against the limit before anything (0x24CDD), an amount of 0 included.
+        var pool = new uint[] { 0, 0, 0, 5, 0, 0, 0 };
+        var c = Char();
+        Assert.True(ShopRules.Take(c, pool, Money.PoolGold, 0, Allowance));
+        Assert.Equal((0, 0, 5u), (c.Word(Money.Gold), c.Word(Money.Weight), pool[Money.PoolGold]));
+        Assert.True(ShopRules.Take(Char(weight: 1500), pool, Money.PoolGold, 0, Allowance));  // at the limit: fits
+        Assert.False(ShopRules.Take(Char(weight: 1501), pool, Money.PoolGold, 0, Allowance));
+        Assert.Equal(5u, pool[Money.PoolGold]);
+    }
+
     // ---- Temple ---------------------------------------------------------------------------------------------------
 
     [Fact]

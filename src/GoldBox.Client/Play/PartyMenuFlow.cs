@@ -507,9 +507,28 @@ public sealed class PartyMenuFlow(Func<PlayerRequest, object?> ask, PartyMenuTex
     {
         // The camp's screens on the menu's party. The party menu draws no text window: our notices (commands not built
         // yet) go on its bottom line. No pool or treasure list here.
+        var memory = GameMemory ?? _loaded?.Memory;
+        // The Items page's box (1, 21)–(38, 22) is the program's print (Trade's scribe warning, START 0x77F8 / Amiga
+        // hunk 10 +0x5616; Drop's, Sell's and Id's where built): the Amiga's waits speed × 2 ticks after each word (hunk
+        // 25 +0x1286, read s47: no typing flag), DOS's types per character only while DS:4A00 is set (only PRINT sets
+        // it). Its text is drawn over the page (TextOverPage) while the command talks.
+        var box = new TextWindow
+        {
+            WordTyped = () =>
+            {
+                if (memory?.GameSpeed is byte s and > 0)
+                    ask(new DelayRequest(TextWindow.AmigaWordDelay(s)) { Chained = true });
+            },
+            Typed = () =>
+            {
+                if (memory is { TypesText: true, GameSpeed: byte s and > 0 })
+                    ask(new DelayRequest(TimeSpan.FromMilliseconds(10 * s)) { Chained = true });
+            },
+        };
         var t = new TradeContext
         {
-            Dialog = new Dialog(ask, new TextWindow()),
+            Dialog = new Dialog(ask, box),
+            TalkOverItemsPage = on => TextOverPage = on ? box : null,
             Text = Resources?.Texts ?? new GameText(),
             Party = Party,
             Pool = new uint[7],
@@ -522,7 +541,7 @@ public sealed class PartyMenuFlow(Func<PlayerRequest, object?> ask, PartyMenuTex
             MessagesOnBottomLine = true,
             ItemsPage = (c, entries, row, name) => ItemsPage(c, entries, row, name),
             Coins = Coins,
-            Memory = GameMemory ?? _loaded?.Memory,
+            Memory = memory,
             PickMenu = Resources?.TargetMenu,
             // Trade's START 0x3379 with DS:49F3 = 0 (case 0: everything inside the outer frame blanked); the member pick
             // then draws the party list in the party menu's layout with its pick lit (DOSBox-X s42, the hall of slot C).
@@ -536,6 +555,7 @@ public sealed class PartyMenuFlow(Func<PlayerRequest, object?> ask, PartyMenuTex
         finally
         {
             PickScreen = false;
+            TextOverPage = null;
         }
     }
 
@@ -612,10 +632,10 @@ public sealed class PartyMenuFlow(Func<PlayerRequest, object?> ask, PartyMenuTex
         if (a is null || a.Action != PageRequest.RowPicked || a.Row < 0 || a.Row >= order.Count)
             return null;
         int kind = order[a.Row];
-        string prompt = GameText.Cat(GameText.Cat(words?.HowMuch ?? text[CombatMsg.HowMuch], CombatSheet.CoinName(r, kind)),
-            words?.WillYou ?? text[CombatMsg.WillYouDrop]).TrimEnd();
+        string prompt = AmigaView.AmountPrompt(GameText.Cat(GameText.Cat(words?.HowMuch ?? text[CombatMsg.HowMuch], CombatSheet.CoinName(r, kind)),
+            words?.WillYou ?? text[CombatMsg.WillYouDrop]));
         // The input 0x24F1D: digits up to the count held (a larger number becomes the count as it is typed), Escape 0.
-        var typed = ask(new TextRequest(prompt, true, 5) { Maximum = FightItemScreens.Coins(c, kind) }) as string;
+        var typed = AmigaView.Number(ask, new TextRequest(prompt, true, 5) { Maximum = FightItemScreens.Coins(c, kind) });
         ushort amount = ushort.TryParse(typed, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var n) ? n : (ushort)0;
         return (kind, amount);
     }

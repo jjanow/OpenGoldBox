@@ -870,7 +870,7 @@ public sealed class ExploreScreen : IScreen
                 bool fwd = input.Pressed(c.Vertical ? GameAction.MenuDown : GameAction.MenuRight);
                 if (back) _selected = (_selected + n - 1) % n;
                 if (fwd) _selected = (_selected + 1) % n;
-                if (input.Pressed(GameAction.Confirm))
+                if (input.Pressed(GameAction.Confirm) && !(c.KeyboardEnterIgnored && input.NewInput is (InputDevice.Keyboard, _)))
                     return new Reply(c.ConfirmAnswer ?? _selected);
                 if (input.Pressed(GameAction.Cancel) && c.CancelIndex is { } ci)
                     return new Reply(ci);
@@ -1302,7 +1302,9 @@ public sealed class ExploreScreen : IScreen
     {
         if (delay.BottomLine is not { } line)
             return;
-        Chrome.Text(f, font, 0, MenuRow, Fit(line.Text, 40), line.Colour);
+        // Under the Amiga pages a timed line's DOS 14 is its caller's pen 24 (hunk 25 +0xE10's callers).
+        if (!(AmigaView.On && AmigaView.TimedPen(line.Colour) is int pen && font.DrawAmiga(f, 0, MenuRow * 8, Fit(line.Text, 40), pen)))
+            Chrome.Text(f, font, 0, MenuRow, Fit(line.Text, 40), line.Colour);
         _bottomLineDrawn = delay;
     }
 
@@ -1323,14 +1325,15 @@ public sealed class ExploreScreen : IScreen
     private const byte MenuPromptColour = 13;
 
     /// <summary>The script text window's cells (rows 17-22) as the program's routines left them, in their draw order
-    /// (<see cref="Chrome.TextRuns"/>: whole strings and printed glyphs as the Amiga draws them).</summary>
+    /// (<see cref="Chrome.TextRuns"/>: whole strings and printed glyphs as the Amiga draws them), with the cells they drew
+    /// over the frame: column 39, and under DOS's print row 23 and column 0 (TextWindow.PrintDos).</summary>
     private void DrawTextWindow(IndexedFrame f, TextFont font)
     {
         var t = _player.Text;
-        for (int r = TextWindow.Top; r <= TextWindow.Bottom; r++)
-            if (t.Cell(r, TextWindow.Right + 1).Char != default)
-                Chrome.Clear(f, TextWindow.Right + 1, r, 1); // a glyph cell is drawn whole: over the frame its background is black
-        Chrome.TextRuns(f, font, t.Runs(TextWindow.Top, TextWindow.Bottom),
+        foreach (var (r, c) in t.OutsideCells)
+            if (r <= TextWindow.Bottom + 1)
+                Chrome.Clear(f, c, r, 1); // a glyph cell is drawn whole: over the frame its background is black
+        Chrome.TextRuns(f, font, t.Runs(TextWindow.Top, TextWindow.Bottom + 1),
             (c, r, ch) => _art.Runes?.Draw(f, c, r, ch) == true); // PROTECT's glyphs in the Amiga rune font
     }
 
@@ -1350,7 +1353,9 @@ public sealed class ExploreScreen : IScreen
             return c.CancelIndex is null ? "CLICK: CHOOSE" : "CLICK / RIGHT CLICK";
         string L(GameAction a) => PromptLabels.For(input.Bindings, a, d);
         string pick = c.Vertical ? (d == InputDevice.Gamepad ? "DPAD " : "UP/DN ") : "";
-        string s = $"{pick}{L(GameAction.Confirm)} OK";
+        // Return does nothing there (the menu helper 0x8B57): the keyboard answers by the hotkeys alone.
+        string s = c.KeyboardEnterIgnored && d == InputDevice.Keyboard ? "KEYS " + string.Join("/", c.Items.Select((_, i) => c.HotkeyOf(i)))
+            : $"{pick}{L(GameAction.Confirm)} OK";
         return c.CancelIndex is null ? s : $"{s} {L(GameAction.Cancel)} BACK";
     }
 

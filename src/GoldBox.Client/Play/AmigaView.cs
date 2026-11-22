@@ -145,6 +145,32 @@ public static class AmigaView
     /// </summary>
     public static TimeSpan TimedPause(int speed) => TimeSpan.FromMilliseconds(100 * speed);
 
+    /// <summary>
+    /// The game-speed pause of a timed message: DOS's PauseOnly (START 0x7E4E: speed × 225 ms) or, under the Amiga
+    /// pages, <see cref="TimedPause"/> (read s47): every Amiga copy read waits Delay(speed · 5 ticks) at hunk 25 +0xD7A:
+    /// the timed row-24 messages (hunk 25 +0xE10, DOS 0x7DF8: "Not Here", the river, the hall's refusals), the green
+    /// row-24 message (hunk 13 +0x4928, DOS START 0x1693 / 0x2233: View's "Must be unreadied", "Overloaded", "Sold!"
+    /// …), View's Sell / Id pauses (hunk 10 +0x6096, +0x64A0) and the creature message routine's pause (hunk 13
+    /// +0x4A7C, DOS START 0x16EC). Speed 0 (or above 9) waits nothing.
+    /// </summary>
+    public static TimeSpan MessagePause(int speed) => MessagePause(speed, On);
+
+    /// <summary><see cref="MessagePause(int)"/> with the switch given.</summary>
+    public static TimeSpan MessagePause(int speed, bool amiga) =>
+        speed is <= 0 or > 9 ? TimeSpan.Zero : amiga ? TimedPause(speed) : TimeSpan.FromMilliseconds(225 * speed);
+
+    /// <summary>
+    /// A timed row-24 message's Amiga pen for its DOS colour, or null (the colour's own pen): DOS 14 is the caller's
+    /// pen 24 (red; <see cref="GoldBox.Data.Module.Por.PorAmigaText.TimedWarnPen"/>, read s47), not the text pens' 18.
+    /// </summary>
+    public static int? TimedPen(byte dosColour) =>
+        dosColour == 14 && CallPen(GoldBox.Data.Module.Por.PorAmigaText.TimedWarnPen) is int pen ? pen : null;
+
+    /// <summary>The loot's item take prompt under the Amiga pages ("Items:", no space; read from the program at import:
+    /// <see cref="GoldBox.Data.Module.Por.PorAmigaText.LootItemsPromptKey"/>), or null (DOS's "Items: ").</summary>
+    public static string? LootItemsPrompt =>
+        On && Strings.TryGetValue(GoldBox.Data.Module.Por.PorAmigaText.LootItemsPromptKey, out var s) ? s : null;
+
     /// <summary>An Amiga caller's pen read from the program (<see cref="CallPens"/>) under the Amiga pages, or null.</summary>
     public static int? CallPen(string key) => On && CallPens.TryGetValue(key, out int pen) ? pen : null;
 
@@ -310,6 +336,28 @@ public static class AmigaView
     public const int InputStringLength = 39, InputNumberLength = 5;
 
     /// <summary>
+    /// A number input's answer (<paramref name="request"/>, numeric) as the program reads it. DOS (START 0x7BF6, the
+    /// money input GAME.OVR 0x24F1D): the line once, empty or Escape = 0. The Amiga's number input (hunk 25 +0x1092,
+    /// read s47: INPUTNUM hunk 16 +0x2428, the money input hunk 19 +0x3306 for View's Drop and Trade, hunk 10 +0x66E2
+    /// / +0x6950, and Take's coins, hunk 19 +0x3BF8) copies the requester's line and parses it with stcd_i (hunk 0
+    /// +0x894: an optional sign, then digits), and asks again while that took no character: an empty line (the
+    /// requester has no Escape) is never an answer. Under the Amiga pages an empty answer is asked again; null (no
+    /// answer) as it is.
+    /// </summary>
+    public static string? Number(Func<PlayerRequest, object?> ask, TextRequest request) => Number(ask, request, On);
+
+    /// <summary><see cref="Number(Func{PlayerRequest, object?}, TextRequest)"/> with the switch given.</summary>
+    public static string? Number(Func<PlayerRequest, object?> ask, TextRequest request, bool amiga)
+    {
+        while (true)
+        {
+            var typed = ask(request) as string;
+            if (!amiga || typed is not "")
+                return typed;
+        }
+    }
+
+    /// <summary>
     /// How long the party-killed window holds before DAMAGE's press-enter line: DOS Delay(3000) (GAME.OVR 0x375A–0x37E4,
     /// row 24 keeping what was there); the Amiga none (hunk 16 +0x4674–0x46DC: the window (1, 1)–(38, 22) with its title
     /// through hunk 25 +0x19F4, the message through the text routine hunk 25 +0x10EC with the clear, PlaySong(5) at
@@ -318,6 +366,17 @@ public static class AmigaView
     /// through the string routine at (1, 24)). Null: no hold.
     /// </summary>
     public static TimeSpan? PartyKilledHold(bool amiga) => amiga ? null : TimeSpan.FromMilliseconds(3000);
+
+    /// <summary>
+    /// An amount question's prompt ("How much " + coin + "will you take? ", the program's strings ending in a space): DOS
+    /// draws it on row 24 with the typed text after one more space (so the Client trims it); the Amiga hands the whole
+    /// string to the input requester (hunk 25 +0x1092 → +0xEC6), whose width counts that last space (FS-UAE s47, Take's
+    /// "How much Copper will you take? ": 31 cells, 252 pixels wide).
+    /// </summary>
+    public static string AmountPrompt(string prompt) => AmountPrompt(prompt, On);
+
+    /// <summary><see cref="AmountPrompt(string)"/> for a given art.</summary>
+    public static string AmountPrompt(string prompt, bool amiga) => amiga ? prompt : prompt.TrimEnd();
 
     /// <summary>The Rename prompt (hunk 10 +0x5506–0x5516: the text, then the name as it is stored; the requester draws
     /// the bytes, so a mixed-case name keeps its case).</summary>

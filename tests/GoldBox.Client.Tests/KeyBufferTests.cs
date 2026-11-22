@@ -300,6 +300,55 @@ public class KeyBufferTests
         Assert.Equal("ALT-M", PromptLabels.Key("Alt+M"));
     }
 
+    /// <summary>
+    /// The Amiga program's fight keys (raw-key table hunk 20 +0x629): ';' and F8 give the magic toggle 0x3B, F6 the
+    /// all-quick key 0xE6; Alt is not read, so there is no Alt-M or Alt-Q, and the AI's key check takes only the toggle
+    /// and space ('2' is not the toggle there, '-' no Alt-X).
+    /// </summary>
+    [Fact]
+    public void The_amiga_fight_keys_are_semicolon_f8_and_f6()
+    {
+        var i = new ActionInput(InputBindings.Defaults()) { AmigaKeys = true };
+        Frame(i);
+        Frame(i, Keys.F8);
+        Assert.True(i.Pressed(GameAction.FightQuickMagic));
+        Frame(i);
+        Frame(i, Keys.OemSemicolon);
+        Assert.True(i.Pressed(GameAction.FightQuickMagic));
+        Frame(i);
+        Frame(i, Keys.LeftAlt, Keys.M);
+        Assert.False(i.Pressed(GameAction.FightQuickMagic));
+        Frame(i);
+        Frame(i, Keys.F6);
+        Assert.True(i.Pressed(GameAction.FightAllQuick));
+        Frame(i);
+        Frame(i, Keys.LeftAlt, Keys.Q);
+        Assert.False(i.Pressed(GameAction.FightAllQuick));
+        Frame(i);
+        Frame(i, Keys.OemSemicolon);
+        i.ReadingKeys(false);
+        Assert.Equal(0x32, i.TakeAiKey());   // the toggle
+        Frame(i);
+        Frame(i, Keys.D2);
+        i.ReadingKeys(false);
+        Assert.Equal(0, i.TakeAiKey());
+        Frame(i);
+        Frame(i, Keys.OemMinus);
+        i.ReadingKeys(false);
+        Assert.Equal(0, i.TakeAiKey());
+        Frame(i);
+        Frame(i, Keys.Space);
+        i.ReadingKeys(false);
+        Assert.Equal(0x20, i.TakeAiKey());
+        PadFrame(i, Buttons.LeftTrigger);    // the pad keeps its buttons
+        Assert.True(i.Pressed(GameAction.FightQuickMagic));
+
+        var dos = new ActionInput(InputBindings.Defaults()) { AmigaKeys = false };
+        Frame(dos);
+        Frame(dos, Keys.F8);
+        Assert.False(dos.Pressed(GameAction.FightQuickMagic));
+    }
+
     [Fact]
     public void The_triggers_toggle_magic_and_all_quick_on_the_pad()
     {

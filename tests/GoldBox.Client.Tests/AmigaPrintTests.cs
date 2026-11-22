@@ -128,4 +128,52 @@ public class AmigaPrintTests
         Assert.Equal(28, pens[PorAmigaText.YesNoSwappedCapitalsPen]);
         Assert.Equal(26, PorAmigaText.Read(bytes)!.Pens[13]);   // DOS 13's pen: every other yes/no prompt
     }
+
+    /// <summary>
+    /// s47: the timed row-24 message (hunk 25 +0xE10) is passed pen 24 where DOS passes 14 ("Not Here", hunk 19
+    /// +0x2864); the loot's take passes the list routine "Items:" with no space (hunk 19 +0x862 → hunk 20 +0xE6), Buy
+    /// "Items: " as DOS.
+    /// </summary>
+    [Fact]
+    public void The_timed_message_pen_and_the_take_prompt_come_from_the_program()
+    {
+        if (Env("GOLDBOX_POR_AMIGA_DIR") is not { } amiga)
+            return;
+        var calls = PorAmigaText.ReadCalls(File.ReadAllBytes(PorAmigaArt.Locate(amiga).Program))!;
+        Assert.Equal(24, calls.Pens[PorAmigaText.TimedWarnPen]);
+        Assert.Equal("Items:", calls.Strings[PorAmigaText.LootItemsPromptKey]);
+    }
+
+    /// <summary>
+    /// s47: every Amiga timed pause read waits Delay(speed · 5 ticks) (hunk 25 +0xD7A: 100 ms per step), DOS's
+    /// PauseOnly 225 ms per step; speed 0 none.
+    /// </summary>
+    [Fact]
+    public void Timed_messages_wait_100_ms_per_step_on_the_amiga()
+    {
+        Assert.Equal(TimeSpan.FromMilliseconds(900), AmigaView.MessagePause(9, amiga: true));
+        Assert.Equal(TimeSpan.FromMilliseconds(675), AmigaView.MessagePause(3, amiga: false));
+        Assert.Equal(TimeSpan.Zero, AmigaView.MessagePause(0, amiga: true));
+    }
+
+    /// <summary>
+    /// s47: the Amiga's number input (hunk 25 +0x1092) asks again while stcd_i took no character, so an empty line is
+    /// never an answer; DOS takes it (as 0).
+    /// </summary>
+    [Fact]
+    public void The_amiga_number_input_asks_again_for_an_empty_line()
+    {
+        var answers = new Queue<object?>(["", "", "12"]);
+        int asked = 0;
+        object? Ask(PlayerRequest _)
+        {
+            asked++;
+            return answers.Dequeue();
+        }
+        var r = new TextRequest("", true, 5);
+        Assert.Equal("12", AmigaView.Number(Ask, r, amiga: true));
+        Assert.Equal(3, asked);
+        answers = new Queue<object?>([""]);
+        Assert.Equal("", AmigaView.Number(Ask, r, amiga: false));
+    }
 }

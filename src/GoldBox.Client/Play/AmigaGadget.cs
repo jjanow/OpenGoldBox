@@ -79,9 +79,14 @@ public sealed class AmigaGadget
     /// 0x205) 10 lines down, 10 high, MaxChars (end mark included) cells wide and centred when that is narrower than the
     /// prompt, else 8n wide from x 2. Intuition draws the typed text in one pass (white, pen 1 in row 24's colours) and
     /// the cursor as a complemented cell. Where the text sits was measured in FS-UAE (s41, Rename): empty, the cursor
-    /// cell starts at the gadget's middle; with text, text and cursor together are centred. The screen is 204 lines:
+    /// cell starts at the gadget's middle; with text, (cells − characters) div 2 whole cells in, the cursor after the text
+/// (s47: Rename and Take's amount). The screen is 204 lines:
     /// the Client's 200 cut the requester's last 4.
     /// </summary>
+    /// <summary>Where the typed text starts in a string gadget <paramref name="width"/> pixels wide holding
+    /// <paramref name="shown"/> characters: (cells − characters) div 2 whole cells in (STRINGCENTER; FS-UAE s47).</summary>
+    public static int TextOffset(int width, int shown) => 8 * Math.Max(0, (width / 8 - shown) / 2);
+
     public void Requester(IndexedFrame f, TextFont font, string prompt, string typed, int maxChars)
     {
         int n = prompt.Length == 0 ? 20 : prompt.Length;
@@ -99,7 +104,10 @@ public sealed class AmigaGadget
             (gx, gw) = (x + (w - 8 * maxChars) / 2, 8 * maxChars);
         int shown = Math.Min(typed.Length, Math.Max(0, gw / 8 - 1));
         typed = typed[^shown..];
-        int tx = gx + (shown == 0 ? gw / 2 : Math.Max(0, (gw - 8 * (shown + 1)) / 2)), gy = y + 10;
+        // STRINGCENTER centres the text in whole cells: (cells − characters) div 2 cells in (FS-UAE s47: Rename's
+        // 16-cell gadget, 2 letters 7 cells in, 13 letters 1 cell in; Take's 6-cell number gadget, "30" 2 cells in; the
+        // code word's 7-cell gadget, empty 3 cells in; s44: 14 letters of the 15-cell name gadget at its left edge).
+        int tx = gx + TextOffset(gw, shown), gy = y + 10;
         font.DrawPen(f, tx, gy, typed, Pen(1, gy));
         Invert(f, tx + 8 * shown, gy, 8, 8);
     }

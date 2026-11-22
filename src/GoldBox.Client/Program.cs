@@ -182,7 +182,14 @@ else
             throw new InvalidOperationException("the party menu's tables were not found (not Pool of Radiance DOS v1.3?)");
         if (startAtMenu && items is null)
             throw new InvalidOperationException("no item types");
-        PorGame WithSound(PorGame g) { g.Loop.Sound = player.Sound; player.ShowOutsideEffects(g); return g; }
+        PorGame WithSound(PorGame g)
+        {
+            g.Loop.Sound = player.Sound;
+            player.ShowOutsideEffects(g);
+            // The Amiga program's INPUTSTR and text COMPARE under the Amiga pages (read live: the art may change).
+            g.Vm.AmigaTextRules = () => AmigaView.On;
+            return g;
+        }
         var roster = new PorRoster(Path.Combine(ClientSettings.SavesFolder, "characters"));
         IReadOnlyList<char> Slots() => [.. "ABCDEFGHIJ".Where(l => ClientOptions.ResolveSave(l.ToString(), ClientSettings.SavesFolder, content.SaveFolder) is not null)];
         string SlotPath(char slot) => ClientOptions.ResolveSave(slot.ToString(), ClientSettings.SavesFolder, content.SaveFolder)

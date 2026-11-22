@@ -62,6 +62,13 @@ public sealed record ChoiceRequest(string? Prompt, IReadOnlyList<string> Items, 
     /// </summary>
     public string? Hotkeys { get; init; }
 
+    /// <summary>
+    /// The keyboard's Return does nothing: the caller loops on the menu routine's 13 (the menu helper 0x8B57 with its
+    /// Return flag [bp+8] = 0: the venue exit questions). The pad's Confirm and a click still answer the lit item, so the
+    /// menu stays playable without a keyboard.
+    /// </summary>
+    public bool KeyboardEnterIgnored { get; init; }
+
     /// <summary>The item highlighted first (the program's yes/no for a drop starts on No; the combat screen).</summary>
     public int Selected { get; init; }
 
@@ -264,6 +271,14 @@ public sealed record SpellPageLayout(string Name, byte NameColour, string Title)
     /// Memorize (<see cref="Box"/> empty: the box blank).
     /// </summary>
     public bool WholeTitle { get; init; }
+
+    /// <summary>
+    /// The title's Amiga pen under the Amiga font (the string routine, hunk 25 +0xC3C), or null for the DOS colour's
+    /// usual pen. The window routine's centred title (hunk 25 +0x19F4: Buy's "Shop", the take's "Loot") passes the raw
+    /// colour 15, which the glyph routine's rule makes pen 30 (FS-UAE s47: orange, where DOS 15's usual pen 16 is grey);
+    /// the heal list's name line passes pen 28 (hunk 25 +0x417E).
+    /// </summary>
+    public int? AmigaTitlePen { get; init; }
 
     /// <summary>The list window's first column (0x2D669's x0: 1 for the spell lists, 2 for the heal list).</summary>
     public int RowColumn { get; init; } = 1;

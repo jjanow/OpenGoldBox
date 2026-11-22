@@ -856,7 +856,7 @@ public sealed class PartyMenuScreen(PartyMenuFlow flow, ScriptRunner runner, ISc
         {
             string s = AmigaView.Case(m.Items[i].Name);   // the Amiga keeps the entries' case (FS-UAE s43)
             Chrome.Text(f, font, 2, ItemsRow + i, s[..1], Chrome.White);
-            Chrome.Text(f, font, 3, ItemsRow + i, s[1..], Chrome.Green);
+            Chrome.Whole(f, font, 3, ItemsRow + i, s[1..], Chrome.Green);   // hunk 10 +0x7EE: the rest a whole string
         }
         // The original marks no entry; for the pad and the mouse the picked one gets a pointer.
         if (active && input.LastDevice != InputDevice.Keyboard && m.Items.Count > 0)

@@ -341,6 +341,37 @@ public class OverlandViewTests
     }
 
     /// <summary>
+    /// Load (0x1FBC9–0x1FBE6; Amiga hunk 16 +0x1488–0x14A0) with location type &gt; 1 loads ICON block 0 into the
+    /// marker's slot 11. A training-hall Load of a game save on the overland leaves it there (no interface load follows),
+    /// so counters 4, 5, 0, 1, 2 draw blocks 0, 128, 0, 128, 1 (FS-UAE s47: the step after the hall Load and four
+    /// more, the marker's pixels equal for the first and third and for the second and fourth).
+    /// </summary>
+    [PorFact]
+    public void A_hall_load_on_the_overland_puts_icon_0_into_the_third_marker_slot()
+    {
+        var game = OverlandViewTests.Load(26, "10,20,N", "");
+        game.Loop.Execute(AreaCommand.TravelEast); // the interface loads the slots
+        Assert.Equal([0, 1, 2], game.Loop.MarkerSlots);
+        var content = PorData.Open();
+        var bytes = PorSaveGame.PlaceOnOverland(File.ReadAllBytes(content.Find("SAVGAMA.DAT")!), content, 26, 10, 20, Facing.North);
+        var tmp = Directory.CreateTempSubdirectory("goldbox-save-");
+        try
+        {
+            var path = Path.Combine(tmp.FullName, "b.json");
+            GoldBox.Data.Module.Por.PorEngineSave.Write(path, GoldBox.Data.Module.Por.PorEngineSave.FromFolders(bytes,
+                "SAVGAMB.DAT", GoldBox.Data.Module.Por.PorEngineSave.Identity(content), content.LoadBlock, [content.Root]));
+            Assert.Equal(HallLoad.CarryOn, game.LoadInHall(path, new EclParty()));
+            Assert.Equal([0, 1, 0], game.Loop.MarkerSlots);
+            Assert.Equal([0, 128, 0, 128, 1],
+                new[] { 4, 5, 0, 1, 2 }.Select(c => Overland.MarkerFrame(c, 0, game.Loop.MarkerSlots).IconBlock));
+        }
+        finally
+        {
+            tmp.Delete(recursive: true);
+        }
+    }
+
+    /// <summary>
     /// What runs on a special square is the wilderness script's vector 1 (ECL7 block 26 $9B0A: rows $B04A, counts
     /// $B061, columns $B053, cases $B06A → ONGOTO): south onto 12,26 is Phlan's north edge; CITY ($49E6 = 1, LOADFILES
     /// #127, x 4, y 0, facing S, disk 3, NEWECL 14) leaves the overland for the 3D map of block 14.

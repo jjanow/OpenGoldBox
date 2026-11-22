@@ -84,6 +84,22 @@ public sealed class EclVm
     public ushort[] Vectors { get; }
     /// <summary>Compare flags = ≠ &lt; &gt; ≤ ≥ (DS:6F78..6F7D).</summary>
     public bool[] Flags { get; } = new bool[6];
+
+    /// <summary>
+    /// The Amiga program's text rules when this answers true (the Client under the Amiga pages; null or false: DOS's).
+    /// INPUTSTR (hunk 16 +0x2448) stores the requester's line as typed: strncpy into a 256-byte buffer, one space
+    /// when empty (+0x24AE–0x24C2), then the store (hunk 4 +0x11E2) copies its bytes; no upper-casing, no 0x20–0x7A
+    /// filter, no cut but the requester's 39 characters (<see cref="NormaliseInput(string, bool)"/>). A text COMPARE
+    /// (hunk 16 +0x1C54 → hunk 4 +0x1AEC) upper-cases copies of both string slots (hunk 0 +0x6F4, the C library's
+    /// ctype table: a–z and 0xE1–0xFA lose 0x20) and compares them as signed bytes up to the NUL (hunk 0 +0x7D8), so
+    /// a typed answer matches the scripts' upper-case words in any case; and it sets the "≥" flag whatever the order
+    /// (+0x1BC8–0x1BCA: no branch before the store, an original bug; no PoR v1.3 script tests an order after a text
+    /// COMPARE). <see cref="CompareTextAmiga"/>.
+    /// </summary>
+    public Func<bool>? AmigaTextRules { get; set; }
+
+    private bool AmigaText => AmigaTextRules?.Invoke() == true;
+
     public int StackDepth => _gosub.Count;
     public IReadOnlyCollection<ushort> GosubStack => _gosub;
 
@@ -843,11 +859,12 @@ public sealed class EclVm
             }
             case EclOpcodes.InputStr:
             {
-                // P (0x16DA): length operand never fetched; 0x20–0x7A, at most 40, upper-cased, empty = one space.
+                // P (0x16DA): length operand never fetched; 0x20–0x7A, at most 40, upper-cased, empty = one space. The
+                // Amiga keeps the line as typed (AmigaTextRules).
                 var dst = DestWord(2);
                 string r = "";
                 HostCall("InputString", [], () => r, () => r = Host.InputString());
-                Memory.WriteText(dst, NormaliseInput(r));
+                Memory.WriteText(dst, NormaliseInput(r, AmigaText));
                 return null;
             }
 
@@ -1457,8 +1474,14 @@ public sealed class EclVm
     }
 
     /// <summary>INPUTSTR rules (P): characters 0x20–0x7A, at most 40, upper-cased; empty input is stored as one space.</summary>
-    public static string NormaliseInput(string s)
+    public static string NormaliseInput(string s) => NormaliseInput(s, false);
+
+    /// <summary><see cref="NormaliseInput(string)"/>, or with <paramref name="amiga"/> the Amiga's INPUTSTR (hunk 16
+    /// +0x2448–0x24D0, <see cref="AmigaTextRules"/>): the line as typed, one space when empty.</summary>
+    public static string NormaliseInput(string s, bool amiga)
     {
+        if (amiga)
+            return s.Length == 0 ? " " : s;
         var sb = new System.Text.StringBuilder();
         foreach (var ch in s)
         {
@@ -1517,7 +1540,9 @@ public sealed class EclVm
                     for (int k = 0; k < n; k++)
                         packed[k] = FetchByte(pc++, "text");
                     _slotString[i] = ++_textOperands;
-                    _strings[_textOperands] = EclText.Unpack(packed);
+                    // The Amiga keeps the first 254 and the last character of a longer text (EclText.SlotAmiga).
+                    var unpacked = EclText.Unpack(packed);
+                    _strings[_textOperands] = AmigaText ? EclText.SlotAmiga(unpacked) : EclText.Slot(unpacked);
                     // P: the loader stores the length byte in lo and leaves hi as it was (value fetch, 0x764D).
                     _slotLo[i] = (byte)n;
                     break;
@@ -1639,6 +1664,12 @@ public sealed class EclVm
             // P (0xE6C / 0x8CE8): string slot 1 against slot 2, bytes unsigned, shorter is less, case-sensitive.
             if (_slotType[1] < 0x80 || _slotType[2] < 0x80)
                 Diag("COMPARE of a text with a number: string slot 2 holds an older text (never in v1.3)");
+            if (AmigaText)
+            {
+                SetFlags(CompareTextAmiga(_strings[1], _strings[2]));
+                Flags[FlagGe] = true; // hunk 4 +0x1BC8–0x1BCA: stored with no test (original bug)
+                return;
+            }
             c = CompareText(_strings[1], _strings[2]);
         }
         else
@@ -1682,6 +1713,33 @@ public sealed class EclVm
                 return d;
         }
         return a.Length - b.Length;
+    }
+
+    /// <summary>
+    /// The Amiga's text order (<see cref="AmigaTextRules"/>): both texts upper-cased as the C library's strupr does
+    /// (hunk 0 +0x6F4: a byte whose ctype entry, hunk 34 +0x8D, marks it lower case loses 0x20: a–z and 0xE1–0xFA),
+    /// then strcmp (hunk 0 +0x7D8): byte by byte as signed values, a text's end read as 0, up to the first difference
+    /// or the end of both.
+    /// </summary>
+    public static int CompareTextAmiga(string a, string b)
+    {
+        static int At(string s, int i)
+        {
+            if (i >= s.Length)
+                return 0;
+            int c = s[i] & 0xFF;
+            if (c is >= 0x61 and <= 0x7A or >= 0xE1 and <= 0xFA)
+                c -= 0x20;
+            return (sbyte)c;
+        }
+        for (int i = 0; ; i++)
+        {
+            int x = At(a, i), y = At(b, i);
+            if (x != y)
+                return x > y ? 1 : -1;
+            if (x == 0)
+                return 0;
+        }
     }
 
     private void SetFlags(int c)

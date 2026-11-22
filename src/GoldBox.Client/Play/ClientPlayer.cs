@@ -26,8 +26,22 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
         {
             _text.Typed ??= TypeDelay;
             _text.WordTyped ??= WordDelay;
+            _text.Hang ??= HangInPrint;
             return _text;
         }
+    }
+
+    /// <summary>
+    /// DOS's print never returns (TextWindow.PrintDos: a 255-character text's last word, P + D s47, view3d.md "Text
+    /// window"): the program keeps drawing the same cells for ever and takes no key. The game logic parks here for good
+    /// (the window can still be closed). Off with <see cref="TypesText"/> (tests).
+    /// </summary>
+    private void HangInPrint()
+    {
+        if (!TypesText)
+            return;
+        while (true)
+            runner.Ask(new DelayRequest(TimeSpan.FromHours(1)) { KeepCommandLine = true });
     }
 
     private readonly TextWindow _text = new();
@@ -486,13 +500,15 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
     public int InputNumber()
     {
         // INPUTNUM (0x1697): the line input with an empty prompt (0x16B9) and 6 characters (START 0x7C1F); the Amiga's
-        // requester takes 5 digits (hunk 16 +0x1092).
-        var s = runner.Ask(new TextRequest("", true, AmigaView.On ? AmigaView.InputNumberLength : 6)) as string ?? "";
+        // requester takes 5 digits (hunk 25 +0x1092) and asks again for an empty line (AmigaView.Number).
+        var s = AmigaView.Number(runner.Ask, new TextRequest("", true, AmigaView.On ? AmigaView.InputNumberLength : 6)) ?? "";
         return int.TryParse(s, NumberStyles.None, CultureInfo.InvariantCulture, out var n) ? n : 0;
     }
 
+    /// <summary>INPUTSTR's line: DOS's line input (the VM upper-cases it); the Amiga's requester types as its keymap
+    /// does and the program keeps the case (<see cref="GoldBox.Core.Ecl.EclVm.AmigaTextRules"/>, read s47).</summary>
     public string InputString() =>
-        runner.Ask(new TextRequest("", false, AmigaView.On ? AmigaView.InputStringLength : 40)) as string ?? "";
+        runner.Ask(new TextRequest("", false, AmigaView.On ? AmigaView.InputStringLength : 40) { KeepsCase = AmigaView.On }) as string ?? "";
 
     /// <summary>WHO through the default host path (not used: <see cref="PickCharacter"/> answers).</summary>
     public void Who(string prompt)
@@ -735,6 +751,23 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
         PartyMenuUnder = false;
         if (state is not (2 or 3 or 4))
             return;
+        WindowsDrawn();
+        PositionLineErased = false;
+        if (state == 2)
+        {
+            ShowPicture(Screens.ExploreScreen.CampPicture, null);
+            PictureUndrawn = true;
+        }
+    }
+
+    /// <summary>
+    /// START 0x3379's window part (00BA:272A, every case but 0 and 5): the four windows (1, 1)–(38, 22), the text box
+    /// (1, 17)–(38, 22), the picture window (1, 1)–(15, 15) and, but in case 3, the 3D view's box (3, 3)–(13, 13), each
+    /// through START 03F1:02E8, which blanks its inside (03F1:0137): the text box is empty (the cursor DS:5E24/5E25
+    /// kept), a CLEARBOX blank, PROTECT's runes and a framed text box are gone; then the party list.
+    /// </summary>
+    private void WindowsDrawn()
+    {
         ViewBlanked = false;
         ViewBoxBlank = false;
         TextBoxFramed = false; // the joints come back with the windows (D s41: a member message, then Cast's list and Escape)
@@ -742,13 +775,23 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
         _glyphsInWindow = false;
         ScreenGlyphs = [.. ScreenGlyphs.Where(g => g.Row == 24)];
         Text.ClearRect(TextWindow.Left, TextWindow.Top, TextWindow.Right, TextWindow.Bottom);
-        PositionLineErased = false;
         ReleaseRosterNames();
-        if (state == 2)
-        {
-            ShowPicture(Screens.ExploreScreen.CampPicture, null);
-            PictureUndrawn = true;
-        }
+    }
+
+    /// <summary>
+    /// START 0x3379 for a venue's interface state (DS:49F3 = 1 shop and temple, 6 loot menu): <see cref="WindowsDrawn"/>,
+    /// then case 1 the head + body in the box (<see cref="VenuePortrait"/>), case 6 the chest (PIC 1) into the frame
+    /// table. The shop's and temple's entries (GAME.OVR 0x721E, 0x528B), the loot menu's (0x645C) and the redraws after
+    /// Buy, Take and Appraise (0x743C, 0x744D; 0x5479, 0x548A), the heal list (0x51A0) and View (0x21D4F). DOSBox-X s47
+    /// (test save J: a loot, then a shop): the loot's exit question is gone from the text box when the shop opens.
+    /// </summary>
+    private void VenueDrawn()
+    {
+        PartyMenuUnder = false;
+        WindowsDrawn();
+        VenuePictureOver = false;
+        if (Interface == Venue.Loot)
+            LootDrawn = true;
     }
 
     /// <summary>
@@ -976,7 +1019,7 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
             LootDrawn = false;
             Window = null;
             WindowAfterFight = false;
-            ViewOverlay = null; // [?] as after the shop: the area display is drawn again after the loot step
+            ViewOverlay = null; // COMBAT's last call, START 0x3379 case 3 / 4 (0x2635), draws the view again (s47)
         }
     }
 
@@ -1099,8 +1142,7 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
             return;
         OtherLayout();
         Interface = Venue.Shop;
-        PartyMenuUnder = false; // the entry's START 0x3379 case 1 (0x721E, 0x528B) replaces a party menu page
-        VenuePictureOver = false;
+        VenueDrawn(); // the entry's START 0x3379 case 1 (0x721E, 0x528B): a party menu page and the text box are gone
         try
         {
             screen(t);
@@ -1109,9 +1151,8 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
         {
             Interface = null;
             VenuePictureOver = false;
-            // [?] The shop and temple screens replace the area display; when the program draws the 3D view again is
-            // not read. CLRMON before them clears the picture flag, so the script's PICTURE 255 does not restore it:
-            // we go back to the view here.
+            // COMBAT's last call, START 0x3379 case 3 / 4 (0x2635, read s47), draws every window and the view again
+            // (EncounterHost.InterfaceRedraw); CLRMON before the venue cleared the picture flag, so nothing comes back.
             ViewOverlay = null;
         }
     }
@@ -1190,12 +1231,7 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
             FrameTextBox = on => TextBoxFramed = on,
             HoldRosterName = HoldRosterName,
             RosterDrawn = ReleaseRosterNames,
-            VenueRedrawn = () =>
-            {
-                VenuePictureOver = false;
-                if (Interface == Venue.Loot)
-                    LootDrawn = true;
-            },
+            VenueRedrawn = VenueDrawn,
             RosterDrawnLit = ReleaseRosterNamesLit,
             HoldPositionLine = on => PositionLineHeld = on,
             Text = Resources.Texts,
@@ -1303,9 +1339,9 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
     /// </summary>
     public void Flash(string text, byte colour)
     {
-        int speed = memory().GameSpeed;
-        if (speed is > 0 and <= 9)
-            runner.Ask(new DelayRequest(TimeSpan.FromMilliseconds(225 * speed)) { BottomLine = (text, colour) });
+        // The Amiga's copy (hunk 25 +0xE10): the whole string, speed · 100 ms (AmigaView.MessagePause), DOS 14 in pen 24.
+        if (AmigaView.MessagePause(memory().GameSpeed) is { Ticks: > 0 } pause)
+            runner.Ask(new DelayRequest(pause) { BottomLine = (text, colour) });
     }
 
     /// <summary>

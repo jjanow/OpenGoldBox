@@ -331,20 +331,21 @@ public static class CharacterView
 
     private static void BoxBlank(TradeContext t) => t.Dialog.Text.ClearRect(BoxLeft, BoxTop, BoxRight, BoxBottom);
 
-    /// <summary>START 0x2233 (0x1693): the text on row 24 in green, the game-speed pause (PauseOnly), row 24 cleared.</summary>
+    /// <summary>START 0x2233 (0x1693): the text on row 24 in green, the game-speed pause (PauseOnly), row 24 cleared. The
+    /// Amiga's copy (hunk 13 +0x4928) draws the whole string (no per-word wait) and waits speed · 100 ms
+    /// (<see cref="AmigaView.MessagePause"/>).</summary>
     internal static void RowMessage(TradeContext t, string text)
     {
-        int s = t.Memory?.GameSpeed ?? 0;
-        if (s is > 0 and <= 9)
-            t.Dialog.Ask(new DelayRequest(TimeSpan.FromMilliseconds(225 * s)) { BottomLine = (text, TextWindow.ScriptColour) });
+        if (AmigaView.MessagePause(t.Memory?.GameSpeed ?? 0) is { Ticks: > 0 } pause)
+            t.Dialog.Ask(new DelayRequest(pause) { BottomLine = (text, TextWindow.ScriptColour) });
     }
 
-    /// <summary>PauseOnly (START 0x7E4E): DS:49E2 × 225 ms, no key.</summary>
+    /// <summary>PauseOnly (START 0x7E4E): DS:49E2 × 225 ms, no key (the Amiga's Sell / Id: hunk 10 +0x6096 / +0x64A0,
+    /// speed · 100 ms).</summary>
     private static void PauseOnly(TradeContext t)
     {
-        int s = t.Memory?.GameSpeed ?? 0;
-        if (s is > 0 and <= 9)
-            t.Dialog.Ask(new DelayRequest(TimeSpan.FromMilliseconds(225 * s)));
+        if (AmigaView.MessagePause(t.Memory?.GameSpeed ?? 0) is { Ticks: > 0 } pause)
+            t.Dialog.Ask(new DelayRequest(pause));
     }
 
     /// <summary>

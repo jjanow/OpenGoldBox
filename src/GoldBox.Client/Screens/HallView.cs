@@ -62,16 +62,22 @@ public sealed class HallView
                     // The original marks no entry (as the party menu); the pad and the mouse get a pointer.
                     if (i == _selected && pending is HallMenuRequest && input.LastDevice != InputDevice.Keyboard)
                         Chrome.Text(f, font, MenuColumn - 1, row, ">", Chrome.Yellow);
-                    Chrome.Text(f, font, MenuColumn, row, Fit(e.Text, 37), Chrome.Green);
-                    if (e.Text.Length > 0)
-                        Chrome.Text(f, font, MenuColumn, row, e.Text[..1], Chrome.White);
+                    // The first letter, then the rest from the next cell (Amiga hunk 10 +0x794 / +0x7EE: the letter
+                    // through the glyph path, the rest a string whose pass 1 covers the letter's pass-2 pixel; FS-UAE s47).
+                    string text = Fit(e.Text, 37);
+                    if (text.Length > 0)
+                    {
+                        Chrome.Text(f, font, MenuColumn, row, text[..1], Chrome.White);
+                        Chrome.Whole(f, font, MenuColumn + 1, row, text[1..], Chrome.Green);
+                    }
                 }
             }
         }
         switch (pending)
         {
             case HallMenuRequest m:
-                Chrome.Text(f, font, 0, BottomRow, Fit(m.Prompt, 40), PromptColour);
+                // The menu routine's prompt (Amiga hunk 10 +0x81A → hunk 19 +0x4DD6: its own two passes; FS-UAE s47).
+                Chrome.MenuPrompt(f, font, 0, BottomRow, Fit(m.Prompt, 40), PromptColour);
                 break;
             case ChoiceRequest { Vertical: false } c:
             {
@@ -103,7 +109,9 @@ public sealed class HallView
                 Chrome.Text(f, font, 0, BottomRow, Fit(k.Prompt ?? "PRESS A KEY", 40), PromptColour);
                 break;
         }
-        if (hall.Message is { } msg)
+        // The hall's timed messages (Amiga: hunk 25 +0xE10, DOS 14 in the callers' pen 24, hunk 10 +0x24F6 …).
+        if (hall.Message is { } msg
+            && !(AmigaView.TimedPen(msg.Colour) is int pen && font.DrawAmiga(f, 0, BottomRow * 8, Fit(msg.Text, 40), pen)))
             Chrome.Text(f, font, 0, BottomRow, Fit(msg.Text, 40), msg.Colour);
     }
 

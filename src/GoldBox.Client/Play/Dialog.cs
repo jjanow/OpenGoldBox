@@ -24,6 +24,18 @@ public sealed class Dialog(Func<PlayerRequest, object?> ask, TextWindow text)
             Animates = animates, // the menu routine's flag [bp+0xA]: the picture window's animation runs while it waits
         }) is int i ? i : cancel ?? 0;
 
+    /// <summary>
+    /// The menu helper GAME.OVR 0x8B57 (002B:0061) as the venue exit questions call it (Return flag [bp+8] = 0): the
+    /// menu routine 0x2CC8C on the shared highlight with colours 13 / 10 / 15 and the keypad flag, until it returns a
+    /// letter or digit (the set at 0x8B57's CS:1664); an item's hotkey answers its index. Return (13 with the flag 0)
+    /// and Escape (0) loop; an extended key (Home / End) runs the party selection 0x23819 and the party list, then the
+    /// menu again (answered here as <see cref="ChoiceRequest.PreviousMember"/> / <see cref="ChoiceRequest.NextMember"/>
+    /// for the caller to apply). A letter that is no hotkey would answer 0xFF, but the menu routine ignores such keys
+    /// (DOSBox-X s47: X, Escape and Return at the loot's question changed nothing).
+    /// </summary>
+    public int MenuHelper(IReadOnlyList<string> items) =>
+        ask(new ChoiceRequest(null, items, false) { PartySelect = true, KeyboardEnterIgnored = true }) is int i ? i : 0;
+
     /// <summary>A vertical list in the text window under <paramref name="prompt"/>; the answer is the index.</summary>
     public int List(string? prompt, IReadOnlyList<string> items, int? cancel = null) =>
         ask(new ChoiceRequest(prompt, items, true, cancel)) is int i ? i : cancel ?? 0;

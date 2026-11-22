@@ -351,12 +351,16 @@ Code: `GoldBox.Core.Explore.AreaLoop` (one command at a time), `GameClock`, `Are
   cell); `[?]` a glyph number past 176 reads past the font (none in v1.3; the Client draws it blank). Columns above 39 or rows above 24 are not drawn. In CGA mode (DS:4A1E = 0) the colour goes
   through a 16-entry table at DS:25D5; in EGA it is used as is.
 
-## Text window (START 0x77F8; program read s12)
+## Text window (START 0x77F8; program read s12, read whole and ported s47)
 
 Arguments: box (x0, y0, x1, y1) in text cells, colour, clear flag, string. PRINT and PRINTCLR (GAME.OVR 0x174F) use
 the box (1, 17)–(38, 22) and colour 10; PRINTCLR first puts the cursor at (1, 17) and passes clear = 1. The text
 cursor is DS:5E24 (column) / DS:5E25 (row); it stays where the last print left it (PRINTRET: next row, column 1;
-EXIT: (1, 17), no clear).
+EXIT: (1, 17), no clear). Every counter of the routine is a **byte**: the position p (BP−0x103), the word's end i
+(BP−0x104), the length (BP−0x101), and the cursor itself.
+0. A box with x0 > 39, y0 > 24, x1 > 39 or y1 > 39 (y1 is tested against 39, not 24) returns at once: nothing is
+   cleared or drawn (0x7813–0x782B). The string is copied into a local string[255] (0x780E, at most 255 characters);
+   an empty one ends after step 1 (0x788D).
 1. A cursor outside the box goes to (x0, y0); with clear the box is blanked (0x7E63) and the cursor goes there too.
 2. The string is cut into words. From position p: skip characters of the delimiter set (DS:0D16, a set constant:
    `! , - . : ; ?`), then characters that are neither delimiters nor spaces, then, unless that stopped on a space,
@@ -367,9 +371,29 @@ EXIT: (1, 17), no clear).
    drawn on row 24 in colour 13, the program waits for a key (GetKey 0x7CC1: a key already waiting answers it at
    once, below), blanks the box and prints the word (the prompt stays on row 24 under the next page: DOSBox-X s46,
    ecl-format.md "Page prompt under typed text"); otherwise the next
-   pass prints it on the new row. (A test at 0x79A9 for a word ending exactly on x1 can never be true.)
+   pass prints it on the new row. (A test at 0x79A9 for a word ending exactly on x1 can never be true.) After the
+   key, 0899:0104 (START 0x8A94) is called: it starts with a jump past its own `while KeyPressed do ReadKey` loop and
+   returns (7 instructions under emulation), so **no typed-ahead key is dropped** (P s47).
+   - **Below the box with only one character left** (the row passed y1 but p = length: the last word is one character
+     and came after a full box): no prompt; the next pass draws that character at (x0, y1 + 1), i.e. on row 23 over the
+     frame for PRINT (P s47; **D** s47: six 37-letter words then "X": the X on row 23, column 1, then the menu).
+   - **A box narrower than one cell** (x1 < x0) whose last word is one character: the word never fits, p = length,
+     and the row counts on (a byte) for ever with nothing drawn: a hang (P s47, under emulation; no caller passes such
+     a box).
 4. Else the word is drawn (0x7737), one cell per character; while DS:4A00 is set each character is
    followed by Delay(DS:49E2 × 10) (START 0x7782 → the Crt-style Delay START 0xA69C, calibrated milliseconds; s15).
+   0x7737 loops `while p <= i` with p a byte, so **a word ending at character 255 never ends**: p wraps from 255 to
+   0 and the loop goes on drawing the string's length byte (character 255, glyph 255 mod 64 = 63, the '?' glyph) and
+   the text again from its start, column + 1 each time (a byte: past 39 the glyph routine draws nothing, at 256 it
+   comes back to column 0), with the typing wait, for ever. Every string of 255 characters ends in such a word, so
+   **a text of 255 characters or more hangs the program** after its last word; the row it was on then shows, from
+   one lap on, the same 40 cells for ever (columns 0 and 39 over the frame), and no key does anything. **D** s47
+   (DOSBox-X, scratch save A, vector 0 = PRINTCLR of a 255-character text, then HMENU "WAIT"): the first page, the
+   prompt, then "TEXT FOR THE ?LONG TEST TEXT FOR THE PR" on row 18 from column 0 to 39, unchanged 25 s later and
+   after Return; the WAIT menu never came. The same text cut to 254 characters printed and reached the menu. The ECL
+   texts of v1.3 are at most 205 characters (ECL6 block 19 $9B70, all blocks scanned s47) and memory texts stop at 255
+   cells, so the shipped scripts never reach it. **Original bug** (proposal, not fixed in the translation: a byte
+   counter in a loop up to 255). The ECL unpacker cuts a longer text to 255 (`ecl-format.md` "Text packing").
    **Typing state** (P, s29; combat-menu.md "The panel's text" lists the writers): DS:4A00 is 1 from the start-up
    (0xE974) and again after every fight (0x6BAF); PRINT / PRINTCLR set 1 for their text and leave 0 (0x1763 / 0x17DC);
    ENCMENU sets 1 for its loop and leaves 0 (0x2C4F / 0x32E0). So PRINT and ENCMENU's texts (the distance text and
@@ -404,7 +428,18 @@ EXIT: (1, 17), no clear).
      with the flag like every 0x77F8 text.
    The status panel's weapon name types (s29, `CombatChooser.Typing`).
 5. After the string a cursor past x1 goes to column x0 of the next row.
-The window never scrolls. Code: `GoldBox.Client.Play.TextWindow`.
+The window never scrolls. Each glyph goes through 0x726F with the upper-case flag: glyph UpCase(c) mod 64 ("Font").
+Code: `GoldBox.Client.Play.TextWindow` (`PrintDos`, s47: every branch above; cells drawn outside the area are kept and
+drawn over the frame; the hang parks the game for good, `ClientPlayer.HangInPrint`; the glyph as `DosGlyph`).
+Oracle: `tools/scripts/por_print_oracle.py` runs 0x77F8 under unicorn on 403 made-up strings, boxes and cursors (49
+hang) and records every glyph, clear, prompt and Delay; `PrintProgramTests` matches them cell for cell. Client vs
+DOSBox-X s47: the 255-character run-on and the row-23 "X" pixel-equal (the Client's help line apart).
+Only the script box parks the game on a hang (`ClientPlayer.Text`); the other 0x77F8 windows (the full-screen
+party-destroyed / party-killed boxes, the fight panel, View's Items box) get program strings far below 255 characters
+and return after one lap, and their full-screen copies (`WindowLines`) leave out cells drawn outside the area.
+Symptom patches the port replaced: the Client printed any length (no cut, no hang); dropped a glyph outside the box
+(`[?]` in the old `Put`); upper-cased with .NET's `ToUpperInvariant` instead of UpCase mod 64 (a '`', '{' or byte
+above 0x7F drew its own glyph or none); had no box check; counted with ints.
 
 CLEARBOX (0x385A) blanks the picture window (1, 1)–(15, 15), not this box. The next view redraw (0x2DCF4: a
 command's or a script switch's) draws the 88 × 88 view alone, so the rest of the window, the view's box among it, stays
@@ -424,6 +459,11 @@ message, no list) leaves it blank; V and Escape, and C on Brother Sean with the 
 Client (s41): `ClientPlayer.InterfaceDrawn` (START 0x3379 by `AreaLoop.DrawInterface`: the hall's end, a load's
 entry, View's exit, Cast) ends it, with the venues, the fight and EXIT as before; the CLEARBOX run's screens equal
 DOSBox-X's but the help lines (test `ExploreScreenTests.View_and_cast_on_the_command_line_by_key_pad_and_mouse`).
+The same calls blank the text box (1, 17)–(38, 22) (START 00BA:272A's second window, every case but 0 and 5). Since
+s47 the Client follows COMBAT's end (0x2635, `EncounterHost.InterfaceRedraw` → `AreaLoop.DrawInterface`) and the
+venue entries and redraws (0x721E, 0x743C, 0x744D, 0x528B, 0x5479, 0x548A, 0x645C: `ClientPlayer.VenueDrawn`), so a
+loot's exit question no longer shows in the next shop (DOSBox-X s47, `combat-format.md` "Between a loot and the next
+venue").
 A CLEARBOX in a loaded game's vector 4 after its LOADFILES pair (0x1B1A drew the layout before it) leaves the ring
 blank: since s42 the Client draws the layout inside the pair as well (`EclVm.EntryInterfaceDue`, training.md). The clear (START 0x7E63 on cells 1–15) takes
 the view's own box (cells 2 and 14) too, which EXIT draws again only after a PROTECT went into the window

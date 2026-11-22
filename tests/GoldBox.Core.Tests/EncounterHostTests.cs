@@ -442,6 +442,23 @@ public class EncounterHostTests
     }
 
     [Fact]
+    public void Every_combat_ends_with_the_interface_drawn_for_the_explore_state()
+    {
+        // GAME.OVR 0x25F7–0x2635: DS:49F3 := 4 (3D) or 3, then START 0x3379 after the shop, the temple and a loot alike
+        // (DOSBox-X s47: a loot's exit question is gone before the next COMBAT's shop draws).
+        var rig = new Rig(new EclAsm()
+            .Op(EclOpcodes.Save, Imm8(1), Mem(0x6E6C)).Op(EclOpcodes.Combat)
+            .Op(EclOpcodes.Save, Imm8(1), Mem(0x6DE2)).Op(EclOpcodes.Combat)
+            .Op(EclOpcodes.Combat).Op(EclOpcodes.Exit));
+        var drawn = new List<string>();
+        rig.Host.InterfaceRedraw = () => drawn.Add($"{rig.Combat.Calls.Count}:{rig.Memory.InterfaceState}");
+        rig.Memory.ViewMode = 1;
+        rig.Run();
+        Assert.Equal(["1:4", "2:4", "3:4"], drawn);
+        Assert.Equal(0, rig.Memory.MarkerCounter); // the hook draws; the host adds no marker step of its own
+    }
+
+    [Fact]
     public void Combat_with_monsters_limits_the_distance_then_fights()
     {
         var rig = new Rig(new EclAsm()

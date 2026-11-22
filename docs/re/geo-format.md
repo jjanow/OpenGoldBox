@@ -457,18 +457,36 @@ Checked against DOSBox-X (PoR v1.3, EGA, save A put on the overland with `goldbo
     (hunk 16 +0xFC2) does not touch it; the first pass (hunk 16 +0x51C8) is DOS's 0x403E ($BA := 4, or 3 when $49F2 is
     25–27 with $49E6 = 0; then hunk 13 +0x5B16 case 4 and the redraw). So the Amiga follows the same rule as DOS.
     FS-UAE (disk A's save A put on block 26's overland at 10,20 N, $49F2 = 0, loaded at the start-up): frame c3 (slot
-    10, frame 1), the Client's (`--art amiga`, `save-overland` save) silhouette equal. **Open `[?]`:** the same save
-    with vector 0 = PROGRAM 0, one step north, Remove × 6, hall Load of a same-area save (interface state 2, so
-    PROGRAM 0's START 0x3379 copy draws case 2, no redraw; the run goes on to the step): FS-UAE showed c0 (three draws
-    after c3: the step's redraw and two more), the Client c4 (the step's redraw only). The two extra draws were not
-    found: every marker draw goes through the redraw or the interface, the interface needs $C0 (DS:49F9) < 2, and
-    $C0's writers (start-up, the loop restart +0x5074, the command routine's end hunk 19 +0x2C9A) leave 3 there as
-    read; DOS not checked on this path. Amiga saves: savegame layout in save-format.md "Amiga".
+    10, frame 1), the Client's (`--art amiga`, `save-overland` save) silhouette equal. Amiga saves: savegame layout in
+    save-format.md "Amiga".
+  - **A hall Load on the overland: no extra draws, slot 11 holds ICON 0** (P + FS-UAE + Client s47; settles s46's
+    open item, where FS-UAE looked like "c0" and the Client "c4" after the same-area hall Load). The whole path,
+    Amiga (training.md "The Amiga's hall Load"): vector 0 runs before the step (the area loop hunk 16 +0x5384–0x5396,
+    the step +0x53DA and its redraw +0x53DE, then vector 1 +0x5438), so PROGRAM 0 (hunk 16 +0x4B88) runs the party menu
+    (hunk 10 +0x64E: $BA := 0), whose Load (+0x9D0 → hunk 16 +0xFC2) reads the save, sets $BF (DS:49F8) when the
+    save's $BA is not 0 and leaves the menu; PROGRAM 0 then draws hunk 13 +0x5B16 by the save's $BA (2: the camp
+    screen, no redraw) and the run goes on; the step's redraw is the only marker draw before the next command, whose
+    interface does not run ($C0 = 3 from the command routine's end). The difference is in the slots: **Load itself,
+    with location type $C1 > 1, loads ICON block 0 into icon slot 11** (hunk 16 +0x1488–0x14A0: hunk 22 +0x193A("ICON",
+    block 0, slot 11), the loader's arguments name, block, slot as the interface's three calls at hunk 19
+    +0x2AF6–0x2B26), and **DOS does the same** (0x1FBC9–0x1FBE6: with DS:49FA > 1, ICON 0 into slot 11 through
+    0x3E9:0x34, the interface's loader). So the step's draw at counter 4 took slot 11 = block 0, the picture of
+    counter 0. FS-UAE (s47, disk A with test saves B (block 26's overland at 10,20 N, vector 0 = PROGRAM 0) and C
+    (vector 0's code an EXIT), B loaded at the start-up, then keypad 8, Remove × 6, Load C, and four more steps):
+    the five markers' light pixels give blocks 0, 128, 0, 128, 1 for counters 4, 5, 0, 1, 2 (the first equal to the
+    third, the second to the fourth, the fifth to neither; "two extra draws" would give 0, 128, 1, 129, 2, and 128
+    differs from 129). After a start-up Load the slot is loaded again by the first command's interface ($C0 < 2),
+    so only a hall Load leaves it (or a start-up Load's first-pass draws at counters 4 / 5, before the interface).
+    Client (s47): `PorGame.ReloadSavedMap` (Load's tail) sets `AreaLoop.MarkerSlots[2] = 0` for location type > 1,
+    as `IconEditorDone`; the Client's run of the same steps on DOS save A placed alike (`save-overland`, vector 0
+    patched the same way, `--art amiga`): all five markers equal to FS-UAE's (0 of 57–64 light pixels differ at the
+    `ashot` offset (+2, −1)). A program bug, kept. DOS not run in DOSBox-X on this path (the same code read).
   The draw (0x2DC18–0x2DC30) takes icon slot 9 + counter / 2, frame counter % 2; the interface load puts ICON 0, 1, 2
   into slots 9, 10, 11 (0x17285–0x172D5, each slot block b and b + 128). The camp's Alter Icon on the overland ends by
   loading ICON 0 into slot 11 (and 1 into slot 12; icon editor 0x1D84A, start-menu.md §3), so until the next interface
   load counters 4 and 5 draw blocks 0 and 128 (**D**, s25: script 26 at 10,20 N, Encamp, Alter, Icon, Exit, Yes, out of
   camp, then E S W N E S: blocks 0, 128, 0, 128, 1, 129, 0 for counters 4, 5, 0, 1, 2, 3, 4; a program bug, kept).
+  Load does the same with location type > 1 (0x1FBC9–0x1FBE6, s47 above).
   Engine: `AreaLoop.MarkerSlots` / `IconEditorDone`, the Client's view equal to DOSBox-X's on all seven screens.
 - **Commands** (0x17054, modes 2–4): the line DS:04DF (the 3D line without Area), C (no status check), V, E, S, L as
   in 3D; Up / Right / Down / Left set the facing to 0 / 2 / 4 / 6 and end the command (vector 0, step, redraw,

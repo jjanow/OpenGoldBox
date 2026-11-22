@@ -109,19 +109,19 @@ public sealed class OutsideEffectMessages(TextWindow window, Func<PlayerRequest,
     /// <summary>START 0x2383 outside a fight: (1, 18)–(38, 22) cleared.</summary>
     private void Clear() => window.ClearRect(TextWindow.Left, TextWindow.Top + 1, TextWindow.Right, TextWindow.Bottom);
 
-    /// <summary>PauseOnly (START 0x709:0x0DBE): DS:49E2 × 225 ms; speed 0 waits nothing.</summary>
+    /// <summary>PauseOnly (START 0x709:0x0DBE): DS:49E2 × 225 ms; speed 0 waits nothing. The Amiga's creature message
+    /// routine (hunk 13 +0x4A7C): speed · 100 ms (<see cref="AmigaView.MessagePause"/>).</summary>
     private void Pause()
     {
-        int s = speed();
-        if (s is > 0 and <= 9)
-            ask(new DelayRequest(TimeSpan.FromMilliseconds(225 * s)));
+        if (AmigaView.MessagePause(speed()) is { Ticks: > 0 } pause)
+            ask(new DelayRequest(pause));
     }
 
-    /// <summary>START 0x1693 (0x2233): row 24 cleared, the text at column 0 in green, PauseOnly, row 24 cleared.</summary>
+    /// <summary>START 0x1693 (0x2233): row 24 cleared, the text at column 0 in green, PauseOnly, row 24 cleared (the
+    /// Amiga's hunk 13 +0x4928: speed · 100 ms).</summary>
     private void BottomLine(string text)
     {
-        int s = speed();
-        if (s is > 0 and <= 9)
-            ask(new DelayRequest(TimeSpan.FromMilliseconds(225 * s)) { BottomLine = (text, TextWindow.ScriptColour) });
+        if (AmigaView.MessagePause(speed()) is { Ticks: > 0 } pause)
+            ask(new DelayRequest(pause) { BottomLine = (text, TextWindow.ScriptColour) });
     }
 }

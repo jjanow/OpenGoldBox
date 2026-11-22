@@ -186,8 +186,7 @@ public class VenueTests
         var (t, s) = Context(new Script(
             0,                          // HEAL
             new ListAnswer(0, 2),       // Heal on cure light wounds
-            0,                          // pay: YES
-            null,                       // "is cured" key
+            0,                          // pay: YES ("is cured" is START 0x16EC with the speed pause: no key, s47)
             new ListAnswer(0, 9),       // the 10th entry leaves
             4), Party(c));              // EXIT
         VenueScreens.Temple(t);
@@ -197,6 +196,9 @@ public class VenueTests
         Assert.Equal(0, s.Left);
         // The pay question's word colours (0x46CE: 13, 15, 10; DOSBox-X s46).
         Assert.Contains(s.Asked, r => r is ChoiceRequest { Items: ["YES", "NO"], MenuColours: (15, 10) });
+        Assert.DoesNotContain(s.Asked, r => r is KeyRequest);
+        // 0x476B: (1, 18)–(38, 22) blanked, then the name on row 18 and "is cured." from row 19; the pause blanks them.
+        Assert.All(t.Dialog.Text.Lines.Skip(1), l => Assert.Equal("", l));
     }
 
     [Fact]
@@ -346,6 +348,42 @@ public class VenueTests
         Assert.Equal(0, s.Left);
     }
 
+    /// <summary>
+    /// The exit questions go through the menu helper 0x8B57 (P + D s47): no Escape answer, Return ignored on the
+    /// keyboard, Home / End pick a member and ask again; any answer but No blanks the text box and stays (0x66D6,
+    /// 0x7408, 0x5445), No leaves with the question still in the box.
+    /// </summary>
+    [Fact]
+    public void Exit_questions_stay_on_any_answer_but_no_and_take_member_keys()
+    {
+        static bool Empty(TextWindow w) =>
+            Enumerable.Range(TextWindow.Top, 6).All(r => Enumerable.Range(TextWindow.Left, 38).All(k => w.Cell(r, k).Char is '\0' or ' '));
+        var a = Member("ANNA");
+        var b = Member("BORIS");
+        var (t, s) = Context(new Script(4, 0, 4, ChoiceRequest.NextMember, 1), Party(a, b), new List<byte[]> { Item(5, 20) });
+        VenueScreens.LootMenu(t);
+        var q = Assert.IsType<ChoiceRequest>(s.Asked[1]);
+        Assert.Equal(["YES", "NO"], q.Items);
+        Assert.Null(q.CancelIndex);
+        Assert.True(q.KeyboardEnterIgnored);
+        Assert.True(q.PartySelect);
+        Assert.Equal(["VIEW", "TAKE", "POOL", "EXIT"], Assert.IsType<ChoiceRequest>(s.Asked[2]).Items); // Yes: the menu again
+        Assert.Same(b, t.Party.Current);                 // End during the question, then asked again
+        Assert.IsType<ChoiceRequest>(s.Asked[4]);
+        Assert.False(Empty(t.Dialog.Text));              // No: the question stays until COMBAT's START 0x3379
+        Assert.Equal(0, s.Left);
+
+        // The shop's question runs on after the message in colour 15; the temple's clears the box and prints in 10.
+        var pool = new uint[] { 1, 0, 0, 0, 0, 0, 0 };
+        (t, s) = Context(new Script(0), Party(a), pool: pool);
+        Assert.True(MoneyScreens.StayForMoney(t, Msg.ShopMoneyLeft, Msg.ShopGoBack));
+        Assert.True(Empty(t.Dialog.Text));               // Yes: the box blanked (0709:0DD3)
+        (t, s) = Context(new Script(1), Party(a), pool: pool);
+        Assert.False(MoneyScreens.StayForMoney(t, Msg.TempleMoneyLeft, Msg.TempleGoBack, questionClears: true));
+        Assert.Equal(TextWindow.ScriptColour, t.Dialog.Text.Cell(TextWindow.Top, TextWindow.Left).Colour);
+        Assert.StartsWith(t.Text[Msg.TempleGoBack][..4], string.Concat(Enumerable.Range(TextWindow.Left, 4).Select(k => t.Dialog.Text.Cell(TextWindow.Top, k).Char)));
+    }
+
     [Fact]
     public void Take_moves_coins_from_the_pool()
     {
@@ -359,6 +397,41 @@ public class VenueTests
         Assert.Equal(3, s.Asked.Count);
         Assert.Equal(0, Assert.IsType<ListRequest>(s.Asked[2]).Selected); // the position word kept
         Assert.Equal((ushort?)7, Assert.IsType<TextRequest>(s.Asked[1]).Maximum);  // at most the pool's count (0x25B89)
+    }
+
+    /// <summary>
+    /// Take with an amount of 0 (Escape, or Return with nothing typed: 0x24F1D answers 0, Val('') = 0), P s47: 0x25974
+    /// still calls 0x25711 (0x25BAF), whose carry test (0x24CDD, weight + 0 &gt; limit) refuses a member already over the
+    /// limit with the row-24 message; anyone else gets 0 of everything. Then the list again.
+    /// </summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Take_of_nothing_still_runs_the_carry_test(bool overloaded)
+    {
+        var c = Member("ANNA", pp: overloaded ? (ushort)60000 : (ushort)0);
+        var pool = new uint[] { 0, 0, 0, 7, 0, 0, 0 };
+        var s = overloaded
+            ? new Script(new ListAnswer(ListRequest.RowPicked, 0), "", null, new ListAnswer(0, 0)) // null: the message's pause
+            : new Script(new ListAnswer(ListRequest.RowPicked, 0), "", new ListAnswer(0, 0));
+        var t = new TradeContext
+        {
+            Dialog = new Dialog(s.Ask, new TextWindow()),
+            Text = new GameText(),
+            Party = Party(c),
+            Pool = pool,
+            Treasure = [],
+            Random = n => n - 1,
+            ShowWindow = _ => { },
+            RosterDrawn = () => { },
+            Memory = new EclMemory { GameSpeed = 3 },
+        };
+        MoneyScreens.Take(t);
+        Assert.Equal(7u, pool[3]);
+        Assert.Equal(0, c.Word(Money.Gold));
+        Assert.Equal(0, s.Left);
+        var messages = s.Asked.OfType<DelayRequest>().Select(d => d.BottomLine?.Text).ToList();
+        Assert.Equal(overloaded ? [t.Text[Msg.Overloaded]] : [], messages);
     }
 
     /// <summary>

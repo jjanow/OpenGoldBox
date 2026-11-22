@@ -94,9 +94,12 @@ public static class VenueScreens
     /// colours 13 / 10 / 15, the prompt "Items: " and the caller's word, then Next / Prev and Exit (flag 1), from the
     /// position word <paramref name="position"/> as the caller keeps it. No member switch: a key other than the word's
     /// letter or Return leaves the list (0x706D, 0x61BC). The Amiga passes the same window and positions (hunk 22
-    /// +0x5418–0x545E, hunk 19 +0x7F0–0x86C).
+    /// +0x5418–0x545E, hunk 19 +0x7F0–0x86C). <paramref name="prompt"/>: the caller's own prompt as the program has it
+    /// (the Amiga's take passes "Items:" with no space, <see cref="AmigaView.LootItemsPrompt"/>, so its words start
+    /// right after the colon); null: "Items: " (DOS, and the Amiga's Buy).
     /// </summary>
-    public static ListRequest ItemPage(TradeContext t, string title, string word, IReadOnlyList<string> rows, int position) =>
+    public static ListRequest ItemPage(TradeContext t, string title, string word, IReadOnlyList<string> rows, int position,
+        string? prompt = null) =>
         new([], rows, [word, "EXIT"], 1, FirstRow: ItemPageFirstRow)
         {
             Selected = position,
@@ -105,7 +108,8 @@ public static class VenueScreens
             Spell = new SpellPageLayout("", 15, AmigaView.Case(title.Trim()))
             {
                 CentredTitle = true,
-                Prompt = AmigaView.Case(t.Text[Msg.ItemsHeader].TrimEnd()) + " ",
+                AmigaTitlePen = AmigaView.On ? WindowTitlePen : null,
+                Prompt = prompt ?? AmigaView.Case(t.Text[Msg.ItemsHeader].TrimEnd()) + " ",
             },
         };
 
@@ -120,6 +124,14 @@ public static class VenueScreens
         CharacterView.RowMessage(t, text);
         t.ShowPageAlone(null);
     }
+
+    /// <summary>
+    /// The pen the Amiga's window routine (hunk 25 +0x19F4) draws a centred title in: Buy (hunk 22 +0x5404) and the take
+    /// (hunk 19 +0x7DC) pass the raw colour 15 to the string routine, the glyph routine's rule makes it 15 + 16 − 1 = 30
+    /// (FS-UAE s47: "Shop" orange, not DOS 15's usual grey pen 16). Camp Display's title passes the same (hunk 1 +0x46BA,
+    /// read, not seen); the other callers pass empty titles (the party-killed window's "The END!" is erased by its message).
+    /// </summary>
+    public const int WindowTitlePen = 30;
 
     /// <summary>The item page's list window (1, 4)–(38, 22): its first row and its rows.</summary>
     public const int ItemPageFirstRow = 4, ItemPageRows = 19;
@@ -168,7 +180,7 @@ public static class VenueScreens
                 case "SHARE": MoneyScreens.Share(t); break;
                 case "APPRAISE": Appraise(t); break;
                 default:
-                    if (!MoneyScreens.StayForMoney(t, Msg.TempleMoneyLeft, Msg.TempleGoBack))
+                    if (!MoneyScreens.StayForMoney(t, Msg.TempleMoneyLeft, Msg.TempleGoBack, questionClears: true))
                     {
                         t.RosterDrawn(); // the pass's list comes before the exit test
                         return;
@@ -253,6 +265,10 @@ public static class VenueScreens
         }
     }
 
+    /// <summary>The Amiga heal list's name line: the string routine at (1, 1) in pen 28 (hunk 25 +0x417E–0x4188), where
+    /// DOS draws it in white (0709:0626, colour 15).</summary>
+    public const int HealTitlePen = 28;
+
     /// <summary>The heal list's window (2, 4)–(38, 15): its first row and its rows.</summary>
     public const int HealFirstRow = 4, HealRows = 12;
 
@@ -271,6 +287,7 @@ public static class VenueScreens
             Spell = new SpellPageLayout("", 15, who + t.Text[Msg.HowCanWeHelp])
             {
                 WholeTitle = true,
+                AmigaTitlePen = AmigaView.On ? HealTitlePen : null,
                 RowColumn = 2,
                 MenuColumn = 0,
                 Box = [],
@@ -286,11 +303,7 @@ public static class VenueScreens
             // 0x458A: START 0x16EC(member, text, 0, no pause) outside a fight: (1, 17)–(38, 22) cleared, the name at
             // (1, 18) in its colour, the text word-wrapped from (1, 19) in green (DOSBox-X s46: "THRENDER GRONE" cyan on
             // row 18, "IS NOT BLIND." on row 19), then the question (13, 10, 15).
-            var w = d.Text;
-            w.ClearRect(TextWindow.Left, TextWindow.Top, TextWindow.Right, TextWindow.Bottom);
-            w.Put(TextWindow.Top + 1, TextWindow.Left, who, CombatChooser.NameColour(c));
-            w.PrintIn(TextWindow.Left, TextWindow.Top + 2, TextWindow.Right, TextWindow.Bottom, AmigaView.Case(t.Text[absent]),
-                true, TextWindow.ScriptColour);
+            MemberMessage(t, c, who, AmigaView.Case(t.Text[absent]), pause: false);
             if (!d.YesNo(t.Text[Msg.CureAnyway]))
                 return;
         }
@@ -300,11 +313,35 @@ public static class VenueScreens
             return;
         if (Money.Pay(c, t.Pool, price, wideCharacterTotal: false) == Money.Payer.None)
         {
-            d.Say(t.Text[Msg.TempleNoMoney]);
+            // 0x475A: START 0x1693, row 24 (Amiga hunk 25 +0x3AE2 → hunk 13 +0x4928), the price text left in the box
+            // (FS-UAE s47); the Client had typed it into the box and waited for a key.
+            CharacterView.RowMessage(t, t.Text[Msg.TempleNoMoney]);
             return;
         }
-        d.Say(who + t.Text[Msg.IsCured]);
+        // 0x476B: START 0x17E3 blanks (1, 18)–(38, 22) (Amiga hunk 13 +0x4A8C), then 0x16EC(member, "is cured.", 0, 1):
+        // the name on row 18, the text from row 19, the pause and the rows blanked (Amiga hunk 25 +0x3AF0–0x3B06).
+        d.Text.ClearRect(TextWindow.Left, TextWindow.Top + 1, TextWindow.Right, TextWindow.Bottom);
+        MemberMessage(t, c, who, t.Text[Msg.IsCured], pause: true);
         TempleRules.Apply(cure, c, t.Random);
+    }
+
+    /// <summary>
+    /// START 0x16EC(member, text, 0, pause) outside a fight (Amiga hunk 13 +0x4970): (1, 17)–(38, 22) cleared, the name at
+    /// (1, 18) in its colour, the text word-wrapped from (1, 19) in green; with the pause, the game-speed wait (DOS
+    /// PauseOnly, 225 ms a step; Amiga hunk 25 +0xD7A, 100 ms) and (1, 18)–(38, 22) blanked (START 0x2383; hunk 13 +0x4A8C).
+    /// </summary>
+    private static void MemberMessage(TradeContext t, EclCharacter c, string who, string text, bool pause)
+    {
+        var w = t.Dialog.Text;
+        w.ClearRect(TextWindow.Left, TextWindow.Top, TextWindow.Right, TextWindow.Bottom);
+        w.Put(TextWindow.Top + 1, TextWindow.Left, who, CombatChooser.NameColour(c));
+        w.PrintIn(TextWindow.Left, TextWindow.Top + 2, TextWindow.Right, TextWindow.Bottom, text, true, TextWindow.ScriptColour);
+        if (!pause)
+            return;
+        int speed = t.Memory?.GameSpeed ?? 0;
+        if (speed is > 0 and <= 9)
+            t.Dialog.Ask(new DelayRequest(AmigaView.On ? AmigaView.TimedPause(speed) : TimeSpan.FromMilliseconds(225 * speed)));
+        w.ClearRect(TextWindow.Left, TextWindow.Top + 1, TextWindow.Right, TextWindow.Bottom);
     }
 
     // ---- After combat (0x6866, 0x5E94, 0x644B) ---------------------------------------------------------------------
@@ -401,17 +438,13 @@ public static class VenueScreens
                     t.Dialog.Say("DETECT: NOT IN THIS BUILD YET.", colour: 14);
                     break;
                 default:
-                    if (money || items)
-                    {
-                        // 0x664A–0x66B3 (s21): the first text in colour 10 with a clear, the second in 15 running on
-                        // after it (the text routine 0x709:0x768, no line break), then "Yes No" through the menu helper
-                        // 0x8B57, which opens on the shared highlight (not the yes/no routine; DOSBox-X: on Yes after
-                        // Exit). Answer 1 (Yes) goes back.
-                        t.Dialog.Show(t.Text[Msg.TreasureLeft]);
-                        t.Dialog.Show(t.Text[Msg.ClaimTreasure], clear: false, colour: 15);
-                        if (t.Dialog.Menu(["YES", "NO"], cancel: 1) == 0)
-                            break;
-                    }
+                    // E or key 0 (0x660D): with money or items left (0x25C07 asked again) the question (0x6636–0x66DB):
+                    // No leaves, anything else blanks the box and stays; with nothing left the menu just ends. The Amiga
+                    // passes its own pen for the second text (hunk 19 +0xC82: 24, red; FS-UAE s47).
+                    if ((money || items) && MoneyScreens.StayAtExit(t, Msg.TreasureLeft, Msg.ClaimTreasure,
+                            goBackColour: AmigaView.CallPen(GoldBox.Data.Module.Por.PorAmigaText.TreasureClaimPen) is int pen
+                                and >= 16 and <= 31 ? (byte)pen : null))
+                        break;
                     return;
             }
         }
@@ -450,11 +483,15 @@ public static class VenueScreens
     /// </summary>
     public static void TakeItems(TradeContext t)
     {
+        // The Amiga's take passes its own prompt, "Items:" with no space (hunk 19 +0x862), so its word starts a cell
+        // to the left (FS-UAE s47); DOS's is the shop's "Items: ".
         int position = 0;
         while (t.Current is { } c && t.Treasure.Count > 0)
         {
-            var rows = t.Treasure.Select(t.ItemName).ToList();
-            var page = ItemPage(t, t.Text[Msg.LootTitle], "TAKE", rows, position);
+            // The names as the naming routine leaves them, ending in a space (Amiga hunk 19 +0x800–0x828 names every
+            // treasure item before the list): the Amiga's lit bar covers that space too (FS-UAE s47); DOS draws it blank.
+            var rows = t.Treasure.Select(t.StoredItemName).ToList();
+            var page = ItemPage(t, t.Text[Msg.LootTitle], "TAKE", rows, position, AmigaView.LootItemsPrompt);
             var a = t.Dialog.Page(page);
             if (a.Action != 0 || a.Row < 0 || a.Row >= t.Treasure.Count)
                 return;

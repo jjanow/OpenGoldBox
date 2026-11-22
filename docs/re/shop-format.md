@@ -126,8 +126,21 @@ key but Escape / E / 0 takes the row (Return too); position word 0 once (0x259A4
 (0x24F1D, colour 10, "How much " + the coin + " will you take?", at most the pool's low word) on row 24 over the list
 drawn unlit. If the amount would overload the character: message, nothing moves. Else amount := min(amount,
 pool[kind]); pool − amount; the character's word + amount, weight + amount. Afterwards DS:6DC0 = any kind left.
-DOSBox-X s46: Copper, 30, Return → the list again with "Copper 70". `[?]` An amount of 0 (Escape) still reaches
-0x25711; the Client moves nothing then and does not show its overload test.
+DOSBox-X s46: Copper, 30, Return → the list again with "Copper 70".
+**Amount 0** (P + D s47). The input 0x24F1D answers 0 to Escape and Val of the typed digits to Return (Val('') = 0:
+nothing typed is 0 too). 0x25974 calls 0x25711 with it whatever it is (0x25BAF), then frees the list and sets DS:6DC0
+(0x25BB7–0x25BF7) and loops. 0x25711 in order: the carry test 0x24CDD (weight word 0x102 + amount, 16 bits, above the
+limit 0x24C89 → the message from its own string through START 0x2233 and nothing else); amount := the pool's low word
+when amount > pool (32-bit compare; never true, the input caps at the low word); pool − amount (32 bits); the
+character's coin word + amount; 0x24CC3 weight + amount. So 0 refuses a member already over the limit with the message
+and does nothing for anyone else. DOSBox-X s47 (scratch save A, TREASURE 100 copper + COMBAT, member 1 with 60000
+platinum and weight 60000): Take, Copper, Escape → "OVERLOADED" on row 24 over the dimmed list, then the list again
+with "Copper 100"; Return with nothing typed the same. The Client (`MoneyScreens.Take`) now passes 0 to
+`ShopRules.Take`; its screens equal DOSBox-X's at both points.
+**Original bug** (P s47, proposal, not fixed): the input's maximum is the pool's **low word** (0x25B89), so a pool of
+65536 or more of one coin (Pool can gather that from several members' 16-bit words) lets only `pool mod 65536` be
+taken at a time, and at exactly 65536 (or any multiple) the maximum is 0: every amount typed becomes 0 and that coin
+can never be taken (Share still divides it). The Client does the same (`TextRequest.Maximum` = the low word).
 
 **Pool** (0x25191, P): DS:6DC0 := 1; every party member whose 0x84 is 0 or 0xB3 adds its seven words to the pool,
 loses that much weight, and its seven words are zeroed. Other members (NPCs) keep their money.
@@ -160,8 +173,33 @@ Jewelry / Exit, repeated until Exit or nothing is left.
   no-gems message and no recalculation (0x26661); when the last gem or jewel is gone after an appraisal the routine
   ends without a message (0x26698 → 0x26ECF; the Client said the message there before s43).
 
-**Exit** (shop and temple): with money in the pool a question offers to go back; leaving keeps the pool unspent
-(the next TREASURE overwrites it). Pool items alone do not ask.
+**Exit** (shop 0x7350–0x740D, temple 0x5384–0x544A; P + D s47): with money in the pool (0x25C07's first answer) a
+question offers to go back; leaving keeps the pool unspent (the next TREASURE overwrites it). Pool items alone do not
+ask. The shop prints its message through the text routine 0709:0768 in the box (1, 17)–(38, 22), colour 10, cleared
+first, and the question after it in colour 15 with no clear (it runs on after the message's two spaces, no line
+break). The **temple** passes the clear flag 1 and colour 10 for its question too (0x53E8), so the priest's message is
+typed and at once replaced by the question (DOSBox-X: the priest's parting message typed to its end, then the box
+cleared and the go-back question typed in green); probably meant as the shop's (an
+original quirk, kept; proposal only). Both then call the **menu helper 0x8B57** (002B:0061) with an empty prompt,
+"~Yes ~No", colours 13 / 10 / 15 and its Return flag [bp+8] = 0: it runs the menu routine 0x2CC8C (keypad flag 1)
+on the **shared highlight** until the key is a letter or digit (the set at its CS:1664, 0x8BEF); a hotkey answers its
+index (0x8C11–0x8C49), any other letter 0xFF (unreachable: the menu routine ignores letters that are no hotkey);
+Return (13 with the flag 0) and Escape (0) loop; an extended key (Home / End, an arrow, a keypad digit) runs the party
+selection 0x23819 and the party list (0x8BC2–0x8BE0) and loops. Answer 1 (No) sets the end flag; any other answer
+blanks the text box (0709:0DD3) and the menu runs again. DOSBox-X s47 (test saves `loot-shop` / `loot-temple`, Pool,
+then E): the question opens on Yes (the cell back to the first after Exit); Escape, Return and X changed nothing; End
+lit the next member and kept the question; Y left the box empty and the menu lit on its first word; N left. The Client
+(`MoneyScreens.StayAtExit`, `Dialog.MenuHelper`, `ChoiceRequest.KeyboardEnterIgnored`) equal on each screen but the
+help lines; the pad's Confirm and a click still answer the lit word (the keyboard's Return does nothing), and the
+cursor-pad meaning of the digits (keypad flag 1) is not modelled in the Client's menus.
+
+**The entry and the redraws** (P s47): 0x7212 sets DS:49F3 = 1, calls START 0x3379 (case 1: the windows blanked
+inside, the venue box's head + body) and the party list, zeroes the pool and DS:6DC0, names every stock item (START
+0xFE2), then loops: the menu (0x25C07 for the line), the key's routine, START 0x3379 again after B and T (0x743C) and
+after A when the appraisal ran (0x744D), and the party list every pass (0x745A). The temple (0x5280) is the same with
+its own keys, but its redraw tests B (0x5471, a copy of the shop's; no temple key is B) and T (0x5479), and A
+(0x548A); its H runs the heal list only for a non-extended key (0x532B: 'H' is also Up's scan code). After a loot the
+text box is therefore empty when the shop opens (DOSBox-X s47; the Client kept the loot's question before s47).
 
 ## Temple (0x5280) — P
 
@@ -193,8 +231,35 @@ hotkey letters green ("Y" green, "ES" white, "NO" green with No lit), as only th
 page, `SpellPageLayout.WholeTitle`, `ListRequest.ReturnRunsFirstAction`), `ChoiceRequest.MenuColours` (also the camp
 cast's lose-it question 0x27CCA, read only; the Client does not ask 0x27D30's); pixel-equal to DOSBox-X on the first
 list, the price question, the list after it, Exit lit, the absent-condition message with its question, and the temple
-menu after Escape and after E (but the Client's help lines). `[?]` The Amiga's heal list layout and its pay
-question's pens are not seen in FS-UAE (the Client draws the DOS layout under either art).
+menu after Escape and after E (but the Client's help lines).
+
+**The Amiga's heal list** (hunk 25 +0x408E, read s47, P + FS-UAE s47 on disk A's save A patched as a temple, speed 9).
+The same routine as DOS's, with C's choices: row 24 blanked (hunk 25 +0x197A with 0, 24, 39, 24), the window
+routine (hunk 25 +0x19F4: blank, frame blit hunk 25 +0x16D4, centred title through the string routine) with (1, 1)–(38,
+22) and an empty title, then again with (1, 1)–(38, 1); each pass the name and the greeting text (strcat) at (1,
+1) through the string routine in **pen 28** (DOS colour 15, white), the window routine with (1, 17)–(38, 22) (the text
+box blanked and its frame blitted again), and the list routine (hunk 13 +0x2B76) with the window (2, 4)–(38, 15), pens
+26 / 28 / 16, an empty prompt, the word "Heal Exit" and no Exit flag. The names are the Amiga's own table (hunk 26 +0x3AE
++ 41·k, DOS's words). Return or H runs the row (+0x41FC–0x4206), the tenth or key 0 ends. **The position word**
+(−0xC(a5)) is never stored before the call either: compiled C, its stack slot holds whatever the temple menu's calls left
+(`[?]` not read; FS-UAE s47: lit on Cure Blindness on entry, and on Cure Light Wounds again after its price was refused,
+as DOS). The entries (hunk 25 +0x39A4 absent, +0x39FE pay) are DOS's: the absent text through the creature message
+routine (hunk 13 +0x4970, no pause) and the cast-anyway question with pens 26 / 28 / 16, then +0x4A8C blanks (1, 18)–(38,
+22); the price text through the text window's print in pen 28 with the clear flag, then "pay for cure " with 26 / 16 /
+28 (the swapped pens, `PorAmigaText.YesNoSwappedWordsPen`); no money: the not-enough-money text through hunk 13 +0x4928 (row
+24, pen 28, Delay(speed · 5 ticks), row 24 blanked) with the price text left in the box; paid: +0x4A8C, then the creature
+message (member, "is cured.", 0, pause 1). At the end (+0x42CA) the list is freed, the whole screen blanked (0, 0)–(39,
+24), redrawn (hunk 13 +0x5B16) and the party list (+0x3A96). FS-UAE s47 against the Client `--art amiga` (DOS save
+A's temple; shift (−2, +1)): the first page, the list after a refused price, the price question, the absent message with
+its question and the not-enough-money line equal pixel for pixel but the names (other parties), once the Client drew the
+name line in pen 28 (`SpellPageLayout.AmigaTitlePen`) and the frames in the program's order (the big window, then the
+title window over it: the Amiga frame's side tiles below row 2 are the big window's; the Client had framed (0, 2)–(39,
+16) by itself). **Both arts (s47):** the not-enough-money line is START 0x1693 on row 24 (0x475A) and the cured text is
+START 0x17E3 then 0x16EC(member, "is cured.", 0, 1) (0x476B–0x478E): the Client had typed both into the box and waited
+for a key (`VenueScreens.Heal`, `MemberMessage`). DOSBox-X s47 (save A patched as a temple, speed 9): Cure Blindness
+cast anyway and paid with too little money: the not-enough-money text on row 24 in green, the price text left in the box, as
+the Client now; the Client `--art dos` heal page (frames in the new order) equal to DOSBox-X's pixel for pixel. The
+cured path is read, not seen in either emulator (neither party had the money).
 
 Flow per entry: if the condition is absent the priest says so and asks whether to cast the cure anyway (0x458A); on yes, or when
 the condition holds, payment (0x4636): the price is shown with a yes/no question; character (16-bit total) or

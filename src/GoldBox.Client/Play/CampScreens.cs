@@ -815,9 +815,9 @@ public static class CampScreens
         w.PrintIn(TextWindow.Left, TextWindow.Top + 2, TextWindow.Right, TextWindow.Bottom, text, true, TextWindow.ScriptColour);
         if (!pause)
             return;
-        int speed = c.Memory.GameSpeed;
-        if (speed > 0)
-            c.Dialog.Ask(new DelayRequest(TimeSpan.FromMilliseconds(225 * speed)));
+        // The Amiga's creature message routine (hunk 13 +0x4A7C): speed · 100 ms (AmigaView.MessagePause).
+        if (AmigaView.MessagePause(c.Memory.GameSpeed) is { Ticks: > 0 } wait)
+            c.Dialog.Ask(new DelayRequest(wait));
         w.ClearRect(TextWindow.Left, TextWindow.Top + 1, TextWindow.Right, TextWindow.Bottom);
     }
 
@@ -1031,7 +1031,13 @@ public static class CampScreens
         {
             Labels = labels,
             Paging = paging,
-            Spell = new SpellPageLayout("", 15, AmigaView.Case(c.Text[Msg.DisplayTitle])) { CentredTitle = true, LabelColour = 11 },
+            // The Amiga's window routine with the raw colour 15 (hunk 1 +0x46BA–0x46D4), as Buy's "Shop": pen 30.
+            Spell = new SpellPageLayout("", 15, AmigaView.Case(c.Text[Msg.DisplayTitle]))
+            {
+                CentredTitle = true,
+                LabelColour = 11,
+                AmigaTitlePen = AmigaView.On ? VenueScreens.WindowTitlePen : null,
+            },
         });
     }
 

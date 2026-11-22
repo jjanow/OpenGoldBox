@@ -87,6 +87,7 @@ public sealed class PorGame
         };
         // DS:49FF: the after-combat step sets it on the VM when the party is destroyed; the area loop clears it.
         Encounter.Vm = Vm;
+        Encounter.InterfaceRedraw = Loop.DrawInterface; // COMBAT's last call, START 0x3379 (GAME.OVR 0x2635)
         if ((player.FightMenu is not null || player.QuickFight) && kit is not null)
             Encounter.FightBuilder = state => kit.Create(memory, state, Rng.Next,
                 PorFight.Area(memory, (Encounter.Map as MapPlanes)?.Planes, Vm.CurrentScript, state.Duel, content.NoWrapOffMap), player.FightMenu,
@@ -238,12 +239,21 @@ public sealed class PorGame
     /// Load game (0x1FBB3–0x1FBC4) re-reads map $49C5 when DS:49FA (the save's location type) &lt; 2; then
     /// (0x1FBEE–0x1FC86, location type ≤ 1) for i = 1..3 the cache DS:6AAE+4i := $4AF9+i (id), DS:6AB0+4i := $4AFC+i
     /// (slot), and LoadWallSet(id, slot) when the id is not negative; a slot whose id is negative keeps what it held. So
-    /// an area whose vector 4 loads no wall sets still shows the saved walls (DOSBox-X s22).
+    /// an area whose vector 4 loads no wall sets still shows the saved walls (DOSBox-X s22). With location type &gt; 1
+    /// (0x1FBC9–0x1FBE6; the Amiga's Load hunk 16 +0x1488–0x14A0, the same) it loads ICON block 0 into icon slot 11
+    /// instead: the marker's third animation slot (<see cref="AreaLoop.MarkerSlots"/>), which the overland interface
+    /// had filled with block 2. Until the next interface load (the command routine's, only after a 3D area: DS:49F9
+    /// &lt; 2) marker counters 4 and 5 draw ICON blocks 0 and 128, as after the icon editor (a program bug, kept). After
+    /// a start-up Load the first command's interface loads the slots again; after a training-hall Load of a game save
+    /// nothing does (FS-UAE s47: the marker after a same-area hall Load showed block 0 at counter 4).
     /// </summary>
     private void ReloadSavedMap()
     {
         if (Memory.ViewMode >= 2)
+        {
+            Loop.MarkerSlots[2] = 0;
             return;
+        }
         Loop.LoadMap(Memory.Read(0x49C5));
         for (int i = 1; i <= 3; i++)
         {

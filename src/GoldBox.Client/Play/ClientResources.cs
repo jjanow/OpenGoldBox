@@ -95,9 +95,10 @@ public sealed class ClientResources
                 .OrderBy(kv => kv.Key, StringComparer.Ordinal).Select(kv => kv.Value));
         for (int i = 0; program is not null && i < 11; i++)
             lines.Add(program.PascalString(PartyMenuDs + 42 * i, 40));
-        // The Amiga's own words (not its prompts, nor the camp's whole lines, which the camp screens use as they are,
-        // nor creation's developer names and lines).
+        // The Amiga's own words (not its prompts, nor its messages and questions, nor the camp's whole lines, which the
+        // camp screens use as they are, nor creation's developer names and lines).
         lines.AddRange(dir.AmigaStrings()?.Where(kv => !kv.Key.Contains("Prompt", StringComparison.Ordinal)
+            && !kv.Key.StartsWith("Msg.", StringComparison.Ordinal)
             && !kv.Key.StartsWith(GoldBox.Data.Module.Por.PorAmigaText.CampLinePrefix, StringComparison.Ordinal)
             && !kv.Key.StartsWith(GoldBox.Data.Module.Por.PorAmigaText.DeveloperKey, StringComparison.Ordinal)).Select(kv => kv.Value) ?? []);
         return [.. lines.OfType<string>()];

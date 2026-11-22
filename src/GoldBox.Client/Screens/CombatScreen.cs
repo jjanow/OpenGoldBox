@@ -778,8 +778,10 @@ public sealed class CombatScreen
                 if (input.LastDevice != InputDevice.Keyboard)
                     Text(f, 1, HintRow, Fit(PageHint(input, p.Rows.Count > 0), 38), Chrome.Grey);
                 break;
-            case DelayRequest when _view.ItemEffectText is not null && _pageMenu is { } kept:
-                // Handler 131's text over the Items page (D s33): the menu row stays as the pick left it.
+            case DelayRequest when _view.ItemEffectText is not null && _pageMenu is { } kept && !AmigaView.On:
+                // Handler 131's text over the Items page (D s33): the menu row stays as the pick left it. The Amiga's
+                // menu routine blanks row 24 on every way out (hunk 19 +0x5372 … +0x5702; FS-UAE s47: row 24 blank under
+                // "is stronger").
                 if (kept.Prompt is { Length: > 0 } keptPrompt)
                     Chrome.MenuPrompt(f, _font, 0, MenuRow, keptPrompt, PromptColour);
                 DrawEntries(f, kept.Entries, kept.Prompt?.Length ?? 0, _pageEntry);
@@ -1132,13 +1134,15 @@ public sealed class CombatScreen
                 // The message routine START 0x1693 over the map (Alt-M, Alt-X): row 24 in green during its pause.
                 Text(f, 0, MenuRow, Fit(msg, 40), Chrome.Green);
                 break;
-            case DelayRequest when _view.MovePrompt is null && _staleMenu is var (sm, sel, seq) && seq == _view.Row24Writes:
+            case DelayRequest when _view.MovePrompt is null && _staleMenu is var (sm, sel, seq) && seq == _view.Row24Writes
+                && !AmigaView.On:
                 // Row 24 keeps the last menu drawn (with the answered entry lit) until something else writes it
                 // (DOSBox-X s29: Aim's and Next's menus while the panel types, a Done menu through the next creature's
-                // panel until the AI's start clears the row).
+                // panel until the AI's start clears the row). The Amiga's menu routine blanks the row as it returns.
                 DrawMenu(f, sm, sel);
                 break;
-            case DelayRequest when _view.MovePrompt is null && _staleCursor is var (sc, lit, cseq) && cseq == _view.Row24Writes:
+            case DelayRequest when _view.MovePrompt is null && _staleCursor is var (sc, lit, cseq) && cseq == _view.Row24Writes
+                && !AmigaView.On:
                 DrawCursorMenu(f, sc, lit);
                 break;
             case CombatMoveRequest m:
@@ -1231,7 +1235,9 @@ public sealed class CombatScreen
 
     /// <summary>The main menu's Alt keys on row 23 for the pad (their buttons) and the mouse (words to click).</summary>
     private static string[] AltWords => AltKeys(AmigaView.On).Words;
-    private const int AltWordsStart = 5;
+    /// <summary>Row 23's label before the words: DOS's Alt keys; the Amiga's are F8 / ';' and F6 (ActionInput.AmigaFightKeys).</summary>
+    private static string AltPrefix => AmigaView.On ? "KEYS: " : "ALT: ";
+    private static int AltWordsStart => AltPrefix.Length;
     private static int[] AltAnswers => AltKeys(AmigaView.On).Answers;
 
     /// <summary>
@@ -1239,7 +1245,8 @@ public sealed class CombatScreen
     /// menu key loop (hunk 1 +0x1C42–0x1DF4) takes M V A U C T Q D, the magic toggle (key 0x3B, +0x1D5A), space and the
     /// all-quick key (−26, +0x1DBA), and its AI key check (hunk 1 +0x127E) only the magic toggle and space; there is no
     /// Alt-X routine, so no refusal either (s45 A1, s46 A2). Under the Amiga art (<paramref name="amiga"/>, as every
-    /// Amiga-program difference) the Client offers no Alt-X.
+    /// Amiga-program difference) the Client offers no Alt-X. The magic toggle 0x3B is ';' or F8 and the all-quick key
+    /// F6 there (s47: the program's raw-key table, <see cref="ActionInput.AmigaFightKeys"/>), not Alt-M / Alt-Q.
     /// </summary>
     internal static (string[] Words, int[] Answers) AltKeys(bool amiga) => amiga
         ? (["MAGIC", "ALL-QUICK"], [CombatChooser.AnswerQuickMagic, CombatChooser.AnswerAllQuick])
@@ -1248,7 +1255,7 @@ public sealed class CombatScreen
     private static string AltHint(ActionInput input)
     {
         if (input.LastDevice == InputDevice.Mouse)
-            return "ALT: " + string.Join(' ', AltWords);
+            return AltPrefix + string.Join(' ', AltWords);
         string L(GameAction a) => PromptLabels.For(input.Bindings, a, InputDevice.Gamepad);
         string hint = $"{L(GameAction.FightQuickMagic)} MAGIC {L(GameAction.FightAllQuick)} ALL QUICK";
         return AmigaView.On ? hint : $"{hint} {L(GameAction.FightAltX)} ALT-X";

@@ -236,6 +236,14 @@ public sealed class EncounterHost : IEclHost
         return (byte)v[Math.Clamp(c, 0, 4)];
     }
 
+    /// <summary>
+    /// COMBAT (GAME.OVR 0x24E1, read whole s47). No monsters loaded (DS:84E7) and no duel (DS:84D4): $6E6C = 1 → 0 and
+    /// the shop (0x7212), else $6DE2 = 1 → 0 and the temple (0x5280), else the after-combat step alone (0x6AA5: the loot
+    /// of a TREASURE). Otherwise the view distance (0x7955) caps $6DC1, the fight (0x9881) and the after-combat step;
+    /// then, when $49E6 is 0 (outdoors), the fight's freed art is loaded again (BACPAC through 0x31A8E, ICON blocks 9–11
+    /// into slots 0–2, 0x2583–0x25E6; art only, not followed) and DS:84D4 is cleared. Every branch ends with DS:49F3 :=
+    /// 4 (3D) or 3, $6DCA AND 1, DS:84C8–84C9 and DS:84E0 cleared and START 0x3379 (<see cref="InterfaceRedraw"/>).
+    /// </summary>
     public void Combat()
     {
         if (!State.MonstersLoaded && !State.Duel)
@@ -273,10 +281,21 @@ public sealed class EncounterHost : IEclHost
         Memory.ClearEncounterDraw(); // 0x261F: DS:84C8–84C9
         Memory.PictureShown = false; // 0x2630
         Memory.InterfaceState = (byte)(Memory.ViewMode == 1 ? 4 : 3); // 0x25F7–0x2605
-        // 0x2635: START 0x3379 with DS:49F3 = 4 (3D) or 3 (0x25F7–0x2605): cases 3 and 4 redraw the view (0x2DCF4), on
-        // the overland the marker too.
-        Explore.Overland.Redrawn(Memory);
+        // 0x2635: START 0x3379 with DS:49F3 = 4 (3D) or 3 (0x25F7–0x2605), whatever ran (fight, loot, shop, temple):
+        // every window drawn again blanked inside (0x32CA: the text box too, so a loot's exit question is gone before
+        // the next screen), the view redrawn (0x2DCF4; on the overland the marker too) and the party list.
+        if (InterfaceRedraw is { } redraw)
+            redraw();
+        else
+            Explore.Overland.Redrawn(Memory);
     }
+
+    /// <summary>
+    /// START 0x3379 for the interface state DS:49F3 (the area loop's <see cref="Explore.AreaLoop.DrawInterface"/>), which
+    /// COMBAT's handler calls last (GAME.OVR 0x2635). Null: only the view redraw's marker step is followed
+    /// (<see cref="Explore.Overland.Redrawn"/>).
+    /// </summary>
+    public Action? InterfaceRedraw { get; set; }
 
     /// <summary>
     /// Builds the fight after the fight start's VM-cell part (<see cref="FightKit.Create"/>: arena, placement, map,

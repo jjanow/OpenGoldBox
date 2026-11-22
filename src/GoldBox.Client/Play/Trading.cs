@@ -269,13 +269,15 @@ public static class MoneyScreens
                 return;
             position = a.Row;
             int kind = kinds[a.Row];
-            string prompt = GameText.Cat(GameText.Cat(t.Text[Msg.HowMuch], t.Text.Coin(kind)), t.Text[Msg.WillYouTake]).TrimEnd();
+            string prompt = AmigaView.AmountPrompt(GameText.Cat(GameText.Cat(t.Text[Msg.HowMuch], t.Text.Coin(kind)), t.Text[Msg.WillYouTake]));
             t.ShowPageAlone(page);
-            var typed = t.Dialog.Ask(new TextRequest(prompt, true, 5) { Maximum = (ushort)(t.Pool[kind] & 0xFFFF) }) as string;
+            var typed = AmigaView.Number(t.Dialog.Ask, new TextRequest(prompt, true, 5) { Maximum = (ushort)(t.Pool[kind] & 0xFFFF) });
             t.ShowPageAlone(null);
-            // [?] 0x25711 runs with an amount of 0 too (Escape, nothing typed); the Client moves nothing then.
-            if (!ushort.TryParse(typed, NumberStyles.None, CultureInfo.InvariantCulture, out var amount) || amount == 0)
-                continue;
+            // 0x24F1D answers 0 to Escape and to Return with nothing typed (Val of an empty string), and 0x25974 calls
+            // 0x25711 with it all the same (0x25BAF): its carry test then refuses a member already over the limit (the
+            // message), else every write adds 0 (P + D s47, shop-format.md "Take").
+            if (!ushort.TryParse(typed, NumberStyles.None, CultureInfo.InvariantCulture, out var amount))
+                amount = 0;
             if (!ShopRules.Take(c, t.Pool, kind, amount, Carrying.StrengthAllowance(c)))
                 VenueScreens.RowMessageOver(t, page, t.Text[Msg.Overloaded]); // 0x2573C: START 0x2233
         }
@@ -339,17 +341,37 @@ public static class MoneyScreens
     }
 
     /// <summary>
-    /// The exit question of the shop and temple (0x7350 / the temple's): with money in the pool, a message and "go back?";
-    /// returns true to stay. Pool items alone do not ask.
+    /// The exit of the shop (0x7350–0x740D) and temple (0x5384–0x544A): with money in the pool (0x25C07's first answer)
+    /// the two texts and "Yes No" through the menu helper (<see cref="StayAtExit"/>); returns true to stay. Pool items
+    /// alone do not ask. The shop prints its question in colour 15 running on after the message; the temple prints it
+    /// in colour 10 with the box cleared first (0x53E8: clear flag 1), so the priest's message is typed and at once
+    /// replaced (DOSBox-X s47).
     /// </summary>
-    public static bool StayForMoney(TradeContext t, Msg leaving, Msg goBack)
+    public static bool StayForMoney(TradeContext t, Msg leaving, Msg goBack, bool questionClears = false) =>
+        t.PoolHasMoney && StayAtExit(t, leaving, goBack, questionClears);
+
+    /// <summary>
+    /// A venue's exit question (shop 0x736F, temple 0x53A3, loot menu 0x6636): the first text through the text routine in
+    /// the box (1, 17)–(38, 22), colour 10, cleared first; the second (0709:0768) in colour 15 running on after it, or
+    /// with <paramref name="questionClears"/> in colour 10 cleared first (the temple's); then "~Yes ~No" through the
+    /// menu helper 0x8B57 (<see cref="Dialog.MenuHelper"/>: the shared highlight, Return and Escape ignored, Home / End
+    /// pick a member and draw the party list). Answer 1 (No) leaves with the text left in the box (COMBAT's last call,
+    /// START 0x3379, clears it); any other answer blanks the box (0709:0DD3 with 1, 17, 38, 22) and stays. DOSBox-X s47
+    /// (test saves J and K): the shop's and the loot's question run on after the message, both open on Yes after Exit,
+    /// End during the question lit the next member and kept the question, Yes left the box empty.
+    /// </summary>
+    public static bool StayAtExit(TradeContext t, Msg leaving, Msg goBack, bool questionClears = false, byte? goBackColour = null)
     {
-        if (!t.PoolHasMoney)
-            return false;
         t.Dialog.Show(t.Text[leaving]);
-        t.Dialog.Text.NewLine();
-        t.Dialog.Show(t.Text[goBack], clear: false, colour: 15);
-        return t.Dialog.YesNo();
+        t.Dialog.Show(t.Text[goBack], clear: questionClears,
+            colour: goBackColour ?? (questionClears ? TextWindow.ScriptColour : (byte)15));
+        int answer;
+        while (t.SelectMember(answer = t.Dialog.MenuHelper(["YES", "NO"])))
+            t.RosterDrawn(); // 0x8BD3: START 0x0767 after the selection
+        if (answer == 1)
+            return false;
+        t.Dialog.Text.ClearRect(TextWindow.Left, TextWindow.Top, TextWindow.Right, TextWindow.Bottom);
+        return true;
     }
 
     /// <summary>The money of a character as "N KIND" parts, highest kind first (for the view and lists).</summary>

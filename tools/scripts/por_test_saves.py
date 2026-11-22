@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Test saves for screen checks in DOSBox-X and the Client (Pool of Radiance DOS v1.3).
 
-    python3 -I por_test_saves.py GAMEDIR
+    python3 -I por_test_saves.py GAMEDIR [SLOT=NAME ...]
 
 Writes SAVGAMB..I.DAT into a scratch game copy (never a master; existing files of those slots are replaced), each
 being SAVGAMA.DAT with its script area (save offset 5121 = $9900) replaced: vectors 1-4 point at an EXIT at $991F,
@@ -17,6 +17,11 @@ training.md, combat-format.md, ecl-format.md "DAMAGE"):
     G  CLRMON, SAVE 1 -> $6DE2, COMBAT: a temple
     H  PROGRAM 8: the end game (FINAL5.DAX is copied to FINAL2.DAX when missing)
     I  PRINT, PROGRAM 0, PRINT, a one-word HMENU: the text box and cursor after the hall
+
+SLOT=NAME writes the named save into slot B..I instead (the program loads A..J; A and J are the release's own):
+
+    loot-shop    CLRMON, TREASURE 100 copper, COMBAT (a loot), then TREASURE (no items), SAVE 1 -> $6E6C, COMBAT: a shop
+    loot-temple  the same loot, then SAVE 1 -> $6DE2, COMBAT: a temple
 
 The texts written by I are this tool's own. Nothing from the game is stored in this file.
 The folder can stay GOLDBOX_POR_DIR afterwards: the tests that count the release's files read a copy without these.
@@ -46,8 +51,18 @@ def text(s):
     return b'\x80' + bytes([len(b)]) + b
 
 
+LOOT = bytes([CLRMON, TREASURE]) + imm(100, 0, 0, 0, 0, 0, 0, 255) + bytes([COMBAT])
+NAMED = {
+    'loot-shop': LOOT + bytes([TREASURE]) + imm(0, 0, 0, 0, 0, 0, 0, 255) + bytes([SAVE]) + imm(1) + b'\x01\x6c\x6e'
+    + bytes([COMBAT]),
+    'loot-temple': LOOT + bytes([SAVE]) + imm(1) + b'\x01\xe2\x6d' + bytes([COMBAT]),
+}
+
+
 def main(argv):
-    if len(argv) != 2:
+    named = [a.split('=', 1) for a in argv[2:]]
+    if len(argv) < 2 or any(len(n) != 2 or len(n[0]) != 1 or n[0] not in 'BCDEFGHI' or n[1] not in NAMED
+                            for n in named):
         print(__doc__, file=sys.stderr)
         return 2
     game = Path(argv[1])
@@ -86,6 +101,9 @@ def main(argv):
         shutil.copyfile(game / 'FINAL5.DAX', game / 'FINAL2.DAX')
     save('I', bytes([PRINT]) + text('FIRST TEXT BEFORE THE HALL.') + bytes([PROGRAM]) + imm(0) + bytes([PRINT])
          + text('SECOND.') + bytes([HMENU]) + b'\x01\x82\x6e' + imm(1) + text('WAIT'))
+    for slot, name in named:
+        save(slot, NAMED[name])
+        print(name, 'in slot', slot)
     print('saves B-I written to', game)
     return 0
 

@@ -296,7 +296,13 @@ words (0x23973–0x239BF); with an action (Cast, Memorize, Scribe: 0x27018–0x2
 **Cast (0x17CD2)**: DS:6DB5 := nil; the check; then the memorised list (Cast) until nothing is chosen: the text box is
 cleared and the spell cast (0x27C38); an empty list → the no-spells message (0x17CBA). **The cast 0x27C38 outside a fight**:
 table byte 7 = 0 → the spell name (row 19), the combat-only line 0x27BC6 (row 20), the question 0x27BE0 (Yes: the memorised spell
-is removed, START 0x202B). Else the cast message (0x27C16) and the spell name (a key), then the non-combat target handler **0x27AA9**: DS:6DB5
+is removed, START 0x202B). The question is the yes/no routine 03C5:0039 at 0x27CCA with colours 13, 15, 10 (the words
+white, the lit word and the hotkeys green, as the temple's pay question). **D** (s47, save A, camp, Rhiannon's Sleep):
+"LOSE IT? YES NO" with Y green, ES white, NO green and No lit; the Client (`CampScreens.CastOne`) equal pixel for pixel
+on the whole screen. That branch runs when DS:6DBF = 0; with DS:6DBF ≠ 0 (a spell cast from an item, by its texts)
+the routine shows the item's combat-only lines instead (0x27CDE–0x27D13) and asks 0x27D30 with the same colours; Yes
+sets the caller's byte ([bp+6] := 1, 0x27D3C) `[?]`: what sets DS:6DBF and what the caller does with that byte are not
+read, and the Client does not build that branch. Else the cast message (0x27C16) and the spell name (a key), then the non-combat target handler **0x27AA9**: DS:6DB5
 defaults to the caster; the target list is the caster; mode 1: done; mode 2: the member pick (prompt 0x27A96,
 starting at DS:6DB5; giving up clears the targets and DS:6DB5 and nothing is cast); mode 4: every creature of the list;
 other modes: nothing. On a pick: invisibility leaves the caster (0x2BEBC), the memorised spell is used up (START

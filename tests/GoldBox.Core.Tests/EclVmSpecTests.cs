@@ -190,6 +190,54 @@ public class EclVmSpecTests
         Assert.DoesNotContain(rig.Trace.Steps.SelectMany(s => s.Reads), r => r.Address == 0x9000);
     }
 
+    /// <summary>
+    /// s47, the Amiga program's text rules (<see cref="EclVm.AmigaTextRules"/>): INPUTSTR keeps the typed line (hunk 16
+    /// +0x2448, no upper-casing or filter; empty = one space), a text COMPARE upper-cases copies of both texts (hunk 4
+    /// +0x1B0E / +0x1B24) and compares signed bytes (hunk 0 +0x7D8), and sets "≥" whatever the order (+0x1BCA).
+    /// </summary>
+    [Fact]
+    public void Amiga_input_keeps_the_case_and_its_text_compare_does_not_see_it()
+    {
+        var asm = new EclAsm()
+            .Op(EclOpcodes.InputStr, Imm8(0), Mem(0x9700))
+            .Op(EclOpcodes.InputStr, Imm8(0), Mem(0x9780))
+            .Op(EclOpcodes.Compare, Text("LUX"), TextAt(0x9700))
+            .Op(EclOpcodes.IfEq).Op(EclOpcodes.Save, Imm8(1), Mem(F))
+            .Op(EclOpcodes.Compare, Text("AA"), TextAt(0x9700))
+            .Op(EclOpcodes.IfGe).Op(EclOpcodes.Save, Imm8(2), Mem(F + 2))
+            .Op(EclOpcodes.Exit);
+        var rig = VmRig.Of(asm);
+        rig.Vm.AmigaTextRules = () => true;
+        rig.Host.Strings.Enqueue("lux");
+        rig.Host.Strings.Enqueue("");
+        rig.Run();
+        Assert.Equal("lux", rig.Memory.ReadText(0x9700));
+        Assert.Equal(" ", rig.Memory.ReadText(0x9780));
+        Assert.Equal(1, rig[F]);                 // "LUX" = "lux" on the Amiga
+        Assert.Equal(2, rig[F + 2]);             // "AA" < "LUX", "≥" set anyway (original bug)
+        Assert.Equal(0, EclVm.CompareTextAmiga("Ab", "aB"));
+        Assert.True(EclVm.CompareTextAmiga("A", "Aé") > 0);   // signed: 0xE9 → 0xC9 below the end's 0
+        Assert.True(EclVm.CompareText("A", "Aé") < 0);        // DOS: unsigned, the shorter is less
+        Assert.Equal("LUX", EclVm.NormaliseInput("lux~"));   // DOS: 0x20–0x7A, upper-cased
+        Assert.Equal("lux~", EclVm.NormaliseInput("lux~", amiga: true));
+    }
+
+    /// <summary>s47: a decoded text past 255 characters keeps its first 255 on DOS and, on the Amiga (hunk 4 +0x14F0 →
+    /// hunk 27 +0x6F96), its first 254 and its last.</summary>
+    [Fact]
+    public void A_long_text_keeps_255_characters_each_its_own_way()
+    {
+        string text = new string('A', 254) + "BCD";
+        Assert.Equal(new string('A', 254) + "B", EclText.Slot(text));
+        Assert.Equal(new string('A', 254) + "D", EclText.SlotAmiga(text));
+        Assert.Equal("ABC", EclText.SlotAmiga("ABC"));
+        var asm = new EclAsm().Op(EclOpcodes.Compare, Text(text), Text("X")).Op(EclOpcodes.Exit);
+        var rig = VmRig.Of(asm);
+        rig.Vm.AmigaTextRules = () => true;
+        rig.Run();
+        Assert.Equal(EclText.SlotAmiga(text), rig.Vm.StringSlot(1));
+    }
+
     // ---- ON, IF-skip, PROGRAM ----------------------------------------------------------------------------------
 
     [Fact]

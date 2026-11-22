@@ -318,12 +318,29 @@ TREASURE; GAME.OVR string "Unable to find item file"). With well-formed operands
 runs; the capture above used no TREASURE (the goblin's coins fill the pool). After a COMBAT with no monsters the Client keeps row 24 blank
 under the window (no fight row; not compared) `[?]`.
 
+**Between a loot and the next venue** (P + D s47). The loot menu ends without touching the text box when the player
+leaves (its exit question stays there); the after-combat step frees the treasure list and returns; COMBAT's handler
+then sets DS:49F3 to 4 / 3 and calls START 0x3379 (0x2635), whose 00BA:272A draws the four windows through 03F1:02E8,
+which blanks each inside (03F1:0137): the text box is empty, the 3D view (0x2DCF4), the party list. The next COMBAT's
+shop or temple entry (0x721E / 0x528B: DS:49F3 = 1, START 0x3379 case 1) blanks it again and draws the venue box.
+DOSBox-X (test save `loot-shop` of `por_test_saves.py`: TREASURE 100 copper, COMBAT, TREASURE, SAVE 1 → $6E6C,
+COMBAT; 175 grabs a second): after N at the loot's question the screen became the explore layout (frames, then the
+3D view and the party list, ~0.3 s), then the shop's frames, the empty box and the menu; row 24 kept "YES NO" until
+the shop's menu. The Client equal on the shop's first frame and the explore screen after it (but the help lines). It
+draws the in-between explore layout too (the redraw runs) but the shop's screen follows at once: the ~0.3 s DOSBox-X
+spends drawing the windows and the view at 3000 cycles is machine time (the grabs changed every 12–20 ms throughout,
+the drawing itself; decisions s39 / s40), not copied.
+
 **Loot menu** (0x644B), P structure: View (0x21AED, called at 0x65B4; `camp.md` "View"), Take (0x62B6), Pool (0x25191), Share (0x252C3), D (0x27C38),
-Exit, G / O previous / next character (0x23819); the item list comes from 0x25C07.
+Exit, G / O previous / next character (0x23819) with the party list after it; the item list comes from 0x25C07. On
+entry START 0x3379 case 6 (0x645C); nothing else in the loop redraws.
 Menu line (s12): with money in the pool View, Take, Pool, Share; with items only View, Take, Pool; then Detect and
 Exit when there are items and the current character has spell 5 or 11 among its memorised bytes 0x17–0x2B, else
 Exit; with nothing left View, Pool, Exit. P pools only for a non-extended key (0x50 is also Down's scan code). E (or
-the key 0) with money or items left: a two-line message (treasure left, go back?) and a yes/no; yes stays.
+the key 0) with money or items left (0x25C07 asked again): the exit question (0x6636–0x66DB, P + D s47): the first
+text in colour 10 with the box cleared, the second in 15 running on after it (0709:0768), then "~Yes ~No" through the
+menu helper 0x8B57 (`shop-format.md` "Exit"). Answer 1 (No) ends the menu with the question left in the box; any
+other answer blanks the box (0709:0DD3 with 1, 17, 38, 22) and the menu runs again. Nothing left: the menu ends.
 **Take** (0x62B6): money and items → a "Take:" menu (Money, Items, Exit) until Exit; money only → the coin take
 0x25974; items only → the item take 0x6184 (`shop-format.md`). **Summary** (0x5E94, s12): the text box is cleared, then one
 result line: with DS:443A (a hostile that did not flee) or a duel (DS:84D4): in a duel the duel-lost text when

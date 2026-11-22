@@ -32,6 +32,31 @@ public sealed class ActionInput(InputBindings bindings)
     private (InputDevice Device, string Name)? _newInput;
     private bool _newShifted;
 
+    /// <summary>
+    /// The Amiga program's fight keys, which take the place of the bindings' keys for these actions under the Amiga art
+    /// (the pad keeps its buttons). The Amiga reads RAWKEY codes through its own table, hunk 20 +0x629 (hunk 19
+    /// +0x4DA6: raw code to byte, the qualifiers never looked at): ';' (raw 0x29) and F8 (0x57) give 0x3B, the magic
+    /// toggle of the fight menu (hunk 1 +0x1D5A) and of the AI's key check (+0x12A2); F6 (0x55) gives 0xE6, the
+    /// all-quick key (+0x1DBA). There is no Alt-M or Alt-Q: Alt is not read, so Alt-M is M (docs/re/combat-menu.md
+    /// "The Amiga's keys").
+    /// </summary>
+    public static readonly IReadOnlyDictionary<GameAction, string[]> AmigaFightKeys = new Dictionary<GameAction, string[]>
+    {
+        [GameAction.FightQuickMagic] = ["OemSemicolon", "F8"],
+        [GameAction.FightAllQuick] = ["F6"],
+    };
+
+    /// <summary>Whether <see cref="AmigaFightKeys"/> apply: null (the default) follows <see cref="Play.AmigaView.On"/>.</summary>
+    public bool? AmigaKeys { get; set; }
+
+    private bool UseAmigaKeys => AmigaKeys ?? Play.AmigaView.On;
+
+    /// <summary>The keyboard names that trigger <paramref name="a"/>: the bindings', or the Amiga program's fixed keys.</summary>
+    public IReadOnlyList<string> KeysOf(GameAction a) => KeysOf(Bindings, a, UseAmigaKeys);
+
+    private static IReadOnlyList<string> KeysOf(InputBindings bindings, GameAction a, bool amiga) =>
+        amiga && AmigaFightKeys.TryGetValue(a, out var k) ? k : bindings.Keys(a);
+
     public InputBindings Bindings { get; set; } = bindings;
 
     /// <summary>The device of the last key, button, stick push or click (prompts follow it). Starts on the keyboard.</summary>
@@ -160,7 +185,7 @@ public sealed class ActionInput(InputBindings bindings)
 
     private bool IsDown(GameAction a, KeyboardState keys, GamePadState pad)
     {
-        foreach (var name in Bindings.Keys(a))
+        foreach (var name in KeysOf(a))
             if (KeyDown(keys, name))
                 return true;
         if (pad.IsConnected)
@@ -240,7 +265,7 @@ public sealed class ActionInput(InputBindings bindings)
                 read = ResolveSingle(first.Scan);
             else
             {
-                read = Resolve(_waiting, Bindings);
+                read = Resolve(_waiting, Bindings, UseAmigaKeys);
                 Discard();
             }
             _pressed.Clear();
@@ -288,7 +313,7 @@ public sealed class ActionInput(InputBindings bindings)
     /// A single press, or a last one with no BIOS bytes (a pad button), is read as itself; a byte no key gives reads
     /// as nothing.
     /// </summary>
-    private static Waiting? Resolve(List<Waiting> waiting, InputBindings bindings)
+    private static Waiting? Resolve(List<Waiting> waiting, InputBindings bindings, bool amiga)
     {
         var last = waiting[^1];
         if (waiting.Count == 1 || last.Dos is not { } l)
@@ -302,7 +327,7 @@ public sealed class ActionInput(InputBindings bindings)
             return null;
         var pressed = new HashSet<GameAction>();
         foreach (var a in Enum.GetValues<GameAction>())
-            if (bindings.Keys(a).Contains(name))
+            if (KeysOf(bindings, a, amiga).Contains(name))
                 pressed.Add(a);
         return new Waiting(pressed, (InputDevice.Keyboard, name), DosKeys.Of(name));
     }
@@ -321,7 +346,7 @@ public sealed class ActionInput(InputBindings bindings)
         var pressed = new HashSet<GameAction>();
         if (name is not null)
             foreach (var a in Enum.GetValues<GameAction>())
-                if (Bindings.Keys(a).Contains(name))
+                if (KeysOf(a).Contains(name))
                     pressed.Add(a);
         _waiting.Insert(0, new Waiting(pressed, name is null ? null : (InputDevice.Keyboard, name), (scan, 0)));
         return first;
@@ -345,12 +370,17 @@ public sealed class ActionInput(InputBindings bindings)
         if (_waiting.Count == 0)
             return 0;
         ToggleSoundIfRead(_waiting[0]);
-        var read = Resolve(_waiting, Bindings);
+        bool amiga = UseAmigaKeys;
+        var read = Resolve(_waiting, Bindings, amiga);
         Discard();
         if (read is null)
             return 0;
         if (read.Pressed.Contains(GameAction.FightManual)) return 0x20;
         if (read.Pressed.Contains(GameAction.FightQuickMagic)) return 0x32;
+        // The Amiga's check (hunk 1 +0x127E) compares its own key byte with 0x3B (the magic toggle, AmigaFightKeys) and
+        // space only: no Alt-X, and '2' is not the toggle there.
+        if (amiga)
+            return read.Dos is { Ascii: 0x20 } ? (byte)0x20 : (byte)0;
         if (read.Pressed.Contains(GameAction.FightAltX)) return 0x2D;
         byte code = read.Dos is { } d ? d.Ascii != 0 ? d.Ascii : d.Scan : (byte)0;
         return code is 0x20 or 0x32 or 0x2D ? code : (byte)0;

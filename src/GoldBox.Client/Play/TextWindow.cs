@@ -38,7 +38,9 @@ public sealed class TextWindow
     // The draw that made each cell (0: none), and whether it was a whole string (Put) rather than one glyph (print).
     private readonly int[,] _draws;
     private readonly bool[,] _whole;
-    private readonly (int Draw, bool Whole)[] _overhangDraw;
+    // Cells drawn outside the area (the glyph routine draws any cell up to column 39, row 24): a whole string's
+    // character one column right of the box (Put), a printed glyph below the box or a run-on's over the frame.
+    private readonly Dictionary<(int Row, int Col), (char Char, byte Colour, int Draw, bool Whole)> _outside = [];
     private int _lastDraw;
     private readonly int _left, _top, _right, _bottom;
 
@@ -57,10 +59,8 @@ public sealed class TextWindow
         (_left, _top, _right, _bottom) = (left, top, right, bottom);
         _chars = new char[bottom - top + 1, right - left + 1];
         _colours = new byte[bottom - top + 1, right - left + 1];
-        _overhang = new (char, byte)[bottom - top + 1];
         _draws = new int[bottom - top + 1, right - left + 1];
         _whole = new bool[bottom - top + 1, right - left + 1];
-        _overhangDraw = new (int, bool)[bottom - top + 1];
         Column = left;
         Row = top;
     }
@@ -105,21 +105,24 @@ public sealed class TextWindow
     }
 
     /// <summary>
-    /// The character and colour of a box cell (row and column in screen cells); '\0' = blank. Column right + 1 is the
-    /// overhang cell <see cref="Put"/> can draw on the frame.
+    /// The character and colour of a screen cell (row and column in screen cells); '\0' = blank. Cells outside the area
+    /// are those the program draws there: <see cref="Put"/>'s one column right of the box, over the frame (the glyph
+    /// routine draws up to column 39; DOSBox-X s22: the end game's 39-character line), and the print's below the box or
+    /// in a run-on (<see cref="PrintIn"/>). The box clear leaves them; <see cref="Clear"/> removes them.
     /// </summary>
-    public (char Char, byte Colour) Cell(int row, int col) => col == _right + 1
-        ? _overhang[row - _top]
-        : _chars[row - _top, col - _left] is var c && c != '\0'
-            ? (c, _colours[row - _top, col - _left])
-            : ('\0', (byte)0);
+    public (char Char, byte Colour) Cell(int row, int col)
+    {
+        if (Inside(row, col))
+            return _chars[row - _top, col - _left] is var c && c != '\0'
+                ? (c, _colours[row - _top, col - _left])
+                : ('\0', (byte)0);
+        return _outside.TryGetValue((row, col), out var o) ? (o.Char, o.Colour) : ('\0', (byte)0);
+    }
 
-    /// <summary>
-    /// Characters <see cref="Put"/> drew one column right of the box, over the frame (the glyph routine draws up to
-    /// column 39; DOSBox-X s22: the end game's 39-character line). The box clear leaves them; <see cref="Clear"/>
-    /// removes them.
-    /// </summary>
-    private readonly (char, byte)[] _overhang;
+    private bool Inside(int row, int col) => row >= _top && row <= _bottom && col >= _left && col <= _right;
+
+    /// <summary>The cells drawn outside the area (<see cref="Cell"/>), as (row, column).</summary>
+    public IEnumerable<(int Row, int Col)> OutsideCells => _outside.Keys;
 
     /// <summary>The box rows as strings (blanks as spaces, trailing blanks cut): for tests and logs.</summary>
     public IReadOnlyList<string> Lines
@@ -143,10 +146,9 @@ public sealed class TextWindow
     {
         Array.Clear(_chars);
         Array.Clear(_colours);
-        Array.Clear(_overhang);
         Array.Clear(_draws);
         Array.Clear(_whole);
-        Array.Clear(_overhangDraw);
+        _outside.Clear();
         Home();
     }
 
@@ -170,10 +172,7 @@ public sealed class TextWindow
         {
             int c = col + i;
             if (c == _right + 1 && c <= 39)
-            {
-                _overhang[row - _top] = (Glyph(text[i], AmigaView.On), colour);
-                _overhangDraw[row - _top] = (draw, true);
-            }
+                _outside[(row, c)] = (Glyph(text[i], AmigaView.On), colour, draw, true);
             if (c < _left || c > _right)
                 continue;
             _chars[row - _top, c - _left] = text[i];
@@ -228,22 +227,22 @@ public sealed class TextWindow
     }
 
     /// <summary>The draw that made a cell (0 for a blank one) and whether it was a whole string.</summary>
-    private (int Draw, bool Whole) DrawOf(int row, int col) => col == _right + 1
-        ? _overhangDraw[row - _top]
-        : (_draws[row - _top, col - _left], _whole[row - _top, col - _left]);
+    private (int Draw, bool Whole) DrawOf(int row, int col) => Inside(row, col)
+        ? (_draws[row - _top, col - _left], _whole[row - _top, col - _left])
+        : _outside.TryGetValue((row, col), out var o) ? (o.Draw, o.Whole) : (0, false);
 
     /// <summary>
-    /// The cells of rows <paramref name="top"/>–<paramref name="bottom"/> (and the overhang column) as the draws that
-    /// made them, in the order they were made: a whole string (<see cref="Put"/>) as one run of the cells it still
-    /// holds on a row, each printed character as a run of one. Blank cells are left out.
+    /// The cells of rows <paramref name="top"/>–<paramref name="bottom"/> (columns 0–39, the cells outside the area
+    /// included) as the draws that made them, in the order they were made: a whole string (<see cref="Put"/>) as one
+    /// run of the cells it still holds on a row, each printed character as a run of one. Blank cells are left out.
     /// </summary>
     public IReadOnlyList<TextRun> Runs(int top, int bottom)
     {
         var runs = new List<(int Draw, TextRun Run)>();
-        for (int r = Math.Max(top, _top); r <= Math.Min(bottom, _bottom); r++)
+        for (int r = Math.Max(top, 0); r <= Math.Min(bottom, ScreenBottom); r++)
         {
-            int c = _left;
-            while (c <= _right + 1)
+            int c = 0;
+            while (c <= ScreenRight)
             {
                 var (ch, colour) = Cell(r, c);
                 if (ch == '\0')
@@ -256,7 +255,7 @@ public sealed class TextWindow
                 var sb = new System.Text.StringBuilder().Append(ch);
                 c++;
                 if (whole)
-                    while (c <= _right + 1 && Cell(r, c) is var (ch2, col2) && ch2 != '\0' && col2 == colour
+                    while (c <= ScreenRight && Cell(r, c) is var (ch2, col2) && ch2 != '\0' && col2 == colour
                            && DrawOf(r, c) == (draw, true))
                     {
                         sb.Append(ch2);
@@ -272,9 +271,13 @@ public sealed class TextWindow
     public void ClearRow(int row) => ClearRect(_left, row, _right, row);
 
     /// <summary>Blanks the cells (<paramref name="left"/>, <paramref name="top"/>)–(<paramref name="right"/>,
-    /// <paramref name="bottom"/>) inside the area (ClearBox START 0x4047). The cursor does not move.</summary>
+    /// <paramref name="bottom"/>) (ClearBox START 0x4047 / 0x7E63), cells drawn outside the area among them. The cursor
+    /// does not move.</summary>
     public void ClearRect(int left, int top, int right, int bottom)
     {
+        if (_outside.Count > 0)
+            foreach (var k in _outside.Keys.Where(k => k.Row >= top && k.Row <= bottom && k.Col >= left && k.Col <= right).ToList())
+                _outside.Remove(k);
         for (int r = Math.Max(top, _top); r <= Math.Min(bottom, _bottom); r++)
             for (int c = Math.Max(left, _left); c <= Math.Min(right, _right); c++)
             {
@@ -310,6 +313,46 @@ public sealed class TextWindow
             PrintAmiga(left, top, right, bottom, text, clear, colour);
             return;
         }
+        PrintDos(left, top, right, bottom, text, clear, colour);
+    }
+
+    /// <summary>The program's string length limit: a Pascal string[255] (START 0x780E copies the text with at most 255).</summary>
+    public const int MaxText = 255;
+
+    /// <summary>The screen's last column and row (the glyph routine START 0x726F draws nothing past them).</summary>
+    public const int ScreenRight = 39, ScreenBottom = 24;
+
+    /// <summary>
+    /// Called when DOS's print never returns (<see cref="PrintDos"/>: a 255-character text, or a box narrower than one
+    /// cell): the program hangs there, so the owner parks the game for good. Null (tests): the print returns.
+    /// </summary>
+    public Action? Hang { get; set; }
+
+    /// <summary>
+    /// START 0x77F8 whole (P s47; tools/scripts/por_print_oracle.py, PrintProgramTests). Its counters (position p, word
+    /// end i, length) and the cursor DS:5E24 / DS:5E25 are bytes.
+    /// <list type="number">
+    /// <item>A box with x0 &gt; 39, y0 &gt; 24, x1 &gt; 39 or y1 &gt; 39 does nothing (0x7813–0x782B).</item>
+    /// <item>A cursor outside the box goes to (x0, y0); with clear the box is blanked (0x7E63) and the cursor goes there.</item>
+    /// <item>The text is copied into a string[255] (0x780E: a longer one is cut); an empty one ends here.</item>
+    /// <item>Words as <see cref="Print"/> says; a word that does not fit wraps (column x0, row + 1, spaces skipped
+    /// 0x77A4); below the box with text left the page prompt (<see cref="Pause"/>; then 0899:0104 = START 0x8A94, which
+    /// jumps over its own key-flush loop, so no key is dropped), the box blanked and the word drawn at the top. Below
+    /// the box with only the word's last character left (p = length) no prompt: the next pass draws it on the row below
+    /// the box (row 23 under PRINT, over the frame).</item>
+    /// <item>Each character through the glyph routine at the cursor (0x7737), then column + 1 and the typing wait.
+    /// The loop runs while p ≤ i with p a byte: a word ending at character 255 never ends (p wraps to 0). The program
+    /// then draws the length byte (character 255: glyph 63, '?') and the text again from its start, the column wrapping
+    /// at 256, for ever; after one lap of 256 every cell it reaches (columns 0–39 of that row) holds what it keeps, so
+    /// one lap is drawn and the print hangs (<see cref="Hang"/>).</item>
+    /// <item>A box with x1 &lt; x0 whose last word is one character counts the row on for ever and draws nothing (hang).</item>
+    /// <item>After the text a cursor past x1 goes to column x0 of the next row.</item>
+    /// </list>
+    /// </summary>
+    private void PrintDos(int left, int top, int right, int bottom, string text, bool clear, byte colour)
+    {
+        if (left > ScreenRight || top > ScreenBottom || right > ScreenRight || bottom > 39)
+            return;
         if (Column < left || Column > right || Row < top || Row > bottom)
         {
             Column = left;
@@ -321,11 +364,13 @@ public sealed class TextWindow
             Column = left;
             Row = top;
         }
+        if (text.Length > MaxText)
+            text = text[..MaxText];
         int len = text.Length;
         if (len == 0)
             return;
-        // 1-based indexes as the Pascal routine.
-        char S(int i) => text[i - 1];
+        // 1-based indexes as the Pascal routine; index 0 is the length byte.
+        char S(int i) => i == 0 ? (char)len : text[i - 1];
         int p = 1;
         do
         {
@@ -341,7 +386,7 @@ public sealed class TextWindow
             {
                 // (0x79A9–0x79E2 test for a word whose last cell is exactly the right edge; it cannot be reached.)
                 Column = left;
-                Row++;
+                Row = (Row + 1) & 0xFF;
                 while (p < len && S(p) == ' ')
                     p++;
                 if (Row > bottom && p < len)
@@ -350,19 +395,70 @@ public sealed class TextWindow
                     Row = top;
                     Pause?.Invoke();
                     ClearRect(left, top, right, bottom);
-                    p = Put(text, p, i, colour);
+                    if (!PutDos(S, ref p, i, colour))
+                        return;
+                }
+                else if (p == len && left > right)
+                {
+                    // The one-character word never fits a box narrower than one cell: the row counts on for ever.
+                    Hang?.Invoke();
+                    return;
                 }
                 // else the word is printed by the next pass at the new row
             }
-            else
-                p = Put(text, p, i, colour);
+            else if (!PutDos(S, ref p, i, colour))
+                return;
         }
         while (p <= len);
         if (Column > right)
         {
             Column = left;
-            Row++;
+            Row = (Row + 1) & 0xFF;
         }
+    }
+
+    /// <summary>
+    /// 0x7737: characters p..i at the cursor, one glyph each (<see cref="DrawGlyph"/>); p ends at i + 1. False when p
+    /// wrapped (i = 255): one lap of the run-on is drawn, then <see cref="Hang"/>.
+    /// </summary>
+    private bool PutDos(Func<int, char> s, ref int p, int i, byte colour)
+    {
+        while (p <= i)
+        {
+            DrawGlyph(s(p), colour);
+            p = (p + 1) & 0xFF;
+            if (p == 0)
+            {
+                for (int k = 0; k <= 0xFF; k++)
+                    DrawGlyph(s(k), colour);
+                Hang?.Invoke();
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /// <summary>The glyph routine START 0x726F at the cursor (nothing past column 39 or row 24; a cell outside the area
+    /// is kept apart, <see cref="Cell"/>), then column + 1 (a byte) and <see cref="Typed"/>.</summary>
+    private void DrawGlyph(char ch, byte colour)
+    {
+        if (Column <= ScreenRight && Row <= ScreenBottom)
+        {
+            char g = Glyph(ch, AmigaView.On);
+            int draw = ++_lastDraw;
+            if (Inside(Row, Column))
+            {
+                _chars[Row - _top, Column - _left] = g;
+                _colours[Row - _top, Column - _left] = colour;
+                _draws[Row - _top, Column - _left] = draw;
+                _whole[Row - _top, Column - _left] = false;
+            }
+            else
+                _outside[(Row, Column)] = (g, colour, draw, false);
+            Printed++;
+        }
+        Column = (Column + 1) & 0xFF;
+        Typed?.Invoke();
     }
 
     /// <summary>Which machine's print <see cref="PrintIn"/> follows when set (tests); null = the Amiga's for a window
@@ -427,8 +523,9 @@ public sealed class TextWindow
         while (c != '\0');
     }
 
-    /// <summary>Characters p..i at the cursor, one cell each (0x7737), each followed by <see cref="Typed"/> unless
-    /// <paramref name="typed"/> is false (the Amiga's print waits per word); returns i + 1.</summary>
+    /// <summary>Characters p..i at the cursor, one cell each (the Amiga's print; DOS's is <see cref="PutDos"/>), each
+    /// followed by <see cref="Typed"/> unless <paramref name="typed"/> is false (the Amiga's print waits per word);
+    /// returns i + 1.</summary>
     private int Put(string text, int p, int i, byte colour, bool typed = true)
     {
         for (; p <= i; p++)
@@ -452,11 +549,24 @@ public sealed class TextWindow
     }
 
     /// <summary>
-    /// The character a text-window cell keeps: DOS's print (START 0x7737) upper-cases it; the Amiga's (hunk 25 +0x10EC,
-    /// the words copied as stored, then each byte through the glyph routine) keeps it, so a lower-case letter shows its
-    /// own glyph.
+    /// The character a text-window cell keeps: DOS's print (START 0x7737) draws glyph UpCase(c) mod 64 (the glyph
+    /// routine 0x726F; UpCase changes a–z only), kept as the character 0x20–0x5F of that glyph (glyph 0 as '@'); the
+    /// Amiga's (hunk 25 +0x10EC, the words copied as stored, then each byte through the glyph routine) keeps it, so a
+    /// lower-case letter shows its own glyph.
     /// </summary>
-    public static char Glyph(char c, bool amiga) => amiga ? c : char.ToUpperInvariant(c);
+    public static char Glyph(char c, bool amiga) => amiga ? c : DosGlyph(c);
+
+    /// <summary>DOS's glyph routine's character (START 0x726F with the upper-case flag): UpCase, then mod 64, as the
+    /// character 0x20–0x5F that names that glyph. Characters past 0xFF (the Client's raw glyphs) are kept.</summary>
+    public static char DosGlyph(char c)
+    {
+        if (c > 0xFF)
+            return c;
+        if (c is >= 'a' and <= 'z')
+            c = (char)(c - 32);
+        int g = c & 63;
+        return (char)(g < 32 ? g + 64 : g);
+    }
 
     /// <summary>The delimiter set of the word cut (START.EXE DS:0D16, a set constant for characters 0x20–0x3F).</summary>
     public static bool IsDelimiter(char c) => c is '!' or ',' or '-' or '.' or ':' or ';' or '?';

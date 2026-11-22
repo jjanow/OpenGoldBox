@@ -147,13 +147,19 @@ public class ExploreScreenTests
 
     /// <summary>
     /// Answer whatever the game waits for: back out where the request allows it (the loot, shop and camp menus loop
-    /// until Exit), else take the first choice.
+    /// until Exit; their exit question, the menu helper 0x8B57, takes only its hotkeys: N leaves), else take the first
+    /// choice.
     /// </summary>
     private static void Settle(Rig r)
     {
         for (int guard = 0; r.Runner.Pending is { } p && guard < 200; guard++)
-            Press(r, p is ChoiceRequest { CancelIndex: not null } or ListRequest { CancelAction: not null }
-                ? GameAction.Cancel : GameAction.Confirm);
+        {
+            if (p is ChoiceRequest { KeyboardEnterIgnored: true })
+                Key(r, Keys.N);
+            else
+                Press(r, p is ChoiceRequest { CancelIndex: not null } or ListRequest { CancelAction: not null }
+                    ? GameAction.Cancel : GameAction.Confirm);
+        }
         Assert.Null(r.Runner.Pending);
     }
 

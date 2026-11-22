@@ -19,6 +19,20 @@ character Drop, Modify, View, Remove, Save, Begin on, Train on when the $6B00 ar
 hall's class mask) is above 0 or the cheat flag is set, Load off; without one those off and Load on. Create, Add and
 Exit keep their data-segment defaults (on).
 
+**Amiga (read s47, FS-UAE s47).** One routine too (hunk 10 +0x64E; the area script's PROGRAM handler, hunk 16
++0x4BCE, calls it for 0, the end game hunk 13 +0x26AE for 8), copying its eleven entries from hunk 11 +0xD2 (the same
+42-byte stride and shown flags): the program's own words, mixed case ("BEGIN Adventuring"), the last naming the
+Workbench where DOS names DOS. The Client takes them under the Amiga art from the strings the importer reads there
+(`PorAmigaText.PartyMenuKey`, as the start-up party menu already did; `HallText.Entry`). The quit question (E, hunk 10
++0xA3C) still says "Quit to DOS " on the Amiga, with pens 24 / 28 / 16 (the warning pen), as DOS's; the camp's quit
+after Save (hunk 1 +0x50B8) and the one when the last member leaves (+0x4B5E) are the Amiga's own Workbench wording,
+read at import (`PorAmigaText.CampQuitKey`, `DropQuitKey`; seen in the code, not run). Each entry: its first letter as a
+character through the string routine (pen 16, hunk 10 +0x794), then the rest from the next column (pen 28, +0x7EE),
+so the rest's JAM2 pass 1 covers the letter's pass-2 pixel (the Client draws the rest as a whole string, `Chrome.Whole`,
+in the hall and the start-up party menu), and the prompt through the menu routine (x + 3 / x + 4). FS-UAE s47 (the
+hall after a test save's PROGRAM 0, and the start-up menu) against the Client `--art amiga`: the entries and row 24
+equal pixel for pixel (the Client had kept the letter's pass-2 pixel and drawn the hall's prompt as plain text).
+
 Screen (DOSBox-X): outer frame; the party list across the top (header at column 1 row 2, members from row 4, AC / HP
 right-aligned at 34 / 38, current member white, the others in the name colour of START 0x23B6; HP 0x11B yellow below 0x32: the party list START 0x1307, read s21, also used by the party menu and the explore screen); the shown
 entries from row 12 at column 2, first letter white, rest green; the prompt on the bottom line in colour 13. The menu
@@ -91,6 +105,26 @@ the position line, which stayed after the step (START 0x366D tests DS:49F3 = 2; 
 (s39): `PorGame.LoadInHall` (the copy in place, DS:49F8 set) and `HallState.LeaveAfterLoad`; the text and the run
 match (before s39 the Client loaded the save as a new entry and ran its vector 4). A save from another area runs
 whatever bytes lie at the old PC in the program.
+**The Amiga's hall Load, P + FS-UAE (s47).** The same path as DOS, read whole. PROGRAM 0 (ECL 0x38 → hunk 16
++0x4B88; vector 0 runs before the step: area loop hunk 16 +0x5384–0x5396) calls the party menu (hunk 10 +0x64E via
++0x5538), then hunk 13 +0x5B16 (START 0x3379's copy, by $BA = DS:49F3) and returns into the run. The party menu sets
+$BA := 0 on entry (+0x692) and draws by it (case 0: the frame); its L (+0x9C2, offered with no current member) calls
+Load (+0x9D0 → hunk 16 +0xFC2) and, when the loaded $BA is not 0, sets $BF (DS:49F8) := 1 and returns (+0x9DE); Begin
+returns with $BA := 4 (+0xA16). Load: the path requester (default `poolsave:`; its `save` file lists the letters),
+the letter, then fread of the four areas, the position, $C1 (DS:49FA), $BA, the party size and the stems
+(save-format.md "Amiga"); $BD / $BC (the Pics flags) := $49FF / 2 and $49FF & 1, the speed $A8 := $49FC, $6E3E := 0;
+each stem's `.sav` read into a new record and joined (hunk 16 +0x7FE, +0xEDE); each member's `NAME.cha`, `.itm` and
+`.spc` deleted where present (hunk 0 +0x1AC); each member through hunk 16 +0x2D0 with 1 (DOS 0x1E468 with 1, the
+load's refresh); with $C1 < 2 the map $49C5 read (hunk 25 +0x382E); with $C1 > 1 **ICON block 0 into icon slot 11**
+(hunk 22 +0x193A, the marker's third slot: geo-format.md "A hall Load on the overland"), else the three wall sets
+from $4AFA–$4AFF as DOS (+0x14AC–0x1532, hunk 25 +0x359E); with $4AA2 ≠ 0 hunk 13 +0x2872 with 0 (DOS 0x82:0x2A with
+0, at the same point; not decoded `[?]`, it plays no marker or view draw); the IDCMP queue flushed (hunk 25 +0xA08) and
+row 24 cleared (hunk 19 +0x58A8). No draw of the view or the marker anywhere in it. DOS's Load (0x1F5E8–0x1FC9D) has
+the same tail in the same order (0x1FBB3 map, 0x1FBC9 ICON 0 → slot 11, 0x1FBEE walls, 0x1FC89 the $344 call).
+Client: `PorGame.ApplyInHall` / `ReloadSavedMap` (the slot since s47). FS-UAE s47: disk A with test saves (block
+26's overland, vector 0 = PROGRAM 0; Remove × 6, Load C with vector 0's code an EXIT) ran as read:
+the camp screen ("CAMPING" after the position line), the step, and the marker of counter 4 drawn from ICON block 0.
+
 **The camp state after the Load, P + D (s41).** Load reads DS:49F3 back from the save (0x1F87B) and the hall's menu
 ends without its Begin value (0x19DCF sets 4 only on Begin), so PROGRAM 0's START 0x3379 (0x3B95) draws case 2: the
 3D layout (0x32CA with 1: every window blanked, the text box among them, the cursor kept), PIC 0x1D loaded into the

@@ -470,17 +470,27 @@ public sealed class ListPage
     {
         f.Clear(0);
         int first = FirstRow(r), last = first + p.Rows - 1;
+        // A title through the Amiga string routine in its own pen (SpellPageLayout.AmigaTitlePen), else in white.
+        void Title(int col, string t)
+        {
+            if (s.AmigaTitlePen is not { } pen || !font.DrawString(f, col * 8, 8, t, pen, 0))
+                Chrome.Text(f, font, col, 1, t, Chrome.White);
+        }
         if (s.CentredTitle)
         {
             Chrome.Box(f, 0, 0, 39, 23);
             string t = Fit(s.Title, 38);
-            Chrome.Text(f, font, Math.Max(1, (1 + 38 - t.Length) / 2), 1, t, Chrome.White);
+            Title(Math.Max(1, (1 + 38 - t.Length) / 2), t);
         }
         else if (s.WholeTitle)
         {
+            // The window (1, 1)–(38, 22), then the title window (1, 1)–(38, 1) over it (START 03F1:02E8 twice; Amiga hunk
+            // 25 +0x4138 / +0x4154): the Amiga frame's side tiles below the title are the big window's (FS-UAE s47).
+            Chrome.Box(f, 0, 0, 39, 23);
             Chrome.Box(f, 0, 0, 39, 2);
-            Chrome.Box(f, 0, 2, 39, last + 1);
-            Chrome.Text(f, font, 1, 1, Fit(s.Title, 38), Chrome.White);
+            if (s.Box is null)
+                Chrome.Box(f, 0, 2, 39, last + 1);
+            Title(1, Fit(s.Title, 38));
         }
         else
         {
@@ -509,8 +519,17 @@ public sealed class ListPage
             else
                 Chrome.Text(f, font, col, first + k, Fit(r.Rows[i], room), r.Labels.Contains(i) ? s.LabelColour : Chrome.Green);
         }
+        // The list routine hands its prompt to the menu routine (Amiga hunk 13 +0x2DB2 → hunk 19 +0x4DD6), which draws
+        // it its own way under the Amiga font (FS-UAE s47: Add's "Add a character: " as the party menu's prompt).
         if (s.Prompt is { Length: > 0 } prompt)
-            Chrome.Text(f, font, 0, ActionRow, Fit(prompt, 40), LabelColour);
+        {
+            // The Amiga's list routine hands its prompt to the menu routine, which draws it at pixel x 3 / 4 (hunk 19
+            // +0x4EEE–0x4F6A; FS-UAE s47, the loot's "Items:": 3 pixels right of a cell-0 string).
+            if (AmigaView.On)
+                Chrome.MenuPrompt(f, font, 0, ActionRow, Fit(prompt, 40), LabelColour);
+            else
+                Chrome.Text(f, font, 0, ActionRow, Fit(prompt, 40), LabelColour);
+        }
         var cells = ActionCells(_words, s.MenuStart);
         for (int i = 0; i < _words.Count; i++)
         {

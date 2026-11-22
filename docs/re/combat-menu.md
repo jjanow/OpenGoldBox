@@ -93,6 +93,51 @@ module having no program-version flag for the fight) the menu takes no Alt-X, ro
 ALL-QUICK" (`CombatScreen.AltKeys`), and `FightKit.AltXEnabled` is false, so the AI's key check ignores it too. Not
 tried in FS-UAE.
 
+**The Amiga's keys** (P s47). The Amiga program reads keys as Intuition RAWKEY messages (class 0x400, codes below
+0x80 only: key presses) and turns the raw code into its own byte through a 0x70-byte table at hunk 20 +0x629 (hunk 19
++0x4DA6, indexed by the raw code; no keymap, and the qualifier word is never read, so Shift, Alt and Ctrl change
+nothing). Two readers use it: the menu routine (hunk 19 +0x4DD6, via hunk 1 +0x5386, for every horizontal menu) and the
+fight's key poll (hunk 1 +0x3AC takes one IDCMP message, + 0x418 translates it), which the AI's key check (hunk 1
++0x127E) calls; nothing else references the routine or the table. The table (raw code: byte; FF = nothing):
+
+| raw | key (A500, US) | byte |
+|---|---|---|
+| 0x01–0x0C | 1 2 3 4 5 6 7 8 9 0 - = | '1'…'0', '-', '=' |
+| 0x10–0x1B | Q W E R T Y U I O P [ ] | upper-case letters, '[', ']' |
+| 0x1D–0x1F, 0x2D–0x2F, 0x3D–0x3F, 0x3C | keypad 1–9, keypad . | '1'–'9', '.' |
+| 0x20–0x29 | A S D F G H J K L ; | 'A'…'L', **';' (0x3B)** |
+| 0x31–0x3A | Z X C V B N M , . / | 'Z'…'M', ',', '.', '/' |
+| 0x40, 0x43, 0x44 | space, keypad Enter, Return | 0x20, 0x0D, 0x0D |
+| 0x45, 0x46, 0x47 | Esc, Del, (no key) | 0xFE, 0x7F, 0 |
+| 0x4A | keypad - | '-' |
+| 0x4C–0x4F | cursor up, down, right, left | '8', '2', '6', '4' (the keypad's digits) |
+| 0x55, 0x56, **0x57**, 0x59 | F6, F7, **F8**, F10 | 0xE6, 0xAE, **0x3B**, 0xD7 |
+| 0x60, 0x64, 0x65, 0x67 | left Shift, left Alt, right Alt, right Amiga | '7', '1', 0x06, 0x04 |
+
+Every other code (0x00 the back-quote key, 0x0D, 0x0E, 0x0F keypad 0, 0x1C, 0x2A–0x2C, 0x30, 0x3B, 0x41 Backspace, 0x42
+Tab, 0x48, 0x49, 0x4B, F1–F5 0x50–0x54, F9 0x58, Help 0x5F, right Shift, Caps Lock, Ctrl, left Amiga) is 0xFF. The menu
+routine takes 0xFE (Esc) as 0, 0x06 / 0x04 as the next / previous entry, space as the lit entry, a–z upper-cased, then
+(hunk 19 +0x57D0) the digits 1–9 (returned with the digit flag), Return, 0x1B as 0, a letter of the menu's key string,
+or **0x3B, 0xAE and 0xE6 whatever the menu**; anything else is ignored. So:
+- The fight menu's **magic toggle 0x3B is ';' (raw 0x29) or F8 (raw 0x57)** (hunk 1 +0x1D5A; the menu's caller keeps
+  0x3B, 0xAE and 0xE6 when the digit flag is set too, +0x1F6C–0x1F90); the AI's key check (+0x12A2) the same two keys.
+- The **all-quick key −26 (0xE6) is F6** (raw 0x55, +0x1DBA).
+- F7 gives 0xAE, which the fight menu's loop does not test: nothing (as DOS's Alt-R).
+- There is **no Alt-M or Alt-Q**: left Alt gives '1' (a digit: the fight menu drops it), and M or Q with Alt held are
+  Move and Quick. s46's "Alt-M exists" was read from the toggle's messages, not from its key.
+- Left Shift alone gives '7' and left Alt '1' (keypad digits: on a 3D or overland command line those are the diagonal
+  / turn keys DOS gives keypad 7 and 1 `[?]` not tried); the cursor keys give the keypad's digits.
+
+FS-UAE (s47, disk A's party in a fight from a test save: vector 0 = CLRMON, LOADMON 2, 8, 2, COMBAT on block 26's
+overland; keys sent by bare keycode through XTEST, as xdotool adds Alt_L to function keys on Xvfb): at the menu F8
+printed "Magic On" on row 24 and ';' "Magic Off" (then the menu typed again); right Alt + M gave Move ("MOVE/ATTACK,
+MOVE LEFT = 12"), as did Ctrl + M; F6 made the current member computer-controlled (it moved and guarded by itself);
+during the AI's turns ';' printed "Magic Off" and space brought the menu back. (Left Alt + M is FS-UAE's own mute key,
+so it never reaches the Amiga there.) Client (s47): under the Amiga art
+`ActionInput.AmigaFightKeys` replaces the keyboard keys of `FightQuickMagic` (';', F8) and `FightAllQuick` (F6) in the
+menu and in the AI's key check (`TakeAiKey`: the toggle and space only, no '2', no '-'); the pad keeps its triggers,
+the bindings file is not changed, and row 23's mouse hint reads "KEYS: MAGIC ALL-QUICK" (DOS: "ALT: …").
+
 **Messages of the Alt keys (P + D, s24):** Alt-M's two messages (0x9CD1 / 0x9CE7), Alt-X's refusal (0x9DC0) and
 Alt-X's own message (0x1637A in 0x1638E) all go through the message routine START 0x1693 (0x2233): row 24 cleared
 (0x3F1:0x137 over columns 0–39), the text at column 0 in **colour 10**, PauseOnly (DS:49E2 × 225 ms), row 24 cleared.
@@ -724,8 +769,12 @@ and Speed menus, an AI attack at game speed 9). Code: `src/GoldBox.Client/Screen
   else when helpless (START 0x1713) "(HELPLESS)" (START CS:0x9D8). The Amiga (hunk 13 +0x3F46–0x3FB4: 0x10F / 0x10E, its
   table hunk 31 +0x323, "(Helpless)" hunk 14 +0x2C2) draws them through the string routine in pen 16. The Client drew
   neither before s46 (`CombatScreen.DrawPanel`); FS-UAE s46 (a slept cleric aimed at, FLAIL on row 7): "(Helpless)" on
-  row 9 in grey, equal to the Client `--art amiga` (Brother Sean asleep, MACE) pixel for pixel. The status words not
-  seen in either emulator `[?]`. **Amiga effect lines** (FS-UAE s46, the city watch fight after a rest on disk A's
+  row 9 in grey, equal to the Client `--art amiga` (Brother Sean asleep, MACE) pixel for pixel. **A status word seen
+  (FS-UAE s47**, disk A's save A after `DAMAGE 0xE0, 1, 1, 9, 0` and a hobgoblin fight, Aim → Manual onto the dying
+  Melcar): "Dying" on row 9 under QUARTER STAFF in pen 16, the name in the dying colour, equal to the Client `--art
+  amiga` (DOS save A alike, the dying Darkstar under 11 DARTS) pixel for pixel in columns 23–38 but the name and weapon.
+  The item-effect box (handler 131) seen too (por-art-formats.md "The fight's panel and item-effect box"). The other
+  status words (unconscious, dead, stoned, fled, gone) not seen in either emulator `[?]`. **Amiga effect lines** (FS-UAE s46, the city watch fight after a rest on disk A's
   save A, Sleep cast by Goldleaf and Conly): "Laurann / falls asleep" and "Goldleaf / is unaffected", name and text in
   pen 28 at rows 10 / 11; the Client `--art amiga` (a DOS fight save, Rhiannon's Sleep) draws "is unaffected" and
   "falls asleep" on row 11 equal pixel for pixel (896 of 896 each), the name rows in the same pens. Other effect
