@@ -275,9 +275,10 @@ public sealed class GameText
     /// <summary>How many of the texts came from the game files.</summary>
     public int FromGame => _texts.Count;
 
-    /// <summary>A menu line's words (spaces between, '~' before a hotkey dropped), upper case.</summary>
+    /// <summary>A menu line's words (spaces between, '~' before a hotkey dropped), upper case (the screens put the
+    /// program's spelling back under the Amiga, <see cref="AmigaView.MenuCase(string)"/>).</summary>
     public IReadOnlyList<string> Words(Msg id) =>
-        [.. this[id].Split(' ', StringSplitOptions.RemoveEmptyEntries).Select(w => w.Replace("~", ""))];
+        [.. Raw(id).ToUpperInvariant().Split(' ', StringSplitOptions.RemoveEmptyEntries).Select(w => w.Replace("~", ""))];
 
     /// <summary>The text as read from the game files (original case), or null when it was not read.</summary>
     public string? FromFiles(Msg id) => _texts.TryGetValue(id, out var s) ? s : null;
@@ -295,11 +296,25 @@ public sealed class GameText
     public string? EffectLabel(byte id)
     {
         int i = Array.IndexOf(GoldBox.Core.Game.CampSpells.LabelledEffects, id);
-        return i >= 0 ? _effectLabels[i]?.ToUpperInvariant() : null;
+        return i >= 0 && _effectLabels[i] is { } label ? Cased(label, AmigaView.On) : null;
     }
 
-    /// <summary>The text, upper case as the font draws it.</summary>
-    public string this[Msg id] => (_texts.TryGetValue(id, out var s) ? s : Table[id]).ToUpperInvariant();
+    /// <summary>
+    /// The text as the screen draws it: upper case as the DOS font draws it, or under the Amiga pages in the program's
+    /// own case (<see cref="Cased"/>), the Amiga's own wording where the module holds one (<see cref="AmigaView.Strings"/>:
+    /// the money-left lines).
+    /// </summary>
+    public string this[Msg id] =>
+        AmigaView.On && AmigaView.Strings.TryGetValue("Msg." + id, out var amiga) ? amiga : Cased(Raw(id), AmigaView.On);
+
+    /// <summary>
+    /// A program text as the machine draws it: DOS upper-cases every character (glyph UpCase(c) mod 64); the Amiga's
+    /// text routines draw the bytes as they are (the string routine hunk 25 +0xC3C, the text window's print hunk 25
+    /// +0x10EC, which copies each word as stored, and the menu routine's prompt, hunk 19 +0x4EEE), and its strings are
+    /// DOS's byte for byte but a few (s44: 440 of the catalogue's texts found as they are in <c>program</c>; QuitToDos
+    /// reads "to" there, the two money-left lines quote with ' ).
+    /// </summary>
+    public static string Cased(string text, bool amiga) => amiga ? text : text.ToUpperInvariant();
 
     /// <summary>A text in the program's own case (the Amiga draws its bytes as they are; <see cref="AmigaView.Case"/>).</summary>
     public string Raw(Msg id) => _texts.TryGetValue(id, out var s) ? s : Table[id];

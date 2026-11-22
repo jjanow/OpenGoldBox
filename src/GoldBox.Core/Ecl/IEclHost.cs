@@ -33,7 +33,8 @@ public interface IEclHost
     void Delay();
 
     // ---- Input and menus ----------------------------------------------------------------------------------------
-    /// <summary>VMENU (0x15): returns the choice index stored at dst. Shape P; meaning of the index [?].</summary>
+    /// <summary>VMENU (0x15): returns the choice index stored at dst: the 0-based position of the highlighted entry,
+    /// for Return, space and Escape alike (0x2D669's position, stored through 002B:0052 at 0x1DA6; DOSBox-X s44).</summary>
     ushort VerticalMenu(string prompt, IReadOnlyList<string> choices);
     /// <summary>HMENU (0x2B): returns the choice index stored at dst. Shape P; meaning of the index [?].</summary>
     ushort HorizontalMenu(IReadOnlyList<string> choices);

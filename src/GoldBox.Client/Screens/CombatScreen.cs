@@ -425,7 +425,7 @@ public sealed class CombatScreen
         // The original's hotkeys: the first letter of an entry.
         if (input.NewInput is (InputDevice.Keyboard, { Length: 1 } key))
             for (int i = 0; i < n; i++)
-                if (c.Items[i].Length > 0 && c.Items[i][0] == key[0])
+                if (c.Items[i].Length > 0 && char.ToUpperInvariant(c.Items[i][0]) == key[0])   // a key is upper case (DosKeys); an Amiga entry may not be
                 {
                     answer = i;
                     return true;

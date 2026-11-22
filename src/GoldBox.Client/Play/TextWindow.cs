@@ -138,7 +138,7 @@ public sealed class TextWindow
         {
             int c = col + i;
             if (c == _right + 1 && c <= 39)
-                _overhang[row - _top] = (char.ToUpperInvariant(text[i]), colour);
+                _overhang[row - _top] = (Glyph(text[i], AmigaView.On), colour);
             if (c < _left || c > _right)
                 continue;
             _chars[row - _top, c - _left] = text[i];
@@ -281,7 +281,7 @@ public sealed class TextWindow
             // row below the box; we drop it.
             if (r >= 0 && r < _chars.GetLength(0) && c >= 0 && c < _chars.GetLength(1))
             {
-                _chars[r, c] = char.ToUpperInvariant(text[p - 1]);
+                _chars[r, c] = Glyph(text[p - 1], AmigaView.On);
                 _colours[r, c] = colour;
             }
             Column++;
@@ -289,6 +289,12 @@ public sealed class TextWindow
         }
         return p;
     }
+
+    /// <summary>
+    /// The character a text-window cell keeps: DOS's print (START 0x7737) upper-cases it; the Amiga's (hunk 25 +0x10EC,
+    /// the words copied as stored, then the string routine) keeps the byte, so a lower-case letter shows its own glyph.
+    /// </summary>
+    public static char Glyph(char c, bool amiga) => amiga ? c : char.ToUpperInvariant(c);
 
     /// <summary>The delimiter set of the word cut (START.EXE DS:0D16, a set constant for characters 0x20–0x3F).</summary>
     public static bool IsDelimiter(char c) => c is '!' or ',' or '-' or '.' or ':' or ';' or '?';

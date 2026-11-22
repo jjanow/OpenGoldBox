@@ -273,8 +273,25 @@ Code: `GoldBox.Core.Explore.AreaLoop` (one command at a time), `GameClock`, `Are
   it (the Client kept the tiles around the box before s43); after Exit the overland again with the joint (the camp
   drew its windows, and the interface is not drawn again). A load of an overland save keeps the saved wall-ahead byte
   (the buffer is not read there). Client: `AreaLoop.OtherLayoutDrawn` from the camp, the venues and a fight
-  (`ClientPlayer.OtherLayout`; `[?]` only the camp checked), `ExploreScreen.OverlandBoxed`, `PorGame.FinishEntry`. Test
+  (`ClientPlayer.OtherLayout`), `ExploreScreen.OverlandBoxed`, `PorGame.FinishEntry`. Test
   `EntryScreenTests.An_overland_load_keeps_its_wall_ahead_byte_and_the_camp_brings_the_joint_back`.
+- **The joint after a fight, a shop, a temple and a loot on the overland** (P + D s44). Every one draws START 0x3379
+  with the 3D layout (0x32CA, joint at (16, 16)): the shop and temple case 1, the loot menu case 6, and COMBAT's
+  handler ends with case 3 on the overland whatever ran (DS:49F3 := 3 when DS:49FA ≠ 1, then 00BA:27D9, GAME.OVR
+  0x25F7–0x2635). START 0x3379 draws the inner box with 0x32CA(1) in cases 1, 2, 4 and 6, without it (0x32CA(0)) in 3,
+  and each window is cleared inside, so on the overland the shop, temple and loot screens show a blank window with the
+  3D view's box in it (empty for the shop and temple, the chest for the loot), not the tiles. The joint then stays: the
+  interface (START 0x36FE, no joint) is drawn only at a command routine entry with DS:49F9 < 2 (0x17285), and DS:49F9
+  is written only by the command routine's end (0x173E7, := DS:49FA), the area loop's restart (0x3F28, := the old
+  DS:49FA) and the start-up (0xE9BE, := 1); on the overland it is 2–4 after the first command, so only a load or an
+  entry from a 3D area brings the joint-less layout back. DOSBox-X: save A put on block 26's overland at 10,20 N with
+  vector 0 pointed at test code past the script's end ($B300) that runs once (a flag at $B6F0): one monster 1 fought
+  (Alt-Q) then its loot, a COMBAT with only TREASURE 100 copper (the loot), CLRMON + $6E6C = 1 + COMBAT (the shop),
+  $6DE2 = 1 (the temple): the joint on each screen, after Exit and after the next step; the window blank with the box.
+  The Client equals each screen pixel for pixel but the help lines (and the chest's twinkle frame on the loot screen);
+  before s44 it kept the tiles around the box and drew no box for the shop. `ExploreScreen.OverlandBoxed` (the camp,
+  `Venue.Shop`, `Venue.Loot`). Tests `EntryScreenTests.A_shop_or_temple_on_the_overland_brings_the_joint_back_for_good`,
+  `The_loot_menu_on_the_overland_shows_the_chest_in_the_box_and_the_joint_stays`.
 - **Camp menu 0x196A0** (s12): DS:49F3 = 2 (saved and restored), a camp message in the text box, then the menu
   routine with a "Camp:" prompt and the DS menu line (v1.3 DS:0508; six words: save, view, magic, rest, alter,
   exit) until E (or key 0). S saves (0x1FD3E) and asks whether to quit, V views (0x21AED), M magic (0x18C22), R rest

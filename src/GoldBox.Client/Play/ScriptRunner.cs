@@ -58,10 +58,14 @@ public sealed record ChoiceRequest(string? Prompt, IReadOnlyList<string> Items, 
     /// <summary>
     /// A vertical list drawn as the program's VMENU draws it (GAME.OVR 0x1C4E → 0x8C5B → list routine 0x2D669): the
     /// prompt is already in the text window (<see cref="ClientPlayer.Text"/>), the items go at column 1 from this row
-    /// to row 22, the highlighted one in colour 15, the others in 10, no cursor glyph, nothing on row 24. Null: the
-    /// Client's own layout (the prompt on row 17, a cursor glyph; WHO's pick, not read).
+    /// to row 22, the highlighted one in colour 15, the others in 10, no cursor glyph; row 24 holds only the list's
+    /// Next / Prev words (<see cref="Paging"/>). Null: the Client's own layout (the prompt on row 17, a cursor glyph).
     /// </summary>
     public int? ListRow { get; init; }
+
+    /// <summary>With <see cref="ListRow"/>: the list routine's Next / Prev words (its window is <see cref="ListRow"/> to
+    /// row 22); null: no paging words.</summary>
+    public ListPaging? Paging { get; init; }
 
     /// <summary>
     /// The menu routine's animate flag ([bp+0xA] of 0x2CC8C): while this menu waits, the picture window's animation
@@ -90,7 +94,7 @@ public sealed record ChoiceRequest(string? Prompt, IReadOnlyList<string> Items, 
     public int? ConfirmAnswer { get; init; }
 
     /// <summary>The hotkey of item <paramref name="i"/>.</summary>
-    public char HotkeyOf(int i) => Hotkeys is { } h && i < h.Length ? h[i] : Items[i].Length > 0 ? Items[i][0] : '\0';
+    public char HotkeyOf(int i) => Hotkeys is { } h && i < h.Length ? h[i] : Items[i].Length > 0 ? char.ToUpperInvariant(Items[i][0]) : '\0';
 }
 
 /// <summary>
@@ -113,6 +117,13 @@ public sealed record KeyRequest(string? Prompt = null) : PlayerRequest
     /// on View).
     /// </summary>
     public int MenuEntries { get; init; }
+
+    /// <summary>
+    /// With <see cref="AsMenu"/>: opened while VM $4AFF was not 0 with a picture in the frame table, so the menu routine
+    /// draws the frames at cell (3, 3) over the page on every pass (0x2CD5D–0x2CDD6; DOSBox-X s44: PICTURE 2 over the
+    /// summary window after a COMBAT with no monsters from a start-up Load's vector 4). <see cref="ClientPlayer.MenuAsked"/>.
+    /// </summary>
+    public bool EveryPass { get; init; }
 
     /// <summary>The prompt's text in the program's own case (the Amiga draws it so: <see cref="AmigaView"/>).</summary>
     public string? Original { get; init; }

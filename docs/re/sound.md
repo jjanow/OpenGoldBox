@@ -203,9 +203,21 @@ for far calls to CS:00DC, CS:01A5, CS:017B):
     bracket runs on in the **next** bracket (the damage line's name animation, START 0x2BB1) from its first tick until
     that bracket's cue (0x2C14; tune 2's row restarts all four voices: Tandy table B rows 1, 2, 7 and 10 all have
     four non-zero entries). DOSBox-X's first damage line after the self-aimed Fireball was 224 ms against 200 ms for the
-    others (one capture; the time between 0x2BB1 and 0x2C14 is the name animation's scroll, drawing time, plus the
-    first tick's phase); after the self-aimed Lightning Bolt and Magic Missile it was 202 / 200 ms `[?]` (not
-    reproduced: the first tick may simply have come after the cue there).
+    others (one capture); after the self-aimed Lightning Bolt and Magic Missile it was 202 / 200 ms. **Settled s44
+    (machine time, no change):** between the install (START 0x2BB1 → 0x8C85) and the cue (0x2C14) the program runs
+    only 0x257E (the sprite's four frame copies, 0x2432) and, for a target off the map window, the combat map's check
+    and scroll (GAME.OVR 0x30E54 / 0x310D0 / 0x31321 / 0x31349); their static call trees hold no Delay (START 0xA69C),
+    PauseOnly, BIOS-tick read or interrupt call (the same scan finds the moving icon's two Delays at 0x2884 / 0x2B4A).
+    So the program spends no time there of its own: the leftover tune sounds only when the driver's first tick (at
+    most one BIOS period after the install) comes before the cue, which depends on the machine's drawing speed and the
+    clock's phase. **D (s44, DOSBox-X 3000 cycles, Tandy (NCR) through `[speaker] tandy=on`, `POOL.CFG` line 2 T,
+    recorded with `parec` from its own null sink; the s41 save with four Fireballs, `--spells 5:47,47,47,47`, driver
+    `AIM:=t`):** four self-aimed Fireballs, 40 damage lines: 39 of 200 ± 1 ms, the first line of the fourth cast 224
+    ms: 16 ms of the Fireball tune at full level (4 ms ticks, spectral centroid ~2.6 kHz against the damage noise's
+    ~4.4–5 kHz), a short gap, then the damage noise's usual ramp from 24 ms on. The other three first lines were 200
+    ms; with the same save, driver and machine a wait of the program's would lengthen every first line, not one in
+    four (the call-tree scan follows direct calls only). The Client's cue follows the install at once (no machine time), so its lines are the 200 ms ones (user s40:
+    machine time is not copied); the BIOS phase is not modelled.
     **Client (s43)**: `ISoundSink.EmptyResident(cue)`: a cast aimed at its own square (`FlightAnimation.DrawsNothing`)
     makes no flight call and an empty bracket: the Client installs, starts the tune and uninstalls under one lock (no
     buffer rendered between), so nothing sounds there and the driver keeps the tune for the next bracket, as the

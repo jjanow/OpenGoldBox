@@ -159,7 +159,7 @@ public static class CharacterView
     {
         string I(int v) => v.ToString(CultureInfo.InvariantCulture);
         string L(Msg m) => x[m].Trim(); // the program pads its labels for its own layout
-        var lines = new List<ListLine> { new(c.Name.ToUpperInvariant(), 15, 1) };
+        var lines = new List<ListLine> { new(AmigaView.Case(c.Name), 15, 1) };
         string str = c[0x10] == 18 && c[0x16] > 0 ? $"18/{(c[0x16] == 100 ? "00" : I(c[0x16]).PadLeft(2, '0'))}" : I(c[0x10]);
         lines.Add(new($"{L(Msg.Age)} {I(c.Word(0x30))}", 10, 1));
         (Msg, string)[] abilities =
@@ -223,7 +223,7 @@ public static class CharacterView
             var rows = c.Items.Select(i => (i[0x34] != 0 ? "YES " : "NO  ") + t.ItemName(i)).ToList();
             var lines = new List<ListLine>
             {
-                new(c.Name.ToUpperInvariant(), 15, 1),
+                new(AmigaView.Case(c.Name), 15, 1),
                 new(MoneyScreens.MoneyLine(t, c), 14, 1),
             };
             var a = t.Dialog.Page(new ListRequest(lines, rows, actions, exit)
@@ -385,7 +385,7 @@ public static class CharacterView
                 BoxBlank(t);
                 return false;
             case true:
-                var name = c.Name.ToUpperInvariant();
+                var name = AmigaView.Case(c.Name);
                 d.Text.ClearRect(BoxLeft, BoxTop, BoxRight, BoxBottom);
                 d.Text.Put(BoxTop, BoxLeft, name, CombatChooser.NameColour(c)); // START 0x23B6 at (1, 21)
                 d.Text.MoveTo(BoxLeft + name.Length + 1, BoxTop);               // DS:5E24 = name length + 2
@@ -514,7 +514,7 @@ public static class CharacterView
                 d.Say(t.Text[Msg.MustBeUnreadied]);
                 return;
             case true:
-                d.Show(c.Name.ToUpperInvariant() + t.Text[Msg.ScribeWarning]);
+                d.Show(AmigaView.Case(c.Name) + t.Text[Msg.ScribeWarning]);
                 if (!d.YesNo(t.Text[Msg.OkayToLose]))
                     return;
                 break;

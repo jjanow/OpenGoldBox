@@ -39,6 +39,38 @@ public sealed class MenuHighlight
     /// <summary>The yes/no routine 0x2D9A0 (0x2D9B9): the cell to the second entry, No.</summary>
     public void YesNo() => Index = 1;
 
+    /// <summary>
+    /// The item list routine's window top (DOS DS:6B29, Amiga hunk 32 +0x17D6): one global word beside the cell, kept
+    /// from list to list. Start-up sets it to 1 on DOS (0xE9DA) and to 0 on the Amiga (hunk 25 +0x1540), so a list
+    /// whose entry 0 is a label (creation's "Pick …" lists, position 1) hides that label on DOS until a list has taken
+    /// the top to 0 (DOSBox-X s44: fresh start, the race list from row 2 with no label; after camp Display, position
+    /// 0, the label on row 2 and the races from row 3) and shows it on the Amiga from the start (FS-UAE s43).
+    /// </summary>
+    public int ListTop { get; set; } = DosListTop;
+
+    /// <summary>The window top after start-up: DOS 1 (0xE9DA), Amiga 0 (hunk 25 +0x1540).</summary>
+    public const int DosListTop = 1, AmigaListTop = 0;
+
+    /// <summary>
+    /// The list routine's entry (DOS 0x2D766–0x2D792, Amiga hunk 13 +0x2C74–0x2CA4): the top goes up to the caller's
+    /// position when below it, and to 0 when past the entry count (labels included). Returns the new top.
+    /// `[?]` The Client carries it through the creation lists, Add's roster list (position 0, 0x1CA19) and the
+    /// explore screen's item lists only: the party menu's View pages (Items, the coin list), VMENU, the fight's lists
+    /// and every Next / Prev paging (the spell lists keep their own top, combat-menu.md "Spell lists' Next / Prev") do
+    /// not move it yet.
+    /// </summary>
+    public int ListEntered(int position, int count) => ListTop = EnterList(ListTop, position, count);
+
+    /// <summary><see cref="ListEntered"/>'s rule on a given top.</summary>
+    public static int EnterList(int top, int position, int count)
+    {
+        if (top > position)
+            top = position;
+        if (top > count)
+            top = 0;
+        return top;
+    }
+
     /// <summary>An entry was chosen (hotkey, Return on the highlight, a click).</summary>
     public void Chosen(int entry)
     {

@@ -250,7 +250,9 @@ hall's classes and Train is offered.
 1. A zeroed 285-byte record; icon colour bytes 0xC1..0xC6 from DS:3CF5[1..6] (c → (c + 8)·16 + c); base AC 0x32,
    base THAC0 0x28 (60 − x); status 0; in play 1; portrait head and body 1; icon footprint 0x6C := 1; byte 0xAB :=
    Random(256), the first draw.
-2. **Race** list (vertical menu 0x2D669, exit word only): race names DS:0F03 + 10·code for codes 1..5 and 7 (half-orc,
+2. **Race** list (vertical menu 0x2D669, exit word only; each creation list's entry 0 is its label, "Pick Race" …,
+   shown only when the list routine's top DS:6B29 is 0: not after start-up (1), but after a list at position 0 such
+   as camp Display, DOSBox-X s44; por-art-formats.md "Creation's list labels"): race names DS:0F03 + 10·code for codes 1..5 and 7 (half-orc,
    6, is skipped; the sixth line is human). Race byte 0x2E; icon size 0xC0 := 1 for dwarf, gnome, halfling, else 2;
    permanent effects added (0x2BD3C, time 0, value 0xFF): halfling 0x5A 0x61; dwarf 0x5A 0x61 0x1A 0x2F; gnome 0x61 0x12
    0x2F 0x30; elf 0x6B; half-elf 0x7C; human none. The effects go to the character's `.spc` file.
@@ -280,7 +282,8 @@ hall's classes and Train is offered.
      level 1; max := (that + the Con bonus 0x1D8B0) / classes, or 1 when a negative bonus leaves too little; current :=
      max; 0xB1 := 0xB1 / classes. Con bonus: DS:408E[Con] per base class, +1 above 16 and +1 above 17 for class code 2;
    - the page (View 0x21084) runs the stat recalculation START 0x1758 (derived fields in the record).
-7. **Name** (`PartyMsg.CharacterName`, 15 characters; asked again while empty), **portrait** (0x1CD66: words key
+7. **Name** (`PartyMsg.CharacterName`, 15 characters, stored upper case; asked again while empty; the Amiga: 14, as
+   typed, por-art-formats.md "Creation's name"), **portrait** (0x1CD66: words key
    `PartyMsg.PortraitMenu`, head 1..14 and body 1..12 step and wrap, the third word keeps; pictures HEAD3/BODY3 blocks
    DS:286F[head] / DS:287D[body]), **icon** (0x1D1AC, below), then SaveChar (section 5). The record is freed: the
    character is in the roster, not the party.

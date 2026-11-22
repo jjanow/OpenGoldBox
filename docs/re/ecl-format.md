@@ -290,9 +290,25 @@ area loop 0x403E (checks at 0x4118–0x423B), which clears it on exit (0x4245); 
   (0x1D51); after the pick the box is blanked (0709:0DD3 = START 0x7E63, 0x1DC2) and the cursor stays after the
   prompt. DOSBox-X (scratch saves D and F): the prompt in green at (1, 17), the rows from (1, 18), the first white and
   the others green, nothing on row 24; a PRINT after the menu went on at column 12 of row 17, after an 11-character
-  prompt. The longest v1.3 VMENU needs 5 rows with its prompt, so the list's Next / Prev paging is never reached
-  `[?]` (the Client scrolls instead). Client: `ClientPlayer.VerticalMenu` (`ChoiceRequest.ListRow`),
-  `ExploreScreen.DrawVertical` (WHO's pick keeps the Client's own list, not read).
+  prompt. The longest v1.3 VMENU needs 5 rows with its prompt, so no v1.3 script pages it, but the routine does
+  (**P + D s44**): 0x8C5B calls 0x2D669 once (no loop of its own) and VMENU stores the **position** it leaves through
+  002B:0052 (0x1DA6), whatever the key. 0x2D669 (combat-menu.md "Spell lists' Next / Prev") with R = 22 − DS:5E25 rows
+  and no headings: the top 0 on entry (position 0), the cell DS:6B2B := 1; row 24 is the menu line, empty word +
+  " Next" while N − R > top + " Prev" while top > 0 (no Exit), so the words from column 1, the lit one white, the
+  other's capital white and the rest green; nothing when the list fits. Inside the routine's own loop: Home / End (keypad
+  7 / 1) move the highlight inside the window, wrapping there; N / P (hotkeys only while shown) and PgDn / PgUp (only
+  while the word shows) move the window by R, at most to N − R (the last window is full and overlaps), at least 0, the
+  highlight keeping its row in the window; ',' / '.' move the lit word; other letters (E too: no Exit) do nothing.
+  Return, space and **Escape** end it: Escape makes 0x2D669 return no entry (0x2D937) but leaves the position, so
+  VMENU stores the highlighted entry as for Return. DOSBox-X (scratch saves, nine entries under a one-row prompt: rows
+  18–22, "NEXT" at (1, 24); End × 5 back on the first; End, N → ECHO–INDIA with FOXTROT lit, "PREV"; A and E nothing;
+  PgUp → ALPHA–ECHO, BRAVO lit; Escape → PRINT showed 1. Seven entries under a two-row prompt: rows 19–22; End, PgDn
+  → DELTA–GOLF, ECHO lit; Return → 4). Client: `ClientPlayer.VerticalMenu` (`ChoiceRequest.ListRow`, `Paging` with
+  the routine's words as the spell lists'), `ExploreScreen.ListAnswer` / `DrawVertical` (the window math shared with
+  the list pages, `ListWindowSteps`; Up / Down as Home / End and the pad's shoulders paging, as the spell lists, user
+  s30; a click on a row picks it, on Next / Prev pages, a right click is Escape: ours). The Client's first-letter
+  hotkeys on the rows are gone (the routine has none). Tests `VmenuPagingWhoTests`. The Amiga's VMENU list and WHO
+  pick are not read nor seen in FS-UAE `[?]`: the Client pages and picks there as on DOS.
 
 ### Encounters (program read 2026-11-17)
 
@@ -342,7 +358,7 @@ the sprite drawn again at slot 2. Engine: `EncounterHost` draw with `EclMemory.E
 (slot 1 in 3D, slot 2 on the overland) where no close-up follows (before s39 the Client showed the close-up on the
 overland at distance 0), and an overland sprite goes over the tiles without the box (it was boxed whenever the
 stand-in text was kept). Frames: on the overland all 12 Client frames equal but for the window frame's cell (16, 16)
-(a `save-overland` artefact, geo-format.md "Row-24 messages") and the help lines; 9 of 11 and 14 of 16 in 3D (the
+(the overland interface's layout has no joint there, the Client then drew one: fixed in s43, view3d.md) and the help lines; 9 of 11 and 14 of 16 in 3D (the
 rest the Client's help lines).
 
 The DOS sprite loader (0x2E170) builds the mask from source index 0 at 0x2E4CE, then remaps EGA index 13 to
@@ -462,7 +478,14 @@ last wraps to the head); a non-extended key 0 or E writes **nil**. Escape makes 
 writes nil and the loop goes on (0 is not an exit key); Select or Enter then leaves WHO with **no current
 character**; Home would pick the last member, End would read the interrupt table through the nil pointer. E never
 comes back from this menu ("Select" is its only item). The VM takes a pick of −1 (`IEclHost.NoCharacter`) as that
-nil (s15).
+nil (s15). **Screen (P + D s44):** after the operands, 0x3879 blanks (1, 17)–(38, 22) (0709:0DD3 = START 0x7E63; the
+text cursor is left where it was) and calls 00BA:2C48 = START 0x37E8 with the Exit flag 0 (`push 0`): the same member
+pick as Trade and camp Cast, its item line "Select" alone (00BA:2C41). Row 24: the prompt in colour 13, then SELECT; the
+party list with the pick lit (the current member first); nothing in the text box. The menu's keypad flag is 1 (its
+[bp+0xA] is the timed-repeat flag, 1 only in camp / loot). DOSBox-X (scratch save): "WHO GOES: SELECT", Thrender lit;
+End twice → Rhiannon lit; E nothing; Return → a PRINT after WHO went on at the cursor left by the PRINT before it,
+Rhiannon still lit after EXIT. Client: `ClientPlayer.PickCharacter` → `MemberPick.Run` with
+`ClientResources.SelectMenu` (nobody picked → `IEclHost.NoCharacter`).
 
 **CHKPARTY s, v, a1..a4** (0x217B). The selector s is the raw field when operand 1 has type 1 (an address names the
 field), else its value; e = low byte of v.

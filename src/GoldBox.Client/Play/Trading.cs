@@ -62,6 +62,14 @@ public sealed class TradeContext
     /// <summary>The party list drawn again (START 0x0767): held names show their colour again.</summary>
     public Action RosterDrawn { get; init; } = () => { };
 
+    /// <summary>
+    /// A shop, temple or loot loop drew its screen again (START 0x3379, case 1 or 6): the shop after Buy and Take
+    /// (0x743C), after Appraise with gems or jewellery to appraise (0x744D), the temple likewise (0x5479, 0x548A), View's
+    /// exit and the heal list's end (0x51A0); the loot menu on entry (0x644B, the chest loaded). A picture a venue menu
+    /// drew over the view box (<see cref="ClientPlayer.VenuePictureOver"/>) is gone.
+    /// </summary>
+    public Action VenueRedrawn { get; init; } = () => { };
+
     /// <summary>The party list drawn with another lit member (null: none), as START's member pick draws it (00BA:2CA1).</summary>
     public Action<EclCharacter?> RosterDrawnLit { get; init; } = _ => { };
 

@@ -1,3 +1,4 @@
+using GoldBox.Core.Game;
 using GoldBox.Client.Play;
 using GoldBox.Data.Module.Por;
 using GoldBox.Data.Por;
@@ -100,6 +101,103 @@ public class AmigaMenuTextTests
         // The Amiga's own strings and pens reached the module.
         Assert.Equal(11, module.AmigaStrings()!.Keys.Count(k => k.StartsWith(PorAmigaText.PartyMenuKey, StringComparison.Ordinal)));
         Assert.Equal(18, module.AmigaCallPens()![PorAmigaText.KeyPagePen]);
-        Assert.Equal(28, module.AmigaCallPens()![PorAmigaText.HmenuPen]);
+        Assert.Equal((28, 16), (module.AmigaCallPens()![PorAmigaText.HmenuWordsPen], module.AmigaCallPens()![PorAmigaText.HmenuCapitalsPen]));
+        // s44: the camp's Amiga lines reached the module, and they stay out of the spelling table.
+        Assert.True(module.AmigaStrings()!.ContainsKey(PorAmigaText.RestMenuKey));
+        Assert.DoesNotContain(module.AmigaStrings()![PorAmigaText.MonstersOnKey], ClientResources.Load(module).MenuLines);
+        var (items, keys, columns, roles) = CampScreens.RestUi.RestMenu(program.Text("Msg.RestMenu")!, module.AmigaStrings()![PorAmigaText.RestMenuKey]);
+        Assert.Equal(7, items.Count);
+        Assert.Null(columns);
+        Assert.Equal(CampScreens.RestUi.EntryRoles, roles);
+        Assert.Equal(7, keys.Distinct().Count());
+        Assert.DoesNotContain('Y', keys);   // the Amiga's days word is hot on its first letter
+        Assert.All(items, w => Assert.NotEqual(w.ToUpperInvariant(), w));
+    }
+
+    /// <summary>
+    /// s44: the rest-time menu's entries keep the program's order on both machines (DOS 0x244A5, Amiga hunk 2 +0x29A), so
+    /// the Amiga line's roles go by position: its second entry (days) is hot on its capital, its fifth and sixth (add,
+    /// take off) on theirs, where DOS has Y, I and D; Up / Down still answer the fifth and sixth.
+    /// </summary>
+    [Fact]
+    public void The_amiga_rest_menu_maps_its_entries_by_position()
+    {
+        var (items, keys, columns, roles) = CampScreens.RestUi.RestMenu("Rr   aYy Hh Mm   Ii Dd   Ee", "Rr Dd Hh Mm Aa Ss Ee");
+        Assert.Equal(["Rr", "Dd", "Hh", "Mm", "Aa", "Ss", "Ee"], items);
+        Assert.Equal("RDHMASE", keys);
+        Assert.Null(columns);
+        Assert.Equal(RestTimeMenu.Key.Days, roles[keys.IndexOf('D')]);
+        Assert.Equal(RestTimeMenu.Key.Inc, roles[keys.IndexOf('A')]);
+        Assert.Equal(RestTimeMenu.Key.Dec, roles[keys.IndexOf('S')]);
+        // DOS (no Amiga line): roles by hotkey, the line's own spaces kept.
+        var (dItems, dKeys, dColumns, dRoles) = CampScreens.RestUi.RestMenu("Rr   aYy Hh Mm   Ii Dd   Ee", null);
+        Assert.Equal("RYHMIDE", dKeys);
+        Assert.Equal(CampScreens.RestUi.EntryRoles, dRoles);
+        Assert.NotNull(dColumns);
+        Assert.Equal(7, dItems.Count);
+        // A line of another length falls back to DOS's.
+        Assert.Equal("RYHMIDE", CampScreens.RestUi.RestMenu("Rr   aYy Hh Mm   Ii Dd   Ee", "Rr Dd Ee").Keys);
+    }
+
+    /// <summary>
+    /// s44: the Amiga's Pics line joins each on / off pair with 0xFF (one entry, the byte drawn blank) and puts one space
+    /// between entries; DOS's words carry two spaces, which its menu routine draws as they are.
+    /// </summary>
+    [Fact]
+    public void The_pics_line_keeps_each_machines_spacing()
+    {
+        string amiga = "Aaa" + PorAmigaText.JoinedSpace + "on Bbb" + PorAmigaText.JoinedSpace + "off Exit";
+        var (items, keys, columns) = CampScreens.PicsLine("Aaa on  Bbb off  Exit", amiga);
+        Assert.Equal(["Aaa" + PorAmigaText.JoinedSpace + "on", "Bbb" + PorAmigaText.JoinedSpace + "off", "Exit"], items);
+        Assert.Equal("ABE", keys);
+        Assert.Null(columns);
+        var (dItems, dKeys, dColumns) = CampScreens.PicsLine("Aaa on  Bbb off  Exit", null);
+        Assert.Equal(["AAA ON", "BBB OFF", "EXIT"], dItems);
+        Assert.Equal("ABE", dKeys);
+        Assert.Equal([0, 8, 17], dColumns);
+        Assert.Equal('A', AmigaView.ParseLine("aAa").Hotkeys[0]);
+        Assert.Equal(1, AmigaView.ParseLine("Aaa" + PorAmigaText.JoinedSpace + "on").Items.Count);
+    }
+
+    [Fact]
+    public void Amiga_timed_messages_wait_100_ms_per_speed_step()
+    {
+        Assert.Equal(TimeSpan.Zero, AmigaView.TimedPause(0));
+        Assert.Equal(TimeSpan.FromMilliseconds(300), AmigaView.TimedPause(3));
+    }
+
+    [Fact]
+    public void Program_texts_and_text_window_cells_keep_their_case_on_the_Amiga()
+    {
+        // The Amiga's text routines draw the bytes (string routine hunk 25 +0xC3C, the text window's print +0x10EC);
+        // DOS upper-cases (glyph UpCase(c) mod 64, print START 0x7737).
+        Assert.Equal("Lorem ipsum dolor...", GameText.Cased("Lorem ipsum dolor...", amiga: true));
+        Assert.Equal("LOREM IPSUM DOLOR...", GameText.Cased("Lorem ipsum dolor...", amiga: false));
+        Assert.Equal('e', TextWindow.Glyph('e', amiga: true));
+        Assert.Equal('E', TextWindow.Glyph('e', amiga: false));
+        var w = new TextWindow(1, 17, 38, 22);
+        w.Print("Lorem ipsum", colour: 10);   // AmigaView.On is off in tests: DOS's cells
+        Assert.Equal("LOREM IPSUM", w.Lines[0]);
+    }
+
+    [Fact]
+    public void Creation_takes_one_character_less_and_keeps_the_case_on_the_Amiga()
+    {
+        // hunk 10 +0x2114: the requester's MaxChars 15 (14 characters); DOS 15. strncpy at +0x212E: no upper-casing.
+        Assert.Equal(14, AmigaView.NameLength(amiga: true));
+        Assert.Equal(15, AmigaView.NameLength(amiga: false));
+        Assert.Equal(15, AmigaView.RenameLength);      // Rename's requester (hunk 10 +0x551A: 16) keeps 15
+        Assert.Equal("Lorem Ipsum", AmigaView.CreationName("Lorem Ipsum", amiga: true));
+        Assert.Equal("LOREM IPSUM", AmigaView.CreationName("Lorem Ipsum", amiga: false));
+        var c = new Core.Ecl.EclCharacter { Name = "Lorem" };
+        Assert.Equal("NEW NAME FOR Lorem", AmigaView.RenamePrompt(c));   // the requester draws the bytes
+    }
+
+    [Fact]
+    public void The_party_killed_window_holds_three_seconds_on_DOS_only()
+    {
+        // DOS Delay(3000) (GAME.OVR 0x375A–0x37E4); the Amiga (hunk 16 +0x4674–0x46DC) starts song 5 and waits for the key.
+        Assert.Equal(TimeSpan.FromMilliseconds(3000), AmigaView.PartyKilledHold(amiga: false));
+        Assert.Null(AmigaView.PartyKilledHold(amiga: true));
     }
 }

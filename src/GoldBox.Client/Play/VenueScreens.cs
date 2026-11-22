@@ -36,12 +36,12 @@ public static class VenueScreens
                 continue;
             switch (menu[Math.Clamp(i, 0, menu.Length - 1)])
             {
-                case "BUY": Buy(t); break;
-                case "VIEW": CharacterView.Run(t, Venue.Shop); break;
-                case "TAKE": MoneyScreens.Take(t); break;
+                case "BUY": Buy(t); t.VenueRedrawn(); break; // 0x743C
+                case "VIEW": CharacterView.Run(t, Venue.Shop); t.VenueRedrawn(); break; // View's exit
+                case "TAKE": MoneyScreens.Take(t); t.VenueRedrawn(); break; // 0x743C
                 case "POOL": MoneyScreens.Pool(t); break;
                 case "SHARE": MoneyScreens.Share(t); break;
-                case "APPRAISE": MoneyScreens.Appraise(t); break;
+                case "APPRAISE": Appraise(t); break;
                 default:
                     if (!MoneyScreens.StayForMoney(t, Msg.ShopMoneyLeft, Msg.ShopGoBack))
                     {
@@ -122,12 +122,12 @@ public static class VenueScreens
                 continue;
             switch (menu[Math.Clamp(i, 0, menu.Length - 1)])
             {
-                case "HEAL": HealList(t); break;
-                case "VIEW": CharacterView.Run(t, Venue.Shop); break;
-                case "TAKE": MoneyScreens.Take(t); break;
+                case "HEAL": HealList(t); t.VenueRedrawn(); break; // the heal list's end (0x51A0)
+                case "VIEW": CharacterView.Run(t, Venue.Shop); t.VenueRedrawn(); break; // View's exit
+                case "TAKE": MoneyScreens.Take(t); t.VenueRedrawn(); break; // 0x5479
                 case "POOL": MoneyScreens.Pool(t); break;
                 case "SHARE": MoneyScreens.Share(t); break;
-                case "APPRAISE": MoneyScreens.Appraise(t); break;
+                case "APPRAISE": Appraise(t); break;
                 default:
                     if (!MoneyScreens.StayForMoney(t, Msg.TempleMoneyLeft, Msg.TempleGoBack))
                     {
@@ -137,6 +137,18 @@ public static class VenueScreens
                     break;
             }
         }
+    }
+
+    /// <summary>
+    /// Appraise from the shop or temple menu: 0x2663B sets its flag to 0 only when the current character has no gems and
+    /// no jewellery at the start (the message alone); with the flag set the loop draws its screen again (0x744D, 0x548A).
+    /// </summary>
+    private static void Appraise(TradeContext t)
+    {
+        bool any = t.Current is { } c && (c.Word(Money.Gems) != 0 || c.Word(Money.Jewellery) != 0);
+        MoneyScreens.Appraise(t);
+        if (any)
+            t.VenueRedrawn();
     }
 
     /// <summary>Our names for the heal list when the program's table is not found.</summary>
@@ -162,10 +174,10 @@ public static class VenueScreens
     /// </summary>
     public static void HealList(TradeContext t)
     {
-        var names = (t.TempleNames ?? OurCures).Select(n => n.ToUpperInvariant()).ToList();
+        var names = (t.TempleNames ?? OurCures).Select(n => AmigaView.Case(n)).ToList();
         while (t.Current is { } c)
         {
-            string who = c.Name.ToUpperInvariant();
+            string who = AmigaView.Case(c.Name);
             int i = t.Dialog.List(who + t.Text[Msg.HowCanWeHelp], names, cancel: names.Count - 1);
             if (i < 0 || i >= 9)
                 return;
@@ -212,7 +224,7 @@ public static class VenueScreens
             int k = 0;
             foreach (var npc in npcsTakingShare)
             {
-                box.PrintIn(5, 5 + k, 34, 22, npc.Name.ToUpperInvariant() + t.Text[Msg.TakesShare], clear: true, colour: 10);
+                box.PrintIn(5, 5 + k, 34, 22, AmigaView.Case(npc.Name) + t.Text[Msg.TakesShare], clear: true, colour: 10);
                 k += 2;
             }
             t.ShowWindow(box.WindowLines());
@@ -259,6 +271,7 @@ public static class VenueScreens
     /// </summary>
     public static void LootMenu(TradeContext t)
     {
+        t.VenueRedrawn(); // 0x644B: START 0x3379 case 6 loads the chest (PIC block 1) into the frame table
         while (true)
         {
             bool money = t.PoolHasMoney, items = t.Treasure.Count > 0;
@@ -336,7 +349,7 @@ public static class VenueScreens
         {
             var rows = t.Treasure.Select(t.ItemName).ToList();
             var a = t.Dialog.Page(new ListRequest(
-                [new(t.Text[Msg.LootTitle], 15, 1), new(c.Name.ToUpperInvariant(), 11, 1), new(t.Text[Msg.ItemsHeader], 15, 1)],
+                [new(t.Text[Msg.LootTitle], 15, 1), new(AmigaView.Case(c.Name), 11, 1), new(t.Text[Msg.ItemsHeader], 15, 1)],
                 rows, ["TAKE", "EXIT"], 1, FirstRow: 4, VisibleRows: 7)
             {
                 Selected = Math.Clamp(selected, 0, rows.Count - 1),

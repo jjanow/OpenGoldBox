@@ -131,7 +131,7 @@ public static class HallScreens
                     entries.Add(new HallEntry(text, text.Length > 0 ? text[0] : '?'));
                 }
             hall.Page = null;
-            var answer = camp.Dialog.Ask(new HallMenuRequest(entries, h.Text["Hall.ChooseFunction"].TrimEnd().ToUpperInvariant()));
+            var answer = camp.Dialog.Ask(new HallMenuRequest(entries, AmigaView.Case(h.Text["Hall.ChooseFunction"].TrimEnd())));
             if (answer is int member)
             {
                 camp.Trade.SelectMember(member);
@@ -169,7 +169,7 @@ public static class HallScreens
                 case TrainingHall.Entry.Begin:
                     return;
                 case TrainingHall.Entry.Exit:
-                    if (camp.Dialog.YesNo(h.Text["Hall.QuitToDos"].ToUpperInvariant()))
+                    if (camp.Dialog.YesNo(AmigaView.Case(h.Text["Hall.QuitToDos"])))
                         camp.Quit?.Invoke();
                     break;
                 default:
@@ -249,7 +249,7 @@ public static class HallScreens
     /// <summary>A message on the bottom line for the program's Delay (START 0x7DF8: game speed × 225 ms).</summary>
     public static void Message(HallTrainer h, string text, byte colour)
     {
-        h.State.Message = (text.ToUpperInvariant(), colour);
+        h.State.Message = (AmigaView.Case(text), colour);
         try
         {
             h.Ask(new DelayRequest(TimeSpan.FromMilliseconds(h.GameSpeed * 225)));
@@ -286,24 +286,24 @@ public static class HallScreens
             Message(h, h.Text[key], 14);
             return;
         }
-        string name = c.Name.ToUpperInvariant();
+        string name = AmigaView.Case(c.Name);
         var page = new List<(int, int, string, byte)>
         {
             (4, 4, name, Chrome11),
-            (name.Length + 4, 4, h.Text["Hall.WillBecome"].ToUpperInvariant(), 10),
+            (name.Length + 4, 4, AmigaView.Case(h.Text["Hall.WillBecome"]), 10),
         };
         int row = 4;
         foreach (var (cls, level) in TrainingHall.Raised(c, offer.Train, t))
         {
             row++;
-            string words = (row == 5 ? h.Text["Hall.ALevel"] : h.Text["Hall.AndALevel"]).ToUpperInvariant();
-            string cname = (h.Resources.ClassName(cls) ?? $"CLASS {cls}").ToUpperInvariant();
+            string words = AmigaView.Case((row == 5 ? h.Text["Hall.ALevel"] : h.Text["Hall.AndALevel"]));
+            string cname = AmigaView.Case((h.Resources.ClassName(cls) ?? $"CLASS {cls}"));
             page.Add((6, row, words + level.ToString(CultureInfo.InvariantCulture) + " " + cname, 10));
         }
         h.State.Page = page;
         try
         {
-            if (!h.YesNo(h.Text["Hall.WishToTrain"].ToUpperInvariant()))
+            if (!h.YesNo(AmigaView.Case(h.Text["Hall.WishToTrain"])))
                 return;
             Message(h, h.Text["Hall.Congratulations"], 10);
         }
@@ -341,14 +341,14 @@ public static class HallScreens
             if (level != last)
             {
                 labels.Add(rows.Count);
-                rows.Add((h.Resources.LevelName(level) ?? $"LEVEL {level}").ToUpperInvariant());
+                rows.Add(AmigaView.Case((h.Resources.LevelName(level) ?? $"LEVEL {level}")));
                 ids.Add(0);
                 last = level;
             }
-            rows.Add("  " + (h.Resources.SpellName(s) ?? $"SPELL {s.ToString(CultureInfo.InvariantCulture)}").ToUpperInvariant());
+            rows.Add("  " + AmigaView.Case((h.Resources.SpellName(s) ?? $"SPELL {s.ToString(CultureInfo.InvariantCulture)}")));
             ids.Add(s);
         }
-        string title = who.Name.ToUpperInvariant() + "'S " + h.Resources.Texts[Msg.SpellsWord] + h.Text["Hall.ToChooseFrom"].ToUpperInvariant();
+        string title = AmigaView.Case(who.Name) + "'S " + h.Resources.Texts[Msg.SpellsWord] + AmigaView.Case(h.Text["Hall.ToChooseFrom"]);
         int row = 0, top = 0; // 0x1C8EB: the position word −1 once; the loop (back to 0x1C8F0) keeps it
         while (true)
         {
@@ -356,7 +356,7 @@ public static class HallScreens
             // list routine's entry (P, s30): row 0 is a heading, so the highlight steps up past it and wraps to the
             // window's last row (or the list's), which is what DOSBox-X showed.
             var a = h.Ask(new ListRequest([new ListLine(title, 11, 1)], rows,
-                [h.Text["Hall.Learn"].ToUpperInvariant()], null, FirstRow: SpellLists.FirstRow)
+                [AmigaView.Case(h.Text["Hall.Learn"])], null, FirstRow: SpellLists.FirstRow)
             {
                 Labels = labels,
                 RowActions = new HashSet<int> { 0 },
@@ -364,10 +364,10 @@ public static class HallScreens
                 Selected = row,
                 Top = top,
                 // the list's screen: "Spells " + the list's words for kind 4 (0x239A0), the choose-spell prompt (action 4)
-                Spell = new SpellPageLayout(who.Name.ToUpperInvariant(), CombatChooser.NameColour(who),
-                    (h.Resources.Texts[Msg.SpellsWord] + h.Text["Hall.ToChooseFrom"]).ToUpperInvariant())
+                Spell = new SpellPageLayout(AmigaView.Case(who.Name), CombatChooser.NameColour(who),
+                    AmigaView.Case((h.Resources.Texts[Msg.SpellsWord] + h.Text["Hall.ToChooseFrom"])))
                 {
-                    Prompt = h.Resources.Texts[Msg.ChooseSpell].TrimEnd().ToUpperInvariant() + " ",
+                    Prompt = AmigaView.Case(h.Resources.Texts[Msg.ChooseSpell].TrimEnd()) + " ",
                 },
             }) as ListAnswer ?? new ListAnswer(-1, 0);
             (row, top) = (Math.Max(0, a.Row), a.Top);
@@ -401,7 +401,7 @@ public static class HallScreens
                         text.Clear();
                         break;
                     case EndGameLine l:
-                        text.Put(l.Row, 1, player.Resources.HallTexts.End(l.Text).ToUpperInvariant(), 10);
+                        text.Put(l.Row, 1, AmigaView.Case(player.Resources.HallTexts.End(l.Text)), 10);
                         break;
                     case EndGamePicture p:
                         scene.Layers.RemoveAll(x => x.Animation);

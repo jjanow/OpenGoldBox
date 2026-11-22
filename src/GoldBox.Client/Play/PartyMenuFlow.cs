@@ -29,9 +29,10 @@ public sealed record PickRequest(IReadOnlyList<string> Rows, IReadOnlyList<strin
 
     /// <summary>
     /// The list's label row ("Pick Race" …: creation's lists start with a flagged entry, +0x29 = 1, Amiga hunk 10
-    /// +0xB00–0xB14 as DOS GAME.OVR 0x19FC4), drawn at (1, 2) in the list routine's flagged-row colour, the rows from
-    /// row 3: FS-UAE s43. Set under the Amiga pages only; DOS keeps the rows from row 2 `[?]` (the same label is in
-    /// its code, not checked in DOSBox-X).
+    /// +0xB00–0xB14 as DOS GAME.OVR 0x19FC4), drawn at (1, 2) in the list routine's flagged-row colour (DOS 13), the
+    /// rows from row 3. Shown only when the list routine's window top is 0 on entry (<see cref="MenuHighlight.ListTop"/>):
+    /// from the start on the Amiga (FS-UAE s43), on DOS once a list has taken the top to 0 (DOSBox-X s44, after camp
+    /// Display); otherwise null and the rows start on row 2 (DOSBox-X s44, a fresh start).
     /// </summary>
     public string? Title { get; init; }
 
@@ -332,7 +333,10 @@ public sealed class PartyMenuFlow(Func<PlayerRequest, object?> ask, PartyMenuTex
     /// <summary>A vertical pick (0x2D669 with Exit): the list position, or null on Exit.</summary>
     private int? Pick(IReadOnlyList<string> rows, string titleKey)
     {
-        var a = ask(new PickRequest(rows, [texts.Exit], 0) { Column = 3, Title = AmigaView.On ? texts.Text(titleKey) : null }) as ListAnswer;
+        // The list's entry 0 is the label, the rows 1..n, the position 1 (0x1A09B): the label shows when the list
+        // routine's global top is 0 (MenuHighlight.ListTop), on DOS and the Amiga alike.
+        int top = Highlight.ListEntered(1, rows.Count + 1);
+        var a = ask(new PickRequest(rows, [texts.Exit], 0) { Column = 3, Title = top == 0 ? texts.Text(titleKey) : null }) as ListAnswer;
         return a is { Action: PickRequest.RowChosen } ? a.Row : null;
     }
 
@@ -365,11 +369,13 @@ public sealed class PartyMenuFlow(Func<PlayerRequest, object?> ask, PartyMenuTex
         }
         while (ask(new SheetRequest(c, texts.YesNo) { Prompt = texts.KeepCharacter }) is not 0);
 
+        // The Amiga asks through its requester with MaxChars 15 (hunk 10 +0x2114: 14 characters, DOS 15) and keeps the
+        // name as typed (strncpy, hunk 10 +0x212E; DOS upper-cases it). AmigaView.CreationName.
         string name;
         do
-            name = (ask(new TextRequest(texts.CharacterName, false, EclCharacter.MaxNameLength)) as string ?? "").Trim();
+            name = (ask(new TextRequest(texts.CharacterName, false, AmigaView.NameLength(AmigaView.On))) as string ?? "").Trim();
         while (name.Length == 0);
-        cc.SetName(name.ToUpperInvariant());
+        cc.SetName(AmigaView.CreationName(name, AmigaView.On));
         PlaySong?.Invoke(3);
         Portrait(c);
         EditIcon(c);
@@ -626,6 +632,9 @@ public sealed class PartyMenuFlow(Func<PlayerRequest, object?> ask, PartyMenuTex
         int row = 0;
         while (true)
         {
+            // 0x1CA19–0x1CA7A: the list routine with the position word 0 on the first call (kept after), so the
+            // global top goes to 0 and a later Create shows its list labels (MenuHighlight.ListTop).
+            Highlight.ListEntered(row, entries.Count);
             var a = ask(new PickRequest(entries, texts.AddExit, 1) { Prompt = texts.AddPrompt }) as ListAnswer;
             if (a is null || a.Action is not (PickRequest.RowChosen or 0))
                 break;

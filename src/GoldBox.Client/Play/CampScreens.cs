@@ -75,9 +75,9 @@ public static class SpellLists
     /// prompt (0x27053) when <paramref name="prompt"/> (actions 1–4), Memorize's slot lines in <paramref name="box"/>.
     /// </summary>
     public static SpellPageLayout Layout(EclCharacter who, GameText text, Msg list, bool prompt, IReadOnlyList<WindowLine>? box = null) =>
-        new(who.Name.ToUpperInvariant(), CombatChooser.NameColour(who), (text[Msg.SpellsWord] + text[list]).ToUpperInvariant())
+        new(AmigaView.Case(who.Name), CombatChooser.NameColour(who), AmigaView.Case((text[Msg.SpellsWord] + text[list])))
         {
-            Prompt = prompt ? text[Msg.ChooseSpell].TrimEnd().ToUpperInvariant() + " " : null,
+            Prompt = prompt ? AmigaView.Case(text[Msg.ChooseSpell].TrimEnd()) + " " : null,
             Box = box,
         };
 
@@ -92,15 +92,15 @@ public static class SpellLists
     {
         var lines = new List<WindowLine>
         {
-            new(1, 18, who.Name.ToUpperInvariant(), CombatChooser.NameColour(who)),
-            new(1, 19, text[Msg.CanMemorise].Trim().ToUpperInvariant()),
+            new(1, 18, AmigaView.Case(who.Name), CombatChooser.NameColour(who)),
+            new(1, 19, AmigaView.Case(text[Msg.CanMemorise].Trim())),
         };
         int row = 20;
         for (int cls = 0; cls <= 1; cls++)
         {
             if (!Enumerable.Range(1, 3).Any(l => CampSpells.SlotsFor(who, cls, l) != 0))
                 continue;
-            lines.Add(new(1, row, text[cls == 0 ? Msg.ClericSpells : Msg.MageSpells].TrimEnd().ToUpperInvariant().PadLeft(18)));
+            lines.Add(new(1, row, AmigaView.Case(text[cls == 0 ? Msg.ClericSpells : Msg.MageSpells].TrimEnd()).PadLeft(18)));
             for (int l = 1; l <= 3; l++)
             {
                 if (CampSpells.SlotsFor(who, cls, l) == 0)
@@ -218,7 +218,7 @@ public static class CampScreens
     /// relief message cleared 0.9 s after it was typed at speed 4).
     /// </summary>
     private static void Say(CampContext c, EclCharacter who, string text, bool pause = true) =>
-        PanelMessage(c, who, text.ToUpperInvariant(), pause);
+        PanelMessage(c, who, AmigaView.Case(text), pause);
 
     // ---- Camp (0x196A0) ------------------------------------------------------------------------------------------
 
@@ -303,7 +303,7 @@ public static class CampScreens
             return;
         c.Dialog.Show(c.Text[Msg.Saving]);
         if (c.Save?.Invoke(keys[i]) is { } problem)
-            c.Dialog.Say(problem.ToUpperInvariant(), colour: 14);
+            c.Dialog.Say(AmigaView.Case(problem), colour: 14);
         c.Dialog.Text.Clear();
     }
 
@@ -347,7 +347,8 @@ public static class CampScreens
             var t = c.Dialog.Text;
             t.ClearRow(17);
             var r = c.State.RestTime;
-            t.Put(17, 1, c.Text[Msg.RestTime], 10);
+            // The Amiga draws the label's bytes as they are (hunk 1 +0x2F54: the same "Rest Time:" as DOS, pen 28).
+            t.Put(17, 1, AmigaView.On ? c.Text.Raw(Msg.RestTime) : c.Text[Msg.RestTime], 10);
             int x = 11;
             for (int i = CampTime.Days; i >= CampTime.Hours; i--)
             {
@@ -366,12 +367,45 @@ public static class CampScreens
 
         private const int FieldLeft = -30, FieldRight = -31;
 
+        /// <summary>The rest-time menu's entries in the program's order (DOS 0x244A5 and the Amiga's hunk 2 +0x29A alike).</summary>
+        public static readonly RestTimeMenu.Key[] EntryRoles =
+        [
+            RestTimeMenu.Key.Rest, RestTimeMenu.Key.Days, RestTimeMenu.Key.Hours, RestTimeMenu.Key.Minutes,
+            RestTimeMenu.Key.Inc, RestTimeMenu.Key.Dec, RestTimeMenu.Key.Exit,
+        ];
+
+        /// <summary>
+        /// The rest-time menu's entries, hotkeys, columns and each entry's role. DOS (0x244A5, "Rest   daYs Hours Mins
+        /// Inc Dec   Exit"): its own spaces, the role by hotkey (Y days, I inc, D dec). Under the Amiga pages the Amiga's
+        /// line (hunk 1 +0x302C, <see cref="GoldBox.Data.Module.Por.PorAmigaText.RestMenuKey"/>): one space apart, the
+        /// program's case, each entry hot on its capital and the role by position (D days, A add, S take off).
+        /// </summary>
+        public static (List<string> Items, string Keys, IReadOnlyList<int>? Columns, RestTimeMenu.Key[] Roles) RestMenu(
+            string dosLine, string? amigaLine)
+        {
+            if (amigaLine is not null && AmigaView.ParseLine(amigaLine) is var (ai, ak) && ai.Count == EntryRoles.Length)
+                return (ai, ak, null, EntryRoles);
+            var (items, keys) = ParseMenu(dosLine);
+            var roles = keys.Select(k => k switch
+            {
+                'R' => RestTimeMenu.Key.Rest,
+                'Y' => RestTimeMenu.Key.Days,
+                'H' => RestTimeMenu.Key.Hours,
+                'M' => RestTimeMenu.Key.Minutes,
+                'I' => RestTimeMenu.Key.Inc,
+                'D' => RestTimeMenu.Key.Dec,
+                _ => RestTimeMenu.Key.Exit,
+            }).ToArray();
+            return (items, keys, MenuColumns(dosLine), roles);
+        }
+
         public bool ChooseRestTime(RestTimeMenu menu)
         {
             c.Dialog.Text.Clear();
-            var (items, keys) = ParseMenu(c.Text.Original(Msg.RestMenu));
-            var columns = MenuColumns(c.Text.Original(Msg.RestMenu));
-            int inc = keys.IndexOf('I'), dec = keys.IndexOf('D');
+            var (items, keys, columns, roles) = RestMenu(c.Text.Original(Msg.RestMenu),
+                AmigaView.CampLine(GoldBox.Data.Module.Por.PorAmigaText.RestMenuKey));
+            int inc = Array.IndexOf(roles, RestTimeMenu.Key.Inc), dec = Array.IndexOf(roles, RestTimeMenu.Key.Dec);
+            int restAt = Array.IndexOf(roles, RestTimeMenu.Key.Rest);
             while (true)
             {
                 Draw(menu.Selected);
@@ -383,22 +417,12 @@ public static class CampScreens
                     // 0x244ED: Left / Right move the field (row 24 keeps its lit word, D s38), Enter = Rest
                     LeftAnswer = FieldLeft,
                     RightAnswer = FieldRight,
-                    ConfirmAnswer = keys.IndexOf('R') is >= 0 and var restAt ? restAt : null,
+                    ConfirmAnswer = restAt >= 0 ? restAt : null,
                     Columns = columns,
                 }) is int a ? a : items.Count - 1;
-                char k = i == FieldLeft ? '<' : i == FieldRight ? '>' : i >= 0 && i < keys.Length ? keys[i] : 'E';
-                RestTimeMenu.Key key = k switch
-                {
-                    '<' => RestTimeMenu.Key.Left,
-                    '>' => RestTimeMenu.Key.Right,
-                    'R' => RestTimeMenu.Key.Rest,
-                    'Y' => RestTimeMenu.Key.Days,
-                    'H' => RestTimeMenu.Key.Hours,
-                    'M' => RestTimeMenu.Key.Minutes,
-                    'I' => RestTimeMenu.Key.Inc,
-                    'D' => RestTimeMenu.Key.Dec,
-                    _ => RestTimeMenu.Key.Exit,
-                };
+                RestTimeMenu.Key key = i == FieldLeft ? RestTimeMenu.Key.Left
+                    : i == FieldRight ? RestTimeMenu.Key.Right
+                    : i >= 0 && i < roles.Length ? roles[i] : RestTimeMenu.Key.Exit;
                 if (menu.Press(key) is { } rest)
                 {
                     // The line stays as the menu left it, its field lit, until the rest shows it again every 5th tick
@@ -428,10 +452,23 @@ public static class CampScreens
             Draw(0);
             if (anyone)
                 c.Trade.RosterDrawn(); // 0x2463D redraws the party list when anyone healed
-            c.Dialog.Text.Put(19, 1, c.Text[Msg.PartyHealed], 10);
-            c.Dialog.WaitKey();
+            if (AmigaView.On)
+            {
+                // Amiga (hunk 1 +0x31DE–0x3216): the line as stored, in its own pen (28), then a timed pause.
+                c.Dialog.Text.Put(19, 1, c.Text.Raw(Msg.PartyHealed), AmigaPen(GoldBox.Data.Module.Por.PorAmigaText.RestHealPen, 10));
+                c.Dialog.Ask(new DelayRequest(AmigaView.TimedPause(c.Memory.GameSpeed)));
+            }
+            else
+            {
+                c.Dialog.Text.Put(19, 1, c.Text[Msg.PartyHealed], 10);
+                c.Dialog.WaitKey();
+            }
             ClearMessages();
         }
+
+        /// <summary>A text-window colour for an Amiga caller's own pen (<see cref="TextWindow.Put"/> takes pens 16–31 as
+        /// Amiga pens), else the DOS colour.</summary>
+        private static byte AmigaPen(string key, byte dos) => AmigaView.CallPen(key) is int pen and >= 16 and <= 31 ? (byte)pen : dos;
 
         public void Memorised(EclCharacter who, int spell) => SpellMessage(who, Msg.HasMemorised, spell);
         public void Scribed(EclCharacter who, int spell) => SpellMessage(who, Msg.HasScribed, spell);
@@ -441,11 +478,16 @@ public static class CampScreens
         {
             Draw(0);
             ClearMessages();
-            var name = who.Name.ToUpperInvariant();
+            // Amiga (hunk 22 +0x4FFC–0x5064): the same places, the texts as stored, then a timed pause, not a key.
+            bool amiga = AmigaView.On;
+            var name = AmigaView.Case(who.Name);
             c.Dialog.Text.Put(19, 1, name, 11);
-            c.Dialog.Text.Put(19, name.Length + 2, c.Text[text], 10);
-            c.Dialog.Text.Put(20, 1, SpellName(c, spell), 10);
-            c.Dialog.WaitKey();
+            c.Dialog.Text.Put(19, name.Length + 2, amiga ? c.Text.Raw(text) : c.Text[text], 10);
+            c.Dialog.Text.Put(20, 1, amiga ? AmigaView.Case(c.Resources.SpellName(spell) ?? SpellName(c, spell)) : SpellName(c, spell), 10);
+            if (amiga)
+                c.Dialog.Ask(new DelayRequest(AmigaView.TimedPause(c.Memory.GameSpeed)));
+            else
+                c.Dialog.WaitKey();
             ClearMessages();
         }
 
@@ -453,6 +495,13 @@ public static class CampScreens
         {
             ClearMessages();
             Draw(0);
+            if (AmigaView.On)
+            {
+                // Amiga (hunk 1 +0x3644–0x3668): the line as stored in pen 30 (orange), then a timed pause.
+                c.Dialog.Text.Put(19, 1, c.Text.Raw(Msg.Interrupted), AmigaPen(GoldBox.Data.Module.Por.PorAmigaText.RestInterruptPen, 15));
+                c.Dialog.Ask(new DelayRequest(AmigaView.TimedPause(c.Memory.GameSpeed)));
+                return;
+            }
             c.Dialog.Text.Put(19, 1, c.Text[Msg.Interrupted], 15);
             c.Dialog.WaitKey();
         }
@@ -500,10 +549,10 @@ public static class CampScreens
     }
 
     public static string SpellName(CampContext c, int spell) =>
-        (c.Resources.SpellName(spell) ?? $"SPELL {spell.ToString(CultureInfo.InvariantCulture)}").ToUpperInvariant();
+        AmigaView.Case((c.Resources.SpellName(spell) ?? $"SPELL {spell.ToString(CultureInfo.InvariantCulture)}"));
 
     private static string LevelName(CampContext c, int level) =>
-        (c.Resources.LevelName(level) ?? $"LEVEL {level.ToString(CultureInfo.InvariantCulture)}").ToUpperInvariant();
+        AmigaView.Case((c.Resources.LevelName(level) ?? $"LEVEL {level.ToString(CultureInfo.InvariantCulture)}"));
 
     /// <summary>The refusal of 0x17B9D as a message; true when the character may go on.</summary>
     private static bool Allowed(CampContext c, CampActivity a)
@@ -564,7 +613,7 @@ public static class CampScreens
             CampSpells.ListKind.ToMemorise => Msg.ToBeMemorised,
             _ => Msg.ToBeScribed,
         };
-        var lines = new List<ListLine> { new(who.Name.ToUpperInvariant() + " " + c.Text[Msg.SpellsWord] + c.Text[suffix], 11, 1) };
+        var lines = new List<ListLine> { new(AmigaView.Case(who.Name) + " " + c.Text[Msg.SpellsWord] + c.Text[suffix], 11, 1) };
         if (action is not null)
             lines.Add(new(c.Text[Msg.ChooseSpell], 13, 1));
         if (extra is not null)
@@ -677,7 +726,7 @@ public static class CampScreens
         // Bless in camp, speed 4): the name and the casts word on row 19, the spell name on row 20 (one row below the
         // effect messages' name row), drawn at once (not typed), then the game-speed pause (no key) and the rows
         // cleared; the effect messages follow. [?] The routine is not read (0x27D48 outside a fight).
-        var name = who.Name.ToUpperInvariant();
+        var name = AmigaView.Case(who.Name);
         var w = c.Dialog.Text;
         w.ClearRect(TextWindow.Left, TextWindow.Top, TextWindow.Right, TextWindow.Bottom);
         w.Put(TextWindow.Top + 2, TextWindow.Left, name, 11);
@@ -762,7 +811,7 @@ public static class CampScreens
         c.Trade.FrameTextBox(true);
         var w = c.Dialog.Text;
         w.ClearRect(TextWindow.Left, TextWindow.Top, TextWindow.Right, TextWindow.Bottom);
-        w.Put(TextWindow.Top + 1, TextWindow.Left, who.Name.ToUpperInvariant(), CombatChooser.NameColour(who));
+        w.Put(TextWindow.Top + 1, TextWindow.Left, AmigaView.Case(who.Name), CombatChooser.NameColour(who));
         w.PrintIn(TextWindow.Left, TextWindow.Top + 2, TextWindow.Right, TextWindow.Bottom, text, true, TextWindow.ScriptColour);
         if (!pause)
             return;
@@ -883,7 +932,7 @@ public static class CampScreens
     /// <summary>0x17DD5: its heading and, per class with slots, its free slots of levels 1–3 (blank without a slot).</summary>
     private static List<ListLine> SlotLines(CampContext c, EclCharacter who)
     {
-        var lines = new List<ListLine> { new(who.Name.ToUpperInvariant() + " " + c.Text[Msg.CanMemorise], 10, 1) };
+        var lines = new List<ListLine> { new(AmigaView.Case(who.Name) + " " + c.Text[Msg.CanMemorise], 10, 1) };
         for (int cls = 0; cls <= 1; cls++)
         {
             var s = new System.Text.StringBuilder(c.Text[cls == 0 ? Msg.ClericSpells : Msg.MageSpells].PadLeft(18));
@@ -967,14 +1016,14 @@ public static class CampScreens
         foreach (var m in c.Party.Members)
         {
             labels.Add(rows.Count);
-            rows.Add(m.Name.ToUpperInvariant());
+            rows.Add(AmigaView.Case(m.Name));
             var lines = c.Spells.Display(m);
             foreach (var l in lines)
-                rows.Add((l.Spell > 0 ? SpellName(c, l.Spell)
+                rows.Add(AmigaView.Case(l.Spell > 0 ? SpellName(c, l.Spell)
                     : l.Funky ? c.Text[Msg.Funky] + l.EffectId.ToString(CultureInfo.InvariantCulture)
-                    : c.Text.EffectLabel(l.EffectId) ?? $"EFFECT {l.EffectId.ToString(CultureInfo.InvariantCulture)}").ToUpperInvariant());
+                    : c.Text.EffectLabel(l.EffectId) ?? $"EFFECT {l.EffectId.ToString(CultureInfo.InvariantCulture)}"));
             if (lines.Count == 0)
-                rows.Add(c.Text[Msg.NoSpellEffects].ToUpperInvariant());
+                rows.Add(AmigaView.Case(c.Text[Msg.NoSpellEffects]));
             rows.Add("");
         }
         var paging = SpellLists.Paging(c.Resources.CombatTexts, memorize: false, wordsAt: 0) with { Rows = DisplayRows };
@@ -982,12 +1031,28 @@ public static class CampScreens
         {
             Labels = labels,
             Paging = paging,
-            Spell = new SpellPageLayout("", 15, c.Text[Msg.DisplayTitle].ToUpperInvariant()) { CentredTitle = true, LabelColour = 11 },
+            Spell = new SpellPageLayout("", 15, AmigaView.Case(c.Text[Msg.DisplayTitle])) { CentredTitle = true, LabelColour = 11 },
         });
     }
 
     /// <summary>Display's list window (1, 4)–(38, 22): its first row and its rows.</summary>
     public const int DisplayFirstRow = 4, DisplayRows = 19;
+
+    /// <summary>
+    /// The Pics menu's entries, hotkeys and columns: DOS's line with its own spaces (<see cref="MenuColumns"/>), or the
+    /// Amiga's (hunk 1 +0x4E94–0x4F36, <see cref="AmigaView.PicsLine"/>): one space apart, the program's case, the 0xFF
+    /// inside "Monsters on" drawn blank (one entry, one gadget).
+    /// </summary>
+    public static (List<string> Items, string Keys, IReadOnlyList<int>? Columns) PicsLine(string dosLine, string? amigaLine)
+    {
+        if (amigaLine is not null)
+        {
+            var (ai, ak) = AmigaView.ParseLine(amigaLine);
+            return (ai, ak, null);
+        }
+        var (items, keys) = ParseMenu(dosLine);
+        return (items, keys, MenuColumns(dosLine));
+    }
 
     // ---- Alter (0x1948A) -----------------------------------------------------------------------------------------
 
@@ -1152,16 +1217,26 @@ public static class CampScreens
         }
     }
 
-    /// <summary>Pics (0x1948A): monsters on/off, portraits on/off, Exit; M and P toggle, until Exit or Escape.</summary>
+    /// <summary>
+    /// Pics (0x1948A): monsters on/off, portraits on/off, Exit; M and P toggle, until Exit or Escape. DOS's words carry two
+    /// spaces after them ("Monsters on  "), which the menu routine draws as they are (as the rest-time menu's, D s33);
+    /// under the Amiga pages the Amiga's line (<see cref="PicsLine"/>).
+    /// </summary>
     public static void Pictures(CampContext c)
     {
         while (true)
         {
-            string line = c.Text.Original(CampSettings.MonsterPictures(c.Memory) ? Msg.MonstersOn : Msg.MonstersOff)
-                + c.Text.Original(CampSettings.Portraits(c.Memory) ? Msg.PortraitsOn : Msg.PortraitsOff)
+            bool monsters = CampSettings.MonsterPictures(c.Memory), portraits = CampSettings.Portraits(c.Memory);
+            string line = c.Text.Original(monsters ? Msg.MonstersOn : Msg.MonstersOff)
+                + c.Text.Original(portraits ? Msg.PortraitsOn : Msg.PortraitsOff)
                 + c.Text.Original(Msg.PicsExit);
-            var (items, keys) = ParseMenu(line);
-            int i = c.Dialog.Ask(new ChoiceRequest(null, items, false, items.Count - 1) { Hotkeys = keys, Animates = true }) is int a ? a : items.Count - 1;
+            var (items, keys, columns) = PicsLine(line, AmigaView.PicsLine(monsters, portraits));
+            int i = c.Dialog.Ask(new ChoiceRequest(null, items, false, items.Count - 1)
+            {
+                Hotkeys = keys,
+                Columns = columns,
+                Animates = true,
+            }) is int a ? a : items.Count - 1;
             char k = i >= 0 && i < keys.Length ? keys[i] : 'E';
             if (k == 'M')
                 CampSettings.ToggleMonsters(c.Memory);

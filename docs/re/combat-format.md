@@ -349,6 +349,8 @@ with no CLRMON): the view box is just as empty on entry and again after View →
 the step, as with CLRMON (settled, was `[?]`). Between menus: View's menu offers only the entries 0x21AED builds
 (a fighter with items and money: Items, Trade, Drop, Exit), so its Exit leaves the shared highlight on the shop menu's
 4th entry, Appraise (DOSBox-X); the Client's View page uses the same entries since s24 (it offered Spells always).
+As the first menu after a Load (vector 4 opening the shop) with $4AFF set, the menu runs a loaded picture in the box
+until the loop draws its screen again (P + D s44, training.md "The picture under $4AFF on other pages").
 
 DS:49F3 = 1, the 28 bytes of the money pool DS:67F4 are zeroed, DS:6DC0 (a byte, not the VM cell) = 0, and every item
 of the treasure list DS:6810 is named (START 0xFE2): **the shop's stock is the treasure list**, filled by TREASURE

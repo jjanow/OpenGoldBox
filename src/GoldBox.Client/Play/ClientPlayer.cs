@@ -136,9 +136,12 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
     /// up. DOSBox-X (s43, a step's PICTURE 2 then PROGRAM 0): after a hall Save the hall's next menu drew the frames
     /// over its page; after a camp Save the quit question's yes/no ran the camp picture's frames on every pass (the camp
     /// menu after it held them 0.22 s again). A horizontal menu gets <see cref="ChoiceRequest.EveryPass"/> (and animates);
-    /// the hall's menu leaves the picture on its page (<see cref="HallState.PictureOver"/>). `[?]` The other page menus
-    /// (lists, View, the party menu) are not seen with $4AFF set: a Save or a Load is followed by the hall's, camp's or
-    /// a script's menu.
+    /// the hall's menu leaves the picture on its page (<see cref="HallState.PictureOver"/>), a shop's or temple's in its
+    /// view box (<see cref="VenuePictureOver"/>); the press-enter menu of the summary or NPC share window draws it over
+    /// the window (<see cref="KeyRequest.EveryPass"/>). DOSBox-X (s44, a start-up Load whose vector 4 runs PICTURE 2 and
+    /// then a shop, a temple, a COMBAT with no monsters or a VMENU): each first menu drew the frames on every pass. The
+    /// other page menus (the item lists, View, Modify) are never the first menu after a Save or a Load in v1.3
+    /// (training.md "The picture under $4AFF on other pages").
     /// </summary>
     public PlayerRequest MenuAsked(PlayerRequest request)
     {
@@ -147,11 +150,19 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
         switch (request)
         {
             case ChoiceRequest { EveryPass: false } c:
+                if (Interface == Venue.Shop)
+                    VenuePictureOver = true;
                 return c with { Animates = true, EveryPass = true };
+            case ChoiceRequest c:
+                if (Interface == Venue.Shop)
+                    VenuePictureOver = true;
+                return c;
             case HallMenuRequest m:
                 if (Hall is { } hall)
                     hall.PictureOver = HallPicture.Whole;
                 return m with { EveryPass = true };
+            case KeyRequest { AsMenu: true, EveryPass: false } k:
+                return k with { EveryPass = true };
             default:
                 return request;
         }
@@ -164,19 +175,41 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
     /// the program's table empty (0x2E24B; DOSBox-X s43: PICTURE 2 after the hall had set disk 3, nothing drawn); the
     /// Client keeps the picture and finds nothing to draw, the same screen.
     /// </summary>
-    private bool FramesLoaded => Camping || Interface == Venue.Loot || ViewPicture is { Kind: ViewPictureKind.Picture };
+    private bool FramesLoaded => Camping || (Interface == Venue.Loot && LootDrawn)
+        || (ViewPicture is { Kind: ViewPictureKind.Picture } p && !ReferenceEquals(p, _freedPicture));
+
+    /// <summary>
+    /// The script picture the fight start freed (0xE402 frees the frame table DS:6ABE first, 0xE40D): no menu of the
+    /// fight or after it draws it, even with $4AFF set (DOSBox-X s44: a start-up Load's vector 4 with PICTURE 2 and a
+    /// COMBAT, the combat menu without it). A picture loaded later is another one.
+    /// </summary>
+    private ViewPicture? _freedPicture;
+
+    /// <summary>
+    /// A shop's or temple's first menu with $4AFF set drew the loaded picture in the view box (<see cref="MenuAsked"/>);
+    /// its last frame stays until the loop draws its screen again (<see cref="TradeContext.VenueRedrawn"/>). DOSBox-X
+    /// (s44): PICTURE 2 ran in the box under the shop's menu, stayed after Pool and was gone after View's exit.
+    /// </summary>
+    public bool VenuePictureOver { get; private set; }
+
+    /// <summary>
+    /// The loot menu drew its screen (START 0x3379 case 6 at 0x644B): the chest is in the frame table and the view box.
+    /// Before it (the NPC share window and the summary) the table still holds what was loaded before the COMBAT.
+    /// </summary>
+    public bool LootDrawn { get; private set; }
 
     private int Choose(string? prompt, IReadOnlyList<string> items, bool vertical = false, int? cancel = null,
-        bool animates = false, int? listRow = null, bool scriptText = false, (int Words, int Capitals)? amigaPens = null)
+        bool animates = false, int? listRow = null, bool scriptText = false, (int Words, int Capitals)? amigaPens = null,
+        ListPaging? paging = null)
     {
         // The menu routine 0x2CC8C also animates while VM $4AFF is not 0, and clears it at its end (AreaLoop.MenuAnimateCell).
         var mem = memory();
-        bool everyPass = mem.MenuAnimates && ViewPicture is { Kind: ViewPictureKind.Picture };
+        bool everyPass = mem.MenuAnimates && FramesLoaded;
         animates |= everyPass;
         try
         {
             return runner.Ask(new ChoiceRequest(prompt, items, vertical, cancel)
-                { Animates = animates, EveryPass = everyPass, ListRow = listRow, ScriptText = scriptText, AmigaPens = amigaPens })
+                { Animates = animates, EveryPass = everyPass, ListRow = listRow, Paging = paging, ScriptText = scriptText, AmigaPens = amigaPens })
                 is int i ? i : 0;
         }
         finally
@@ -383,15 +416,20 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
     /// then the list routine 0x2D669 (through 0x8C5B, 0x1D99) with the window from row DS:5E25 + 1 to row 22, columns
     /// 1–38, colours 13 / 10 / 15, keypad flag 1, an empty prompt and word and no Exit, the position 0 (0x1D51). After
     /// the pick the box is blanked (START 0x7E63 through 0709:0DD3, 0x1DC2) and the cursor stays after the prompt
-    /// (DOSBox-X s43: a PRINT after the menu went on at the prompt's end). [?] A list longer than its window (no v1.3
-    /// VMENU has one: at most 5 rows with the prompt) pages in the program with Next / Prev; the Client scrolls it.
+    /// (DOSBox-X s43: a PRINT after the menu went on at the prompt's end). A list longer than its window (no v1.3
+    /// VMENU has one: at most 5 rows with the prompt) pages with the routine's Next / Prev (read and seen in DOSBox-X
+    /// s44, scratch saves; the words as the spell lists', <see cref="CampScreens.Paging"/>): the screen's
+    /// <c>ExploreScreen.ListAnswer</c>. Escape picks the highlighted entry too (VMENU stores the position, 0x1D9E).
     /// </summary>
     public ushort VerticalMenu(string prompt, IReadOnlyList<string> choices)
     {
         Text.Home();
         Text.Print(prompt, clear: true);
         int first = Math.Min(Text.Row + 1, TextWindow.Bottom);
-        int pick = Choose(null, Upper(choices), vertical: true, listRow: first, scriptText: true);
+        var words = Resources.CombatTexts.Words(CombatMsg.AimNextPrevManual);
+        var paging = new ListPaging(words.ElementAtOrDefault(0) ?? "NEXT", words.ElementAtOrDefault(1) ?? "PREV",
+            TextWindow.Bottom - first + 1, 0);
+        int pick = Choose(null, Upper(choices), vertical: true, listRow: first, scriptText: true, paging: paging);
         Text.ClearRect(TextWindow.Left, TextWindow.Top, TextWindow.Right, TextWindow.Bottom);
         return (ushort)pick;
     }
@@ -425,21 +463,28 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
     public string InputString() =>
         runner.Ask(new TextRequest("", false, AmigaView.On ? AmigaView.InputStringLength : 40)) as string ?? "";
 
-    /// <summary>WHO: [?] Lee only (the player picks a character, who becomes current).</summary>
+    /// <summary>WHO through the default host path (not used: <see cref="PickCharacter"/> answers).</summary>
     public void Who(string prompt)
     {
-        if (PickCharacter(prompt) is { } i && memory().Party is { } party)
+        if (PickCharacter(prompt) is { } i && i >= 0 && memory().Party is { } party)
             party.CurrentIndex = i;
     }
 
-    /// <summary>WHO's pick (0x3879): a vertical list of the party under the prompt; [?] Escape is not offered (what it leaves is not read).</summary>
+    /// <summary>
+    /// WHO (GAME.OVR 0x3879, read s44): the operands, the text box (1, 17)–(38, 22) blanked (START 0x7E63 through
+    /// 0709:0DD3; the cursor stays), then START's member pick 0x37E8 (00BA:2C48) with the prompt (string slot 1) and
+    /// the Exit flag 0 on DS:5D92 itself: row 24 the prompt in colour 13 and "Select" alone, the party list drawn with
+    /// the pick lit, Home / End move it (<see cref="MemberPick"/>). Escape clears the pick and the loop goes on; Select
+    /// or Return then leaves nobody current (<see cref="IEclHost.NoCharacter"/>).
+    /// </summary>
     public int? PickCharacter(string prompt)
     {
         var party = memory().Party;
-        if (party is null || party.Members.Count == 0)
+        if (party is null || party.Members.Count == 0 || Trade(null) is not { } t)
             return null;
-        var names = party.Members.Select(m => m.Name.ToUpperInvariant()).ToList();
-        return Math.Clamp(Choose(prompt.ToUpperInvariant(), names, vertical: true), 0, names.Count - 1);
+        Text.ClearRect(TextWindow.Left, TextWindow.Top, TextWindow.Right, TextWindow.Bottom);
+        var pick = MemberPick.Run(t, AmigaView.Case(prompt), party.Current, Resources.SelectMenu ?? "Select");
+        return pick is null ? IEclHost.NoCharacter : party.Members.IndexOf(pick);
     }
 
     public ushort Parley(ushort haughty, ushort sly, ushort nice, ushort meek, ushort abusive) => 0; // EncounterHost answers
@@ -606,20 +651,25 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
     }
 
     /// <summary>
-    /// START 0x3379 drew the screen for interface state <paramref name="state"/> while exploring (<see
-    /// cref="GoldBox.Core.Explore.AreaLoop.DrawInterface"/>: the hall's end, a load's entry, the command line's View and
-    /// Cast; P s41). 0x32CA draws every window again, each blanked inside: the text box (the cursor stays), the picture
-    /// window and, in cases 2 and 4, the 3D view's box (a CLEARBOX blank and its ring are gone, PROTECT's runes with
-    /// them); the party list (0x1307) and the position line (0x34AB). Case 2 shows the camp's picture (PIC 0x1D,
-    /// 0x2E170) until the next view redraw; cases 3 and 4 redraw the view next (0x2DCF4, the area loop's redraw).
-    /// </summary>
-    /// <summary>
     /// A screen that draws its own windows (the camp, a shop or temple, the loot menu, a fight) replaces the overland
-    /// interface's layout (<see cref="GoldBox.Core.Explore.AreaLoop.OverlandLayout"/>). [?] Only the camp is checked
-    /// (DOSBox-X s43); after the others the Client draws the 3D layout's joint as it did before s43.
+    /// interface's layout (<see cref="GoldBox.Core.Explore.AreaLoop.OverlandLayout"/>): each draws START 0x3379 (the
+    /// shop and temple case 1, the loot menu case 6, the camp case 2), and COMBAT's handler ends with START 0x3379 case 3
+    /// on the overland (GAME.OVR 0x25F7–0x2635) whatever ran, so the joint at (16, 16) is back for the screen after it.
+    /// It stays: the interface (START 0x36FE, no joint) is drawn again only at a command routine entry with DS:49F9 &lt; 2
+    /// (0x17285), and on the overland DS:49F9 is 2–4 after the first command (0x173E7) and after the area loop's restart
+    /// (0x3F28). DOSBox-X s44 (save-overland 26 10,20,N, vector 0 = a fight, a loot, a shop, a temple once): the joint
+    /// on each screen, after it and after the next step.
     /// </summary>
     private void OtherLayout() => Game()?.Loop.OtherLayoutDrawn();
 
+    /// <summary>
+    /// START 0x3379 drew the screen for interface state <paramref name="state"/> while exploring (<see
+    /// cref="GoldBox.Core.Explore.AreaLoop.DrawInterface"/>: the hall's end, a load's entry, the command line's View and
+    /// Cast; P s41). 0x32CA draws every window again, each blanked inside: the text box (the cursor stays), the picture
+    /// window and, in cases 1, 2, 4 and 6 (0x32CA(1)), the 3D view's box (a CLEARBOX blank and its ring are gone, PROTECT's runes with
+    /// them); the party list (0x1307) and the position line (0x34AB). Case 2 shows the camp's picture (PIC 0x1D,
+    /// 0x2E170) until the next view redraw; cases 3 and 4 redraw the view next (0x2DCF4, the area loop's redraw).
+    /// </summary>
     /// <summary>START 0x3379 by the game's DS:49F3 (<see cref="GoldBox.Core.Explore.AreaLoop.DrawInterface"/>, followed here).</summary>
     public void DrawInterface()
     {
@@ -837,6 +887,8 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
     public void Fight(EncounterState state, GoldBox.Core.Game.Fight fight)
     {
         OtherLayout();
+        PartyMenuUnder = false; // the combat screen replaces a party menu page
+        _freedPicture = ViewPicture; // 0xE40D: the fight start frees the frame table
         int speed = memory().GameSpeed;
         FightView.Speed = (byte)(speed <= 9 ? speed : 0);
         FightView.Dungeon = memory().ViewMode == 1; // DUNGCOM only when DS:49FA = 1, else WILDCOM (0xD81B; combat-menu.md "Ground")
@@ -864,6 +916,8 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
             return;
         OtherLayout();
         Interface = Venue.Loot;
+        PartyMenuUnder = false; // the window 03F1:02E8 (1, 1, 38, 22) over the whole page, then START 0x3379 case 6
+        LootDrawn = false;
         try
         {
             VenueScreens.Loot(t, outcome, state.Duel, Game()?.Encounter.NpcsTakingShare ?? []);
@@ -871,6 +925,7 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
         finally
         {
             Interface = null;
+            LootDrawn = false;
             Window = null;
             WindowAfterFight = false;
             ViewOverlay = null; // [?] as after the shop: the area display is drawn again after the loot step
@@ -947,7 +1002,9 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
     /// The end of DAMAGE (0x375A–0x37E4). Party killed: a full-screen window whose title the message's clear erases at
     /// once, the message at column 1, row 1 in colour 10, Delay(3000) (a fixed 3 s; the bottom line keeps what was
     /// there, e.g. the page prompt), then the program's end. Every DAMAGE then shows the white press-enter line on the
-    /// bottom row (START 0x7C85, colour 15) and waits for a key; after a wipe the program exits to DOS.
+    /// bottom row (START 0x7C85, colour 15) and waits for a key; after a wipe the program exits to DOS. The Amiga
+    /// (hunk 16 +0x4674–0x46DC) draws the same window, title and message, starts song 5 and goes straight to its
+    /// press-enter key wait (pen 28 at column 1): no Delay, so row 24 never shows the stale prompt.
     /// </summary>
     public void DamageEnd(bool partyKilled)
     {
@@ -960,8 +1017,12 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
             box.PrintIn(1, 1, 38, 22, t[Msg.PartyKilled], clear: true, colour: 10);
             Window = box.WindowLines();
             // Row 24 keeps what was there: the page prompt, or else the command line (DOSBox-X s22, a one-line wipe).
-            (string, byte)? stale = _pagePrompted ? ((Resources.PagePrompt ?? "PRESS A KEY").ToUpperInvariant(), (byte)13) : null;
-            runner.Ask(new DelayRequest(TimeSpan.FromMilliseconds(3000)) { BottomLine = stale });
+            // The Amiga has no hold (AmigaView.PartyKilledHold): its press-enter line comes at once.
+            if (AmigaView.PartyKilledHold(AmigaView.On) is { } hold)
+            {
+                (string, byte)? stale = _pagePrompted ? ((Resources.PagePrompt ?? "PRESS A KEY").ToUpperInvariant(), (byte)13) : null;
+                runner.Ask(new DelayRequest(hold) { BottomLine = stale });
+            }
         }
         try
         {
@@ -989,6 +1050,8 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
             return;
         OtherLayout();
         Interface = Venue.Shop;
+        PartyMenuUnder = false; // the entry's START 0x3379 case 1 (0x721E, 0x528B) replaces a party menu page
+        VenuePictureOver = false;
         try
         {
             screen(t);
@@ -996,6 +1059,7 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
         finally
         {
             Interface = null;
+            VenuePictureOver = false;
             // [?] The shop and temple screens replace the area display; when the program draws the 3D view again is
             // not read. CLRMON before them clears the picture flag, so the script's PICTURE 255 does not restore it:
             // we go back to the view here.
@@ -1070,6 +1134,12 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
             FrameTextBox = on => TextBoxFramed = on,
             HoldRosterName = HoldRosterName,
             RosterDrawn = ReleaseRosterNames,
+            VenueRedrawn = () =>
+            {
+                VenuePictureOver = false;
+                if (Interface == Venue.Loot)
+                    LootDrawn = true;
+            },
             RosterDrawnLit = ReleaseRosterNamesLit,
             HoldPositionLine = on => PositionLineHeld = on,
             Text = Resources.Texts,

@@ -770,7 +770,7 @@ public sealed class PartyMenuScreen(PartyMenuFlow flow, ScriptRunner runner, ISc
                 // Drop's amount (input 0x24F1D; DOSBox-X s39): the question in green, a space, the digits typed in white,
                 // no cursor.
                 Chrome.Clear(f, 0, MenuRow, 40);
-                string question = Fit(t.Prompt.ToUpperInvariant() + " ", 40);
+                string question = Fit(AmigaView.Case(t.Prompt) + " ", 40);
                 Chrome.Text(f, font, 0, MenuRow, question, Chrome.Green);
                 Chrome.Text(f, font, question.Length, MenuRow, Fit(_typed, 40 - question.Length), Chrome.White);
                 break;
@@ -826,7 +826,7 @@ public sealed class PartyMenuScreen(PartyMenuFlow flow, ScriptRunner runner, ISc
     {
         Chrome.Clear(f, 0, MenuRow, 40);
         if (prompt is { Length: > 0 })
-            Chrome.MenuPrompt(f, font, 0, MenuRow, Fit(prompt.ToUpperInvariant(), 40), promptColour);
+            Chrome.MenuPrompt(f, font, 0, MenuRow, Fit(AmigaView.Case(prompt), 40), promptColour);
         // D s39: the icon editor's "Parts color-1 color-2 Size Exit" (hotkeys P 1 2 S E): Parts lit shows PARTS COLOR
         // white, the '-' green and the 1 white; color-1 lit shows its 1 and the next word's COLOR white.
         ExploreScreen.DrawLine(f, font, words, selected, start ?? WordsStart(prompt),
@@ -963,10 +963,10 @@ public sealed class PartyMenuScreen(PartyMenuFlow flow, ScriptRunner runner, ISc
             for (int k = 0; k < 2; k++)
                 if (art.Combat.Party(c, k == 1) is { } pic)
                     CombatArt.Draw(f, pic, 32 + 72 * k, y, false, (0, 0, 320, 200));
-            Chrome.Text(f, font, 3, y / 8 + 3, Fit(Texts("IconFrames") ?? "READY   ACTION", 30).ToUpperInvariant(), Chrome.White);
+            Chrome.Text(f, font, 3, y / 8 + 3, AmigaView.Case(Fit(Texts("IconFrames") ?? "READY   ACTION", 30)), Chrome.White);
         }
-        Pair(old, 56, (Texts("IconOld") ?? "OLD").ToUpperInvariant());
-        Pair(ic.Character, 104, (Texts("IconNew") ?? "NEW").ToUpperInvariant());
+        Pair(old, 56, AmigaView.Case((Texts("IconOld") ?? "OLD")));
+        Pair(ic.Character, 104, AmigaView.Case((Texts("IconNew") ?? "NEW")));
     }
 
     private string? Texts(string key) => Program?.Text("PartyMsg." + key);

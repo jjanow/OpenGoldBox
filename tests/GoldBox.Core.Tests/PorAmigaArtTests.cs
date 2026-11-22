@@ -560,12 +560,30 @@ public class PorAmigaArtTests(ITestOutputHelper output)
         Assert.NotNull(c);
         Assert.Equal(18, c.Pens[PorAmigaText.KeyPagePen]);
         Assert.Equal(28, c.Pens[PorAmigaText.KeyDamagePen]);
-        Assert.Equal(28, c.Pens[PorAmigaText.HmenuPen]);
+        // s44: HMENU's '~' helper passes its own pens (FS-UAE s44: capitals grey, the rest green).
+        Assert.Equal((28, 16), (c.Pens[PorAmigaText.HmenuWordsPen], c.Pens[PorAmigaText.HmenuCapitalsPen]));
+        Assert.Equal((30, 28), (c.Pens[PorAmigaText.RestInterruptPen], c.Pens[PorAmigaText.RestHealPen]));
+        // s44: the camp's Amiga lines: the rest-time menu (seven entries, one space apart) and the Pics words (two words
+        // joined by 0xFF, a space after each; the exit word without).
+        var rest = c.Strings[PorAmigaText.RestMenuKey];
+        Assert.Equal(7, rest.Split(' ').Length);
+        foreach (var k in new[] { PorAmigaText.MonstersOnKey, PorAmigaText.MonstersOffKey, PorAmigaText.PortraitsOnKey, PorAmigaText.PortraitsOffKey })
+        {
+            Assert.Equal(1, c.Strings[k].Count(ch => ch == PorAmigaText.JoinedSpace));
+            Assert.EndsWith(" ", c.Strings[k]);
+        }
+        Assert.DoesNotContain(' ', c.Strings[PorAmigaText.PicsExitKey]);
         Assert.Equal((4, 16, 28), (c.Pens[PorAmigaText.PortraitPromptPen], c.Pens[PorAmigaText.PortraitWordsPen],
             c.Pens[PorAmigaText.PortraitCapitalsPen]));
         Assert.Equal(13, c.Strings[PorAmigaText.PagePromptKey].Length);
         Assert.Equal(PorAmigaText.PartyMenuEntries, c.Strings.Keys.Count(k => k.StartsWith(PorAmigaText.PartyMenuKey, StringComparison.Ordinal)));
         Assert.True(c.Strings.ContainsKey(PorAmigaText.ViewRenameKey));
+        foreach (var key in new[] { PorAmigaText.ShopMoneyLeftKey, PorAmigaText.TempleMoneyLeftKey })
+        {
+            // s44: the Amiga's money-left lines quote with ' (DOS with ").
+            Assert.DoesNotContain('"', c.Strings[key]);
+            Assert.Equal(2, c.Strings[key].Count(ch => ch == '\''));
+        }
         var hunks = AmigaHunks.Parse(program);
         var disagree = (byte[])program.Clone();
         disagree[hunks[4].DataOffset!.Value + 0x236D] = 0x1A;   // the two DAMAGE key waits no longer agree

@@ -119,6 +119,8 @@ else
         Chrome.AmigaFrame = clientArt.Frame;
         Chrome.AmigaGadget = clientArt.Gadget;
         AmigaView.On = clientArt.Frame is not null;
+        // The list routine's window top after start-up (DOS 1, Amiga 0): a change of art later keeps the running value.
+        sharedHighlight.ListTop = AmigaView.On ? MenuHighlight.AmigaListTop : MenuHighlight.DosListTop;
         clientArt.Changed = c =>
         {
             Chrome.AmigaFrame = clientArt.Frame;

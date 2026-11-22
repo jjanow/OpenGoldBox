@@ -481,9 +481,9 @@ Checked against DOSBox-X (PoR v1.3, EGA, save A put on the overland with `goldbo
   `Overland.Redrawn`, and by the interface) is the facing the view draws; the interface's composite (frame c + 1 drawn
   alone over frame c, START 0x36FE / 0x3710) stays on screen until the next redraw (`EclMemory.MarkerDrawnTwice`; the
   Client drew frame c + 1 alone after the first command before s39). Frames: 2 of 2 equal during and after the
-  message but for cell (16, 16): a `save-overland` save keeps save A's $49F2 = 20, so its load draws the 3D layout's
-  window frame (START 0x3379 case 4, 0x272A with 1), whose plain piece there the overland interface does not redraw
-  (the Client draws the overland's junction; a save made on the overland loads at state 3 and draws none). Client:
+  message but for cell (16, 16): the overland interface's layout (START 0x36FE, 0x2E03F) has no joint there and the
+  Client of s39 drew one (fixed in s43; when the joint comes and goes on the overland: view3d.md "The joint after a
+  fight, a shop, a temple and a loot on the overland"). Client:
   `ClientPlayer.Flash` (a `DelayRequest` with the row-24 line in colour 14), the texts `Msg.RiverBlocks` /
   `Msg.NoAreaMapHere` read from GAME.OVR.
 - **Position line** (START 0x34C2): x = $49C3 + 13 in mode 3, + 26 in mode 4 (immediates), y = $49C4.

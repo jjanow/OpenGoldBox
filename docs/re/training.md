@@ -183,8 +183,42 @@ the $4AFF rule predicts; the picture is drawn over the party menu's screen there
   frame left (which one depends on the pass the key ends). Tests
   `HallPlayTests.A_hall_menu_after_a_save_draws_the_loaded_picture_over_the_page`,
   `HallPlayTests.A_member_pick_draws_the_party_list_over_the_picture_left_on_the_hall_page`,
-  `CampPlayTests.The_quit_question_after_a_camp_save_runs_the_camp_picture_every_pass`. `[?]` A venue's menu with
-  $4AFF set (only after a Load whose vector 4 opens a shop or temple) and the page menus (lists, View) were not seen.
+  `CampPlayTests.The_quit_question_after_a_camp_save_runs_the_camp_picture_every_pass`.
+- **The picture under $4AFF on other pages, P + D (s44).** Which menu comes first after a Save or a Load: the hall's
+  (hall Save, above), the camp's quit question (camp Save), the command line (a Load whose vector 4 asks nothing), or
+  whatever the entry script (vector 4) or, after a hall Load of a game save, the running script asks first. Of the
+  page menus, only VMENU reaches the list routine 0x2D669 straight from an ECL handler (0x8CD9); its 14 other callers
+  (the shop's Buy 0x6E98, the heal list 0x50E7, the loot's item take 0x615F, camp Display 0x18BE7, the hall's Create
+  0x1A0F4–0x1A821 and Add 0x1CA7A, View's Items 0x222C9, Trade and Drop 0x233B0 / 0x236AF, Take's kinds 0x25B14, the
+  spell list 0x271EF) and View 0x21AED's eight (shop 0x730D, temple 0x5341, loot 0x65B4, the fight 0x9BC0, the
+  command line 0x17118 / 0x17330, camp 0x197B3, hall 0x19D23) all run under a menu of their own that has already cleared
+  the cell. PROGRAM's cases (0x3B56) are the hall, the end game and the camp (whose menus are covered above). So in v1.3
+  the full-page menus with $4AFF set are VMENU's list, the shop's and temple's menus and the summary's and NPC share
+  window's press-enter menu (0x6071, 0x6A40). **D** (DOSBox-X v1.3, 3000 cycles; scratch saves from save A with vectors
+  0–3 = EXIT and vector 4 = PICTURE 2 and then: CLRMON, TREASURE (none), $6E6C := 1, COMBAT (shop); CLRMON, $6DE2 := 1,
+  COMBAT (temple); CLRMON, TREASURE 100 copper, COMBAT (no monsters); CLRMON, LOADMON 2, 8, 2, COMBAT (a fight); a
+  two-line VMENU; each loaded from the start-up menu):
+  - Shop and temple: the entry's START 0x3379 case 1 (0x721E, 0x528B) drew the screen over the party menu page; the
+    menu (flag 0, $4AFF = 3) ran PICTURE 2 in the empty view box, a different frame on every capture. After Pool the
+    last frame stayed (four captures equal); View's exit (START 0x3379) left the box empty. The loops draw the screen
+    again after B and T (0x743C, 0x5479), after A when 0x2663B's flag is set (gems or jewellery at the start; 0x744D,
+    0x548A), at the heal list's end (0x51A0) and at View's exit; not after Pool, Share, G / O or Exit's question.
+  - COMBAT with no monsters skips the fight 0x9881 and with it the fight start's free: the summary's full-screen window
+    (03F1:02E8) and its press-enter menu ran PICTURE 2 over the window's text on every pass; Enter, and the loot menu's
+    START 0x3379 case 6 loaded and showed the chest (held for its delays: the press-enter menu had cleared the cell).
+  - The fight: the fight start 0xE402 frees the frame table first (0xE40D, the same free as the command line's
+    0x17746), so the combat menu with $4AFF set drew nothing (captures equal, no picture); the battle line came over
+    the party menu page with the picture, as before vector 4's pair (s42). A fight in which no player menu runs (all
+    on Quick) leaves $4AFF set for the summary's press-enter menu, which then finds the table empty: P only, not seen.
+  - VMENU: the list over the party menu page and PICTURE 2 at cell (3, 3) on every pass.
+  Client: `ClientPlayer.MenuAsked` sets `VenuePictureOver` for a shop's or temple's menu (drawn in the box instead of
+  the blank, `ExploreScreen`; cleared by `TradeContext.VenueRedrawn` at the loops' START 0x3379 points) and
+  `KeyRequest.EveryPass` for the press-enter menu (the frames over the window); the chest only from the loot menu
+  (`ClientPlayer.LootDrawn`); the fight start marks the script picture freed (`FramesLoaded`); the shop, temple, loot
+  and fight end `PartyMenuUnder` (the Client drew the party menu page under the shop's menu and the summary before,
+  and the chest over it). On Xvfb with DOS art: the shop, temple and summary screens equal DOSBox-X's but the Client's
+  help lines, every row of the picture one of the same two frames (which one is left after Pool depends on the pass
+  the key ends); VMENU and the fight as DOSBox-X. Tests `MenuPictureTests`.
 - **A turn draws the view.** After Load D's case 2 (blank box), V and Escape (box blank again), Left drew the 3D view
   in the box, CAMPING kept: a turn (0x2ED72 + 0x2EEF4) and the area map toggle (0x2EEF4) draw the view over a
   picture or blank. Client: `AreaLoop.ViewDrawn` → `ClientPlayer.ViewDrawn` (the CLEARBOX ring stays blank as after

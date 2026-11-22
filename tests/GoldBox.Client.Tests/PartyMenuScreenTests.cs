@@ -205,6 +205,58 @@ public class PartyMenuScreenTests
     }
 
     [Fact]
+    public void A_creation_list_shows_its_label_only_when_the_list_top_is_0()
+    {
+        // DOSBox-X s44: a fresh start (the list routine's top DS:6B29 = 1) shows the races from row 2 with no label;
+        // after camp Display (position 0, top 0) the label on row 2 and the races from row 3, the gender list
+        // likewise. The Amiga starts with the top 0 (hunk 25 +0x1540): its labels show from the start.
+        if (Dir() is null)
+            return;
+        using (var r = Start(77))
+        {
+            Assert.Equal(MenuHighlight.DosListTop, r.Flow.Highlight.ListTop);
+            r.Act(GameAction.Confirm);               // Create
+            var race = Assert.IsType<PickRequest>(r.Runner.Pending);
+            Assert.Null(race.Title);
+            Assert.Equal(2, race.FirstRow);
+            Assert.Equal(1, r.Flow.Highlight.ListTop);
+        }
+        using (var r = Start(77))
+        {
+            r.Flow.Highlight.ListTop = 0;            // after a list at position 0 (camp Display), or the Amiga's start
+            r.Act(GameAction.Confirm);
+            var race = Assert.IsType<PickRequest>(r.Runner.Pending);
+            Assert.False(string.IsNullOrEmpty(race.Title));
+            Assert.Equal(3, race.FirstRow);
+            r.Act(GameAction.Confirm);               // dwarf
+            var gender = Assert.IsType<PickRequest>(r.Runner.Pending);
+            Assert.False(string.IsNullOrEmpty(gender.Title));
+            Assert.NotEqual(race.Title, gender.Title);
+        }
+        using (var r = Start(77))
+        {
+            AddHero(r);                              // Add's roster list: position 0 (0x1CA19) takes the top to 0
+            Assert.Equal(0, r.Flow.Highlight.ListTop);
+            r.Key(Keys.C);
+            Assert.False(string.IsNullOrEmpty(Assert.IsType<PickRequest>(r.Runner.Pending).Title));
+        }
+    }
+
+    [Fact]
+    public void The_list_routines_entry_moves_the_global_top()
+    {
+        Assert.Equal(1, MenuHighlight.EnterList(1, 1, 7));    // creation on a fresh DOS start: the label stays hidden
+        Assert.Equal(0, MenuHighlight.EnterList(1, 0, 20));   // camp Display (position 0)
+        Assert.Equal(0, MenuHighlight.EnterList(0, 1, 7));    // then creation shows its label
+        Assert.Equal(1, MenuHighlight.EnterList(5, 1, 7));    // a top below the position goes up to it
+        Assert.Equal(0, MenuHighlight.EnterList(9, 12, 7));   // past the entries: 0
+        var h = new MenuHighlight();
+        Assert.Equal(MenuHighlight.DosListTop, h.ListTop);
+        Assert.Equal(0, h.ListEntered(0, 3));
+        Assert.Equal(0, h.ListTop);
+    }
+
+    [Fact]
     public void The_pad_alone_creates_and_adds_and_drops()
     {
         if (Dir() is null)

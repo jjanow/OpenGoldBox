@@ -69,7 +69,8 @@ public sealed class ExploreScreen : IScreen
     /// <summary>What the picture window shows: the camp's picture while camping, else the encounter picture (or null).</summary>
     private ViewPicture? ShownPicture =>
         _player.Camping ? new ViewPicture(ViewPictureKind.Picture, CampPicture, null, 0, _game.Memory.Disk)
-        : _player.Interface == Venue.Loot ? new ViewPicture(ViewPictureKind.Picture, LootPicture, null, 0, _game.Memory.Disk)
+        : _player.Interface == Venue.Loot && _player.LootDrawn
+            ? new ViewPicture(ViewPictureKind.Picture, LootPicture, null, 0, _game.Memory.Disk)
         : _player.ViewPicture;
 
     /// <summary>
@@ -402,6 +403,21 @@ public sealed class ExploreScreen : IScreen
                 return null;
             case ListRequest l:
                 return _list.Click(l, click);
+            case ChoiceRequest { ListRow: not null } list:
+                if (click.Right)
+                    return GameAction.Cancel; // Escape: the highlighted entry (VMENU stores the position)
+                if (click.Y / 8 == MenuRow && WordAt([.. ListWords(list).Select(w => w.Word)], click.X / 8 - 1) is { } wi)
+                {
+                    _listWord = wi;
+                    _listPageClick = ListWords(list)[wi].Down;
+                    return null;
+                }
+                if (ItemAt(list, click.X / 8, click.Y / 8) is { } li)
+                {
+                    _selected = li;
+                    return GameAction.Confirm;
+                }
+                return null;
             case ChoiceRequest c:
                 if (click.Right)
                     return c.CancelIndex is not null ? GameAction.Cancel : null;
@@ -460,8 +476,88 @@ public sealed class ExploreScreen : IScreen
 
     private int ListTop(ChoiceRequest c)
     {
+        if (c.ListRow is not null)
+            return _listTop;
         int rows = ListWindow(c).Rows;
         return Math.Clamp(_selected - rows + 1, 0, Math.Max(0, c.Items.Count - rows));
+    }
+
+    // ---- VMENU's list routine 0x2D669 (ChoiceRequest.ListRow; P s30, D s44) --------------------------------------
+
+    /// <summary>The list window's first entry (DS:6B29): 0 when VMENU opens (its position 0, 0x2D766), moved only by Next / Prev.</summary>
+    private int _listTop;
+
+    /// <summary>The lit word of the list's menu line (the shared cell; 0x2D6B9 stores 1 on entry).</summary>
+    private int _listWord;
+
+    /// <summary>A click on Next (true) or Prev (false) waiting for the next update (ours).</summary>
+    private bool? _listPageClick;
+
+    /// <summary>The list's menu line: Next while entries remain below the window, Prev while the top is past 0
+    /// (0x2D7E6–0x2D854; VMENU passes an empty word and no Exit). Each word with its direction (true = down).</summary>
+    private List<(string Word, bool Down)> ListWords(ChoiceRequest c)
+    {
+        var words = new List<(string, bool)>();
+        if (c.Paging is not { } p)
+            return words;
+        var (next, prev) = ListWindowSteps.Words(_listTop, ListWindow(c).Rows, c.Items.Count);
+        if (next) words.Add((p.Next, true));
+        if (prev) words.Add((p.Prev, false));
+        return words;
+    }
+
+    /// <summary>The lit word as the menu routine shows it: a cell past the last entry goes back to the first (0x2CCE5).</summary>
+    private int ListWord(ChoiceRequest c) => _listWord < ListWords(c).Count ? _listWord : 0;
+
+    private void PageList(ChoiceRequest c, bool down)
+    {
+        (_selected, _listTop) = ListWindowSteps.Page(_selected, _listTop, ListWindow(c).Rows, c.Items.Count, down);
+        _listWord = ListWord(c);
+    }
+
+    /// <summary>
+    /// VMENU's keys as the list routine 0x2D669 takes them (read s44): Home / End (keypad 7 / 1; the Client's Up / Down
+    /// too) move the highlight inside the window, wrapping there (0x2D594); N / P (the shown words' hotkeys) and PgDn /
+    /// PgUp (keypad 3 / 9, only while the word shows) move the window by its rows, at most to the last full window
+    /// (0x2D502); ',' / '.' (Left / Right) move the lit word; any other key the menu returns (Return, space) picks the
+    /// highlighted entry, and so does Escape: 0x2D669 then returns no entry, but VMENU stores the position it leaves
+    /// (0x1D9E). Other letters, E included, are no hotkey and do nothing (DOSBox-X s44). The pad pages with its
+    /// shoulders / triggers as the spell lists (user s30). [?] The Amiga's list routine is not read: the same there.
+    /// </summary>
+    private Reply? ListAnswer(ChoiceRequest c, ActionInput input)
+    {
+        int n = c.Items.Count, rows = ListWindow(c).Rows;
+        var words = ListWords(c);
+        bool keys = input.LastDevice == InputDevice.Keyboard, pad = input.LastDevice == InputDevice.Gamepad;
+        if (n > 0 && (input.Pressed(GameAction.MenuUp) || (keys && input.Pressed(GameAction.StepUpLeft))))
+            _selected = ListWindowSteps.Step(_selected, _listTop, rows, n, down: false);
+        if (n > 0 && (input.Pressed(GameAction.MenuDown) || (keys && input.Pressed(GameAction.StepDownLeft))))
+            _selected = ListWindowSteps.Step(_selected, _listTop, rows, n, down: true);
+        if (words.Count > 0 && input.Pressed(GameAction.MenuLeft))
+            _listWord = (ListWord(c) + words.Count - 1) % words.Count;
+        if (words.Count > 0 && input.Pressed(GameAction.MenuRight))
+            _listWord = (ListWord(c) + 1) % words.Count;
+        bool? page = _listPageClick;
+        _listPageClick = null;
+        if (input.Pressed(GameAction.StepDownRight) || (pad && input.Pressed(GameAction.NextMember)))
+            page = true;
+        if (input.Pressed(GameAction.StepUpRight) || (pad && input.Pressed(GameAction.PreviousMember)))
+            page = false;
+        if (input.NewInput is (InputDevice.Keyboard, { Length: 1 } key))
+            for (int i = 0; i < words.Count; i++)
+                if (words[i].Word.Length > 0 && char.ToUpperInvariant(words[i].Word[0]) == char.ToUpperInvariant(key[0]))
+                {
+                    _listWord = i; // the hotkey lights its entry (0x2CF48)
+                    page = words[i].Down;
+                }
+        if (page is { } down && words.Any(w => w.Down == down))
+        {
+            PageList(c, down);
+            return null;
+        }
+        if (n > 0 && (input.Pressed(GameAction.Confirm) || input.Pressed(GameAction.Cancel)))
+            return new Reply(_selected);
+        return null;
     }
 
     /// <summary>The party-list member under a cell (rows 4–11, columns 17–38).</summary>
@@ -540,7 +636,8 @@ public sealed class ExploreScreen : IScreen
         Sync();
         var shown = ShownPicture;
         _anim.Show(shown);
-        bool everyPass = _runner.Pending is ChoiceRequest { EveryPass: true } or HallMenuRequest { EveryPass: true };
+        bool everyPass = _runner.Pending is ChoiceRequest { EveryPass: true } or HallMenuRequest { EveryPass: true }
+            or KeyRequest { EveryPass: true };
         if ((everyPass || _runner.Pending is ChoiceRequest { Animates: true }) && shown is not null)
         {
             var delays = _art.Pictures.Delays(shown);
@@ -651,6 +748,7 @@ public sealed class ExploreScreen : IScreen
             case ChoiceRequest v:
                 _highlight.ItemList();
                 _selected = Math.Clamp(v.Selected, 0, Math.Max(0, v.Items.Count - 1));
+                (_listTop, _listWord, _listPageClick) = (0, 0, null);
                 break;
             case KeyRequest { AsMenu: true } km:
                 _highlight.Start(km.MenuEntries);
@@ -660,7 +758,12 @@ public sealed class ExploreScreen : IScreen
                 if (l.SharedHighlight)
                     _list.SetAction(l, _highlight.Start(l.Actions.Count));
                 else
+                {
                     _highlight.Index = _list.SelectedAction;
+                    // The list routine's entry moves its global window top (MenuHighlight.ListTop): camp Display
+                    // (position 0) takes it to 0, so a later creation list shows its label (DOSBox-X s44).
+                    _highlight.ListEntered(l.Selected, l.Rows.Count);
+                }
                 break;
         }
 
@@ -684,6 +787,9 @@ public sealed class ExploreScreen : IScreen
     {
         switch (request)
         {
+            case ChoiceRequest { ListRow: not null } list:
+                _highlight.Index = ListWord(list); // 0x2D669 leaves the cell where its menu left it
+                break;
             case ChoiceRequest { Vertical: false } h:
                 _highlight.Index = !cancelled && reply is { Value: int i } && i >= 0 && i < h.Items.Count ? i : _selected;
                 break;
@@ -734,6 +840,9 @@ public sealed class ExploreScreen : IScreen
 
             case DelayRequest:
                 return _clock.Elapsed >= _delayEnd || input.SkipsPause ? new Reply(null) : null;
+
+            case ChoiceRequest { ListRow: not null } list:
+                return ListAnswer(list, input);
 
             case ChoiceRequest c:
             {
@@ -913,6 +1022,9 @@ public sealed class ExploreScreen : IScreen
             Chrome.Box(f, 0, 0, 39, 23);
             foreach (var line in window)
                 Chrome.Text(f, font, line.Column, line.Row, Fit(line.Text, 39 - line.Column), line.Colour);
+            // The press-enter menu with $4AFF set draws the loaded frames at cell (3, 3) over the window (KeyRequest.EveryPass).
+            if (pending is KeyRequest { EveryPass: true } && ShownPicture is { } overWindow)
+                _art.Pictures.Draw(f, ViewX, ViewY, overWindow, _anim.Frame);
             if (pending is KeyRequest wk)
                 DrawKeyLine(f, font, wk, input);
             else if (pending is DelayRequest { BottomLine: not null } windowDelay)
@@ -1002,8 +1114,10 @@ public sealed class ExploreScreen : IScreen
             (_keptMenu, _keptSelected, _keptMenuDrawn) = (h, _selected, true);
         }
         else if (pending is DelayRequest { BottomLine: null } keptDelay && (keptDelay.KeepCommandLine || _player.Camping)
-            && keptMenuWasDrawn && _keptMenu is { } kept)
-            // typing keeps the row; in the camp a message's pause does too (D s33: the rest-time menu under the revive text)
+            && keptMenuWasDrawn && _keptMenu is { } kept && !AmigaView.On)
+            // typing keeps the row; in the camp a message's pause does too (D s33: the rest-time menu under the revive text).
+            // The Amiga's menu routine blanks row 24 on every way out (hunk 19 +0x5372, +0x5560, +0x55DE, +0x564A, +0x56A6:
+            // columns 0-39 of row 24 through hunk 25 +0x197A; FS-UAE s44: the row blank under the rest's interruption line).
         {
             if (kept.MenuPrompt is { Length: > 0 } kp)
                 Chrome.MenuPrompt(f, font, 0, MenuRow, kp, kept.MenuPromptColour ?? MenuPromptColour);
@@ -1163,6 +1277,21 @@ public sealed class ExploreScreen : IScreen
                     continue;
                 if (c > TextWindow.Right)
                     Chrome.Clear(f, c, r, 1); // a glyph cell is drawn whole: over the frame its background is black
+                // 16–31: an Amiga caller's own pen (only set under the Amiga pages): the run of cells in that pen drawn as
+                // one string, pass 1 then pass 2, so each glyph's pass-2 spill stays over the next glyph (FS-UAE s44).
+                if (colour is >= 16 and <= 31)
+                {
+                    int end = c;
+                    var run = new System.Text.StringBuilder();
+                    while (end <= TextWindow.Right + 1 && t.Cell(r, end) is var (rc, rp) && rc != default && rp == colour)
+                        run.Append(t.Cell(r, end++).Char);
+                    if (run.Length > 0 && font.DrawAmiga(f, c * 8, r * 8, run.ToString(), colour))
+                    {
+                        c = end - 1;
+                        continue;
+                    }
+                    colour = Chrome.White;
+                }
                 Chrome.Text(f, font, c, r, ch.ToString(), colour);
             }
     }
@@ -1284,10 +1413,12 @@ public sealed class ExploreScreen : IScreen
     }
 
     /// <summary>
-    /// The overland window blanked with the 3D view's box in it (<see cref="OverlandUi.Boxed"/>), and in the camp: its
-    /// picture goes in the box over a blank window there too (DOSBox-X s43, Encamp on the overland at 10,20 of block 26).
+    /// The overland window blanked with the 3D view's box in it (<see cref="OverlandUi.Boxed"/>), and under START 0x3379's
+    /// boxed layout (0x32CA(1): cases 1, 2, 4 and 6; case 3, the overland's, has no box): the camp (case 2, its picture in
+    /// the box; DOSBox-X s43, Encamp on the overland at 10,20 of block 26), the shop and temple (case 1, the box empty) and
+    /// the loot menu (case 6, the chest in the box): DOSBox-X s44 on the same square, the window blank around the box.
     /// </summary>
-    private bool OverlandBoxed => OverlandUi.Boxed(_player) || _player.Interface == Venue.Camp;
+    private bool OverlandBoxed => OverlandUi.Boxed(_player) || _player.Interface is Venue.Camp or Venue.Shop or Venue.Loot;
 
     private void DrawView(IndexedFrame f, TextFont font)
     {
@@ -1338,6 +1469,11 @@ public sealed class ExploreScreen : IScreen
         // Shop/temple (START 0x3379 case 1): an empty view box, also after a PICTURE before CLRMON (DOSBox-X s22) and
         // with the picture still armed (no CLRMON; DOSBox-X s24: empty on entry and after View → Exit, the 3D view back
         // on leaving).
+        else if (_player.Interface == Venue.Shop && _player.VenuePictureOver && ShownPicture is { } venuePicture
+            && _art.Pictures.Draw(f, ViewX, ViewY, venuePicture, _anim.Frame))
+        {
+            // The first menu after a Save or a Load drew the loaded frames in the box ($4AFF; ClientPlayer.VenuePictureOver).
+        }
         else if (_player.Interface == Venue.Shop)
         {
             for (int y = 0; y < 88; y++)
@@ -1486,6 +1622,11 @@ public sealed class ExploreScreen : IScreen
                 Chrome.Text(f, font, TextWindow.Left, first + r, Fit(c.Items[i], TextWindow.Right - TextWindow.Left + 1),
                     i == _selected ? Chrome.White : Chrome.Green);
             }
+            // Row 24: the menu line " Next" / " Prev" through 0x2CC8C from column 0, so the words from column 1; the row
+            // is blanked past the line (DOSBox-X s44).
+            var words = ListWords(c).Select(w => w.Word).ToList();
+            Chrome.Clear(f, 0, MenuRow, 40);
+            DrawLine(f, font, words, ListWord(c), 1, i => words[i].Length > 0 ? words[i][0] : '\0');
             return;
         }
         if (c.Prompt is { Length: > 0 } p)

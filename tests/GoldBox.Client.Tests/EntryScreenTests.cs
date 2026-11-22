@@ -216,4 +216,104 @@ public class EntryScreenTests
         Assert.Contains((byte)14, Colours(Draw(r), 16, 16));
         r.Runner.Dispose();
     }
+
+    /// <summary>
+    /// Save A on block 26's overland at 10,20 N (as goldbox-tools save-overland writes it), its vector 0 pointed at
+    /// <paramref name="code"/> placed past the script's end ($B300) behind a run-once guard (a flag byte at $B6F0): the
+    /// DOSBox-X s44 test saves.
+    /// </summary>
+    private static Rig StartOverland(PorGameDirectory dir, byte[] code)
+    {
+        var savePath = dir.Find("SAVGAMA.DAT")!;
+        var save = PorSaveGame.PlaceOnOverland(File.ReadAllBytes(savePath), dir, 26, 10, 20, Facing.North);
+        byte[] guard = [0x03, 1, 0xF0, 0xB6, 0, 0, 0x17, 0x00, 0x09, 0, 1, 1, 0xF0, 0xB6]; // COMPARE; IFNE EXIT; SAVE 1
+        save[PorSaveGame.OffScript + 2] = 0x00;            // vector 0 -> $B300
+        save[PorSaveGame.OffScript + 3] = 0xB3;
+        int o = PorSaveGame.OffScript + 0xB300 - 0x9900;
+        guard.CopyTo(save, o);
+        code.CopyTo(save, o + guard.Length);
+        save[o + guard.Length + code.Length] = 0;          // EXIT
+        var runner = new ScriptRunner();
+        PorGame? game = null;
+        var player = TestRig.Player(runner, () => game!.Memory);
+        player.Resources = ClientResources.Load(dir);
+        player.Game = () => game;
+        game = PorGame.FromSave(dir, PorViewArt.Load(dir), save, Path.GetDirectoryName(savePath)!,
+            new PorPlayer(player, player, player, player), 7);
+        var art = new ClientArt(dir, game.Art, new ScreenPalette(), PorArtChoice.Dos);
+        return new Rig(new ExploreScreen(game, player, runner, new TestRig.NoHost(), 'A', art), game, runner,
+            new ActionInput(InputBindings.Defaults()), player);
+    }
+
+    private static void TravelNorth(Rig r) => r.Runner.Start(() => r.Game.Loop.Execute(AreaCommand.TravelNorth));
+
+    /// <summary>The overland window around the box blank (cell 1, 8), the box's ring there (cell 2, 8), the joint.</summary>
+    private static void AssertBlankWindowWithBox(IndexedFrame f)
+    {
+        Assert.Equal([0], Colours(f, 1, 8));
+        Assert.NotEqual([0], Colours(f, 2, 8));
+        Assert.Contains((byte)14, Colours(f, 16, 16));      // START 0x3379's layout: the joint
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void A_shop_or_temple_on_the_overland_brings_the_joint_back_for_good(bool temple)
+    {
+        // START 0x3379 case 1 (0x32CA(1): every window blanked, the 3D view's box) and COMBAT's closing START 0x3379
+        // case 3 (0x2635): DOSBox-X s44 (save-overland 26 10,20,N, vector 0 = CLRMON, SAVE 1 to $6E6C / $6DE2, COMBAT
+        // once): the window blank with the empty box in it and the joint at (16, 16); after Exit the overland with the
+        // joint, also after the next step (the interface, START 0x36FE, needs DS:49F9 < 2).
+        if (Dir() is not { } dir)
+            return;
+        byte[] code = [0x1C, 0x09, 0, 1, 1, (byte)(temple ? 0xE2 : 0x6C), (byte)(temple ? 0x6D : 0x6E), 0x24];
+        var r = StartOverland(dir, code);
+        Assert.DoesNotContain((byte)14, Colours(Draw(r), 16, 16));
+        TravelNorth(r);
+        Assert.NotNull(r.Runner.Pending);
+        Assert.Equal(Venue.Shop, r.Player.Interface);
+        var f = Draw(r);
+        AssertBlankWindowWithBox(f);
+        Assert.Equal([0], Colours(f, 8, 8));                // the box empty
+        Key(r, Keys.E);
+        Assert.Null(r.Runner.Pending);
+        f = Draw(r);
+        Assert.NotEqual([0], Colours(f, 1, 8));             // the tiles again
+        Assert.Contains((byte)14, Colours(f, 16, 16));
+        TravelNorth(r);                                     // the guard: no second shop
+        Assert.Null(r.Runner.Pending);
+        Assert.False(r.Game.Loop.OverlandLayout);
+        Assert.Contains((byte)14, Colours(Draw(r), 16, 16));
+        r.Runner.Dispose();
+    }
+
+    [Fact]
+    public void The_loot_menu_on_the_overland_shows_the_chest_in_the_box_and_the_joint_stays()
+    {
+        // START 0x3379 case 6 (0x32CA(1), PIC block 1 in the box): DOSBox-X s44 (vector 0 = CLRMON, TREASURE 100 copper,
+        // COMBAT once): the summary, then the window blank with the chest in the box and the joint; Exit, No (treasure
+        // left): the overland with the joint, also after the next step. A won fight ends the same way (DOSBox-X s44).
+        if (Dir() is not { } dir)
+            return;
+        byte[] code = [0x1C, 0x27, 0, 100, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 0x24];
+        var r = StartOverland(dir, code);
+        TravelNorth(r);
+        Press(r, GameAction.Confirm);                       // the summary's key
+        Assert.NotNull(r.Runner.Pending);
+        Assert.Equal(Venue.Loot, r.Player.Interface);
+        var f = Draw(r);
+        AssertBlankWindowWithBox(f);
+        Assert.NotEqual([0], Colours(f, 8, 8));             // the chest
+        Key(r, Keys.E);
+        for (int guard = 0; r.Runner.Pending is not null && guard < 5; guard++)
+            Key(r, Keys.N);                                 // no, do not go back for the treasure
+        Assert.Null(r.Runner.Pending);
+        f = Draw(r);
+        Assert.NotEqual([0], Colours(f, 1, 8));
+        Assert.Contains((byte)14, Colours(f, 16, 16));
+        TravelNorth(r);
+        Assert.Null(r.Runner.Pending);
+        Assert.Contains((byte)14, Colours(Draw(r), 16, 16));
+        r.Runner.Dispose();
+    }
 }

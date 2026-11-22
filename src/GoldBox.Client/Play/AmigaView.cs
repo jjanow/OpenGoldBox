@@ -94,13 +94,59 @@ public static class AmigaView
     /// the module; empty without them.</summary>
     public static IReadOnlyDictionary<string, string> Strings { get; set; } = new Dictionary<string, string>();
 
+    /// <summary>A camp line the Amiga words otherwise than DOS (<see cref="GoldBox.Data.Module.Por.PorAmigaText.RestMenuKey"/>,
+    /// …), under the Amiga pages only; null otherwise or when the module has none.</summary>
+    public static string? CampLine(string key) => On && Strings.TryGetValue(key, out var s) ? s : null;
+
+    /// <summary>
+    /// The Amiga's Pics line for the two flags (hunk 1 +0x4E94–0x4F36: the monsters word, the portraits word, the exit
+    /// word, joined as the program's strcpy / strcat do), or null.
+    /// </summary>
+    public static string? PicsLine(bool monsters, bool portraits) =>
+        CampLine(monsters ? GoldBox.Data.Module.Por.PorAmigaText.MonstersOnKey : GoldBox.Data.Module.Por.PorAmigaText.MonstersOffKey) is { } m
+        && CampLine(portraits ? GoldBox.Data.Module.Por.PorAmigaText.PortraitsOnKey : GoldBox.Data.Module.Por.PorAmigaText.PortraitsOffKey) is { } p
+        && CampLine(GoldBox.Data.Module.Por.PorAmigaText.PicsExitKey) is { } e
+            ? m + p + e : null;
+
+    /// <summary>
+    /// An Amiga menu line as its menu routine splits it (hunk 19 +0x4F88–0x5170: entries end at a space or '_'; the key
+    /// test +0x57D0 and a gadget's answer +0x573E take each entry's first capital or digit): the entries in the
+    /// program's case, the 0xFF that joins two words of one entry kept (the font's 0xFF is blank, and the entry's
+    /// gadget runs over it: FS-UAE s44, "Monsters on" pressed as one), and each entry's hotkey.
+    /// </summary>
+    public static (List<string> Items, string Hotkeys) ParseLine(string line)
+    {
+        var items = new List<string>();
+        var keys = new System.Text.StringBuilder();
+        foreach (var w in line.Split([' ', '_'], StringSplitOptions.RemoveEmptyEntries))
+        {
+            items.Add(w);
+            int k = w.AsSpan().IndexOfAny("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789");
+            keys.Append(k >= 0 ? w[k] : char.ToUpperInvariant(w[0]));
+        }
+        return (items, keys.ToString());
+    }
+
     /// <summary>The View menu's Rename word as the Amiga program holds it (hunk 11 +0x840, trimmed), or null.</summary>
     public static string? RenameWord =>
         Strings.TryGetValue(GoldBox.Data.Module.Por.PorAmigaText.ViewRenameKey, out var s) ? Case(s.Trim()) : null;
 
-    /// <summary>HMENU's pens under the Amiga pages (one pen for words and capitals, hunk 16 +0x2DC6), or null.</summary>
+    /// <summary>HMENU's pens under the Amiga pages: the '~' helper's own (hunk 4 +0x195A–0x1962: words 28, capitals 16;
+    /// FS-UAE s44), or null.</summary>
     public static (int Words, int Capitals)? HmenuPens =>
-        On && CallPens.TryGetValue(GoldBox.Data.Module.Por.PorAmigaText.HmenuPen, out int pen) ? (pen, pen) : null;
+        On && CallPens.TryGetValue(GoldBox.Data.Module.Por.PorAmigaText.HmenuWordsPen, out int words)
+            && CallPens.TryGetValue(GoldBox.Data.Module.Por.PorAmigaText.HmenuCapitalsPen, out int capitals)
+            ? (words, capitals) : null;
+
+    /// <summary>
+    /// The pause of the Amiga's timed messages (hunk 25 +0xD7A: Delay(speed byte · 5) in AmigaDOS ticks of 1/50 s, so
+    /// 100 ms per game-speed step; none at speed 0). The camp rest's heal, interruption and memorise / scribe lines
+    /// wait so on the Amiga (hunk 1 +0x320E, +0x3668; hunk 22 +0x5060), where DOS waits for a key.
+    /// </summary>
+    public static TimeSpan TimedPause(int speed) => TimeSpan.FromMilliseconds(100 * speed);
+
+    /// <summary>An Amiga caller's pen read from the program (<see cref="CallPens"/>) under the Amiga pages, or null.</summary>
+    public static int? CallPen(string key) => On && CallPens.TryGetValue(key, out int pen) ? pen : null;
 
     /// <summary>Creation's portrait menu's pens under the Amiga pages (words 16, capitals 28: hunk 10 +0x3778–0x3790),
     /// or null (the usual menu pens).</summary>
@@ -247,8 +293,37 @@ public static class AmigaView
     /// </summary>
     public const int InputStringLength = 39, InputNumberLength = 5;
 
-    /// <summary>The Rename prompt (hunk 10 +0x5506–0x5516: the text, then the name).</summary>
-    public static string RenamePrompt(EclCharacter c) => "NEW NAME FOR " + c.Name.ToUpperInvariant();
+    /// <summary>
+    /// How long the party-killed window holds before DAMAGE's press-enter line: DOS Delay(3000) (GAME.OVR 0x375A–0x37E4,
+    /// row 24 keeping what was there); the Amiga none (hunk 16 +0x4674–0x46DC: the window (1, 1)–(38, 22) with its title
+    /// through hunk 25 +0x19F4, the message through the text routine hunk 25 +0x10EC with the clear, PlaySong(5) at
+    /// hunk 27 +0x6E54, which only starts the song (hunk 33 +0xE6 → hunk 27 +0x78A0), then the key wait hunk 25 +0xE78
+    /// with the press-enter line in pen 28: 39 blank glyphs from column 1, which draw nothing (JAM1), then the line
+    /// through the string routine at (1, 24)). Null: no hold.
+    /// </summary>
+    public static TimeSpan? PartyKilledHold(bool amiga) => amiga ? null : TimeSpan.FromMilliseconds(3000);
+
+    /// <summary>The Rename prompt (hunk 10 +0x5506–0x5516: the text, then the name as it is stored; the requester draws
+    /// the bytes, so a mixed-case name keeps its case).</summary>
+    public static string RenamePrompt(EclCharacter c) => "NEW NAME FOR " + c.Name;
+
+    /// <summary>
+    /// Creation's name length: the Amiga's requester gets MaxChars 15 (hunk 10 +0x2114–0x2122, "Character name: ",
+    /// the end mark included: 14 characters; Rename's 16 gives 15, <see cref="RenameLength"/>); DOS 0x1B7BE takes 15.
+    /// </summary>
+    public const int CreationNameLength = 14;
+
+    /// <summary>The characters creation's name prompt takes: <see cref="CreationNameLength"/> under the Amiga pages,
+    /// else DOS's <see cref="EclCharacter.MaxNameLength"/>.</summary>
+    public static int NameLength(bool amiga) => amiga ? CreationNameLength : EclCharacter.MaxNameLength;
+
+    /// <summary>
+    /// The created character's name: the Amiga copies the requester's text as typed (strncpy, hunk 10 +0x212E; asked
+    /// again while empty, +0x2136–0x2146), so lower case stays (its font draws it); DOS stores it upper case. The Amiga
+    /// then stores each space as 0xFF (hunk 10 +0x2332–0x2356; its font draws 0xFF blank), its own record's matter: the
+    /// Client keeps the space (the DOS record).
+    /// </summary>
+    public static string CreationName(string typed, bool amiga) => amiga ? typed : typed.ToUpperInvariant();
 
     /// <summary>
     /// The page's texts as the Amiga draws them: the DOS layout of <see cref="CombatSheet.Build"/> with the name on

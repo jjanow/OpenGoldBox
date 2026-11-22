@@ -47,6 +47,9 @@ public sealed class ClientResources
     /// <summary>START's member pick's line (00BA:2C41 "Select" + 00BA:2C19 " Exit"), original case, or null.</summary>
     public string? TargetMenu { get; init; }
 
+    /// <summary>The same pick's line without Exit (00BA:2C41 "Select" alone: WHO passes the Exit flag 0), or null.</summary>
+    public string? SelectMenu { get; init; }
+
     /// <summary>Spell name 1..56 (DS:2912 + 41·(id − 1)) and level heading 1..9 (DS:0A79 + 41·level), or null.</summary>
     public Func<int, string?> SpellName { get; init; } = _ => null;
     public Func<int, string?> LevelName { get; init; } = _ => null;
@@ -92,7 +95,9 @@ public sealed class ClientResources
                 .OrderBy(kv => kv.Key, StringComparer.Ordinal).Select(kv => kv.Value));
         for (int i = 0; program is not null && i < 11; i++)
             lines.Add(program.PascalString(PartyMenuDs + 42 * i, 40));
-        lines.AddRange(dir.AmigaStrings()?.Where(kv => !kv.Key.Contains("Prompt", StringComparison.Ordinal)).Select(kv => kv.Value) ?? []);
+        // The Amiga's own words (not its prompts, nor the camp's whole lines, which the camp screens use as they are).
+        lines.AddRange(dir.AmigaStrings()?.Where(kv => !kv.Key.Contains("Prompt", StringComparison.Ordinal)
+            && !kv.Key.StartsWith(GoldBox.Data.Module.Por.PorAmigaText.CampLinePrefix, StringComparison.Ordinal)).Select(kv => kv.Value) ?? []);
         return [.. lines.OfType<string>()];
     }
 
@@ -138,6 +143,7 @@ public sealed class ClientResources
             ItemSlot = items is null ? _ => -1 : it => items[it[0x2E], BaseItemTable.Slot],
             PagePrompt = program?.PagePrompt,
             TargetMenu = program?.Text("Pick.Select") is { } sel && program.Text("Pick.Exit") is { } ex ? sel + ex : null,
+            SelectMenu = program?.Text("Pick.Select"),
             MenuLines = MenuLinesOf(program, v13 ? Ds : _ => null, dir),
         };
     }

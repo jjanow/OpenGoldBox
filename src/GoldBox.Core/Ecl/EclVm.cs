@@ -807,7 +807,7 @@ public sealed class EclVm
                 return null;
             }
 
-            // ---- Menus (shape P, meaning of the result [?]) -------------------------------------------------------
+            // ---- Menus (shape P; VMENU's result is the highlighted entry's position, s44; HMENU's meaning [?]) ----
             case EclOpcodes.VMenu:
             {
                 // P (0x1C4E): the destination and the prompt (string slot 1) are taken before the tail load; the

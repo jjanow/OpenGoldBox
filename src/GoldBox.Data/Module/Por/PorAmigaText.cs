@@ -242,7 +242,9 @@ public static class PorAmigaText
     /// </summary>
     /// <param name="Pens">By name: <see cref="KeyPagePen"/>, <see cref="KeyDamagePen"/>, <see cref="PortraitPromptPen"/>,
     /// <see cref="PortraitWordsPen"/>, <see cref="PortraitCapitalsPen"/>.</param>
-    /// <param name="Strings">By name: <see cref="PagePromptKey"/>, <see cref="ViewRenameKey"/>, <see cref="PartyMenuKey"/> + 0–10.</param>
+    /// <param name="Strings">By name: <see cref="PagePromptKey"/>, <see cref="ViewRenameKey"/>, <see cref="PartyMenuKey"/> + 0–10,
+    /// <see cref="ShopMoneyLeftKey"/>, <see cref="TempleMoneyLeftKey"/>, the camp lines
+    /// (<see cref="RestMenuKey"/>, <see cref="MonstersOnKey"/> … <see cref="PicsExitKey"/>; s44).</param>
     public sealed record Calls(IReadOnlyDictionary<string, int> Pens, IReadOnlyDictionary<string, string> Strings);
 
     /// <summary>The text window's page prompt (hunk 25 +0x1200–0x120A: its own upper-case string, hunk 26 +0x176, through
@@ -257,11 +259,22 @@ public static class PorAmigaText
     /// prompt pen 4 (the prompt is empty), other letters 16, capitals 28: the reverse of every other menu (28 / 16).</summary>
     public const string PortraitPromptPen = "portraitPrompt", PortraitWordsPen = "portraitWords", PortraitCapitalsPen = "portraitCapitals";
 
-    /// <summary>The area script's HMENU (hunk 16 +0x2D2E–0x2DD6: the choices joined as a '~' line, then the '~' menu
-    /// helper hunk 4 +0x1910, which lowers the capitals and raises the letter after each '~', hunk 4 +0x17A0–0x1830):
-    /// one pen, 28, for prompt, words and capitals, so the line is all green (DOS 0x1E17: its usual colours, 15 / 15
-    /// for one choice).</summary>
-    public const string HmenuPen = "hmenu";
+    /// <summary>
+    /// The area script's HMENU (hunk 16 +0x2D2E–0x2DD6: the choices joined as a '~' line, then the '~' menu helper hunk 4
+    /// +0x1910, which lowers the capitals and raises the letter after each '~', hunk 4 +0x17A0–0x1830). HMENU passes 28
+    /// three times (hunk 16 +0x2DC6), but the helper reads only its two flags (+0x1922 / +0x1926) and calls the menu
+    /// routine with its own pens (hunk 4 +0x1956–0x196E: prompt 26, words 28, capitals 16), the usual ones: each choice's
+    /// capital grey, the rest green (FS-UAE s44: the city watch's two choices after an interrupted rest). s43 read the
+    /// 28s as the line's pens.
+    /// </summary>
+    public const string HmenuWordsPen = "hmenuWords", HmenuCapitalsPen = "hmenuCapitals";
+
+    /// <summary>
+    /// The camp rest's interruption line (hunk 1 +0x3644–0x3668: "…rudely interrupted!" through the string routine at
+    /// (1, 19) in pen 30, orange; DOS 0x24A45: white, 15) and its whole-party heal line (hunk 1 +0x31E4–0x320E: pen 28,
+    /// DOS 10). Both then wait Delay(speed · 5 ticks) (hunk 25 +0xD7A), not a key as DOS does.
+    /// </summary>
+    public const string RestInterruptPen = "restInterrupt", RestHealPen = "restHeal";
 
     /// <summary>The party menu's entries (hunk 10 +0x672: 11 × 42 bytes copied from hunk 11 +0xD2; DOS DS:061A, the
     /// same stride): "PartyMenu.0" … "PartyMenu.10". The last is the Amiga's own exit entry.</summary>
@@ -270,6 +283,40 @@ public static class PorAmigaText
     /// <summary>The View menu's Amiga-only entry (hunk 10 +0x5440–0x544E, hunk 11 +0x840), appended to the line.</summary>
     public const string ViewRenameKey = "View.Rename";
     public const int PartyMenuEntries = 11, PartyMenuStride = 42;
+
+    /// <summary>
+    /// Program messages the Amiga words otherwise than DOS (s44, under the Client's <c>Msg</c> names): the shop's and the
+    /// temple's money-left lines (hunk 22 +0x57F8 / hunk 25 +0x4472, each the text of the print in the box (1, 1)–(38,
+    /// 22); quoted with ' where DOS 0x7194 / 0x5205 quote with ").
+    /// </summary>
+    public const string ShopMoneyLeftKey = "Msg.ShopMoneyLeft", TempleMoneyLeftKey = "Msg.TempleMoneyLeft";
+
+    /// <summary>
+    /// The camp's rest-time menu line (hunk 1 +0x302C: the menu routine with an empty prompt, hunk 2 +0x298, and the
+    /// words at hunk 2 +0x29A, pens 26 / 28 / 16, animate flag 0): the Amiga's own wording, one space between entries,
+    /// in the order of DOS's (0x244A5: Rest, Days, Hours, Mins, Inc, Dec, Exit) with other words for the last three
+    /// but one and Days hot on its capital (DOS: Y). Its key test (hunk 1 +0x30D2–0x3176): R (and Enter) rests, D / H / M
+    /// pick the word, A adds, S takes off, E leaves; keypad 8 / 2 add / take off, 4 / 6 move the word as DOS's Left /
+    /// Right.
+    /// </summary>
+    public const string RestMenuKey = "Camp.RestMenu";
+
+    /// <summary>
+    /// The camp Alter menu's Pics line (hunk 1 +0x4E94–0x4F36): built in a buffer from the monsters word for the monster
+    /// pictures flag (hunk 32 +0xBD: on, else off), the portraits word for the portraits flag (hunk 32 +0xBC), then the
+    /// exit word, and asked through the menu routine with an empty prompt (hunk 2 +0x7C8), pens 26 / 28 / 16. Each
+    /// on / off word holds a 0xFF between its two words, so the menu routine (which splits entries at a space or '_',
+    /// hunk 19 +0x4F88–0x4FD0) keeps "Monsters on" one entry; the font draws 0xFF blank. One space between entries
+    /// (DOS: two). M toggles the monster pictures, P the portraits, as DOS.
+    /// </summary>
+    public const string MonstersOnKey = "Camp.MonstersOn", MonstersOffKey = "Camp.MonstersOff",
+        PortraitsOnKey = "Camp.PortraitsOn", PortraitsOffKey = "Camp.PortraitsOff", PicsExitKey = "Camp.PicsExit";
+
+    /// <summary>The prefix of the strings that are whole camp lines, not words for the menu spelling table.</summary>
+    public const string CampLinePrefix = "Camp.";
+
+    /// <summary>The byte that joins two words of one menu entry in the Amiga's Pics line (drawn blank).</summary>
+    public const char JoinedSpace = '\u00FF';
 
     // (hunk, offset, bytes): the code the call-site reads rely on.
     private static readonly (int Hunk, int At, string Hex)[] CallChecks =
@@ -294,11 +341,46 @@ public static class PorAmigaText
         (10, 0x6EEA, "4ef9"),              // … jmp the menu routine (hunk 19 +0x4DD6)
         (10, 0x672, "41f9"),               // party menu: lea table.l, a0; …
         (10, 0x678, "43edfe09303c01cd"),   // … 0x1CE + 1 bytes (11 × 42) to the frame
-        (16, 0x2DC6, "741c2f022f022f02"),   // HMENU: moveq #pen, d2; the same pen for prompt, words and capitals, …
-        (16, 0x2DD6, "4eba28da"),          // … jsr the stub at +0x56B2 …
-        (16, 0x56B2, "4ef9"),              // … jmp the '~' menu helper (hunk 4 +0x1910)
+        (16, 0x2DD6, "4eba28da"),          // HMENU: jsr the stub at +0x56B2 …
+        (16, 0x56B2, "4ef9"),              // … jmp the '~' menu helper (hunk 4 +0x1910), …
+        (4, 0x1922, "1e2d001f1c2d0023"),   // … which reads only its two flag arguments, …
+        (4, 0x195A, "4878"),               // … and passes its own pens: pea capitals.w, …
+        (4, 0x195E, "4878"),               // … pea others.w, …
+        (4, 0x1962, "4878"),               // … pea prompt.w, …
+        (4, 0x196E, "4eba415c"),           // … jsr the stub at +0x5ACC …
+        (4, 0x5ACC, "4ef9"),               // … jmp the menu routine (hunk 19 +0x4DD6)
+        (1, 0x3654, "4878"),               // rest interrupted: pea pen.w, …
+        (1, 0x3660, "4eba1b5c"),           // … the string routine at (1, 19) (stub +0x51BE), …
+        (1, 0x3668, "4eba1d28"),           // … then Delay(speed · 5) (stub +0x5392)
+        (1, 0x31EA, "4878"),               // whole party healed: pea pen.w, …
+        (1, 0x31F6, "4eba1fc6"),           // … the string routine at (1, 19), …
+        (1, 0x320E, "4eba2182"),           // … then Delay(speed · 5)
+        (1, 0x51BE, "4ef9"),
+        (1, 0x5392, "4ef9"),
         (10, 0x5434, "10280085"),          // View menu: Rename when record byte 0x85 < 0x80 (hunk 10 +0x542C–0x543E), …
         (10, 0x5444, "4879"),              // … pea the Rename word.l (appended to the line)
+        (22, 0x57F8, "4879"),              // shop: pea the money-left line.l, then the box print's arguments
+        (22, 0x57FE, "70012f00487800"),    // … moveq #1, d0; push d0 (clear); pea $1C.w (pen 28) …
+        (25, 0x4472, "4879"),              // temple: the same
+        (25, 0x4478, "70012f00487800"),
+        (1, 0x305A, "4878001048"),         // rest-time menu: pea capitals.w (16), …
+        (1, 0x305E, "4878001c48"),         // … pea others.w (28), …
+        (1, 0x3062, "4878001a"),           // … pea prompt.w (26), …
+        (1, 0x3066, "4879"),               // … pea words.l, …
+        (1, 0x306C, "4879"),               // … pea prompt.l, …
+        (1, 0x3072, "4eba2312"),           // … jsr the stub at +0x5386 …
+        (1, 0x5386, "4ef9"),               // … jmp the menu routine (hunk 19 +0x4DD6)
+        (1, 0x4E94, "4a39"),               // Pics: tst.b the monster pictures flag …
+        (1, 0x4E9A, "6718"),               // … beq to the off word
+        (1, 0x4EA0, "4879"),               // … pea the monsters-on word.l (strcpy into the line)
+        (1, 0x4EB8, "4879"),               // … pea the monsters-off word.l
+        (1, 0x4ECA, "4a39"),               // … tst.b the portraits flag …
+        (1, 0x4ED0, "6718"),               // … beq to the off word
+        (1, 0x4ED6, "4879"),               // … pea the portraits-on word.l (strcat)
+        (1, 0x4EEE, "4879"),               // … pea the portraits-off word.l
+        (1, 0x4F04, "4879"),               // … pea the exit word.l (strcat)
+        (1, 0x4F30, "4879"),               // … pea prompt.l, …
+        (1, 0x4F36, "4eba044e"),           // … jsr the stub at +0x5386
     ];
 
     // (hunk, offset, target hunk, value): RELOC32 longs of the call-site reads.
@@ -308,6 +390,12 @@ public static class PorAmigaText
         (4, 0x5AE6, 25, 0xE78),
         (10, 0x6EEC, 19, 0x4DD6),
         (16, 0x56B4, 4, 0x1910),
+        (4, 0x5ACE, 19, 0x4DD6),
+        (1, 0x51C0, 25, 0xC3C),
+        (1, 0x5394, 25, 0xD7A),
+        (1, 0x5388, 19, 0x4DD6),
+        (1, 0x4E96, 32, 0xBD),
+        (1, 0x4ECC, 32, 0xBC),
     ];
 
     /// <summary>The call-site facts from the player's <c>program</c>, or null when its code is not laid out so.</summary>
@@ -347,7 +435,11 @@ public static class PorAmigaText
                     return null;
                 var s = program.AsSpan(Base(h)!.Value + at, Math.Min(max, hunks[h].Size - at));
                 int z = s.IndexOf((byte)0);
-                if (z < 0 || s[..z].IndexOfAnyExceptInRange((byte)0x20, (byte)0x7E) >= 0)
+                // Printable ASCII, and 0xFF where the Pics words join two words into one entry.
+                foreach (byte b in s[..Math.Max(z, 0)])
+                    if (b is (< 0x20 or > 0x7E) and not 0xFF)
+                        return null;
+                if (z < 0)
                     return null;
                 return Encoding.Latin1.GetString(s[..z]);
             }
@@ -358,7 +450,10 @@ public static class PorAmigaText
                 [PortraitCapitalsPen] = Word(10, 0x377A),
                 [PortraitWordsPen] = Word(10, 0x377E),
                 [PortraitPromptPen] = Word(10, 0x3782),
-                [HmenuPen] = program[Base(16)!.Value + 0x2DC7],
+                [HmenuCapitalsPen] = Word(4, 0x195C),
+                [HmenuWordsPen] = Word(4, 0x1960),
+                [RestInterruptPen] = Word(1, 0x3656),
+                [RestHealPen] = Word(1, 0x31EC),
             };
             // Both DAMAGE key waits pass the same pen; every pen is a register (the prompt's may be one of the low 16).
             if (Word(4, 0x236C) != pens[KeyDamagePen] || pens.Values.Any(p => p is < 0 or > 30))
@@ -370,6 +465,11 @@ public static class PorAmigaText
             if (CString(Pointer(10, 0x5446), 40) is not { Length: > 0 } rename)
                 return null;
             strings[ViewRenameKey] = rename;
+            if (CString(Pointer(22, 0x57FA), 120) is not { Length: > 0 } shopLeft
+                || CString(Pointer(25, 0x4474), 120) is not { Length: > 0 } templeLeft)
+                return null;
+            strings[ShopMoneyLeftKey] = shopLeft;
+            strings[TempleMoneyLeftKey] = templeLeft;
             if (Pointer(10, 0x674) is not var (th, table) || !In(th, table, PartyMenuEntries * PartyMenuStride))
                 return null;
             for (int i = 0; i < PartyMenuEntries; i++)
@@ -377,6 +477,19 @@ public static class PorAmigaText
                 if (CString((th, table + PartyMenuStride * i), PartyMenuStride) is not { Length: > 0 } entry)
                     return null;
                 strings[PartyMenuKey + i] = entry;
+            }
+            // The camp's Amiga lines (empty prompts checked: the menu routine draws no prompt for them).
+            if (CString(Pointer(1, 0x306E), 4) != "" || CString(Pointer(1, 0x4F32), 4) != "")
+                return null;
+            foreach (var (key, at) in new[]
+            {
+                (RestMenuKey, 0x3068), (MonstersOnKey, 0x4EA2), (MonstersOffKey, 0x4EBA), (PortraitsOnKey, 0x4ED8),
+                (PortraitsOffKey, 0x4EF0), (PicsExitKey, 0x4F06),
+            })
+            {
+                if (CString(Pointer(1, at), 60) is not { Length: > 0 } line)
+                    return null;
+                strings[key] = line;
             }
             return new Calls(pens, strings);
         }

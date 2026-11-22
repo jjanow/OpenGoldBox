@@ -89,12 +89,13 @@ public sealed class ListPage
         {
             if (i == at && p is not null)
             {
-                if (r.Rows.Count - p.Rows > top)
+                var (next, prev) = ListWindowSteps.Words(top, p.Rows, r.Rows.Count, LeadingLabels(r));
+                if (next)
                 {
                     words.Add(p.Next);
                     map.Add(NextWord);
                 }
-                if (top > LeadingLabels(r))
+                if (prev)
                 {
                     words.Add(p.Prev);
                     map.Add(PrevWord);
@@ -132,22 +133,7 @@ public sealed class ListPage
         SkipWindowLabels(r, down);
     }
 
-    private void Move(ListRequest r, bool down)
-    {
-        int rows = r.Paging!.Rows, n = r.Rows.Count;
-        if (down)
-        {
-            _row++;
-            if (_top + rows - 1 < _row) _row = _top;
-            if (n - 1 < _row) _row = _top;
-        }
-        else
-        {
-            _row--;
-            if (_row < _top) _row = _top + rows - 1;
-            if (n - 1 < _row) _row = n - 1;
-        }
-    }
+    private void Move(ListRequest r, bool down) => _row = ListWindowSteps.Step(_row, _top, r.Paging!.Rows, r.Rows.Count, down);
 
     /// <summary>0x2D3D2: past label rows in the direction, at most a window's rows, with the same wrapping.</summary>
     private void SkipWindowLabels(ListRequest r, bool down)
@@ -159,18 +145,7 @@ public sealed class ListPage
     /// <summary>0x2D502: the window a page down (up), the highlight at the same place in it, then past labels.</summary>
     private void Page(ListRequest r, bool down)
     {
-        int rows = r.Paging!.Rows, n = r.Rows.Count, offset = _row - _top;
-        if (down)
-        {
-            _top += rows;
-            if (n - rows < _top) _top = n - rows;
-        }
-        else
-        {
-            _top -= rows;
-            if (_top < 0) _top = 0;
-        }
-        _row = _top + offset;
+        (_row, _top) = ListWindowSteps.Page(_row, _top, r.Paging!.Rows, r.Rows.Count, down);
         SkipWindowLabels(r, down);
         Remenu(r);
     }

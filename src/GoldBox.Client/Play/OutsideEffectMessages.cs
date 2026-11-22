@@ -97,7 +97,7 @@ public sealed class OutsideEffectMessages(TextWindow window, Func<PlayerRequest,
         if (r == TextWindow.Top)
             framed?.Invoke(); // the box's frame drawn again (03F1:0000)
         window.ClearRect(TextWindow.Left, r, TextWindow.Right, TextWindow.Bottom);
-        window.Put(r + 1, TextWindow.Left, c.Name.ToUpperInvariant(), CombatChooser.NameColour(c));
+        window.Put(r + 1, TextWindow.Left, AmigaView.Case(c.Name), CombatChooser.NameColour(c));
         window.PrintIn(TextWindow.Left, r + 2, TextWindow.Right, TextWindow.Bottom, text, true, TextWindow.ScriptColour);
         if (pause)
         {
