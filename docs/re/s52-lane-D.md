@@ -107,3 +107,5 @@ Status: `exec` oracle / test added; `read` branch-by-branch read, port matches; 
 The oracle rows (new `e.call` targets): `por_clock_oracle.py` 0x241A1, 0x2416F, 0x24246, 0x244ED, 0x24A66 (and their
 untrapped callees 0x23DCC, 0x240BE, 0x2463D, 0x246F1, 0x247B3, 0x248D6, 0x2497E); `por_ai_oracle.py` 0xBE4D, 0xB235,
 0xBC97, 0xBB0F, 0xAFA4, 0xB105. The ledger's oracle list needs `por_clock_oracle.py` added.
+
+**Decided s53 (user, 2026-11-26):** the questions above are settled; see PLAN.md "Decided s53".

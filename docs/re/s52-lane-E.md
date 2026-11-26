@@ -173,3 +173,5 @@ exec 19 (stub 72: 7; stub 75: 12), read 30, fixed 1 (0x17438; 0x16D13 is exec wi
     'O:206a3': dict(status='W', why='read whole s52 (EndGame.FrameTime, EndGameAnimation)'),
     'O:20941': dict(status='W', why='read whole s52 (EndGame.Steps)'),
 ```
+
+**Decided s53 (user, 2026-11-26):** the questions above are settled; see PLAN.md "Decided s53".

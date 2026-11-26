@@ -104,3 +104,5 @@ and in `ORACLE_O`: `0x27F67: 'spell', 0x13965: 'spell', 0x13B4C: 'spell', 0x2BF2
 - Every oracle fixture was regenerated after the `por_emu` trap change and the new traps: all byte-identical except
   the ones extended here (`spells.json`, `round.json`, `handlers.json`); `cast.json` differs only in its source label.
   On a merge conflict, regenerate those three from the merged scripts rather than merging the JSON.
+
+**Decided s53 (user, 2026-11-26):** the questions above are settled; see PLAN.md "Decided s53".

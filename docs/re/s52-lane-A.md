@@ -119,3 +119,5 @@ New oracle `e.call` targets for `cite.py` ORACLE_O: 0x62B6 'venue' (loot_take), 
 0x25C99 'trade' (treasure), 0x25191 'trade' and 0x252C3 'trade' (money), 0x25711 'trade' and 0x24E8C 'trade'
 (take_coins), 0x2663B 'trade' (appraise). Already called but not registered: 0x644B 'venue' (loot), and the temple
 entries 0x47C0, 0x4978, 0x4A87, 0x4CC8, 0x4DB1, 0x4E9F 'venue' (templeEntries, called through a variable).
+
+**Decided s53 (user, 2026-11-26):** the questions above are settled; see PLAN.md "Decided s53".

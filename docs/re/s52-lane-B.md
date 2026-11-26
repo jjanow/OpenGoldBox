@@ -267,3 +267,5 @@ unit), **bug?** 1 (the same handler 89 call, question above), **open** 0 routine
 | 0x11DF6 | effect handlers 5, 13, 19, 24, 27, 60, 63, 92, 1 | read | the shared empty handler (5, 13, 19, 24, 27, 60, 63, 92, 127): push bp / pop bp / retf 0xA |
 | 0x11DFD | see `por-art-formats.md` Amiga program reads (s1 | exec | already W by execution (s49 oracles) |
 | 0x12504 | empty routine (unit init or empty handler) | read | empty |
+
+**Decided s53 (user, 2026-11-26):** the questions above are settled; see PLAN.md "Decided s53".
