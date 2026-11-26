@@ -60,8 +60,9 @@ public static class PorParty
     /// Writes the party as save slot <paramref name="letter"/> (GAME.OVR 0x1FD3E's per-member save): member n's
     /// 285-byte record to <c>CHRDAT&lt;letter&gt;n.SAV</c>; the old <c>.ITM</c> and <c>.SPC</c> are deleted and written
     /// again only when the member has items or effects (records as they are, 63 / 9 bytes each, list order). Files of
-    /// members beyond the party stay (the program leaves them too). [?] The program also deletes the roster files
-    /// (<c>&lt;name&gt;.CHA/.ITM/.SPC</c>) of every member; its name-to-file rule is not read, so they are left.
+    /// members beyond the party stay (the program leaves them too). The program also deletes the roster files
+    /// (<c>&lt;name&gt;.CHA/.ITM/.SPC</c>, name through <see cref="PorRoster.DosStem"/>) of every member (Load does the
+    /// same, 0x1FA21–0x1FB46); not done here (the engine's roster is its own folder).
     /// </summary>
     public static void Save(EclParty party, string folder, char letter)
     {

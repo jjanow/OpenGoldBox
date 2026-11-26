@@ -25,11 +25,15 @@ from unicorn.x86_const import UC_X86_REG_AX, UC_X86_REG_DX  # noqa: E402
 REC, COMBAT, EFFECT, ITEM = 0x11D, 0x16, 9, 0x3F
 BUILD_HANDLERS, BUILD_ROUTINES, CALL_HANDLER = 0x11DFD, 0x2A42B, 0x2AEEA
 # START.EXE far routines trapped (linear = seg*16 + off as the far calls name them) and their argument bytes.
-START_TRAPS = {0x228C: 12, 0x2B8B: 10, 0x2233: 4, 0x257E: 2, 0x25C9: 12, 0x7E4E: 0, 0x2383: 0, 0x1758: 4}
-OVR_TRAPS = {0x310D0: 8, 0x32123: 10, 0x2AA87: 4, 0x3154B: 4}
+START_TRAPS = {0x228C: 12, 0x2B8B: 10, 0x2233: 4, 0x257E: 2, 0x25C9: 12, 0x7E4E: 0, 0x2383: 0, 0x1758: 4,
+               0x8C85: 2, 0x8BBC: 2,  # (s52) sound cue and driver start: Hold Person's flights
+               0x1583: 4}  # (s52) the creature panel: turn undead
+OVR_TRAPS = {0x310D0: 8, 0x32123: 10, 0x2AA87: 4, 0x3154B: 4,
+             0x2CFCA: 0, 0x319D2: 8}  # (s52) turn undead: menu clear, view scroll
 # Map routines answered only in the cases without a combat map: square x / y, put on a square.
 MAP_TRAPS = {0x31321: (4, 0), 0x31349: (4, 0), 0x317E1: (10, 1)}
 BUILD_CELLS, REMOVE_EFFECT = 0x30ADA, 0x2AF10
+TURN_UNDEAD, MORALE_EFFECTS = 0x13965, 0x2BF2B
 GETMEM, FREEMEM, RACE_LIMIT = 0xB1BF, 0xB1D4, 0x3AF7
 
 
@@ -49,8 +53,9 @@ class Oracle:
         self.e = e = Emu(exe, ovr)
         for lin, n in START_TRAPS.items():
             e.trap_start(0, lin, Emu.ret(n))
+        self.real_remove = False
         for off, n in OVR_TRAPS.items():
-            e.trap_ovr(off, Emu.ret(n))
+            e.trap_ovr(off, self._remove_trap(n) if off == 0x3154B else Emu.ret(n))
         e.trap_start(0, GETMEM, self._getmem)
         e.trap_start(0, FREEMEM, Emu.ret(6))
         e.trap_start(0, RACE_LIMIT, Emu.ret(6, 0))
@@ -63,6 +68,20 @@ class Oracle:
         for i in range(0, 68):
             seg, off = e.dsptr(0x6B84 + 4 * i)
             self.routines[i] = (seg, off)
+
+    def _remove_trap(self, n):
+        # 0x3154B (off the map: sound, body icon, cells) is skipped; in the turn-undead cases (s52) the creature's slot
+        # size DS:5F2A + 4k is zeroed first, as 0x2BDF0 takes a creature off, so the target search no longer finds it
+        def f(e):
+            if self.real_remove:
+                ptr = (e.arg(2), e.arg(0))
+                for k in range(1, 64):
+                    o, sg = struct.unpack('<HH', e.rb(e.ds(0x65B9 + 4 * k), 4))
+                    if (sg, o) == ptr:
+                        e.set_dsb(0x5F2A + 4 * k, 0)
+                        break
+            e.pop_ret(n)
+        return f
 
     def _map_trap(self, n, ax):
         def f(e):
@@ -159,7 +178,11 @@ class Oracle:
         ptrs = self.build(case['creatures'])
         self.map_mode = 'cells' in case
         arena = self.setup_map(case, ptrs) if self.map_mode else None
-        e.set_dsb(0x49F3, 0)
+        e.set_dsb(0x49F3, 5 if case.get('fight') else 0)
+        if 'ds4845' in case:
+            e.set_dsb(0x4844, case['ds4844'])
+            e.set_dsb(0x4845, case['ds4845'])
+            e.set_dsb(0x681C, 0)
         e.set_dsb(0x681F, 0)
         e.set_dsb(0x6DBF, 0)
         e.set_dsb(0x6819, 0)
@@ -176,6 +199,19 @@ class Oracle:
             if 'removeFrom' in case:
                 c = ptrs[case['removeFrom']]
                 e.call(REMOVE_EFFECT, [c[0], c[1], 0x28, 0, 0])
+        elif case['kind'] == 'morale':  # s52: 0x2BF2B(creature 0)
+            c = ptrs[case['current']]
+            e.call(MORALE_EFFECTS, [c[0], c[1]])
+        elif case['kind'] == 'turn':  # s52: turn undead 0x13965 by creature 0 (combat record bytes preset)
+            for ci, off, v in case.get('combatSet', []):
+                cb = struct.unpack('<HH', e.rb(self.lin(ptrs[ci]) + 0x108, 4))
+                e.wb(cb[1] * 16 + cb[0] + off, [v])
+            c = ptrs[case['current']]
+            self.real_remove = True
+            try:
+                e.call(TURN_UNDEAD, [c[0], c[1]])
+            finally:
+                self.real_remove = False
         elif case['kind'] == 'spell':
             if 'aim' in case:
                 e.set_dsb(0x6DB9, case['aim'][0])
@@ -205,7 +241,18 @@ class Oracle:
             e.call(CALL_HANDLER, [case['id'], c[0], c[1], node[0], node[1], 1 if case.get('removed') else 0])
         res = {'after': [self.read_creature(p) for p in ptrs], 'seedAfter': e.randseed(),
                'spellCell': e.dsb(0x681B), 'ds4845': e.dsb(0x4845)}
-        if arena is not None:
+        if 'ds4845' in case:
+            res['ds4844'] = e.dsb(0x4844)
+            res['ds6819'] = e.dsb(0x6819)
+            res['ds681c'] = e.dsb(0x681C)
+            res['ds6820'] = e.dsb(0x6820)
+        if case['kind'] == 'turn':
+            res['combat'] = []
+            for p in ptrs:
+                cb = struct.unpack('<HH', e.rb(self.lin(p) + 0x108, 4))
+                res['combat'].append(e.rb(cb[1] * 16 + cb[0], COMBAT).hex())
+            res['ds6e31'] = e.dsb(0x6E31)
+        if arena is not None and case['kind'] != 'turn':
             res['cells'] = e.rb(self.lin(arena) + 7, 1250).hex()
             res['aim'] = [e.dsb(0x6DB9), e.dsb(0x6DBA)]
         return res
@@ -396,7 +443,115 @@ def make_cases(rnd):
         if rnd.random() < 0.8:
             c['removeFrom'] = 0
         add('cloud', 34, cs, 0, **c)
+    more_cases(rnd, add, placed, arena)
     return cases
+
+
+def more_cases(rnd, add, placed, arena):
+    """s52: spell routines 1-33, 38, 40, 45, 61, 63 and 66 (read whole in s52); DS:4844 / 4845 set and compared."""
+    pool = [0x0C, 0x35, 0x37, 0x21, 0x2A, 0x27, 0x0B, 0x01, 0x16, 0x24]
+
+    def lv_any():
+        lv = [0] * 8
+        for k in rnd.sample(range(8), rnd.choice([1, 1, 2, 3])):
+            lv[k] = rnd.randrange(1, 14)
+        return lv
+
+    def target(**kw):
+        ef = [effect(x, rnd.randrange(0, 60), rnd.choice([0xFF, rnd.randrange(0, 0x40)]))
+              for x in rnd.sample(pool, rnd.choice([0, 0, 1, 2]))]
+        return creature(rnd, **kw), ef, []
+
+    def g():
+        return dict(ds4844=rnd.randrange(256), ds4845=rnd.randrange(256))
+
+    plain = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 22, 24, 25, 28, 29, 30, 31, 32,
+             33, 38, 40, 45, 52, 53, 54, 61, 63, 66, 50]
+    for sid in plain:
+        for _ in range(12):
+            caster = (creature(rnd, levels=lv_any()), [], [])
+            n = rnd.choice([1, 1, 1, 2, 3, 4])
+            ts = []
+            for _i in range(n):
+                kw = {}
+                if sid == 10:
+                    kw = dict(type=rnd.choice([0, 1, 2, 4]), size=rnd.choice([1, 1, 2]))
+                if sid in (3, 4, 9, 15, 20):
+                    kw = dict(hpmax=rnd.randrange(10, 60))
+                ts.append(target(**kw))
+            if sid == 13 and rnd.random() < 0.6:
+                ts[0][1].insert(rnd.randrange(len(ts[0][1]) + 1), effect(0x0C, 30, rnd.randrange(0, 256)))
+            if sid == 10 and rnd.random() < 0.3:
+                ts[0][1].append(effect(0x0B, 30, rnd.randrange(0, 256)))
+            add('spell', sid, [caster] + ts, 0, targets=list(range(1, n + 1)), **g())
+    for _ in range(12):  # 12 Enlarge: casting levels 1-6 and outside
+        lv = [0] * 8
+        lv[rnd.choice([0, 1, 2, 3, 4, 5, 6, 7])] = rnd.choice([1, 2, 3, 4, 5, 6, 7, 9, 12])
+        add('spell', 12, [(creature(rnd, levels=lv), [], []), target(str=rnd.randrange(3, 19))], 0, targets=[1], **g())
+    for _ in range(30):  # 21 Sleep: hit dice, race, status, 0x35, the 4d4 budget
+        cs = [(creature(rnd, levels=lv_any()), [], [])]
+        n = rnd.randrange(1, 9)
+        for _i in range(n):
+            c, ef, it = target(hd=rnd.choice([0, 1, 2, 3, 4, 5, 6, 9, 0xFE]), race=rnd.choice([0, 0, 1, 3]),
+                               status=rnd.choice([0, 0, 0, 1, 4]))
+            if rnd.random() < 0.2:
+                ef.append(effect(0x35, 5))
+            cs.append((c, ef, it))
+        add('spell', 21, cs, 0, targets=list(range(1, n + 1)), **g())
+    for sid in (23, 49):  # Hold Person: one to four targets
+        for _ in range(20):
+            n = rnd.randrange(1, 5)
+            cs = [(creature(rnd, levels=lv_any()), [], [])] + \
+                [target(type=rnd.choice([0, 1, 1, 2]), size=rnd.choice([1, 1, 2])) for _i in range(n)]
+            add('spell', sid, cs, 0, targets=list(range(1, n + 1)), **g())
+    for _ in range(25):  # 26 Slow Poison
+        c, ef, it = target(status=rnd.choice([0, 0, 1, 4]), hp=rnd.choice([0, 0, 5]))
+        if rnd.random() < 0.7:
+            ef.insert(rnd.randrange(len(ef) + 1), effect(0x37, 0, 0xFF))
+        add('spell', 26, [(creature(rnd, levels=lv_any()), [], []), (c, ef, it)], 0, targets=[1], **g())
+    for _ in range(20):  # 27 Snake Charm: the whole creature list
+        cs = [(creature(rnd, levels=lv_any(), hp=rnd.randrange(1, 60)), [], [])]
+        for _i in range(rnd.randrange(1, 8)):
+            cs.append(target(type=rnd.choice([0x0E, 0x0E, 0, 1]), hp=rnd.randrange(1, 30)))
+        add('spell', 27, cs, 0, targets=[], **g())
+    for v in [1, 2, 3, 4, 5, 6, 7, 9] * 3:  # 12 Enlarge: every class at the same level = the casting level
+        add('spell', 12, [(creature(rnd, levels=[v] * 8), [], []), target(str=rnd.randrange(3, 19))], 0, targets=[1],
+            **g())
+    for _ in range(12):  # 14 Friends: Charisma near the cap of 25
+        c, ef, it = target()
+        c[0x15] = rnd.randrange(16, 26)
+        add('spell', 14, [(creature(rnd, levels=lv_any()), [], []), (c, ef, it)], 0, targets=[1], **g())
+    for sid in (3, 21, 23, 49, 13, 26):  # no target (62 heals the stale DS:6C95 then: not run)
+        add('spell', sid, [(creature(rnd, levels=lv_any()), [], [])], 0, targets=[], **g())
+    for _ in range(60):  # turn undead 0x13965 with the target search 0x13B4C (0x3154B: only the slot size zeroed, cells not compared)
+        cs, places = placed(rnd.randrange(2, 10))
+        lvl = rnd.choice([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 13, 14, 20, 0xF0])
+        cs[0][0][0x96] = lvl
+        sets = []
+        for k in range(1, len(cs)):
+            cs[k][0][0x76] = rnd.choice([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 0xFE])  # PoR rows are 1-10
+            cs[k][0][0x10E] = rnd.choice([1, 1, 1, 0])
+            if rnd.random() < 0.15:
+                sets.append([k, 0x10, 1])
+        add('turn', 0, cs, 0, targets=[], cells=bytes(arena()).hex(), places=places, fight=1, combatSet=sets)
+    for _ in range(30):  # a high cleric among many weak undead: the 1d12 runs out while destroying (count back to 1)
+        cs, places = placed(rnd.randrange(7, 12))
+        cs[0][0][0x96] = rnd.choice([9, 11, 13, 14])
+        for k in range(1, len(cs)):
+            cs[k][0][0x76] = rnd.choice([1, 1, 2, 3])
+            cs[k][0][0x10E] = 1
+        add('turn', 0, cs, 0, targets=[], cells=bytes(arena()).hex(), places=places, fight=1)
+    for _ in range(12):  # 1 Bless in a fight: targets with an enemy beside them leave the list
+        cs, places = placed(rnd.randrange(3, 9))
+        add('spell', 1, cs, 0, targets=list(range(len(cs))), cells=bytes(arena()).hex(), places=places,
+            fight=1, aim=list(places[0][:2]), **g())
+    for _ in range(30):  # 0x2BF2B: the morale check's removal of 0x4A then 0x4B (their removal handlers 74 / 75 run)
+        cs, places = placed(rnd.randrange(2, 5))
+        k = rnd.randrange(1, len(cs))
+        ef = [effect(rnd.choice([0x4A, 0x4B, 0x4A, 0x4B, 0x16, 0x01]), 0, k + 1, 1) for _i in range(rnd.randrange(0, 5))]
+        cs[0] = (cs[0][0], ef, cs[0][2])
+        cs[k] = (cs[k][0], [effect(0x3A, 0, 0xFF)] if rnd.random() < 0.7 else [], cs[k][2])
+        add('morale', 0, cs, 0, targets=[], cells=bytes(arena()).hex(), places=places, fight=1)
 
 
 def main(argv):

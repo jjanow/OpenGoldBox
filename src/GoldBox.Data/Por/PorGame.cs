@@ -581,6 +581,7 @@ public sealed class PorGame
         public void Clock(ushort minutes) => Target.Clock(minutes);
         public void Call(ushort routine) => Target.Call(routine);
         public void Program(ushort program) => Target.Program(program);
+        public bool ProgramCamp() => Target.ProgramCamp();
         public void Protect(ushort address) => Target.Protect(address);
         public ushort Random(ushort range) => Target.Random(range);
         public void ScriptChanging(ushort script) => Target.ScriptChanging(script);

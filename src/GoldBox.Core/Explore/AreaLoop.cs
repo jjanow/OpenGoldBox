@@ -483,18 +483,23 @@ public sealed class AreaLoop
         }
 
         LeaveCommandRoutine(); // 0x173E7: the command routine ends with DS:49F9 := DS:49FA
-        // The area loop (0x40E3 on): $49F2 = the current block after every command read.
-        Memory.Write(PreviousScript, (ushort)Vm.CurrentScript);
+        // The area loop (0x40DB–0x40FA): $49F2 = the current block after the command read, except for the read that
+        // follows a camp or a Look (0x4172–0x418F reads the next command and goes straight back to 0x40FF; s52).
+        if (!_afterCampOrLook)
+            Memory.Write(PreviousScript, (ushort)Vm.CurrentScript);
+        _afterCampOrLook = false;
         try
         {
             if (command == AreaCommand.Encamp)
             {
                 Encamp();
+                _afterCampOrLook = true;
                 return;
             }
             if (Memory.Read(SearchMode) > 1)
             {
                 LookRun();
+                _afterCampOrLook = true;
                 return;
             }
 
@@ -536,12 +541,22 @@ public sealed class AreaLoop
     /// <summary>The area loop has ended (the party was destroyed, DS:49FF); no more commands run.</summary>
     public bool Ended { get; private set; }
 
-    /// <summary>The camp routine 0x3B19: vector 2, the camp menu, vector 3 if the rest was interrupted, redraw.</summary>
+    /// <summary>0x4172: the camp or Look path ended; the next command read does not write $49F2.</summary>
+    private bool _afterCampOrLook;
+
+    /// <summary>
+    /// The camp routine 0x3B19: vector 2, the camp menu (0x196A0), vector 3 if the rest was interrupted, redraw. Both
+    /// vectors run through the run loop 0x3EB7 alone: a NEWECL there is not followed here (no 0x3EFA); the script-changed
+    /// flag stays set and the next command's vector 0 (0x41A1) or a Look's vector 1 (0x4159) follows it (s52: Core had
+    /// followed it at once, vectors 4, 0, 1 before the camp menu). The camp menu opens after a NEWECL too. [?] Core
+    /// still skips it when the party was destroyed (DS:49FF) or the run faulted; the program opens it whatever.
+    /// </summary>
     private void Encamp()
     {
-        var r = Run(2);
-        if (r.Reason is EclStopReason.Exit && !Defeated && Ui.Camp())
-            Run(3);
+        var r = Vm.RunVector(2);
+        Runs.Add(r);
+        if (r.Reason is EclStopReason.Exit or EclStopReason.NewScript && !Defeated && Ui.Camp())
+            Runs.Add(Vm.RunVector(3));
         Redraw();
     }
 
@@ -580,11 +595,15 @@ public sealed class AreaLoop
     }
 
     /// <summary>
-    /// The step after vector 0 (0x17438): cancelled when the script set $6DC9 ≥ 255 ($6DC9 back to 0); else by the
-    /// party's own face: 1 moves, 2/3 open the door menu (one try), 0 refuses. A refused step or failed try bumps.
+    /// The step after vector 0 (0x17438, read whole s52): only in the 3D view (DS:49FA = 1) or on the overland (2–4);
+    /// there it is cancelled when the script set $6DC9 ≥ 255 ($6DC9 back to 0; in any other mode $6DC9 is left as it
+    /// is); else by the party's own face: 1 moves, 2/3 open the door menu (one try), 0 refuses. A refused step or
+    /// failed try bumps.
     /// </summary>
     public void Step()
     {
+        if (Memory.ViewMode != 1 && !Overland.Commands(Memory))
+            return;
         if (Memory.Read(CancelStep) >= 255)
         {
             Memory.Write(CancelStep, 0);
@@ -640,10 +659,12 @@ public sealed class AreaLoop
                 a = DoorRules.Pick(barrier, party, Rng, DoorFlags);
                 break;
             default:
+                // 0x16D13 only clears the slot; 0x17438 then steps (0x16E06) with no face set: the map keeps the
+                // lock, so the door is locked again on the way back (read s52; Bash and Pick set both faces, 0x167D4)
                 a = DoorRules.Knock(party);
                 if (a.Opened)
                     members[a.Member][DoorMember.SpellSlotsOffset + a.KnockSlot] = 0;
-                break;
+                return a.Opened;
         }
         if (a.Opened)
             DoorMap.Open(Map!.Planes, p.X, p.Y, p.Facing);

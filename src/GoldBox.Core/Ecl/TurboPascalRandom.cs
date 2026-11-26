@@ -24,12 +24,15 @@ public sealed class TurboPascalRandom(uint seed)
         return Seed;
     }
 
-    /// <summary>Random(n): 0..n−1. [?] n = 0 is never passed by the VM (RANDOM uses n ≥ 1); returns 0 without a draw.</summary>
+    /// <summary>
+    /// Random(n): 0..n−1. n = 0 returns 0 after a draw, as the program's Random (START 0xC140: the seed steps first,
+    /// then a range of 0 skips the division). The dice of handler 28 (Mirror Image with param 255: 1d(param + 1),
+    /// a byte) reach it (s52, por_handler_oracle.py).
+    /// </summary>
     public ushort Next(ushort n)
     {
-        if (n == 0)
-            return 0;
-        return (ushort)((NextSeed() >> 16) % n);
+        uint seed = NextSeed();
+        return n == 0 ? (ushort)0 : (ushort)((seed >> 16) % n);
     }
 
     /// <summary>Advances the seed <paramref name="count"/> times (draws made by code outside the VM).</summary>

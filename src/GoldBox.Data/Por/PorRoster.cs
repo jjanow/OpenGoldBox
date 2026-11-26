@@ -14,8 +14,9 @@ namespace GoldBox.Data.Por;
 /// The engine keeps the same list file and writes each character as one JSON file, a save's party entry
 /// (<see cref="SavedCharacter"/>, docs/module-format.md §15). A character copied from the DOS game
 /// (<c>NAME.CHA</c> and its <c>.ITM</c> / <c>.SPC</c>) is read when no JSON file of that name exists.
-/// [?] The program's file name is the name through its own clean-up (8.3); ours keeps letters, digits, '-' and '_'
-/// and replaces the rest with '_' (two names that clean up the same share a file, as in the program).
+/// The program's file name is the name through its own clean-up (<see cref="DosStem"/>, START 0x8445, read s52); ours
+/// keeps letters, digits, '-' and '_' and replaces the rest with '_' (two names that clean up the same share a file, as
+/// in the program); a DOS file is looked up by the program's rule.
 /// </para>
 /// </summary>
 public sealed class PorRoster(string folder)
@@ -62,18 +63,20 @@ public sealed class PorRoster(string folder)
         ModuleJson.Write(Path.Combine(Folder, stem + ".json"), PorEngineSave.Character(c, stem));
     }
 
-    /// <summary>LoadChar (0x1EAD2): the character by its name, or null when no file has it.</summary>
+    /// <summary>LoadChar (0x1EAD2): the character by its name, or null when no file has it. (The program allocates the
+    /// first item before testing EOF, so an empty <c>.itm</c> would give one stale record; it never writes one.)</summary>
     public EclCharacter? Load(string name)
     {
         var stem = Stem(name);
         if (Find(stem + ".json") is { } json)
             return PorEngineSave.Character(ModuleJson.Read<SavedCharacter>(json));
-        if (Find(stem + ".cha") is not { } cha)
+        var dos = DosStem(name);
+        if (Find(dos + ".cha") is not { } cha)
             return null;
         var c = new EclCharacter(File.ReadAllBytes(cha));
-        foreach (var r in Records(Find(stem + ".itm"), EclCharacter.ItemRecordSize))
+        foreach (var r in Records(Find(dos + ".itm"), EclCharacter.ItemRecordSize))
             c.Items.Add(r);
-        foreach (var r in Records(Find(stem + ".spc"), EclCharacter.EffectRecordSize))
+        foreach (var r in Records(Find(dos + ".spc"), EclCharacter.EffectRecordSize))
             c.Effects.Add(r);
         return c;
     }
@@ -94,6 +97,29 @@ public sealed class PorRoster(string folder)
         foreach (char ch in name)
             sb.Append(char.IsAsciiLetterOrDigit(ch) || ch is '-' or '_' ? char.ToUpperInvariant(ch) : '_');
         return sb.Length > 0 ? sb.ToString() : "_";
+    }
+
+    /// <summary>The characters the program's clean-up removes, in its order (DS:0D1A, ten bytes).</summary>
+    public const string DosRemoved = " .*,?/\\:;|";
+
+    /// <summary>
+    /// The program's file stem of a name (START 0x8445, read s52): each character of <see cref="DosRemoved"/> in turn is
+    /// removed by START 0x8376, which walks the positions 1..(length at its start) and deletes a match without looking
+    /// at the position again (so of two adjacent matches the second stays); then the first 8 characters, upper case.
+    /// </summary>
+    public static string DosStem(string name)
+    {
+        var s = new StringBuilder(name);
+        foreach (char r in DosRemoved)
+        {
+            int n = s.Length;
+            for (int i = 0; i < n; i++)
+                if (i < s.Length && s[i] == r)
+                    s.Remove(i, 1);
+        }
+        var t = s.ToString();
+        // Turbo Pascal's UpCase (START 0xC7AA) changes a..z only
+        return new string((t.Length > 8 ? t[..8] : t).Select(ch => ch is >= 'a' and <= 'z' ? (char)(ch - 32) : ch).ToArray());
     }
 
     /// <summary>A file in the folder, any case (the DOS files are upper case).</summary>

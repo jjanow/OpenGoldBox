@@ -106,6 +106,8 @@ for f, kind in files:
     rel = os.path.relpath(f, ROOT)
     if '/survey-' in rel or rel.endswith('prior-art.md') or rel.endswith('routine-ledger.md'):
         continue
+    if re.search(r'/s\d+-lane-[A-Z]\.md$', rel):
+        continue  # session lane notes (s52 on): a record of the reads, not a spec; their rows reach the ledger through overrides.py
     last_start = -99
     for ln, line in enumerate(open(f, encoding='utf-8', errors='replace'), 1):
         if 'START' in line:
@@ -182,15 +184,49 @@ ORACLE_O = {0x143F3: 'ai', 0x148BE: 'ai', 0xAEAB: 'ai', 0x22AC4: 'ai', 0x22827: 
             # s51: por_altx_oracle.py
             0x1638E: 'altx',
             # s51: por_items_oracle.py
-            0x21F32: 'items'}
-ORACLE_S = {0x9E5C: 'sound', 0x9ECA: 'sound', 0xA222: 'sound', 0xA28E: 'sound', 0x2FD3: 'combat', 0x30FB: 'combat', 0x3AF7: 'level', 0x1758: 'trade'}
+            0x21F32: 'items',
+            # s52 lane A: por_venue_oracle.py (loot take, award, the loot menu, the temple entries through a variable)
+            0x62B6: 'venue', 0x58D3: 'venue', 0x644B: 'venue',
+            0x47C0: 'venue', 0x4978: 'venue', 0x4A87: 'venue', 0x4CC8: 'venue', 0x4DB1: 'venue', 0x4E9F: 'venue',
+            # s52 lane A: por_trade_oracle.py (treasure, money, coin take, appraise)
+            0x25C99: 'trade', 0x25191: 'trade', 0x252C3: 'trade', 0x25711: 'trade', 0x24E8C: 'trade', 0x2663B: 'trade',
+            # s52 lane A: callees run untrapped inside those (lane notes "exec (caller)"; no closure entry for these
+            # oracle methods, whose traps differ from the s49 'venue' / 'trade' sets)
+            0x6184: 'venue', 0x6092: 'venue', 0x25C07: 'venue', 0x25C5B: 'trade', 0x25269: 'trade',
+            # s52 lane C: por_spell_oracle.py, por_round_oracle.py, por_handler_oracle.py
+            0x27F67: 'spell', 0x13965: 'spell', 0x13B4C: 'spell', 0x2BF2B: 'spell',
+            0x15074: 'round', 0x15103: 'round', 0x130AD: 'round', 0x13465: 'round', 0x317E1: 'handler',
+            0x2BDF0: 'round',  # run inside the flee 0x13465 (lane C "exec (caller)")
+            # s52 lane D: por_clock_oracle.py (and its untrapped callees), por_ai_oracle.py sections
+            0x241A1: 'clock', 0x2416F: 'clock', 0x24246: 'clock', 0x244ED: 'clock', 0x24A66: 'clock',
+            0x23DCC: 'clock', 0x240BE: 'clock', 0x2463D: 'clock', 0x246F1: 'clock', 0x247B3: 'clock', 0x248D6: 'clock',
+            0x2497E: 'clock',
+            0xBE4D: 'ai', 0xB235: 'ai', 0xBC97: 'ai', 0xBB0F: 'ai', 0xAFA4: 'ai', 0xB105: 'ai',
+            # s52 lane E: por_door_oracle.py, por_camp_oracle.py
+            0x1695F: 'door', 0x16BAA: 'door', 0x16D13: 'door', 0x16901: 'door', 0x16CB9: 'door',
+            0x17831: 'camp', 0x1798A: 'camp', 0x179CD: 'camp', 0x17A45: 'camp', 0x17A8D: 'camp', 0x17B9D: 'camp',
+            0x18055: 'camp', 0x18CDA: 'camp', 0x18E32: 'camp', 0x1813B: 'camp', 0x1838C: 'camp',
+            # s52 lane F: por_list_oracle.py
+            0x2D594: 'list', 0x2D3D2: 'list', 0x2D502: 'list'}
+ORACLE_S = {0x9E5C: 'sound', 0x9ECA: 'sound', 0xA222: 'sound', 0xA28E: 'sound', 0x2FD3: 'combat', 0x30FB: 'combat', 0x3AF7: 'level', 0x1758: 'trade',
+            # s52 lane F: por_print_oracle.py, por_input_oracle.py
+            0x77F8: 'print', 0x7A73: 'input', 0x7BF6: 'input'}
 disp = json.load(open(_WORK + 'disp.json'))
-for sid in [35, 36, 37, 39, 41, 42, 43, 44, 46, 47, 48, 51, 55, 56, 57, 58, 59, 60, 62, 64, 65, 67, 34]:
+for sid in range(1, 68):  # s52 lane C: every spell id 1..67 (por_spell_oracle.py)
     ORACLE_O[int(disp['spells'][str(sid)][2:], 16)] = 'spell'
 for hid in [81, 82, 83, 85, 86]:
     ORACLE_O[int(disp['handlers'][str(hid)][2:], 16)] = 'spell'
-for hid in [40, 84, 88, 90, 97]:  # por_handler_oracle.py (90 / 97 inside the saving throw 0x2BC4D)
+for hid in [40, 84, 88, 90, 97,  # por_handler_oracle.py (90 / 97 inside the saving throw 0x2BC4D)
+            # s52 lane B: the 'call' cases (HandlerCallProgramTests)
+            1, 2, 3, 4, 6, 7, 8, 9, 10, 11, 12, 14, 15, 17, 18, 20, 21, 22, 23, 25, 26, 28, 29, 30, 31, 32, 33, 34,
+            35, 36, 37, 38, 39, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 56, 57, 58, 59, 61, 62, 64, 65,
+            66, 67, 68, 69, 70, 71, 72, 75, 76, 77, 78, 79, 80, 87, 89, 91, 93, 94, 95, 96, 98, 99, 100, 101, 102,
+            103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123,
+            124, 125, 126, 128, 129, 130, 131, 132, 133, 134, 135, 136, 137, 138, 139]:
     ORACLE_O.setdefault(int(disp['handlers'][str(hid)][2:], 16), 'handler')
+# s52 lane B: the unit's helpers, run inside those handlers (not trapped)
+for a in (0xEC5B, 0xEC7A, 0xECB3, 0xFC07, 0xFC78, 0x11570, 0x101A0, 0x10246, 0x2BCCD, 0x2BD18):
+    ORACLE_O.setdefault(a, 'handler')
 oracle = {}
 for a, n in ORACLE_O.items():
     oracle['O:%x' % a] = n

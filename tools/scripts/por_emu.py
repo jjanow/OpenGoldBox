@@ -122,8 +122,11 @@ class Emu:
             f(self)
 
     def _trap(self, lin, fn):
+        # a second trap on the same address replaces the first (one hook, so the trap does not run twice)
+        new = lin not in self.traps
         self.traps[lin] = fn
-        self.uc.hook_add(UC_HOOK_CODE, self._code, begin=lin, end=lin)
+        if new:
+            self.uc.hook_add(UC_HOOK_CODE, self._code, begin=lin, end=lin)
 
     def trap_ovr(self, ovroff, fn):
         self._trap(self.unit_linear(ovroff)[0], fn)

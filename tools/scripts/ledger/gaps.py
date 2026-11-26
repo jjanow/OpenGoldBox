@@ -1,38 +1,10 @@
 # ---- hand-ranked gap lists (exec'd at the end of render.py) ----
 GAP_PLAY = [
-    ('O:6184', 'loot item take: the s51 extended-key rule lets Shift-F1 (Take) reach it with neither money nor items left; what the page shows on an empty list is not read (combat-format.md "Loot menu", `[?]`)'),
 ]
-# rows closed in s49–s51 (W or N now): their hand notes, shown under "Closed in s49–s51"; prune at the next session's rebuild
+# rows closed in s52 (W now): their hand notes, shown under "Closed in s52"; prune at the next session's rebuild
 GAP_DONE = [
-    ('O:27c38', 'done s49: read whole, oracle `por_spellcast_oracle.py` (memorised, item and scroll casts, aim abort, combat-only questions; Core driven out of a fight, the fight branch checked against the program\'s rules only); bit 7 of a scroll pick is not kept; out-of-fight branch `CampCast.Run`, fight branch `FightSpells.CastNow` + `FightMenu.CastNow` (the loot menu\'s D caller 0x6605 wired s51: `LootRules.Detect`, oracle `por_venue_oracle.py` "loot")'),
-    ('O:127fb', 's49: read whole and run under emulation with its callees and the trigger-0x12 effects (`por_round_oracle.py`, `RoundProgramTests`); the C# already matched'),
-    ('O:9938', 's49: read whole, run under emulation on every initiative byte and after real round starts (`RoundProgramTests`)'),
-    ('O:12f0d', 's49: read whole with the guards 0x12E22, the callers\' hand-off and 0x2B9D1, run under emulation (`RoundProgramTests`); the step is now drawn inside the routine (`Fight.StepDrawn`)'),
-    ('O:14c0f', 'done s49 (P3): ported whole, oracle `por_cast_oracle.py` (ids 0..67, ai 0 / 1, the list 0x275B4 kind 0); `[?]` left: ids above 67 read past the table (`spells-effects.md` "Combat cast")'),
-    ('O:f91e', 's49: ported whole, by execution (`por_handler_oracle.py`, bodies under the clouds)'),
-    ('O:10ad2', 's49: by execution; the range word is stack residue, 0x3E58 at 18 of 18 DOSBox-X gazes (no range in practice; sampled, not proven)'),
-    ('O:2a0f1', 's49: whole routine rechecked, by execution (the pick at DS:6B84 entry 0 scripted)'),
-    ('O:11134', 's49: by execution inside the saving throw 0x2BC4D; Constitution outside 4..20 adds stack residue that varies (DOSBox-X 0x1F, 0x00), 0 taken `[?]`, reached after enough temple raises (Con − 1 each, 0x4B85) or handler 7 at Con 20'),
-    ('O:112e5', 's49: as 90'),
-    ('O:282bd', 'done s49: other levels keep DS:4845 as Enlarge, Sleep or Dispel Magic last left it, shared for the run (`spells-effects.md` "Spell globals"); start value `[?]` (uninitialised data)'),
-    ('O:27466', 'done s49: read whole, oracle `por_spellcast_oracle.py`; signed cleric level; DS:4843 / DS:476A overflows `[U]` (`item-format.md`)'),
-    ('O:27534', 'done s49: read whole, oracle `por_spellcast_oracle.py` (`item-format.md`)'),
-    ('O:4864', 'W by execution s49 (`por_venue_oracle.py`, VenueProgramTests): DS:681F stops the removal handlers\' re-add (shop-format.md "Temple")'),
-    ('O:22f8c', 'W by execution s49 (`por_venue_oracle.py`, VenueProgramTests; DOSBox-X s42)'),
-    ('O:23819', 'W by execution s49 (`por_venue_oracle.py`, VenueProgramTests; Core PartySelection); other extended keys → first member not wired in the Client (shop-format.md "Party selection")'),
-    ('O:202bb', 'read s49 (ecl-format.md NEWECL): disk prompt only; a module holds every script, so it never runs. Not ported by design'),
-    ('O:24331', 'done s49 (P3): a text routine, not the clock (kind pres); ported (`CampTime.TwoDigits`), spec in `camp.md`, oracle for 0..255'),
-    ('O:1e294', 'read s49 (start-menu.md §5): disks and paths; the Client makes its own save folders. Not ported by design'),
-    ('O:b4', 'read s49 (start-menu.md §1): memory handler set-up. Not ported by design'),
-    ('O:4a', 'read s49 (start-menu.md §1): reached through DS:4414 from GetMem (START 0xB343), not dead; .NET has no fixed heap. Not ported by design'),
-    ('S:228c', 'W by citation after s49: the C# now names the entry (FightSpells.CombatCastStep)'),
-    ('O:18668', 'read whole s51: Display\'s nested append (its four callers all in 0x187ED), no branch; not Memorize / Scribe as the s47 role said; texts all under 40 characters (camp.md "Display")'),
-    ('S:77f8', 'checked s51: the 255-character case was fixed s48 (a) and run s49 (`TextWindow.PrintDos`, `PrintProgramTests`); the one `[?]` on its spec lines was combat-menu.md\'s Amiga status texts, which only shared a line with it'),
-    ('O:2dcf4', 'checked s51: the same-area Load marker was settled s47 (FS-UAE) and fixed s48 (d) (`AreaLoop.ReloadMarkerSlots`, `OverlandViewTests`; not seen on screen, a [release] item); the picture `[?]` closed: it draws nothing only for DS:49FA outside 1..4, which no writer stores (por-art-formats.md)'),
-    ('S:6', 'read whole s51 (start-menu.md §1): one branch (the debug word at START CS:0000 skips the introduction and the code wheel), the Client\'s order the same, the code wheel N, the exits Exit / AFTER DEFEAT off; the view colours 0x2EA4C(11, 0, 7, 6) never drawn (also W now)'),
-    ('O:1638e', 'read whole s51, oracle `por_altx_oracle.py` (AltXProgramTests, 48 cases: the word and five variants, hostile party members, creatures without a slot); Core no longer takes the creatures off through 0x3154B (no body tune, no grid rebuild, no body)'),
-    ('O:21f32', 'done s51: read whole with Ready 0x2250A, Drop, Halve 0x22827, Join 0x228D7; oracle `por_items_oracle.py` (ItemsPageProgramTests, 420 cases over DS:49F3 0-6); every caller outside a fight runs them; DOSBox-X and the Client pixel-equal on the camp\'s Items page (camp.md "The Items page\'s Ready, Drop, Halve and Join")'),
-    ('O:21aed', 'done s51: the party menu\'s View runs Spells (0x21D05) as every caller; DS:6DB5 kept on the game memory (camp.md "The remembered target DS:6DB5")'),
+    ('O:6184', 'done s52 lane A: an empty list ends at once and the screen is redrawn (DOSBox-X); run under emulation inside 0x62B6 (`por_venue_oracle.py` lootTake)'),
+    ('O:2eef4', 'read whole s52 lane F: the view pixel-equal to DOSBox-X from the formats (`view3d.md`); its internals stay in the presentation list'),
 ]
 GAP_PRES = [
     ('O:2d669', 'list window and its never-cited helpers 0x2C936, 0x2CFE0, 0x2D073, 0x2D1A6, 0x2D1F2, 0x2D238, 0x2D2D7: the Client rebuilt the pages from DOSBox-X (s45–s46)'),
@@ -41,7 +13,7 @@ GAP_PRES = [
     ('O:2cc8c', 'menu routine (every horizontal menu): one `[?]` line; its key handling is run by the oracles but its drawing is not compared'),
     ('S:1307', 'party list redraw and its colour helpers 0x148F, 0x1513, the creature panel 0x1583, the icon flash 0x257E, the View text helper 0x1C4D: run under the oracles, drawing compared only in DOSBox-X'),
     ('S:2b8b', 'effect message and pause'),
-    ('O:2eef4', '3D view internals 0x2E8F7, 0x2EA6B, 0x2EB08, 0x2EEEA never cited, the piece draw 0x32392 cited only inside: the view is pixel-equal to DOSBox-X from the formats (`view3d.md`), so only a check'),
+    ('O:2e8f7', '3D view internals 0x2E8F7, 0x2EA6B, 0x2EB08, 0x2EEEA never cited, the piece draw 0x32392 cited only inside (0x2EEF4 itself read whole s52): the view is pixel-equal to DOSBox-X from the formats (`view3d.md`), so only a check'),
     ('O:20d50', 'after a load or script switch, never cited: overland / picture set-up (calls 0x2DE38 and the picture draw)'),
     ('S:4751', 'pictures, START segment 0464 (0x4640–0x6C72): read, decode, draw, recolour, free; the importer decodes the formats and the Client draws them (`por-art-formats.md`); only some draw entries are cited'),
     ('O:1e468', 'combat icon slots and their builders 0x1E315, 0x1CE5E, 0x1CF3D (icon editor preview, recolour)'),
@@ -64,6 +36,8 @@ G.append('| # | Routine | Role | St | Why it is open |')
 G.append('|---|---|---|---|---|')
 for i, (k, note) in enumerate(GAP_PLAY, 1):
     G.append('| %d | %s | %s | %s | %s |' % (i, addr(k), role(k), ST[k], note))
+if not GAP_PLAY:
+    G[-2:] = ['None since s52: every play row is W or N (the W-by-citation rows are listed in the unit tables).']
 G.append('')
 G.append('### Presentation only (drawing, text, sound, input timing)')
 G.append('')
@@ -72,9 +46,11 @@ G.append('|---|---|---|---|---|')
 for i, (k, note) in enumerate(GAP_PRES, 1):
     G.append('| %d | %s | %s | %s | %s |' % (i, addr(k), role(k), ST[k], note))
 G.append('')
-G.append('### Closed in s49–s51')
+G.append('### Closed in s52')
 G.append('')
-G.append('Rows that left the ranked lists this session, with the lane notes (their status stays in the unit tables).')
+G.append('Rows that left the ranked lists this session, with the lane notes (their status stays in the unit tables). '
+         'The s52 lanes\' branch-by-branch reads of the W-by-citation rows are in `s52-lane-A.md` … `s52-lane-F.md` '
+         'and under "Statuses set by hand".')
 G.append('')
 G.append('| Routine | Role | St | Note |')
 G.append('|---|---|---|---|')

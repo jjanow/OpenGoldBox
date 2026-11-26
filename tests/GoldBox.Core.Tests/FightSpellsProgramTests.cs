@@ -99,7 +99,14 @@ public class FightSpellsProgramTests
             fight.Spells = spells;
             var current = list[k.GetProperty("current").GetInt32()];
             spells.Range(fight, current, 1); // binds the engine to the fight
-            fx.InCombat = false;             // the oracle runs outside a fight (DS:49F3 = 0)
+            // the oracle runs outside a fight (DS:49F3 = 0), or with DS:49F3 = 5 on a combat map ("fight", s52)
+            fx.InCombat = k.TryGetProperty("fight", out var inFight) && inFight.GetInt32() != 0;
+            bool globals = k.TryGetProperty("ds4845", out var g4845);
+            if (globals)
+            {
+                spells.Globals.Ds4844 = (byte)k.GetProperty("ds4844").GetInt32();
+                spells.Globals.Ds4845 = (byte)g4845.GetInt32();
+            }
             fight.State.Current = current;
             string what = $"case {n} {kind} {id}";
             if (k.TryGetProperty("aim", out var aim))
@@ -119,6 +126,32 @@ public class FightSpellsProgramTests
                 if (k.TryGetProperty("removeFrom", out var rf))
                     fx.RemoveEffect(list[rf.GetInt32()], 0x28);
             }
+            else if (kind == "morale")
+            {
+                // s52: 0x2BF2B, the morale check's first removals (DS:0C24 / 0C25)
+                foreach (var moraleId in MonsterAi.MoraleEffects)
+                    FightRules.RemoveFirstEffect(current, moraleId, fx);
+            }
+            else if (kind == "turn")
+            {
+                // s52: turn undead 0x13965 by the current creature; the oracle only zeroes a destroyed creature's slot
+                // size for the map removal 0x3154B, so the cells are not compared; the combat records' turned / tried
+                // bytes and the end of actions are
+                if (k.TryGetProperty("combatSet", out var sets))
+                    foreach (var st in sets.EnumerateArray())
+                        fight.Record(list[st[0].GetInt32()]).Bytes[st[1].GetInt32()] = (byte)st[2].GetInt32();
+                TurnUndead.Run(fight, current, program.TurnUndeadTable());
+                int ri = 0;
+                foreach (var cb in k.GetProperty("result").GetProperty("combat").EnumerateArray())
+                {
+                    var want = Convert.FromHexString(cb.GetString()!);
+                    var got = fight.Record(list[ri]).Bytes;
+                    foreach (int b in new[] { 0, 3, 6, 7, CombatRecord.Turned, CombatRecord.TriedTurning })
+                        if (want[b] != got[b])
+                            fails.Add($"{what} creature {ri} combat +{b:X2}: {got[b]} vs {want[b]}");
+                    ri++;
+                }
+            }
             else if (kind == "spell")
             {
                 foreach (var t in k.GetProperty("targets").EnumerateArray())
@@ -137,8 +170,17 @@ public class FightSpellsProgramTests
             var res = k.GetProperty("result");
             if (rng.Seed != res.GetProperty("seedAfter").GetUInt32())
                 fails.Add($"{what}: RandSeed {TurboPascalRandom.StepsBetween(k.GetProperty("seed").GetUInt32(), res.GetProperty("seedAfter").GetUInt32())} draws in the program, {rng.Draws} here");
-            if (map is not null && Convert.ToHexString(map.Arena.Bytes, CombatArena.HeaderSize, 1250) !=
-                res.GetProperty("cells").GetString()!.ToUpperInvariant())
+            if (globals)
+                foreach (var (cell, mine) in new (string, int)[]
+                         {
+                             ("ds4844", spells.Globals.Ds4844), ("ds4845", spells.Globals.Ds4845),
+                             ("ds6819", fight.State.DamageFlags), ("ds681c", fight.State.DamageDice),
+                             ("ds6820", fx.Cells.MultiTarget),
+                         })
+                    if (res.GetProperty(cell).GetInt32() != mine)
+                        fails.Add($"{what}: {cell} {mine} vs {res.GetProperty(cell).GetInt32()}");
+            if (map is not null && res.TryGetProperty("cells", out var cellsAfter) &&
+                Convert.ToHexString(map.Arena.Bytes, CombatArena.HeaderSize, 1250) != cellsAfter.GetString()!.ToUpperInvariant())
                 fails.Add($"{what}: arena cells differ");
             if (res.TryGetProperty("aim", out var aimAfter) && kind == "spell" &&
                 spells.Aim != (aimAfter[0].GetInt32(), aimAfter[1].GetInt32()))

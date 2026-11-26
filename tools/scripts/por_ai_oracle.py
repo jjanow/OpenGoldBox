@@ -355,6 +355,235 @@ def stack_cases(o, rnd, n):
     return out
 
 
+# ---- s52: the AI unit's own routines (0xBE4D, 0xB235, 0xBC97, 0xBB0F, 0xAFA4, 0xB105) ---------------------------------
+
+WORTH, CAN_STEP, MORALE, FINISH, ITEM_PICK, SPELL_PICK = 0xBE4D, 0xB235, 0xBC97, 0xBB0F, 0xAFA4, 0xB105
+STATUS_CHANGE, CAST_AUTO, GUARD_MSG = 0x2BDF0, 0x14C0F, (0xBA, 0x1693)
+
+
+def set_bytes(o, p, bts):
+    for off, v in bts.items():
+        o.e.wb(o.lin(p) + int(off), [v & 0xFF])
+
+
+def worth_cases(o, rnd, n):
+    """0xBE4D(creature, item): a weapon's worth."""
+    e = o.e
+    weapons = [t for t in range(128) if o.base_items[16 * t] == 0]
+    out = []
+    for _ in range(n):
+        o.fresh()
+        specs = [{'size': 1, 'inplay': 1, 'hostile': 1,
+                  'bytes': {0x100: rnd.choice([0, 1, 2, 3]), 0xA0: rnd.randrange(9)}},
+                 {'size': 1, 'inplay': 1, 'hostile': 0, 'bytes': {0x76: rnd.choice([0, 0, 1, 0x80, 5])}}]
+        ptrs = o.creatures(specs)
+        for p, s in zip(ptrs, specs):
+            set_bytes(o, p, s['bytes'])
+        other = rnd.random() < 0.7
+        o.set_other(ptrs[0], ptrs[1] if other else None)
+        b = bytearray(63)
+        b[0x2E] = rnd.choice(weapons + [0x55] * 4)
+        b[0x32] = rnd.choice([0, 0, 1, 2, 3, 0xFF, 0x80, 0x7F])
+        b[0x36] = rnd.choice([0] * 6 + [1])
+        b[0x3D] = rnd.choice([0, 0, 0x53, 0x13, 0x21, 5])
+        b[0x3E] = rnd.choice([0, 0, 0x84])
+        it = e.alloc(63)
+        e.wb(o.lin(it), bytes(b))
+        r = e.call(WORTH, [*ptrs[0], *it])[0] & 0xFF
+        out.append({'creatures': specs, 'other': int(other), 'item': bytes(b).hex(), 'worth': r})
+    return out
+
+
+def step_cases(o, rnd, n):
+    """0xB235(creature, attempt, direction, var edge): can the AI step there."""
+    e = o.e
+    out = []
+    for _ in range(n):
+        o.fresh()
+        cells = random_cells(rnd, 0.35)
+        for k in range(rnd.randrange(0, 40)):
+            cells[rnd.randrange(1250)] = rnd.choice([0, 0x1E, 0x1E])
+        o.set_cells(bytes(cells))
+        cx, cy = rnd.randrange(0, 50), rnd.randrange(0, 24)  # footprints stay on the arena
+        taken = {(cx, cy)}
+        specs = [{'size': 1 if rnd.random() < 0.8 else 2, 'inplay': 1, 'hostile': rnd.randrange(2),
+                  'effects': [rnd.choice([0x20, 0x1E, 0x6F, 0x7D, 0x33, 9])] if rnd.random() < 0.3 else []}]
+        places = [(cx, cy, specs[0]['size'])]
+        for _j in range(rnd.randint(0, 5)):
+            x, y = place_near(rnd, cx, cy, 2, taken)
+            specs.append({'size': 1, 'inplay': 1, 'hostile': rnd.randrange(2)})
+            places.append((x, y, 1))
+        ptrs = o.creatures(specs)
+        o.set_slots(ptrs, places)
+        row, move = rnd.randint(1, 6), rnd.choice([0, 1, 2, 3, 4, 6, 8, 12, 24])
+        cr = o.combat_rec(ptrs[0])
+        e.wb(cr + 0x15, [row])
+        e.wb(cr + 6, [move])
+        attempt, base = rnd.randint(1, 5), rnd.randrange(8)
+        edge = e.alloc(2)
+        e.wb(o.lin(edge), b'\xee')
+        r = e.call(CAN_STEP, [*ptrs[0], attempt, base, *edge])[0] & 0xFF
+        out.append({'cells': bytes(cells).hex(), 'creatures': specs, 'places': [list(p) for p in places], 'row': row,
+                    'move': move, 'attempt': attempt, 'base': base, 'result': r, 'edge': e.rb(o.lin(edge), 1)[0]})
+    return out
+
+
+def morale_cases(o, rnd, n):
+    """0xBC97(creature): morale. The status change 0x2BDF0 (surrender) is trapped and logged."""
+    e = o.e
+    seen = []
+
+    def status_change(em):
+        seen.append(em.arg(4) & 0xFF)
+        em.pop_ret(0xA)
+    e.trap_ovr(STATUS_CHANGE, status_change)
+    out = []
+    for _ in range(n):
+        o.fresh()
+        k = rnd.randint(1, 6)
+        specs = []
+        for j in range(k):
+            mx = rnd.randint(1, 80)
+            specs.append({'size': 1, 'inplay': 1 if j == 0 or rnd.random() < 0.8 else 0, 'hostile': rnd.randrange(2),
+                          'maxhp': mx, 'hp': rnd.randint(0, mx),
+                          'effects': [rnd.choice([0x4A, 0x4B, 0x4A, 9, 0x2D]) for _x in range(rnd.choice([0, 0, 1, 2, 3]))],
+                          'bytes': {0x84: rnd.choice([0, 0x10, 0x7F, 0x80, 0x85, 0xA0, 0xB2, 0xB4, 0xFF]),
+                                    0x11: rnd.choice([3, 5, 6, 10, 18]), 0x11C: rnd.choice([0, 3, 6, 9, 12, 15, 30, 100])}})
+        ptrs = o.creatures(specs)
+        for p, s in zip(ptrs, specs):
+            set_bytes(o, p, s['bytes'])
+        forced = 1 if rnd.random() < 0.15 else 0
+        e.wb(o.combat_rec(ptrs[0]) + 0x10, [forced])
+        e.wb(o.combat_rec(ptrs[0]), bytes([1, 1, 1, 7, 0, 0, 6, 0]))
+        side_pct = rnd.choice([0, 10, 50, 60, 90, 100])
+        e.set_dsb(0x6E2F, side_pct)
+        thr = rnd.choice([0, 10, 40, 50, 100, 120])
+        e.wb(o.lin(o.zone1) + 0x58C, struct.pack('<H', thr))
+        e.set_dsb(0x6825, 0xEE)
+        seen.clear()
+        r = e.call(MORALE, [*ptrs[0]])[0] & 0xFF
+        eff = []
+        p = struct.unpack('<HH', e.rb(o.lin(ptrs[0]) + 0x7F, 4))
+        while p != (0, 0):
+            q = (p[1], p[0])
+            eff.append(e.rb(o.lin(q), 1)[0])
+            p = struct.unpack('<HH', e.rb(o.lin(q) + 5, 4))
+        out.append({'creatures': specs, 'forced': forced, 'sidePct': side_pct, 'threshold': thr, 'result': r,
+                    'combat': e.rb(o.combat_rec(ptrs[0]), 22).hex(), 'morale': e.dsb(0x6825), 'effects': eff,
+                    'surrender': list(seen)})
+    return out
+
+
+def finish_cases(o, rnd, n):
+    """0xBB0F(creature): end the actions or guard."""
+    e = o.e
+    e.trap_start(*GUARD_MSG, Emu.ret(4))
+    weapons = [t for t in range(128) if o.base_items[16 * t] == 0]
+    out = []
+    for _ in range(n):
+        o.fresh()
+        specs = [{'size': 1, 'inplay': 1, 'hostile': rnd.randrange(2), 'status': rnd.choice([0, 0, 0, 1, 2]),
+                  'effects': [rnd.choice([0x33, 0x34, 0x35, 0x1F, 9])] if rnd.random() < 0.3 else []}]
+        ptrs = o.creatures(specs)
+        c = ptrs[0]
+        item = None
+        if rnd.random() < 0.6:
+            b = bytearray(63)
+            b[0x2E] = rnd.choice(weapons)
+            b[0x34] = 1
+            it = e.alloc(63)
+            e.wb(o.lin(it), bytes(b))
+            e.wb(o.lin(c) + 0xC8, ptr_bytes(it))
+            e.wb(o.lin(c) + 0xCC, ptr_bytes(it))
+            item = bytes(b).hex()
+        init = rnd.choice([0, 0, 1, 5, 20])
+        e.wb(o.combat_rec(c), bytes([2, 1, 1, init, 0, 0, 6, 0]))
+        r = e.call(FINISH, [*c])[0] & 0xFF
+        out.append({'creatures': specs, 'item': item, 'initiative': init, 'result': r,
+                    'combat': e.rb(o.combat_rec(c), 22).hex()})
+    return out
+
+
+def pick_item_spell_cases(o, rnd, spells, n):
+    """0xAFA4 (item) and 0xB105 (spell) with the should-cast test 0xAEAB run; the use 0x22AC4 and the cast 0x14C0F
+    trapped and logged (the cast's result scripted)."""
+    e = o.e
+    seen = {}
+
+    def use(em):
+        seen['use'] = (em.arg(6), em.arg(4))
+        em.pop_ret(8)
+
+    def cast(em):
+        seen['cast'] = em.arg(6) & 0xFF
+        em.wb(em.arg(2) * 16 + em.arg(0), [seen['done']])
+        em.pop_ret(8)
+    e.trap_ovr(USE, use)
+    e.trap_ovr(CAST_AUTO, cast)
+    base = o.base_items
+    scroll_types = [t for t in range(128) if 11 <= base[16 * t] <= 13]
+    other_types = [t for t in range(128) if not 11 <= base[16 * t] <= 13]
+    out = []
+    for i in range(n):
+        o.fresh()
+        cells = random_cells(rnd, 0.15)
+        o.set_cells(bytes(cells))
+        cx, cy = rnd.randrange(5, 45), rnd.randrange(4, 20)
+        taken = {(cx, cy)}
+        side = rnd.randrange(2)
+        specs, places = [], []
+        for j in range(rnd.randint(2, 8)):
+            x, y = (cx, cy) if j == 0 else place_near(rnd, cx, cy, rnd.choice([1, 2, 4, 8]), taken)
+            mx = rnd.randint(1, 40)
+            specs.append({'size': 1, 'inplay': 1, 'hostile': side if j == 0 else (side if rnd.random() < 0.3 else 1 - side),
+                          'maxhp': mx, 'hp': rnd.randint(0, mx), 'cleric': rnd.randint(0, 9), 'mage': rnd.randint(0, 9)})
+            places.append((x, y, 1))
+        mem = [0] * 21
+        for k in range(21):
+            if rnd.random() < 0.2:
+                mem[k] = rnd.choice(spells)  # no pending ids (+0x80): Core leaves them out by decision (s50)
+        specs[0]['bytes'] = {0x84: rnd.choice([0, 0x80, 0xFF])}
+        for k in range(21):
+            specs[0]['bytes'][0x17 + k] = mem[k]
+        ptrs = o.creatures(specs)
+        set_bytes(o, ptrs[0], specs[0]['bytes'])
+        o.set_slots(ptrs, places)
+        enemies = sum(1 for s in specs if s['hostile'] != side and s['inplay'])
+        e.set_dsb(0x6814, enemies if side == 1 else rnd.choice([0, 3]))
+        e.set_dsb(0x6815, enemies if side == 0 else rnd.choice([0, 3]))
+        recs = []
+        for _k in range(rnd.choice([0, 1, 2, 3])):
+            b = bytearray(63)
+            b[0x2E] = rnd.choice(scroll_types if rnd.random() < 0.2 else other_types)
+            b[0x34] = rnd.choice([0, 1, 1])
+            b[0x3D] = rnd.choice([0, rnd.choice(spells), rnd.choice(spells) + 0x17, 0x39, 0x50])
+            b[0x3E] = rnd.choice([0, 0, 1, 0x80, 0x84])
+            recs.append(b)
+        iptrs = [e.alloc(63) for _ in recs]
+        for j, (p, r) in enumerate(zip(iptrs, recs)):
+            r[0x2A:0x2E] = ptr_bytes(iptrs[j + 1] if j + 1 < len(iptrs) else None)
+            e.wb(o.lin(p), bytes(r))
+        e.wb(o.lin(ptrs[0]) + 0xC8, ptr_bytes(iptrs[0] if iptrs else None))
+        e.wb(o.combat_rec(ptrs[0]), bytes([0, rnd.choice([0, 1, 1]), rnd.choice([0, 1, 1]), 7, 0, 0, 6, 0]))
+        quick = rnd.randrange(2)
+        e.set_dsb(0x6E30, quick)
+        anti = 1 if rnd.random() < 0.1 else 0
+        e.wb(o.lin(o.zone0) + 0x1CA, struct.pack('<H', anti))
+        e.set_dsptr(0x5D92, ptrs[0])
+        seed = rnd.getrandbits(32)
+        e.set_randseed(seed)
+        seen.clear()
+        seen['done'] = rnd.randrange(2)
+        op = 'item' if i % 2 == 0 else 'spell'
+        r = e.call(ITEM_PICK if op == 'item' else SPELL_PICK, [*ptrs[0]])[0] & 0xFF
+        out.append({'op': op, 'cells': bytes(cells).hex(), 'creatures': specs, 'places': [list(p) for p in places],
+                    'teams': [e.dsb(0x6814), e.dsb(0x6815)], 'items': [bytes(r).hex() for r in recs],
+                    'combat': e.rb(o.combat_rec(ptrs[0]), 8).hex(), 'quick': quick, 'anti': anti, 'seed': seed,
+                    'scripted': seen['done'], 'result': r, 'seedAfter': e.randseed(),
+                    'used': iptrs.index(seen['use']) if 'use' in seen else -1, 'cast': seen.get('cast', 0)})
+    return out
+
+
 def main(argv):
     if len(argv) != 3:
         print(__doc__)
@@ -367,9 +596,15 @@ def main(argv):
     out['pick'] = pick_cases(o, rnd, spells)
     out['use'] = use_cases(o, rnd, 120)
     out['stack'] = stack_cases(o, rnd, 160)
+    # s52 (appended so the sections above keep their draws)
+    out['worth'] = worth_cases(o, rnd, 300)
+    out['step'] = step_cases(o, rnd, 400)
+    out['morale'] = morale_cases(o, rnd, 300)
+    out['finish'] = finish_cases(o, rnd, 150)
+    out['choose'] = pick_item_spell_cases(o, rnd, spells, 400)
     with open(argv[2], 'w') as f:
         json.dump(out, f, separators=(',', ':'))
-    print('cure %d, pick %d, use %d, stack %d' % (len(out['cure']), len(out['pick']), len(out['use']), len(out['stack'])))
+    print(' '.join('%s %d' % (k, len(v)) for k, v in out.items() if isinstance(v, list)))
     return 0
 
 

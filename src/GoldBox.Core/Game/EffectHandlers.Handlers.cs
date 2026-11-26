@@ -406,7 +406,7 @@ public sealed partial class EffectHandlers
             it[0x32] = 1;
             it[0x3D] = 0x17;
             it[0x3E] = 0x89;
-            c.Items.Add(it); // [?] START 0x2197 (where it goes in the list, 0xC7) not read
+            c.Items.Add(it); // START 0x2197: a copy appended at the list end; the count 0xC7 is left (s52, por_handler_oracle.py)
             Emit(c, EffectEvent.GainsItem);
         }
         ResetBaseline(c);

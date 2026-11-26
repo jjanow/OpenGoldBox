@@ -232,7 +232,8 @@ public sealed class FightMoves(CombatMap map) : IFightMoves
     /// (0x15103: movement 0x1291E shr 1) is slower than the creature's own movement shr 1, or as fast and 1d2 = 1 (the
     /// one draw). Away: put out of play with status 3, fled (0x2BDF0: its message first, <see cref="FightState.FleeMessage"/>; its icon leaves the map, in play 0, status
     /// 3, HP kept; actions end; its dropped-on-down effects go, 0x2BEF4). Not away: START 0x1693's message (same hook). Either way the actions end
-    /// (START 0x31D7). Returns whether it got away. The team counts are not lowered here (they are recounted).
+    /// (START 0x31D7). Returns whether it got away (the program returns 0x31D7's 1 either way, so both callers end the
+    /// move after one try: the menu and the AI 0xB52D, s52). The team counts are not lowered here (they are recounted).
     /// </summary>
     public bool Flee(Fight fight, EclCharacter c)
     {

@@ -12,7 +12,7 @@ namespace GoldBox.Core.Tests;
 /// test 0x143F3, the AI's target pick 0x148BE / aim 0x14611 / target search 0x15FDF with their draws, the should-cast
 /// test 0xAEAB, and the item use 0x22AC4 (cast trapped).
 /// </summary>
-public class AiCastProgramTests
+public partial class AiCastProgramTests
 {
     private static readonly string? FixturePath = Find();
 
@@ -59,7 +59,8 @@ public class AiCastProgramTests
     private static Case Build(JsonElement c, uint seed)
     {
         var map = new CombatMap(Tables.Value);
-        Convert.FromHexString(c.GetProperty("cells").GetString()!).CopyTo(map.Arena.Bytes, CombatArena.HeaderSize);
+        if (c.TryGetProperty("cells", out var cells))
+            Convert.FromHexString(cells.GetString()!).CopyTo(map.Arena.Bytes, CombatArena.HeaderSize);
         var memory = new EclMemory { Party = new EclParty { CurrentIndex = 0 } };
         var all = new List<EclCharacter>();
         foreach (var s in c.GetProperty("creatures").EnumerateArray())
@@ -74,6 +75,9 @@ public class AiCastProgramTests
             ch[FightSpells.ClericLevel] = (byte)Int(s, "cleric");
             ch[FightSpells.MageLevel] = (byte)Int(s, "mage");
             ch[CombatRules.AutoCombat] = (byte)Int(s, "auto", 1);
+            if (s.TryGetProperty("bytes", out var bytes)) // s52 cases: record bytes by offset
+                foreach (var b in bytes.EnumerateObject())
+                    ch[int.Parse(b.Name)] = (byte)b.Value.GetInt32();
             if (s.TryGetProperty("effects", out var effs))
                 foreach (var id in effs.EnumerateArray())
                     ch.Effects.Add([(byte)id.GetInt32(), 0, 0, 0xFF, 0, 0, 0, 0, 0]);
@@ -81,7 +85,8 @@ public class AiCastProgramTests
             all.Add(ch);
         }
         int k = 0;
-        foreach (var p in c.GetProperty("places").EnumerateArray())
+        var placeList = c.TryGetProperty("places", out var places) ? places.EnumerateArray().ToList() : [];
+        foreach (var p in placeList)
         {
             k++;
             map.SetSlotCreature(k, all[k - 1]);

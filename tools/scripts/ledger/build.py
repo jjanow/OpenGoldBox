@@ -194,6 +194,16 @@ ORACLES.update({
     # s51: por_items_oracle.py (the Items loop whole; list, yes/no, handler, naming and drawing trapped)
     'items': ([O_(0x21F32)], [O_(x) for x in (0x2D669, 0x2D9A0, 0x2AEEA)]
               + [S_(x) for x in (0x2233, 0xFE2, 0x7D3B, 0x76B6, 0x77F8, 0x3F10, 0x4047, 0x41F8, 0x23B6)] + ALLOC),
+    # s52 lane E: por_door_oracle.py (the barrier accessor answers the case's barrier)
+    'door': ([O_(x) for x in (0x1695F, 0x16BAA, 0x16D13, 0x16901, 0x16CB9)], [O_(0x2EC47)] + ALLOC),
+    # s52 lane E: por_camp_oracle.py (list, yes/no, messages, drawing, redraw trapped: por_items_oracle.py's set-up)
+    'camp': ([O_(x) for x in (0x17831, 0x1798A, 0x179CD, 0x17A45, 0x17A8D, 0x17B9D, 0x18055, 0x18CDA, 0x18E32, 0x1813B, 0x1838C)],
+             [O_(x) for x in (0x239D6, 0x2D9A0, 0x2D669, 0x2AEEA)]
+             + [S_(x) for x in (0x228C, 0x2233, 0x3379, 0xFE2, 0x7D3B, 0x76B6, 0x77F8, 0x3F10, 0x4047, 0x41F8, 0x23B6)] + ALLOC),
+    # s52 lane F: por_list_oracle.py, por_print_oracle.py, por_input_oracle.py
+    'list': ([O_(x) for x in (0x2D594, 0x2D3D2, 0x2D502)], [O_(0x2D073)]),
+    'print': ([S_(0x77F8)], [S_(x) for x in (0x726F, 0x7E63, 0x7C85, 0xA69C)]),
+    'input': ([S_(0x7A73), S_(0x7BF6)], [S_(0x89E9)]),
 })
 via_oracle = {}
 for name, (roots, traps) in ORACLES.items():

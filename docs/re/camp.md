@@ -574,7 +574,7 @@ written again only when there are items / effects) and the roster files `<name>.
 give the same bytes, except the leftover memory after each stem; the member files come back byte for byte.
 
 The Client writes saves to its own folder (`$XDG_DATA_HOME/goldbox/por-saves/`), never into the game folder; `--save
-X` looks there first. `[?]` The roster-file deletion (its name-to-file rule) is not done. Location type: the
+X` looks there first. The roster-file deletion is not done (the name-to-file rule is now read: `PorRoster.DosStem`, START 0x8445; s52). Location type: the
 program writes DS:49FA, the view mode (0x1FF9D; `save-format.md`); `PorSaveGame.Build(memory, n, letter, state)` takes
 it from `EclMemory.ViewMode` and $49FC from `EclMemory.GameSpeed` (s15); the Client's camp Save uses it. The bytes
 after each stem and unused name

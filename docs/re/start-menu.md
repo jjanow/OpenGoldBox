@@ -306,7 +306,8 @@ hall's classes and Train is offered.
    - the page (View 0x21084) runs the stat recalculation START 0x1758 (derived fields in the record).
 7. **Name** (`PartyMsg.CharacterName`, 15 characters, stored upper case; asked again while empty; the Amiga: 14, as
    typed, por-art-formats.md "Creation's name"), **portrait** (0x1CD66: words key
-   `PartyMsg.PortraitMenu`, head 1..14 and body 1..12 step and wrap, the third word keeps; pictures HEAD3/BODY3 blocks
+   `PartyMsg.PortraitMenu`, head 1..14 and body 1..12 step and wrap, the third word keeps (s52: the loop also leaves on the extended Left
+   arrow, scan 0x4B like K, and then puts back the portrait it had on entry; the Client keeps Left for the lit word); pictures HEAD3/BODY3 blocks
    DS:286F[head] / DS:287D[body]), **icon** (0x1D1AC, below), then SaveChar (section 5). The record is freed: the
    character is in the roster, not the party.
 
@@ -364,7 +365,10 @@ through the menus with Keep, Exit, Escape and No; `IconEditorProgramTests`).
   until a member with the same name and byte 0xAB; when none, a player character joins while fewer than 6 were
   counted, an NPC while the party has fewer than 8. The join 0x1F42C: last in the list, current, icon slot 0xBF :=
   the first free of 0..7, $6E3E + 1, level stats 0x2AA87. The menu ends on exit or when more than 5 player characters
-  were counted or more than 7 members; then SaveCharlist (0x1E19E) writes the unmarked names.
+  were counted or more than 7 members; then SaveCharlist (0x1E19E) writes the unmarked names. `[?]` The count byte
+  [bp−0x16] is set only on the load path (0x1CAEB); a first pick of a marked name (or a key other than Return / A /
+  E / Escape) reaches the end test (0x1CBE2) with it unset, so the menu leaves or stays by stack residue. Core
+  recounts the party's player characters there (`PartyMenu.TryAdd` callers; s52, a question for the user).
 - **Remove**: SaveChar (0x1E684) of the current character, then 0x1CC10: out of the list; the next member becomes
   current when it was the first, else the one before it.
 - **Drop (0x1B8B6)**: yes/no `PartyMsg.Drop` + name + `PartyMsg.Forever`, then `PartyMsg.AreYouSure`; on two yeses the
@@ -556,7 +560,8 @@ before it uses them (`PorProgramData.CreationTables`). `[?]` Not decoded into a 
 - Home / End wrapping on the party menu; the drop message's line and how long it stays.
 - The icon editor's frame boxes (icon slot 25) are drawn as seen, not decoded. The camp's Alter Icon
   runs the same routine (camp.md "Alter").
-- File names of roster characters (8.3 clean-up); the save's deletion of the members' roster files (camp.md).
+- The save's (and Load's) deletion of the members' roster files is not done (camp.md); the file-name rule is read
+  (s52: START 0x8445 removes the ten characters of DS:0D1A one by one, keeps 8, upper case; `PorRoster.DosStem`).
 - Load at the party menu of a state-0 save: what the program's re-read of map $49C5 = 0 and wall set 0 gives.
 - View's Items commands other than Trade, Sell and Id (Ready, Use, Drop, Halve, Join) and View's Spells outside a
   fight are still our notice (the pages are the program's since s39, camp.md "View").

@@ -145,12 +145,18 @@ public class ShopRulesTests
         Assert.Equal((ushort)500, ShopRules.Appraise(c, pool, false, _ => 79, (_, _) => false, Allowance));
         Assert.Equal(100, c.Word(Money.Platinum));
         Assert.Equal(1, c.Word(Money.Gems));
+        // Keep with no items: the program loses the gem (original bug kept faithful, s52): count down, nothing added.
+        Assert.Equal((ushort)10, ShopRules.Appraise(c, pool, false, _ => 0, (_, can) => can, Allowance));
+        Assert.Equal(0, c.Word(Money.Gems));
+        Assert.Empty(c.Items);
+        Assert.Equal(100, c.Word(Money.Platinum));
+        c.Items.Add(new byte[EclCharacter.ItemRecordSize]);
         var rolls = new Queue<int>([94, 123]); // 1d100 = 95 → 2000 + Random(10000)
         Assert.Equal((ushort)2123, ShopRules.Appraise(c, pool, true, _ => rolls.Dequeue(), (_, can) => can, Allowance));
-        Assert.Single(c.Items);
-        Assert.Equal(70, c.Items[0][0x2E]);
-        Assert.Equal(0xD6, c.Items[0][0x31]);
-        Assert.Equal(2123, c.Items[0][0x3A] | c.Items[0][0x3B] << 8);
+        Assert.Equal(2, c.Items.Count);
+        Assert.Equal(70, c.Items[1][0x2E]);
+        Assert.Equal(0xD6, c.Items[1][0x31]);
+        Assert.Equal(2123, c.Items[1][0x3A] | c.Items[1][0x3B] << 8);
         Assert.Null(ShopRules.Appraise(c, pool, true, _ => 0, (_, _) => true, Allowance));
     }
 

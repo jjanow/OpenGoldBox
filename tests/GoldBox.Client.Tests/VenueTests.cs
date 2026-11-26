@@ -314,6 +314,9 @@ public class VenueTests
     {
         var c = Member("ANNA", str: 18);
         c.SetWord(Money.Gems, 1);
+        var dagger = new byte[EclCharacter.ItemRecordSize];
+        dagger[0x2E] = 7;
+        c.Items.Add(dagger); // with an empty pack the program loses a kept gem (s52 question): not this test
         Carrying.RecalculateWeight(c);
         // GEMS, keep/sell; with none left after an appraisal the routine just ends (0x26698: no "no gems" key wait).
         var (t, s) = Context(new Script(0, answer), Party(c));
@@ -321,13 +324,14 @@ public class VenueTests
         Assert.Equal(0, c.Word(Money.Gems));
         if (kept)
         {
-            var gem = Assert.Single(c.Items);
+            Assert.Equal(2, c.Items.Count);
+            var gem = c.Items[1];
             Assert.Equal(5000, gem[0x3A] | gem[0x3B] << 8);
             Assert.Equal(70, gem[0x2E]);
         }
         else
         {
-            Assert.Empty(c.Items);
+            Assert.Single(c.Items);
             Assert.Equal(1000, c.Word(Money.Platinum));                 // 5000 div 5
         }
         Assert.Equal(0, s.Left);

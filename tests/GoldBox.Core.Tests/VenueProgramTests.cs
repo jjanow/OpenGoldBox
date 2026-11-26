@@ -353,6 +353,143 @@ public class VenueProgramTests
         Assert.True(fails.Count == 0, $"{fails.Count} differences:\n" + string.Join("\n", fails.Take(40)));
     }
 
+    /// <summary>
+    /// Take 0x62B6 and the item take 0x6184 run for real by the oracle on made-up pools and treasure lists, the Take:
+    /// menu, the coin take, the list routine on a non-empty list and the copy step answered by its script: Core's <see
+    /// cref="LootRules.Take"/> / <see cref="LootRules.TakeItems{T}"/> fed the same answers make the same calls in the
+    /// same order and leave the same list and pool. The empty list (Shift-F1 with nothing left): the window, the list
+    /// routine's immediate return and the redraw, nothing else (DS:6B2B untouched).
+    /// </summary>
+    [OracleFact]
+    public void Loot_take_matches_0x62B6_and_0x6184_under_emulation()
+    {
+        using var doc = Doc();
+        var fails = new List<string>();
+        int n = 0, empty = 0, menus = 0, copies = 0;
+        foreach (var k in doc.RootElement.GetProperty("lootTake").EnumerateArray())
+        {
+            n++;
+            string what = $"case {n}";
+            var log = k.GetProperty("log").EnumerateArray().Where(l => !(l.TryGetProperty("call", out var c) &&
+                c.GetString() == "window")).ToList();
+            var pool = k.GetProperty("pool").EnumerateArray().Select(p => p.GetUInt32()).ToArray();
+            var treasure = Enumerable.Range(0, k.GetProperty("items").GetInt32()).ToList();
+            if (pool.All(p => p == 0) && treasure.Count == 0)
+            {
+                empty++;
+                if (log.Count != 2 || log[0].GetProperty("page").GetString() != "empty" ||
+                    log[1].GetProperty("call").GetString() != "redraw" ||
+                    k.GetProperty("b6b2bAfter").GetInt32() != k.GetProperty("b6b2b").GetInt32())
+                    fails.Add($"{what}: empty take {k.GetProperty("log")}");
+            }
+            int i = 0;
+            JsonElement? Next(string kind)
+            {
+                // The empty list's page runs in the program and returns at once; Core does not call the page there.
+                while (i < log.Count && log[i].TryGetProperty("page", out var p) && p.ValueKind == JsonValueKind.String)
+                    i++;
+                if (i < log.Count && log[i].TryGetProperty(kind, out _))
+                    return log[i++];
+                fails.Add($"{what}: {kind} vs {(i < log.Count ? log[i].ToString() : "the end")}");
+                return null;
+            }
+            void Call(string name)
+            {
+                if (Next("call") is { } c && c.GetProperty("call").GetString() != name)
+                    fails.Add($"{what}: {name} vs {c}");
+            }
+            int before = fails.Count;
+            LootRules.Take(new LootRules.TakeSteps
+            {
+                Flags = () => (pool.Any(p => p != 0), treasure.Count > 0),
+                Menu = () =>
+                {
+                    menus++;
+                    if (Next("menu") is not { } m)
+                        return (byte)'E';
+                    if (m.GetProperty("menu").GetString() != "Money Items Exit")
+                        fails.Add($"{what}: menu line {m}");
+                    return (byte)m.GetProperty("key").GetInt32();
+                },
+                Coins = () =>
+                {
+                    if (Next("coins") is { } c && c.GetProperty("coins").GetInt32() != 0)
+                        Array.Clear(pool);
+                },
+                Items = () => LootRules.TakeItems(treasure, _ =>
+                    {
+                        if (Next("page") is not { } p)
+                            return (0, -1);
+                        var rows = p.GetProperty("page").EnumerateArray().Select(r => r.GetInt32()).ToList();
+                        if (!rows.SequenceEqual(treasure))
+                            fails.Add($"{what}: page {string.Join(",", treasure)} vs {p}");
+                        return ((byte)p.GetProperty("key").GetInt32(), p.GetProperty("row").GetInt32());
+                    },
+                    item =>
+                    {
+                        copies++;
+                        if (Next("copy") is not { } c)
+                            return false;
+                        if (c.GetProperty("copy").GetInt32() != item)
+                            fails.Add($"{what}: copy {item} vs {c}");
+                        if (c.GetProperty("refused").GetInt32() != 0)
+                            return false;
+                        if (Next("free") is { } f && f.GetProperty("free").GetInt32() != item)
+                            fails.Add($"{what}: free {item} vs {f}");
+                        return true;
+                    },
+                    () => Call("redraw")),
+                Select = key =>
+                {
+                    if (Next("select") is { } s && s.GetProperty("select").GetInt32() != key)
+                        fails.Add($"{what}: select {key} vs {s}");
+                },
+                Redraw = () => Call("redraw"),
+                PartyList = () => Call("party"),
+            });
+            if (fails.Count == before && i != log.Count)
+                fails.Add($"{what}: Core stopped at {i} of {log.Count}");
+            string left = string.Join(",", k.GetProperty("left").EnumerateArray().Select(x => x.GetInt32()));
+            if (string.Join(",", treasure) != left)
+                fails.Add($"{what}: left {string.Join(",", treasure)} vs {left}");
+            if (!pool.SequenceEqual(k.GetProperty("poolAfter").EnumerateArray().Select(p => p.GetUInt32())))
+                fails.Add($"{what}: pool differs");
+        }
+        Assert.True(n >= 300, $"{n} cases");
+        Assert.True(empty >= 20, $"{empty} empty takes");
+        Assert.True(menus >= 100 && copies >= 100, $"{menus} menus, {copies} copies");
+        Assert.True(fails.Count == 0, $"{fails.Count} differences:\n" + string.Join("\n", fails.Take(40)));
+    }
+
+    /// <summary>
+    /// The after-combat award 0x58D3 run under emulation over lists of made-up records (class, prime scores, in-play,
+    /// status and experience varied) with longint shares, negative and large ones included: <see
+    /// cref="CombatRules.AwardExperience"/> leaves the same records.
+    /// </summary>
+    [OracleFact]
+    public void Experience_award_matches_0x58D3_under_emulation()
+    {
+        using var doc = Doc();
+        var fails = new List<string>();
+        int n = 0, changed = 0;
+        foreach (var k in doc.RootElement.GetProperty("award").EnumerateArray())
+        {
+            n++;
+            var list = k.GetProperty("records").EnumerateArray()
+                .Select(r => new EclCharacter(Convert.FromHexString(r.GetString()!))).ToList();
+            var before = list.Select(c => c[0xAC]).ToList();
+            CombatRules.AwardExperience(list, unchecked((int)k.GetProperty("share").GetUInt32()));
+            var after = k.GetProperty("after").EnumerateArray().ToList();
+            for (int m = 0; m < list.Count; m++)
+            {
+                SameRecord(fails, $"case {n} member {m}", list[m], after[m].GetString()!);
+                changed += list[m][0xAC] != before[m] ? 1 : 0;
+            }
+        }
+        Assert.True(n >= 300 && changed > 300, $"{n} cases, {changed} changed");
+        Assert.True(fails.Count == 0, $"{fails.Count} differences:\n" + string.Join("\n", fails.Take(40)));
+    }
+
     [OracleFact]
     public void Shop_identify_matches_0x22F8C_under_emulation()
     {

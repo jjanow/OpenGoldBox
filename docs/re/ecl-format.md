@@ -305,10 +305,13 @@ area loop 0x403E (checks at 0x4118–0x423B), which clears it on exit (0x4245); 
 - **INPUTNUM / INPUTSTR** (0x1697 / 0x16DA): the length operand is loaded but never fetched.
 - **The ECL line inputs** (P + D s43). INPUTSTR calls START 0x7A73 (0709:09E3) with an empty prompt (the local string
   at 0x16E9), colour 10 and 40 characters; INPUTNUM calls START 0x7BF6 (0709:0B66) with an empty prompt and colour 10,
-  which runs the same 0x7A73 with 6 characters (0x7C1F) and converts the line with Val. 0x7A73 blanks row 24 (0x767B),
+  which runs the same 0x7A73 with 6 characters (0x7C1F) and converts the line with Val into a longint, asking again
+  while Val rejects it or the value is below 0 or above 65536 (an empty line is asked again too; `$` hex, a sign and
+  leading blanks are Val's), the answer its low word (65536 gives 0; s52, run under emulation:
+  `por_input_oracle.py`, `LineInputProgramTests`, Core `DosLineInput`). 0x7A73 blanks row 24 (0x767B),
   draws the prompt at (0, 24) in the colour, then for each key 0x20–0x7A while below the limit draws it in colour 15
   at the next column, the first at the prompt's length + 1 (0x7B0E); Backspace blanks the last; Return or Escape end
-  it and blank row 24. No cursor glyph. So both ECL inputs type from column 1 (DOSBox-X: scratch saves, "ABC" and
+  it (Escape keeps the text typed) and blank row 24; the line is upper-cased (a–z) and cut to 40. No cursor glyph. So both ECL inputs type from column 1 (DOSBox-X: scratch saves, "ABC" and
   "12" from column 1, the text box left as it was). Client: `ClientPlayer.InputNumber` / `InputString` (empty
   prompts), `ExploreScreen.DrawTypedLine` (the typed text at the prompt's length + 1; the "_" after it and the
   character grid in the box are the Client's).

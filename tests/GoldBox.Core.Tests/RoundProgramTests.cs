@@ -161,6 +161,21 @@ public class RoundProgramTests
                 fails.Add($"{what}: picks {string.Join(",", picks)} vs {string.Join(",", wantPicks)}");
             if (s.Rng.Seed != k.GetProperty("seedAfter").GetUInt32())
                 fails.Add($"{what}: after the picks {Draws(seed, k.GetProperty("seedAfter").GetUInt32(), s.Rng)}");
+            // s52: 0x15103 for each creature (both ports), then 0x15074 into DS:6E2F (0xEE before)
+            int fi = 0;
+            foreach (var f in k.GetProperty("fastest").EnumerateArray())
+            {
+                var c = s.List[fi++];
+                int a = FightMoves.HighestEnemyMovement(s.Fight, c), b = MonsterAi.HighestEnemyMovement(s.Fight, c);
+                if (a != f.GetInt32() || b != f.GetInt32())
+                    fails.Add($"{what}: 0x15103 creature {fi - 1}: {a} / {b} vs {f.GetInt32()}");
+            }
+            s.Fight.State.HostileHpPercent = 0xEE;
+            FightRules.UpdateHostileHpPercent(s.List, s.Fight.State);
+            if (s.Fight.State.HostileHpPercent != k.GetProperty("hpPercent").GetInt32())
+                fails.Add($"{what}: 0x15074 {s.Fight.State.HostileHpPercent} vs {k.GetProperty("hpPercent").GetInt32()}");
+            if (s.Rng.Seed != k.GetProperty("seedEnd").GetUInt32())
+                fails.Add($"{what}: 0x15103 {Draws(k.GetProperty("seedAfter").GetUInt32(), k.GetProperty("seedEnd").GetUInt32(), s.Rng)}");
             n++;
         }
         Assert.True(n >= 100, $"{n} cases");
@@ -272,6 +287,96 @@ public class RoundProgramTests
                     }
             if (s.Rng.Seed != k.GetProperty("seedAfter").GetUInt32())
                 fails.Add($"{what}: RandSeed");
+            n++;
+        }
+        Assert.True(n >= 100, $"{n} cases");
+        Assert.True(fails.Count == 0, $"{fails.Count} differences:\n" + string.Join("\n", fails.Take(40)));
+    }
+
+    /// <summary>
+    /// s52: the free attacks 0x130AD before a step. The oracle traps MakeAttack and logs each call with the attacker's
+    /// phase (+4) and attacks 0x113 / 0x114 as 0x130AD left them; here MakeAttack runs whole (the mover has 255 HP, so
+    /// it stays in play), so only the calls, those bytes and the attackers' +0x0A put back are compared.
+    /// </summary>
+    [OracleFact]
+    public void Free_attacks_match_0x130AD()
+    {
+        var fails = new List<string>();
+        int n = 0;
+        foreach (var k in Root.Value.GetProperty("free").EnumerateArray())
+        {
+            var s = Build(k, true);
+            var moves = new FightMoves(s.Map!);
+            s.Fight.Moves = moves;
+            var mover = s.List[0];
+            var got = new List<string>();
+            s.Fight.AttackStarting = (a, d) =>
+                got.Add($"{s.List.IndexOf(a)}>{s.List.IndexOf(d)} phase {s.Fight.Record(a)[CombatRecord.AttackPhase]} " +
+                        $"attacks {a[0x113]},{a[0x114]}");
+            moves.AttacksOfOpportunity(s.Fight, mover, k.GetProperty("dir").GetInt32());
+            var want = k.GetProperty("attacks").EnumerateArray()
+                .Select(a => $"{a[0]}>{a[1]} phase {a[4]} attacks {a[5]},{a[6]}").ToList();
+            string what = $"free {n}";
+            if (!got.SequenceEqual(want))
+                fails.Add($"{what}: {string.Join(" | ", got)} vs {string.Join(" | ", want)}");
+            foreach (var a in k.GetProperty("attacks").EnumerateArray())
+                if (a[2].GetInt32() != 1 || a[3].GetBoolean())
+                    fails.Add($"{what}: the program's call was not from behind without ammunition");
+            int ci = 0;
+            foreach (var cb in k.GetProperty("afterCombat").EnumerateArray())
+            {
+                var wantCb = Convert.FromHexString(cb.GetString()!);
+                var rec = s.Fight.Record(s.List[ci]);
+                bool otherNil = wantCb.AsSpan(0x0A, 4).IndexOfAnyExcept((byte)0) < 0;
+                if (otherNil != (rec.Other is null))
+                    fails.Add($"{what} creature {ci}: +0x0A {(rec.Other is null ? "nil" : "set")} vs {(otherNil ? "nil" : "set")}");
+                ci++;
+            }
+            n++;
+        }
+        Assert.True(n >= 100, $"{n} cases");
+        Assert.True(fails.Count == 0, $"{fails.Count} differences:\n" + string.Join("\n", fails.Take(40)));
+    }
+
+    /// <summary>s52: the flee 0x13465 whole (with 0x1291E, 0x15103 and 0x2BDF0): records, slots, combat records,
+    /// RandSeed; the program returns 1 (START 0x31D7) whether the creature got away or not.</summary>
+    [OracleFact]
+    public void Flee_matches_0x13465()
+    {
+        var fails = new List<string>();
+        int n = 0;
+        foreach (var k in Root.Value.GetProperty("flee").EnumerateArray())
+        {
+            var s = Build(k, true);
+            var moves = new FightMoves(s.Map!);
+            s.Fight.Moves = moves;
+            s.Memory.Write(FightRules.PartyMoveCell,
+                BitConverter.ToUInt16(Convert.FromHexString(k.GetProperty("partyMove").GetString()!)));
+            uint seed = k.GetProperty("seed").GetUInt32();
+            moves.Flee(s.Fight, s.List[0]);
+            string what = $"flee {n}";
+            if (k.GetProperty("result").GetInt32() != 1)
+                fails.Add($"{what}: the program returned {k.GetProperty("result").GetInt32()}");
+            CompareCreatures(what, s, k.GetProperty("after"), fails);
+            int ci = 0;
+            foreach (var cb in k.GetProperty("afterCombat").EnumerateArray())
+            {
+                var want = Convert.FromHexString(cb.GetString()!);
+                var got = s.Fight.Record(s.List[ci]).Bytes;
+                foreach (int b in new[] { 0, 3, 6, 7 })
+                    if (want[b] != got[b])
+                        fails.Add($"{what} creature {ci} combat +{b:X2}: {got[b]} vs {want[b]}");
+                ci++;
+            }
+            int slot = 0;
+            foreach (var sl in k.GetProperty("slots").EnumerateArray())
+            {
+                slot++;
+                if (s.Map!.SlotSize(slot) != sl[3].GetInt32())
+                    fails.Add($"{what}: slot {slot} size {s.Map.SlotSize(slot)} vs {sl[3].GetInt32()}");
+            }
+            if (s.Rng.Seed != k.GetProperty("seedAfter").GetUInt32())
+                fails.Add($"{what}: {Draws(seed, k.GetProperty("seedAfter").GetUInt32(), s.Rng)}");
             n++;
         }
         Assert.True(n >= 100, $"{n} cases");

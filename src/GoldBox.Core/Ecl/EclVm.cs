@@ -489,6 +489,30 @@ public sealed class EclVm
         return last;
     }
 
+    /// <summary>
+    /// PROGRAM 9 (0x3BA7–0x3BB8): PC saved, the camp routine 0x3B19 inside the running script: vector 2 through the run
+    /// loop 0x3EB7 (a nested run; a NEWECL there is not followed, its flag stays set), the camp menu
+    /// (<see cref="IEclHost.ProgramCamp"/>), vector 3 when a rest was interrupted, the view redraw (drawing); PC restored,
+    /// and the caller then ends the run (EXIT, 0x3BBC). s52: Core had run the camp menu alone, so an interrupted rest
+    /// never ran vector 3 (ECL3 block 0 at $A1AD, ECL7 block 17 at $A5EF).
+    /// </summary>
+    private void ProgramCamp()
+    {
+        ushort pc = Pc;
+        int vector = CurrentVector;
+        var step = _step; // the nested runs trace their own steps; PROGRAM's host call stays on this one
+        RunVector(2);
+        StopFlag = false; // 0x3EF0: the run loop clears the stop flag on its way out
+        if (Host.ProgramCamp())
+        {
+            RunVector(3);
+            StopFlag = false;
+        }
+        Pc = pc;
+        CurrentVector = vector;
+        _step = step;
+    }
+
     /// <summary>Loads the script a NEWECL named when no script source was attached at the time.</summary>
     private void LoadPending()
     {
@@ -1120,7 +1144,10 @@ public sealed class EclVm
                 RestoreSelected(); // 0x3B5C (SotSB OVR 0x41B2), before the operand is loaded
                 // ids P; effects [?]. SotSB (OVR 0x41DB) compares the low byte.
                 var v = PorHandlers ? Value16(1) : (ushort)(Value(1) & 0xFF);
-                HostCall("Program", [Num(v)], null, () => Host.Program(v));
+                if (PorHandlers && v == 9)
+                    HostCall("Program", [Num(v)], null, ProgramCamp);
+                else
+                    HostCall("Program", [Num(v)], null, () => Host.Program(v));
                 if (Profile.ProgramIdsThatExit.Contains(v) && (Profile.ProgramExitGuardCell is not { } guard || Memory.Read(guard) == 0))
                     DoExit(); // P: camp (0x3B56), then EXIT (0x3BBC): the run ends (SotSB: only while the guard cell is 0)
                 return null;

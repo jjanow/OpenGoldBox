@@ -741,6 +741,8 @@ public sealed class PartyMenuFlow(Func<PlayerRequest, object?> ask, PartyMenuTex
                 pcs = PartyMenu.TryAdd(Party, c, LevelStatsOf).PlayerCharacters;
             }
             else
+                // [?] 0x1C9EC tests its count byte here without setting it (set only on the load path, 0x1CAEB): the
+                // previous pick's count, or stack residue on the first pick; the party is recounted instead (s52 question)
                 pcs = Party.Members.Count(PartyMenu.IsPlayerCharacter);
             if (PartyMenu.AddFull(Party, pcs))
                 break;

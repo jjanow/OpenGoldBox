@@ -642,7 +642,7 @@ monsters: dosbox-trace-method.md "Monsters of another disk"):
 | 21 Sleep | 0x28533 | DS:6820 = 1; budget 4d4; cost by hit-dice byte 0x73: ≤ 1 → 1, 2 → 2, 3 → 4, 4 → 6, 5 → 10 (race byte 0) or 20, else 20; animated, already asleep or unaffordable targets leave |
 | 23, 49 Hold Person | 0x2866F | modifier by target count (1 → −2 for 23 / −3 for 49, 2 → −1, 3–4 → 0); from the last target: save; type > 1 or size > 1 counts as saved; effect for the duration, strength = level, no removal call |
 | 26 Slow Poison | 0x28873 | animated target dropped; poisoned target: HP 0 → 1, resolution (strength 255, removal on), handler 0x4E (removed), effect 0x0F 10 minutes |
-| 27 Snake Charm | 0x28927 | budget = caster's HP; every snake (type 0x0E) in the creature list whose HP fit is taken |
+| 27 Snake Charm | 0x28927 | budget DS:4844 = the current character's (DS:5D92) HP; every snake (type 0x0E) in the creature list whose HP fit is taken and paid from DS:4844 (the global keeps what is left, s52) |
 | 28 Spiritual Hammer | 0x289DB | resolution with removal on; handler 0x17 on the first target |
 | 32 Mirror Image | 0x28AA2 | strength 1d4 |
 | 5, 6, 7, 8, 11, 16–19, 22, 24, 25, 29–31, 33, 50, 52–54 | shared | plain resolution (the table's effect) |
@@ -664,7 +664,7 @@ monsters: dosbox-trace-method.md "Monsters of another disk"):
 | 57 | 0x29E1A | first target losing Slow 0x2A (message) → done; else plain |
 | 58 | 0x29E65 | first target losing poison 0x37 → under the lock its 0x16 goes; else 0x292A2; nothing cured → heal 1d4 + 8 (no bypass), message. **Original bug, fixed (user, s51; not an option):** only the first 0x37 and 0x16 go, so with a second 0x37 handler 22 finds it on the 0x16's removal and kills the target (as the temple's poison cure, `shop-format.md` "Temple"); the engine removes every further 0x37 and every 0x16 with the lock set before each (`FightSpells.Spell58`) |
 | 59 | 0x29EFD | raise to Str 21 / 0 (message); effect 0x26, duration 1d4 × 10 + 40, removal on |
-| 62 | 0x29FE8 | heal 2d4 + 2 (no bypass), message |
+| 62 | 0x29FE8 | heal 2d4 + 2 (no bypass), message; the count DS:6C94 is not tested, so the 2d4 is drawn and DS:6C95 healed even with no target (s52: Core draws, heals only a target it has) |
 | 65 | 0x2A070 | damage 2d4 + 2 (count to 681C), element 8 |
 | 66 | 0x2A0AA | nothing |
 | 67 | 0x2A0BA | strength 255, removal on (effect 4 for 1440) |
@@ -811,10 +811,16 @@ square takes it. Core: `EffectHandlers.PutBackOnSquare` (`CanRevive` only overri
 ## Checked under emulation — E
 
 `tools/scripts/por_spell_oracle.py` runs the v1.3 routines under unicorn on generated creatures (fixture
-`tests/fixtures-private/por/program-v1.3/spells.json`, 487 cases; `FightSpellsProgramTests`): record bytes, effect
+`tests/fixtures-private/por/program-v1.3/spells.json`, 487 cases until s52; `FightSpellsProgramTests`): record bytes, effect
 lists, items, RandSeed (so the draws), and on a combat map the arena cells and the aim. Covered: spells 34 (twice,
 then handler 40 through the removal of 0x28), 35, 36, 37, 39, 41, 42, 43, 44, 46, 47, 48, 51, 55, 56, 57, 58, 59, 60,
-62, 64, 65, 67; handlers 81, 82, 83, 85, 86. Outside a fight (DS:49F3 = 0); text and drawing trapped; 0x2AA87 and
+62, 64, 65, 67; handlers 81, 82, 83, 85, 86. s52 (1136 cases): every other routine, spells 1–33, 38, 40, 45, 49, 50,
+52–54, 61, 63, 66 (12+ cases each; Enlarge at casting levels 1–7 and 9, Sleep's costs and budget, Hold Person with one
+to four targets, Slow Poison, Snake Charm over the whole list, Friends at the Charisma cap, no-target casts of 3, 13,
+21, 23, 26, 49), Bless in a fight (DS:49F3 = 5 on a combat map: the enemy-beside test START 0x2FD3); these cases also
+set and compare DS:4844 / 4845 and DS:6819, 681C, 6820. Every instruction of 0x27F67–0x28B28 ran except Hold Person's
+nil-slot skip (0x286CD), which no caller reaches. Only Snake Charm differed (its budget lives in DS:4844, now as the
+program). Outside a fight (DS:49F3 = 0); text and drawing trapped; 0x2AA87 and
 START 0x1758 skipped, START 0x3AF7 answers "no limit" (the seams do the same). Restoration with the real limit and level stats:
 `por_restore_oracle.py` ("Restoration at the race limit"). Handlers 73–77, 121 need the
 fight's slots and attack: hand tests (`EffectHandlersHoldsTests`); 40 with bodies, 84, 88, 90 and 97:
@@ -855,6 +861,40 @@ enough reaches 3 and below (and handler 7 can make 21), and the residue then dec
 spells and wands (97). **An original bug, fixed (user, s50):** the engine adds 0 below Constitution 4 and 5 above 20
 (the table extended at both ends; not an option). Core `EffectHandlers.ConSaveBonus`, test
 `EffectHandlersMoreTests.Constitution_save_bonus_outside_4_to_20_is_the_s50_rule`.
+
+## Every handler under emulation — E (s52)
+
+`por_handler_oracle.py`'s **call** cases (fixture `program-v1.3/handler_calls.json.gz`, 4600 cases, about 40 per id;
+`HandlerCallProgramTests`) run every handler of the unit at 0xEC5B that the cases above and `por_spell_oracle.py`
+(81–86) do not, through 0x2AEEA with the record, the creature and the removal flag: ids 1–4, 6–12, 14, 15, 17, 18,
+20–23, 25, 26, 28–39, 41–53, 56–59, 61, 62, 64–72, 75–80, 87, 89, 91, 93–96, 98–126 and the item codes 128–139 (the
+handler's item as the record), so also the unit's helpers 0xEC5B (nullify), 0xEC7A (add unless locked), 0xECB3
+(status), 0xFC07 / 0xFC78 (missile dodge, the missile) and 0x11570 (magic resistance). Each case: 2–4 generated
+creatures (effect lists drawn from the ids the handlers look for, items, weapons for the current character, names
+from the handlers' name lists), combat records with their +0x0A target, DS:6826, the cells 6816–682A, the round
+counter, the team counts and DS:6DBF; a third of the cases on a combat map in a fight (DS:49F3 = 5; holds, dodges,
+acid breath and revives always on a map). Compared: records (equipment slot pointers aside), effect lists, items,
+combat records and their target, the cells, DS:6826, RandSeed. Equal in all 4600. A code hook on the unit
+(`HANDLER_COVERAGE`) shows both sides of every conditional jump taken in every routine the cases run, except handler
+40's cloud-list walk (other casters' clouds, a missing cloud, an unlink past the list head), which only the cloud cases
+above reach.
+
+Found on the way: the program's Random (START 0xC140) steps the seed even for a range of 0, which handler 28 reaches
+(1d(param + 1) with param 255); `TurboPascalRandom.Next(0)` now draws. START 0x2197 (handler 23's new hammer) appends a
+copy at the list end and leaves the count 0xC7. Display-only callees trapped: 0x319D2, 0x30C65, START 0x1583 (the
+status panel: handler 30 redraws it when the coughing creature is the current one, 0xF749; it also writes the readied
+items' names into their records, a display cache), START 0x6192 (screen copy after 0x2BDF0) and the sound call.
+
+Inputs kept to what play produces: hostile bytes 0 / 1 (START 0x2F7B counts `DS:6814 + hostile`, sign-extended, so
+another value would step DS:6813 / DS:6816…; `FightRules.CountTeams` ignores it), spell ids 0–67 in DS:681B (START
+0x3262 leaves the level unset for a class byte other than 0–2: rows past the table), combat slots that exist in the
+0x4A / 0x4B params (DS:65B9 + 4·param is read unchecked), and item codes 128–139 granting only effects whose handler
+does not read its record: 0x11B35 runs the granted effect's handler with a **nil** record, so a granted 11, 12, 15,
+28, 38, 39, 57, … would read the interrupt table at 0000:0000. In the data the codes grant 61, 89 and 3
+(`item-format.md`), and **89 reads it**: readying a cloak (code 133) runs handler 89 on byte 3 of 0000:0000 (the high
+byte of INT 0's segment): AND 0x0F at round 0 with attack roll 0, else with bit 4 clear the attack roll becomes −1 and
+bit 4 is set there. Core follows it on a stand-in byte (`EffectHandlers.NilRecord`, `[?]` its real value; the call
+cases set it per case); an original bug, a question for the user (s52 lane B notes).
 
 ## DOSBox — D
 

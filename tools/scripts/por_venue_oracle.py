@@ -17,6 +17,9 @@ Cases (fixed seed, so the output is the same every run):
   not), the pool DS:67F4; the yes/no 0x2D9A0 answers Y or N; the name builder START 0x0FE2, the text routine START
   0x77F8, the row-24 message START 0x2233, PauseOnly START 0x7E4E and the box clear START 0x4047 are trapped and
   counted. Out: the record, the item, the pool, the redraw flag and the trap counts.
+- lootTake (s52): Take 0x62B6 and the item take 0x6184 for real, the menu, coin take, list routine and copy step
+  answered by the script (see loot_take).
+- award (s52): the after-combat award 0x58D3 on the list DS:5D96 with a longint share.
 The records are made up here (zeros with the bytes the routines read); the output goes in tests/fixtures-private.
 """
 import json
@@ -268,6 +271,150 @@ class VenueOracle(SpellOracle):
                         'after': [self.read_creature(p) for p in ptrs]})
         return out
 
+    def loot_take(self, rnd, n):
+        """Take 0x62B6 and the item take 0x6184 (with its page 0x6092) run for real on made-up pools and treasure
+        lists (0–4 items, linked at +0x2A from DS:6810). Answered by the script and logged in order: the Take: menu
+        0x2CC8C (M, I, E, 0, Home / End, others), the coin take 0x25974 (it may empty the pool), the list routine
+        0x2D669 on a non-empty list (a key T, Return or another, and a row; on the empty list it runs as it is), the
+        copy step 0x6F0D (refused or not). Logged as well: the window START 0x41F8, the redraw START 0x3379, the party
+        list START 0x1307, the selection 0x23819 and FreeMem. Out: the log, the list left (indices) and DS:6B2B."""
+        e = self.e
+        state = {}
+        log = lambda x: state['log'].append(x)  # noqa: E731
+
+        def menu(em):
+            s, o = em.arg(16), em.arg(14)
+            line = em.rb(s * 16 + o + 1, em.rb(s * 16 + o)[0]).decode('latin-1')
+            r = state['rnd']
+            if state['menus'] >= 6:
+                key, ext = ord('E'), 0
+            else:
+                key, ext = r.choice([(ord('M'), 0), (ord('I'), 0), (ord('I'), 0), (ord('M'), 0), (ord('E'), 0),
+                                     (0, 0), (0x47, 1), (0x4F, 1), (0x50, 1), (0x20, 0)])
+            state['menus'] += 1
+            log({'menu': line, 'key': key, 'ext': ext})
+            em.wb(em.arg(2) * 16 + em.arg(0), [ext])
+            em.pop_ret(22, key)
+
+        def coins(em):
+            r = state['rnd']
+            empty = r.random() < 0.5
+            log({'coins': int(empty)})
+            if empty:
+                em.wb(em.ds(0x67F4), bytes(28))
+            em.pop_ret(0)
+
+        def items_list():
+            out = []
+            p = e.dsptr(0x6810)
+            while p != (0, 0) and len(out) < 16:
+                out.append(state['items'].index(p) if p in state['items'] else -1)
+                o, s = struct.unpack('<HH', e.rb(self.lin(p) + 0x2A, 4))
+                p = (s, o)
+            return out
+
+        def page(em):
+            # 0x2D669 (retf 0x28): [bp+0x14] the list head (args 14 / 16), [bp+0xA] var position (4 / 6), [bp+6] var
+            # item (0 / 2), from 0x6092's push list.
+            o, s = em.arg(14), em.arg(16)
+            if (s, o) == (0, 0):
+                log({'page': 'empty', 'b6b2b': em.dsb(0x6B2B)})
+                return  # runs as it is
+            r = state['rnd']
+            rows = items_list()
+            row = r.randrange(len(rows))
+            key = r.choice([ord('T'), ord('T'), 13, ord('T'), 0, ord('E'), 0x20])
+            p = e.dsptr(0x6810)
+            for _ in range(row):
+                lo, ls = struct.unpack('<HH', e.rb(self.lin(p) + 0x2A, 4))
+                p = (ls, lo)
+            log({'page': rows, 'key': key, 'row': row})
+            # var item: [bp+6] = args 0 (offset) and 2 (segment); var position: [bp+0xA] = args 4 / 6.
+            em.wb(em.arg(2) * 16 + em.arg(0), struct.pack('<HH', p[1], p[0]))
+            em.wb(em.arg(6) * 16 + em.arg(4), struct.pack('<H', row))
+            em.pop_ret(0x28, key)
+
+        def copy(em):
+            item = (em.arg(6), em.arg(4))
+            refused = int(state['rnd'].random() < 0.3)
+            log({'copy': state['items'].index(item) if item in state['items'] else -1, 'refused': refused})
+            em.wb(em.arg(2) * 16 + em.arg(0), [refused])
+            em.pop_ret(8)
+
+        def select(em):
+            log({'select': em.arg(0) & 0xFF})
+            em.pop_ret(2)
+
+        def free(em):
+            p = (em.arg(4), em.arg(2))
+            log({'free': state['items'].index(p) if p in state['items'] else -1, 'size': em.arg(0)})
+            em.pop_ret(6)
+
+        def note(nbytes, name):
+            def f(em):
+                log({'call': name})
+                em.pop_ret(nbytes)
+            return f
+
+        e.trap_ovr(0x2CC8C, menu)
+        e.trap_ovr(0x25974, coins)
+        e.trap_ovr(0x2D669, page)
+        e.trap_ovr(0x6F0D, copy)
+        e.trap_ovr(0x23819, select)
+        e.traps[0xB1D4] = free
+        e.trap_start(0, 0x41F8, note(16, 'window'))
+        e.trap_start(0, 0x3379, note(0, 'redraw'))
+        e.trap_start(0, 0x1307, note(4, 'party'))
+        out = []
+        for i in range(n):
+            e.reset_heap()
+            pool = [0] * 7 if rnd.random() < 0.4 else [rnd.choice([0, 0, 0, 5, 100]) for _ in range(7)]
+            e.wb(e.ds(0x67F4), struct.pack('<7I', *pool))
+            count = 0 if i % 5 == 0 else rnd.randint(0, 4)
+            items = [e.alloc(ITEM) for _ in range(count)]
+            for a, b in zip(items, items[1:] + [(0, 0)]):
+                e.wb(self.lin(a) + 0x2A, struct.pack('<HH', b[1], b[0]))
+            e.set_dsptr(0x6810, items[0] if items else (0, 0))
+            e.set_dsptr(0x5D92, e.alloc(REC))
+            b6b2b = rnd.choice([0, 1, 2, 5])
+            e.set_dsb(0x6B2B, b6b2b)
+            flags = e.alloc(4)
+            money, have = int(any(pool)), int(bool(items))
+            e.wb(self.lin(flags), bytes([money, 0, have, 0]))
+            state.update(log=[], menus=0, items=items, rnd=random.Random(rnd.getrandbits(32)))
+            self.counts = {}
+            fs, fo = flags
+            e.call(0x62B6, [fs, fo, fs, fo + 2])
+            out.append({'pool': pool, 'items': count, 'b6b2b': b6b2b, 'log': list(state['log']),
+                        'left': items_list(), 'b6b2bAfter': e.dsb(0x6B2B),
+                        'poolAfter': list(struct.unpack('<7I', e.rb(e.ds(0x67F4), 28))),
+                        'counts': dict(self.counts)})
+        return out
+
+    def award(self, rnd, n):
+        """The after-combat award 0x58D3(share: longint) over the list DS:5D96 of 1–8 made-up records: class byte 0x2F
+        (0..17, sometimes 0x80+), the four prime scores, in-play byte 0x10D, status 0x10C and experience 0xAC varied.
+        Out: the records, the share and the records after."""
+        e = self.e
+        out = []
+        for _ in range(n):
+            recs = []
+            for _ in range(rnd.randint(1, 8)):
+                rec = self.record(rnd)
+                rec[0x2F] = rnd.choice(list(range(18)) + [0x80, 0xFF])
+                for k in (0x10, 0x11, 0x12, 0x13):
+                    rec[k] = rnd.choice([3, 9, 15, 16, 18, 25])
+                rec[0x10D] = rnd.choice([0, 1, 1, 2])
+                rec[0x10C] = rnd.choice([0, 0, 1, 4, 6])
+                struct.pack_into('<I', rec, 0xAC, rnd.choice([0, 1, 999, 250000, 0xFFFFFF00]))
+                recs.append({'record': rec.hex(), 'effects': [], 'items': []})
+            ptrs = self.build(recs)
+            share = rnd.choice([0, 1, 9, 10, 37, 1000, 65535, 70001, 0x7FFFFFF0, -5 & 0xFFFFFFFF])
+            e.call(0x58D3, [share >> 16, share & 0xFFFF])
+            out.append({'records': [r['record'] for r in recs], 'share': share,
+                        'after': [self.read_creature(p)['record'] for p in ptrs]})
+        return out
+
     def identify(self, rnd, n):
         e = self.e
         out = []
@@ -308,6 +455,8 @@ def main(argv):
     data = {'members': o.members(rnd, 400), 'temple': o.temple(rnd, 300), 'identify': o.identify(rnd, 300)}
     data['templeEntries'] = o.temple_entries(random.Random(5151), 1300)
     data['loot'] = o.loot(random.Random(6605), 400)
+    data['lootTake'] = VenueOracle(argv[1]).loot_take(random.Random(6184), 400)  # its own traps: a fresh program
+    data['award'] = o.award(random.Random(0x58D3), 400)
     with open(argv[2], 'w') as f:
         json.dump(data, f, indent=0)
     return 0

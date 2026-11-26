@@ -798,18 +798,19 @@ public sealed partial class FightSpells : IFightSpells
     }
 
     /// <summary>
-    /// 0x28927: budget = the caster's HP; the list is rebuilt from the whole creature list: every snake (type 0x0E)
-    /// whose HP fit in what is left is taken and paid for; then the resolution.
+    /// 0x28927: budget DS:4844 = the current character's HP (DS:5D92); the list is rebuilt from the whole creature
+    /// list: every snake (type 0x0E) whose HP fit in what is left is taken and paid for; then the resolution. The
+    /// budget stays in the program global DS:4844 (read whole s52, oracle <c>por_spell_oracle.py</c>).
     /// </summary>
     private void SnakeCharm(int spell, EclCharacter caster)
     {
-        int budget = caster[FightRules.Hp];
+        Globals.Ds4844 = (Current ?? caster)[FightRules.Hp];
         Targets.Clear();
         foreach (var p in Effects.List())
         {
-            if (p[EffectHandlers.CreatureType] == 0x0E && budget >= p[FightRules.Hp])
+            if (p[EffectHandlers.CreatureType] == 0x0E && Globals.Ds4844 >= p[FightRules.Hp])
             {
-                budget = (byte)(budget - p[FightRules.Hp]);
+                Globals.Ds4844 = (byte)(Globals.Ds4844 - p[FightRules.Hp]);
                 Targets.Add(p);
             }
         }

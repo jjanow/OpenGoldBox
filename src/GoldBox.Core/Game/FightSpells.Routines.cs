@@ -95,9 +95,14 @@ public sealed partial class FightSpells
                 Bolt(3, 0x14, 4, false);
                 return true;
             case 62: // 0x29FE8: the first target healed 2d4 + 2 (no bypass); message when healed
-                if (First is { } t62 && Effects.RestoreHitPoints(t62, (byte)(Dice(2, 4) + 2), false))
+            {
+                // The program does not test the count DS:6C94: the 2d4 is drawn and DS:6C95 healed even with no
+                // target (a stale pointer then; read s52). Core draws and heals only a target it has.
+                byte heal = (byte)(Dice(2, 4) + 2);
+                if (First is { } t62 && Effects.RestoreHitPoints(t62, heal, false))
                     Event?.Invoke(t62, spell, EffectEvent.Healed);
                 return true;
+            }
             case 65: // 0x2A070: damage 2d4 + 2 (count to DS:681C), element 8
             {
                 F.DamageDice = 2;

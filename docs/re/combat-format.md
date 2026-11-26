@@ -378,13 +378,13 @@ menu the cast gets an uninitialised stack byte as the spell id (emulation: the 0
 found, even for a character without the spell (a free Detect Magic, the copy-removal finding nothing): an original
 bug. The other collisions, none of which looks at the line either (0x65A6–0x6717, read s51): Del (0x53) = S, Share
 0x252C3 (with no money it shares nothing); Shift-F1 (0x54) = T, Take 0x62B6 (with neither money nor items it runs the
-item take 0x6184 on the empty list; `[?]` what that page shows is not read); Shift-F3 (0x56) = V, View; Home / End
+item take 0x6184 on the empty list: see **Take** below, the screen is redrawn and nothing else happens); Shift-F3 (0x56) = V, View; Home / End
 (0x47 / 0x4F) = G / O, the only keys that reach 0x23819 here (so no first-member pick, unlike the camp's menus); P
 tests the cell (0x65D5), so Down (0x50) does not pool. **Decided (user, s51):** Del, Shift-F1 and Shift-F3 act as
 Share, Take and View, as the program, line or not; F10 acts as D only when Detect is on the line (then with the spell
 this pass found), otherwise nothing (`LootRules.ExtendedKey`; Client `ChoiceRequest.ExtendedKeys`, `DosKeys.ExtendedScan`
 for the BIOS's Shift-F1..F10 codes 0x54..0x5D). In the Client F1 stays the controls key; Shift-F1 is the program's
-other key and answers Take in this menu. Take with nothing left does nothing in the Client (the `[?]` above). Tests
+other key and answers Take in this menu. Take with nothing left redraws the loot screen in the Client too. Tests
 `ShopRulesTests.Loot_extended_keys`, `VenueTests.Loot_extended_keys_follow_the_s51_rule`,
 `CampPlayTests.Loot_menu_extended_keys_reach_the_menu`.
 **D s51** (a `por_test_saves.py`-style save C: CLRMON, TREASURE 100 copper with 133 = five random items, COMBAT;
@@ -394,8 +394,30 @@ Detect lit, then the box blanked and the line without Detect; Take → Items: "*
 on the same save: the same steps and screens (the text box and row 24 under the message pixel-equal) (its random items differ: the treasure draw is not this check), once it
 kept the loot line on row 24 under the cast's pause (`ExploreScreen`: a pause in the loot keeps the last menu line, as
 in the camp).
-**Take** (0x62B6): money and items → a "Take:" menu (Money, Items, Exit) until Exit; money only → the coin take
-0x25974; items only → the item take 0x6184 (`shop-format.md`). **Summary** (0x5E94, s12): the text box is cleared, then one
+**Take** (0x62B6, **W s52**: read whole and run under emulation, `por_venue_oracle.py` "lootTake", test
+`VenueProgramTests.Loot_take_matches_0x62B6_and_0x6184_under_emulation`; Core `LootRules.Take` / `TakeItems`, Client
+`VenueScreens.LootTake` / `TakeItems`). Its two var flags are the loot loop's money / items flags. No money (0x62C3):
+the item take 0x6184, whatever the items flag. Money, no items (0x62CF): the coin take 0x25974, then START 0x3379.
+Both: the "Take:" menu (0x630A: prompt "Take: ", line "Money Items Exit", colours 13 / 10 / 15, keypad flag 1, animate
+flag 1) until done: M → the coin take and START 0x3379; I → the item take; E or 0 (Escape) → done; G / O → 0x23819
+with the key (the letters are no hotkeys of this line, so only Home / End, or the keypad's 7 / 1, get there); any
+other key nothing. After every key START 0x1307 (00BA:0767) draws the party list, 0x25C07 is asked again and Take
+ends as soon as either flag is clear (0x6370–0x6387): after the last item or the last coin the menu does not come
+back, the loot menu does. The menu routine's other extended keys compare as their scan codes: Right (0x4D, keypad 6)
+is M, PgUp (0x49, keypad 9) is I (`[U]` for the Client, see s52 lane A notes: its Right moves the lit word).
+**The item take 0x6184** (read whole s52): the position word 0 (0x619F); each pass the page 0x6092 (the window
+(1, 1)–(38, 22) titled "Loot" through START 0x41F8, every item named, the list routine 0x2D669 from DS:6810 with
+"Items: " / "Take" and Exit); T or Return (0x61BC) → the copy step 0x6F0D (stub 0028:002A) with the item:
+refused (its message) → the page again; taken → the item unlinked (the head moved, or the link before it), its link
+cleared and the record freed (FreeMem 0x3F), and the take ends when DS:6810 is then nil; any other key ends it. At the
+end START 0x3379 redraws the loot screen (text window empty). **On the empty list** (Shift-F1 with nothing left, the
+s51 rule) 0x2D669 returns at its nil-head exit (0x2D69C: position 0, no item, key 0, no menu drawn, no key waited for,
+the shared cell DS:6B2B untouched), so the take ends at once: no hang, no state change. **D s52** (`por_test_saves.py`
+save E, the 51 copper left after the gnoll's share all taken, "View Pool Exit"; Shift-F1 sent as Shift_L + F1 by
+keycode; Shift-F3 the same way opened View, the control): 60 fps capture: the screen blanks and the loot screen is drawn
+again over about 20 frames (frames, chest, party list; the "Loot" title never showed), row 24 kept "View Pool Exit"
+throughout, the lit word unchanged (Pool when Pool was lit before). The Client: no page, `VenueRedrawn` (text window
+emptied), the lit word kept. **Summary** (0x5E94, s12): the text box is cleared, then one
 result line: with DS:443A (a hostile that did not flee) or a duel (DS:84D4): in a duel the duel-lost text when
 DS:84DA = 0, else the duel-won text; outside a duel the party-won text. Otherwise the party-fled text when DS:443B is
 set, else the treasure-found text (a COMBAT with no monsters). Then the experience line (the duelist's or each character's share,

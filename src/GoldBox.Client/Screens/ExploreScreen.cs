@@ -999,6 +999,8 @@ public sealed class ExploreScreen : IScreen
                         return new Reply(_typed);
                     if (name == "Escape" && t.Maximum is not null)
                         return new Reply(""); // 0x24F1D answers 0 to Escape
+                    if (name == "Escape" && !AmigaView.On)
+                        return new Reply(_typed); // START 0x7A73: Escape ends the line as Return does (0x7B83, s52)
                     if (name == "Back")
                     {
                         Backspace();

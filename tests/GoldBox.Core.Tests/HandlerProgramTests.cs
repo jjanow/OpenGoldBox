@@ -144,6 +144,32 @@ public class HandlerProgramTests
                         fails.Add($"{what}: DS:681B {fx.Cells.Spell} vs {res.GetProperty("spellCell")}");
                     break;
                 }
+                case "place":
+                {
+                    // s52: 0x317E1(creature, x, y, moving) in a fight (CombatMap.TryPlace) or outside one (true)
+                    var c = list[k.GetProperty("creature").GetInt32()];
+                    fx.InCombat = k.GetProperty("fight").GetBoolean();
+                    fight.Record(c)[CombatRecord.NotParty] = (byte)k.GetProperty("notParty").GetInt32();
+                    var to = k.GetProperty("to");
+                    bool moving = k.GetProperty("moving").GetInt32() != 0;
+                    bool put = fx.InCombat ? map!.TryPlace(c, to[0].GetInt32(), to[1].GetInt32(), moving, fight.State) : true;
+                    if (put != (res.GetProperty("put").GetInt32() != 0))
+                        fails.Add($"{what}: put {put} vs {res.GetProperty("put")}");
+                    int sl = 0;
+                    foreach (var w in res.GetProperty("slots").EnumerateArray())
+                    {
+                        sl++;
+                        var (sx, sy) = map!.SlotPosition(sl);
+                        if (((byte)sx, (byte)sy, map.SlotSize(sl)) != ((byte)w[0].GetInt32(), (byte)w[1].GetInt32(), w[3].GetInt32()))
+                            fails.Add($"{what}: slot {sl} ({sx}, {sy}, {map.SlotSize(sl)}) vs ({w[0]}, {w[1]}, {w[3]})");
+                    }
+                    var wantBodies = res.GetProperty("bodies").EnumerateArray().Select(b => b[0].ValueKind == JsonValueKind.Null
+                        ? "-" : $"{b[0]}@{b[1]},{b[2]}:{b[3]}").ToList();
+                    var gotBodies = map!.Bodies.Select(b => b is null ? "-" : $"{list.IndexOf(b.Creature)}@{b.X},{b.Y}:{b.Terrain}").ToList();
+                    if (!gotBodies.SequenceEqual(wantBodies))
+                        fails.Add($"{what}: bodies {string.Join(" ", gotBodies)} vs {string.Join(" ", wantBodies)}");
+                    break;
+                }
                 case "save":
                 {
                     var c = list[0];
@@ -195,7 +221,7 @@ public class HandlerProgramTests
         }
         Assert.True(kinds.GetValueOrDefault("cloud") >= 30 && kinds.GetValueOrDefault("breath") >= 50 &&
                     kinds.GetValueOrDefault("gaze") >= 50 &&
-                    kinds.GetValueOrDefault("save") >= 100, string.Join(", ", kinds));
+                    kinds.GetValueOrDefault("save") >= 100 && kinds.GetValueOrDefault("place") >= 50, string.Join(", ", kinds));
         Assert.True(residue >= 10, $"{residue} residue cases");
         Assert.True(fails.Count == 0, $"{fails.Count} differences:\n" + string.Join("\n", fails.Take(40)));
     }

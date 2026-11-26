@@ -138,7 +138,7 @@ others only when in play = 0 or status = 1 — the same gate as Trade in View (0
 
 **Loot item take** (0x6184, s12): the same copy step 0x6F0D gives the highlighted treasure item to the current
 character (T or Enter; refused when it cannot carry it); on success the original is unlinked from the treasure list
-and freed. Repeats until another key or an empty list. Its page (0x6092, P + D s46) is Buy's with the title "Loot",
+and freed. Repeats until another key or an empty list (W s52, run under emulation; on an empty list from the start it ends at once: `combat-format.md` "Take"). Its page (0x6092, P + D s46) is Buy's with the title "Loot",
 the word "Take" and the plain names, position word 0 (0x619F) then kept.
 
 **Take** (0x25974 → 0x25711, P + D s46): the window (1, 1)–(38, 22) with no title, then until the pool is empty or
@@ -187,7 +187,8 @@ loses that much weight, and its seven words are zeroed. Other members (NPCs) kee
 4. The pool := the remainders; DS:6DC0 := any left.
 A member overloaded before the share gets a wrapped `room` in step 2 as well (16-bit subtraction): parity keeps it.
 
-**Appraise** (0x2663B, P): needs gems or jewellery on the current character (else a message). Menu Gems /
+**Appraise** (0x2663B, **W s52**: read whole and run under emulation, `por_trade_oracle.py` "appraise", test
+`TradeProgramTests.Appraise_matches_0x2663B_under_emulation`): needs gems or jewellery on the current character (else a message). Menu Gems /
 Jewelry / Exit, repeated until Exit or nothing is left.
 - Each appraisal takes one gem (+0x92) or jewel (+0x94) and rolls its value: gem **1d100**: 1–25 → 10, 26–50 → 50,
   51–70 → 100, 71–90 → 500, 91–99 → 1000, 100 → 5000. Jewel **1d100**, then Random(n) + b: 1–10 → 100 + R(900),
@@ -195,7 +196,10 @@ Jewelry / Exit, repeated until Exit or nothing is left.
   R(6000), 91–100 → 2000 + R(10000) (two draws).
 - Choices: Sell, plus Keep when 1 more weight does not overload the character and it has fewer than 16 items. K
   (only when offered) adds an identified item (type 70, word 0x65 gem / 0xD6 jewel, value, weight 1, `hidden` 0)
-  at the end of the inventory. Any other key sells: value div 5 platinum through "add platinum" (so a jewel loses
+  at the end of the inventory. **Original bug (s52, `[U]`):** with no items (+0xC8 nil) the new record is put in a
+  local (0x26AFB gem, 0x26E4E jewel) and never into +0xC8, so the kept gem or jewel is lost: the count is down, no
+  item, no platinum (emulation: every such Keep). Kept faithful in Core (`ShopRules.Appraise`) pending the user. The
+  first menu runs with the keypad flag 1, so Home (scan 0x47 = G) appraises a gem too. Any other key sells: value div 5 platinum through "add platinum" (so a jewel loses
   value mod 5). Every pass of the menu, Exit included, ends with START 0x1758 on the character (0x26EC2); the Keep
   test reads the stored weight and item count (0x24CDD, +0xC7 against 16). With nothing to appraise at the start the
   no-gems message and no recalculation (0x26661); when the last gem or jewel is gone after an appraisal the routine

@@ -361,8 +361,9 @@ public static class AmigaView
     public const int InputStringLength = 39, InputNumberLength = 5;
 
     /// <summary>
-    /// A number input's answer (<paramref name="request"/>, numeric) as the program reads it. DOS (START 0x7BF6, the
-    /// money input GAME.OVR 0x24F1D): the line once, empty or Escape = 0. The Amiga's number input (hunk 25 +0x1092,
+    /// A number input's answer (<paramref name="request"/>, numeric) as the program reads it. DOS: the money input
+    /// GAME.OVR 0x24F1D reads the line once, empty or Escape = 0; INPUTNUM (START 0x7BF6) asks again until the value is
+    /// taken (<see cref="GoldBox.Core.Explore.DosLineInput.Number"/>, ClientPlayer.InputNumber). The Amiga's number input (hunk 25 +0x1092,
     /// read s47: INPUTNUM hunk 16 +0x2428, the money input hunk 19 +0x3306 for View's Drop and Trade, hunk 10 +0x66E2
     /// / +0x6950, and Take's coins, hunk 19 +0x3BF8) copies the requester's line and parses it with stcd_i (hunk 0
     /// +0x894: an optional sign, then digits), and asks again while that took no character: an empty line (the

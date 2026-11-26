@@ -58,8 +58,14 @@ public sealed class TestFightMap : IFightMap, IFightMoves
     }
 
     public bool Fled;
+    /// <summary>The flee fails (the creature stays); <see cref="FleeTries"/> counts the calls.</summary>
+    public bool FleeFails;
+    public int FleeTries;
     public bool Flee(Fight fight, EclCharacter c)
     {
+        FleeTries++;
+        if (FleeFails)
+            return false;
         Fled = true;
         At_.Remove(c);
         c[FightRules.InPlay] = 0;
@@ -380,6 +386,30 @@ public class MonsterAiTests
         new MonsterAi(Steps).MoveStep(fight, gob);
         Assert.True(map.Fled);
         Assert.Equal(0, fight.Record(gob)[MonsterAi.Fleeing]);
+        Assert.Equal(0, fight.Record(gob).InitiativeValue);
+    }
+
+    /// <summary>s52: 0x13465 returns START 0x31D7's 1 whether the creature got away or not, so the AI loop 0xB4EB
+    /// ends after one flee: movement and the fleeing flag cleared, actions over.</summary>
+    [Fact]
+    public void A_failed_flee_at_the_edge_ends_the_move_after_one_try()
+    {
+        var rng = new Script(0); // 1d2 for the row
+        var gob = Creature(1);
+        var a = Creature(0);
+        var (fight, map) = Setup(rng, a, gob);
+        fight.Memory.Position.Facing = 2;
+        map.Place(gob, 5, 5);
+        map.Place(a, 0, 0);
+        map.FleeFails = true;
+        fight.Record(gob)[MonsterAi.Fleeing] = 1;
+        foreach (var d in new[] { 0, 1, 2, 3, 4, 5, 6, 7 })
+            map.Edge.Add((5 + new[] { 0, 1, 1, 1, 0, -1, -1, -1 }[d], 5 + new[] { -1, -1, 0, 1, 1, 1, 0, -1 }[d]));
+        new MonsterAi(Steps).MoveStep(fight, gob);
+        Assert.Equal(1, map.FleeTries);
+        Assert.False(map.Fled);
+        Assert.Equal(0, fight.Record(gob)[MonsterAi.Fleeing]);
+        Assert.Equal(0, fight.Record(gob)[CombatRecord.Movement]);
         Assert.Equal(0, fight.Record(gob).InitiativeValue);
     }
 

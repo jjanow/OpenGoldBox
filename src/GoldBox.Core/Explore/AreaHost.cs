@@ -66,6 +66,7 @@ public sealed class AreaHost(AreaLoop loop, IEclHost inner) : IEclHost
     public void LoadOutdoorPicture() => Inner.LoadOutdoorPicture();
     public void Call(ushort routine) => Inner.Call(routine);
     public void Program(ushort program) => Inner.Program(program);
+    public bool ProgramCamp() => Inner.ProgramCamp();
     public void Protect(ushort address) => Inner.Protect(address);
     public void ScriptChanging(ushort script) => Inner.ScriptChanging(script);
     public int? PickCharacter(string prompt) => Inner.PickCharacter(prompt);

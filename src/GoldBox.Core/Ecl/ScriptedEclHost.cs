@@ -155,6 +155,13 @@ public sealed class ScriptedEclHost : IEclHost
     public void ExperienceMessage(string? memberName) => Log($"ExperienceMessage {memberName ?? "(party)"}");
     public void Call(ushort routine) => Log($"Call {routine:X4}");
     public void Program(ushort program) => Log($"Program {program}");
+    /// <summary>PROGRAM 9's camp answers: whether a rest was interrupted (none queued: not interrupted).</summary>
+    public Queue<bool> CampInterrupted { get; } = new();
+    public bool ProgramCamp()
+    {
+        Log("Program 9");
+        return CampInterrupted.Count > 0 && CampInterrupted.Dequeue();
+    }
     public void Protect(ushort address) => Log($"Protect {address:X4}");
     /// <summary>Every Random(n) answer given, as (range, value).</summary>
     public List<(ushort Range, ushort Value)> RandomLog { get; } = [];

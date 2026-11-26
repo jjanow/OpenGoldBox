@@ -155,7 +155,8 @@ Attempts 1–5 (**can step**, 0xB235): direction = (base + table[5 × row + atte
 (ground type, highest-cost over the footprint with 0x1E winning, and another creature there): ground 0 = the edge →
 no (edge noted); a creature → no; cost (DS:2744 + 4 × ground, byte 0) ≥ +6 → no; need = cost × 2, × 3 for odd
 (diagonal) directions; ground 0x1E without effect 0x20, 0x1E, 0x6F or 0x7D needs +6 + 1. Yes when +6 ≥ need. A
-fleeing creature that meets the edge tries to flee (0x13465) at the same attempt; success → +6 = 0, +0x14 = 0,
+fleeing creature that meets the edge tries to flee (0x13465) at the same attempt; the step loop then stops whether it
+got away or not (0x13465 returns START 0x31D7's result, always 1, not its "away" flag; s52): +6 = 0, +0x14 = 0,
 actions end.
 
 Then new direction = (base + table[5 × row + attempt]) mod 8. When all five failed or the new direction is the

@@ -144,11 +144,8 @@ public sealed class ListPage
     private void Move(ListRequest r, bool down) => _row = ListWindowSteps.Step(_row, _top, r.Paging!.Rows, r.Rows.Count, down);
 
     /// <summary>0x2D3D2: past label rows in the direction, at most a window's rows, with the same wrapping.</summary>
-    private void SkipWindowLabels(ListRequest r, bool down)
-    {
-        for (int k = 0; k < r.Paging!.Rows && r.Labels.Contains(_row); k++)
-            Move(r, down);
-    }
+    private void SkipWindowLabels(ListRequest r, bool down) =>
+        _row = ListWindowSteps.SkipLabels(_row, _top, r.Paging!.Rows, r.Rows.Count, down, r.Labels.Contains);
 
     /// <summary>0x2D502: the window a page down (up), the highlight at the same place in it, then past labels.</summary>
     private void Page(ListRequest r, bool down)

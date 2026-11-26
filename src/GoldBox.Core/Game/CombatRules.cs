@@ -60,11 +60,12 @@ public static class CombatRules
 
     /// <summary>
     /// Experience from the treasure pool (GAME.OVR 0x57B1–0x5845): copper / 200 + silver / 20 + electrum / 2 + gold +
-    /// platinum × 5 + gems × 250 + jewellery × 2200, integer divisions on the pool totals (DS:67F4, seven dwords).
+    /// platinum × 5 + gems × 250 + jewellery × 2200 on the pool totals (DS:67F4, seven dwords) as the program's longints
+    /// (signed division START 0xB9F6 / multiplication 0xB9DB, the sum wrapping at 32 bits; read whole s52).
     /// </summary>
-    public static int PoolExperience(IReadOnlyList<uint> pool) =>
-        (int)(pool[0] / 200) + (int)(pool[1] / 20) + (int)(pool[2] / 2) + (int)pool[3] + (int)pool[4] * 5 +
-        (int)pool[5] * 250 + (int)pool[6] * 2200;
+    public static int PoolExperience(IReadOnlyList<uint> pool) => unchecked(
+        (int)pool[0] / 200 + (int)pool[1] / 20 + (int)pool[2] / 2 + (int)pool[3] + (int)pool[4] * 5 +
+        (int)pool[5] * 250 + (int)pool[6] * 2200);
 
     /// <summary>Experience for one treasure item (GAME.OVR 0x586F–0x588A): 400 × plus when plus &gt; 0, 16-bit product sign-extended.</summary>
     public static int ItemExperience(byte[] item)

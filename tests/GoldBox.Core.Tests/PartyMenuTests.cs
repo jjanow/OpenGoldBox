@@ -9,6 +9,17 @@ namespace GoldBox.Core.Tests;
 /// <summary>The party menu's rules (GAME.OVR 0x19AE0 and its Add / Remove / join), the roster files and the new game.</summary>
 public class PartyMenuTests
 {
+    /// <summary>The program's roster file stem (START 0x8445 / 0x8376, read s52): the ten characters removed one by one
+    /// (a match right after a removed one is skipped), the first 8 kept, a..z upper case.</summary>
+    [Theory]
+    [InlineData("Bob", "BOB")]
+    [InlineData("a.b*c,d?e", "ABCDE")]
+    [InlineData("Longname12345", "LONGNAME")]
+    [InlineData("SIR  BOB", "SIR BOB")]
+    [InlineData("x//y", "X/Y")]
+    [InlineData("Tom-Lee_2", "TOM-LEE_")]
+    public void Roster_file_stem_is_the_programs(string name, string stem) => Assert.Equal(stem, PorRoster.DosStem(name));
+
     public sealed class PorDataFactAttribute : FactAttribute
     {
         public PorDataFactAttribute()

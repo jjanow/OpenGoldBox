@@ -9,6 +9,7 @@ Cases (fixed seeds, so the output is the same every run):
 - round: the start of round 0x127FB for every creature in list order (with its callees 0x1351E, 0x1364D, 0x1291E and
   the trigger-0x12 effects 39 haste, 42 slow, 58 run for real), surprise $6DCB cleared, then the picks 0x9938 until
   none, each picked creature's initiative set to 0 (as its turn would end); records, combat records, picks, RandSeed;
+  then (s52) the highest enemy movement 0x15103 for each creature and the hostile HP percent 0x15074 (DS:6E2F);
 - picks: 0x9938 alone on initiative bytes 0x00-0xFF (the signed path), several picks per seed;
 - move: one square 0x12F0D on a combat map (cost, slot, grid, flank counters, the guards 0x12E22 with 0x13FF1 run and
   MakeAttack 0x1407F trapped and logged; a scripted guard attack can put the mover out of play or make it helpless);
@@ -29,6 +30,7 @@ import por_spell_oracle as so  # noqa: E402
 from por_emu import Emu  # noqa: E402
 
 ROUND_START, NEXT_CREATURE, MOVE_ONE, TERRAIN, MAKE_ATTACK, DISPATCH = 0x127FB, 0x9938, 0x12F0D, 0x2B9D1, 0x1407F, 0x2AEEA
+FASTEST_ENEMY, HP_PERCENT, FREE_ATTACKS, FLEE, PICTURE = 0x15103, 0x15074, 0x130AD, 0x13465, 0x6192  # s52
 REDRAW_CELL, SOUND = 0x30C65, 0x8BBC  # 0x30C65 (draws only), START 08AE:00DC
 FLOOR, CLOUD = 23, 0x1E
 HELPLESS = [0x33, 0x34, 0x35, 0x1F]
@@ -44,10 +46,12 @@ class RoundOracle(so.Oracle):
         e.wb(e.ds(0x5582), self.base)
         e.trap_ovr(REDRAW_CELL, Emu.ret(6))
         e.trap_start(0, SOUND, Emu.ret(2))
+        e.trap_start(0, PICTURE, Emu.ret(0))  # s52: START 0x6192 (screen) after 0x2BDF0's icon removal
         e.trap_ovr(MAKE_ATTACK, self._make_attack)
         e.trap_ovr(DISPATCH, self._dispatch)
         self.zone1 = None
         self.attacks = []
+        self.attack_state = []
         self.handlers = []
         self.knock = None
 
@@ -59,6 +63,8 @@ class RoundOracle(so.Oracle):
         frm = e.arg(8) & 0xFF
         ammo = (e.arg(6), e.arg(4))
         self.attacks.append((att, dfn, frm, ammo != (0, 0)))
+        rl = self.lin(att)
+        self.attack_state.append([e.rb(self.combat(att) + 4, 1)[0]] + list(e.rb(rl + 0x113, 2)))
         if self.knock is not None and len(self.attacks) == self.knock[0]:
             rl = self.lin(dfn)
             if self.knock[1] == 'out':
@@ -224,9 +230,15 @@ def round_cases(o, rnd, n):
             j = index[(sg, off)]
             picks.append(j)
             e.wb(o.combat(ptrs[j]) + 3, [0])
+        seed_after = e.randseed()
+        # s52: after the picks, the highest enemy movement 0x15103 for each creature and the hostile HP percent 0x15074
+        fastest = [e.call(FASTEST_ENEMY, [p[0], p[1]])[0] & 0xFF for p in ptrs]
+        e.set_dsb(0x6E2F, 0xEE)
+        e.call(HP_PERCENT)
         out.append({'creatures': cases_in, 'combat': combats, 'surprise': surprise, 'partyMove': partymove,
                     'roundCounter': counter, 'seed': seed, 'started': started, 'startedCombat': start_combat,
-                    'seedStarted': seed_start, 'picks': picks, 'seedAfter': e.randseed()})
+                    'seedStarted': seed_start, 'picks': picks, 'seedAfter': seed_after,
+                    'fastest': fastest, 'hpPercent': e.dsb(0x6E2F), 'seedEnd': e.randseed()})
     return out
 
 
@@ -375,6 +387,114 @@ def terrain_cases(o, rnd, n):
     return out
 
 
+def free_cases(o, rnd, n):
+    """s52: the free attacks 0x130AD before a step (MakeAttack trapped and logged with the attacker's phase +4 and
+    attacks 0x113 / 0x114 as 0x130AD left them); the mover cannot be knocked out (the trap does nothing)."""
+    e = o.e
+    out = []
+    for i in range(n):
+        cells = bytearray(FLOOR for _ in range(1250))
+        cx, cy = rnd.randrange(4, 46), rnd.randrange(4, 20)
+        mover_hostile = rnd.randrange(2)
+        taken = {(cx, cy)}
+        cs = [map_creature(rnd, mover_hostile, inplay=1 if rnd.random() < 0.95 else 0)]
+        r0 = bytearray.fromhex(cs[0]['record'])
+        r0[0x11B] = r0[0x32] = 255  # the Core test runs MakeAttack whole: the mover must stay in play
+        cs[0]['record'] = r0.hex()
+        places = [(cx, cy, 1)]
+        for _ in range(rnd.randint(1, 9)):
+            h = (1 - mover_hostile) if rnd.random() < 0.8 else mover_hostile
+            c = map_creature(rnd, h, inplay=0 if rnd.random() < 0.08 else 1)
+            r = bytearray.fromhex(c['record'])
+            r[0xA1] = rnd.choice([0, 0, 1, 2])
+            r[0x113] = rnd.choice([0, 0, 1, 2])
+            r[0x114] = rnd.choice([0, 0, 1])
+            c['record'] = r.hex()
+            if rnd.random() < 0.12:
+                c['effects'].append(effect(rnd.choice([0x4A, 0x4B])))
+            cs.append(c)
+            x, y = place(rnd, cx, cy, 1 if rnd.random() < 0.7 else 2, taken)
+            places.append((x, y, 1))
+        ptrs = o.build(cs)
+        o.map_mode = True
+        o.setup_map({'cells': cells.hex(), 'places': places}, ptrs)
+        e.set_dsb(0x49F3, 5)
+        o.fresh_zone1(0, 0)
+        combats = []
+        for j, p in enumerate(ptrs):
+            cb = bytearray(rnd.randrange(256) for _ in range(0x16))
+            cb[0x0A:0x0E] = b'\0\0\0\0'
+            cb[3] = rnd.choice([0, 0, 1, 5, 0x80, 0xFF])
+            cb[0x0F] = rnd.choice([0, 0, 1, 2])
+            cb[9] = rnd.choice([rnd.randrange(8), rnd.randrange(8), 250, 255])
+            e.wb(o.combat(p), cb)
+            combats.append(cb.hex())
+        d = rnd.randrange(8)
+        o.attacks = []
+        o.attack_state = []
+        o.handlers = []
+        o.knock = None
+        seed = rnd.getrandbits(32)
+        e.set_randseed(seed)
+        e.call(FREE_ATTACKS, [ptrs[0][0], ptrs[0][1], d])
+        index = {p: j for j, p in enumerate(ptrs)}
+        out.append({'creatures': cs, 'combat': combats, 'cells': cells.hex(), 'places': places, 'dir': d,
+                    'seed': seed, 'after': [o.read_creature(p) for p in ptrs],
+                    'afterCombat': [o.read_combat(p) for p in ptrs],
+                    'attacks': [[index[a], index[b], f, m] + st for (a, b, f, m), st in zip(o.attacks, o.attack_state)],
+                    'seedAfter': e.randseed()})
+    return out
+
+
+def flee_cases(o, rnd, n):
+    """s52: the flee 0x13465 (enemies in sight or not, speeds, the 1d2, 0x2BDF0 with status 3)."""
+    e = o.e
+    out = []
+    for i in range(n):
+        cells = bytearray(FLOOR for _ in range(1250))
+        cx, cy = rnd.randrange(4, 46), rnd.randrange(4, 20)
+        mover_hostile = rnd.randrange(2)
+        taken = {(cx, cy)}
+        cs = [map_creature(rnd, mover_hostile, inplay=1 if rnd.random() < 0.95 else 0)]
+        places = [(cx, cy, 1)]
+        for _ in range(rnd.randint(0, 6)):
+            h = (1 - mover_hostile) if rnd.random() < 0.7 else mover_hostile
+            cs.append(map_creature(rnd, h, inplay=0 if rnd.random() < 0.15 else 1))
+            x, y = place(rnd, cx, cy, rnd.choice([2, 8, 15]), taken)
+            places.append((x, y, 1))
+        for c in cs:
+            r = bytearray.fromhex(c['record'])
+            r[0x6B] = rnd.choice([3, 6, 6, 9, 12, 12, rnd.randrange(16)])
+            c['record'] = r.hex()
+            if rnd.random() < 0.15:
+                c['effects'].append(effect(rnd.choice([0x27, 0x2A]), 0xFF, 5))
+        ptrs = o.build(cs)
+        o.map_mode = True
+        o.setup_map({'cells': cells.hex(), 'places': places}, ptrs)
+        e.set_dsb(0x49F3, 5)
+        o.fresh_zone1(0, rnd.choice([0, 0, 1, 3]))
+        combats = []
+        for j, p in enumerate(ptrs):
+            cb = bytearray(rnd.randrange(256) for _ in range(0x16))
+            cb[0x0A:0x0E] = b'\0\0\0\0'
+            e.wb(o.combat(p), cb)
+            combats.append(cb.hex())
+        o.attacks = []
+        o.attack_state = []
+        o.handlers = []
+        o.knock = None
+        seed = rnd.getrandbits(32)
+        e.set_randseed(seed)
+        ax, _dx = e.call(FLEE, [ptrs[0][0], ptrs[0][1]])
+        count = e.dsb(0x5F2A)
+        out.append({'creatures': cs, 'combat': combats, 'cells': cells.hex(), 'places': places,
+                    'partyMove': o.e.rb(o.lin(o.zone1_ptr()) + 0x6E4, 2).hex(), 'seed': seed, 'result': ax & 0xFF,
+                    'after': [o.read_creature(p) for p in ptrs], 'afterCombat': [o.read_combat(p) for p in ptrs],
+                    'slots': [list(e.rb(e.ds(0x5F27 + 4 * k), 4)) for k in range(1, len(ptrs) + 1)],
+                    'seedAfter': e.randseed()})
+    return out
+
+
 def main(argv):
     if len(argv) != 3:
         print(__doc__)
@@ -388,9 +508,11 @@ def main(argv):
     out['picks'] = pick_cases(o, rnd, 200)
     out['move'] = move_cases(o, rnd, 200)
     out['terrain'] = terrain_cases(o, rnd, 80)
+    out['free'] = free_cases(o, rnd, 200)
+    out['flee'] = flee_cases(o, rnd, 200)
     with open(argv[2], 'w') as f:
         json.dump(out, f, separators=(',', ':'))
-    print('round %d, picks %d, move %d, terrain %d' % tuple(len(out[k]) for k in ('round', 'picks', 'move', 'terrain')))
+    print('round %d, picks %d, move %d, terrain %d, free %d, flee %d' % tuple(len(out[k]) for k in ('round', 'picks', 'move', 'terrain', 'free', 'flee')))
     return 0
 
 

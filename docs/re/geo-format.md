@@ -209,7 +209,15 @@ opened door resets them. Nothing sets DS:6DE0 to 0. Model: `GoldBox.Core.Doors` 
   DS:6DDF = 0 and Pick leaves the menu. Barrier 3 (0x176E0): choosing Pick only sets DS:6DDF = 0, with no roll; it
   never opens the door.
 - **Knock** (0x16D13, both types): the first member with spell 31 memorised loses that spell slot (set to 0) and
-  the door opens. Without such a member nothing happens. No roll.
+  the party steps through (0x16E06). Without such a member nothing happens. No roll. Unlike Bash and Pick (which set
+  both faces to 1 through 0x167D4 before the step), Knock sets no face: the door stays locked in the map, so the
+  door menu comes back from that side where its face is locked too (read s52; Core follows; `docs/re/s52-lane-E.md` asks whether to keep it).
+- **Step routine** (0x17438, read whole s52): only with DS:49FA = 1 (3D) or 2–4 (overland); in either, VM word
+  $6DC9 ≥ 255 (a script cancelled the step) is set back to 0 and nothing else happens; in other modes $6DC9 stays.
+  The 3D branch reads the party's own face through 0x2EC47: 1 steps, 2 / 3 build the door menu above (only Exit →
+  0x166CB seals the face and the menu is not shown; B / P / K as above, any other answer does nothing), 0 does
+  nothing; a step not taken plays the bump sound (DS:2622). Either branch then redraws (START 0x34AB); at the end the
+  picture frames (0x2E55D on DS:6ABE, START 0x6BD5 on DS:6B01 / 6B06) are freed and DS:6B00 / 6B05 set to 0xFF.
 - After a success the party steps (0x16E06, which resets the three flags). After a failure the step is not taken,
   and the area loop goes on to vector 1 as after any step command.
 - Dice: the game's dice routine (far call to GAME.OVR unit stub B0:48, routine 0x2BCCD) with (count, sides). With

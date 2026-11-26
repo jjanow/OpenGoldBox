@@ -539,9 +539,11 @@ public sealed class MonsterAi : IFightController
                 break;
             if (rec[Fleeing] != 0 && edge)
             {
-                done = f.Moves.Flee(f, c);
-                if (!done && g > 50) // not the program's: a flee seam that never ends
-                    done = true;
+                // 0xB52D: done = 0x13465's result, which is START 0x31D7's (actions end: always 1), not whether the
+                // creature got away (s52: Core had looped back into the flee while it failed, a second message and
+                // 1d2 each time).
+                f.Moves.Flee(f, c);
+                done = true;
             }
             else
                 attempt++;

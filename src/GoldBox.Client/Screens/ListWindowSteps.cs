@@ -26,6 +26,15 @@ public static class ListWindowSteps
         return row;
     }
 
+    /// <summary>0x2D3D2: past label rows in the direction, at most <paramref name="rows"/> moves, each the step of
+    /// <see cref="Step"/> (the routine inlines the same wrapping).</summary>
+    public static int SkipLabels(int row, int top, int rows, int n, bool down, Func<int, bool> isLabel)
+    {
+        for (int k = 0; k < rows && isLabel(row); k++)
+            row = Step(row, top, rows, n, down);
+        return row;
+    }
+
     /// <summary>0x2D502: the window a page down (up) by its rows, at most n − rows (at least 0), the highlight at the same
     /// place in it.</summary>
     public static (int Row, int Top) Page(int row, int top, int rows, int n, bool down)

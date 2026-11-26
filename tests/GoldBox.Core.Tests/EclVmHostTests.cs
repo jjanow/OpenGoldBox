@@ -39,7 +39,9 @@ public class EclVmHostTests
             .Op(EclOpcodes.Protect, Mem(0x9700))
             .Op(EclOpcodes.ClearBox)
             .Op(EclOpcodes.Program, Imm8(9)) // camp, then the run ends like EXIT
-            .Op(EclOpcodes.Save, Imm8(1), Mem(F)); // not reached
+            .Op(EclOpcodes.Save, Imm8(1), Mem(F)) // not reached
+            .Label("camp").Op(EclOpcodes.Exit) // vectors 2 and 3, run by PROGRAM 9
+            .Vector(2, "camp").Vector(3, "camp");
         var rig = VmRig.Of(asm);
         Assert.Equal(EclStopReason.Exit, rig.Run().Reason);
         Assert.Equal(0, rig[F]);
@@ -53,6 +55,28 @@ public class EclVmHostTests
         ], rig.Host.Calls);
         // Host calls are in the trace too.
         Assert.Equal(rig.Host.Calls.Count, rig.Trace.Steps.Sum(s => s.HostCalls.Count));
+    }
+
+    /// <summary>PROGRAM 9 (0x3B56 → 0x3B19): vector 2, the camp menu, vector 3 only after an interrupted rest, then EXIT.</summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Program_9_runs_vector_2_the_camp_and_vector_3_when_interrupted(bool interrupted)
+    {
+        var asm = new EclAsm()
+            .Op(EclOpcodes.Save, Imm8(1), Mem(F))
+            .Op(EclOpcodes.Program, Imm8(9))
+            .Op(EclOpcodes.Save, Imm8(9), Mem(F)) // not reached: the run ends
+            .Label("v2").Op(EclOpcodes.Save, Imm8(2), Mem(F + 1)).Op(EclOpcodes.Exit)
+            .Label("v3").Op(EclOpcodes.Save, Imm8(3), Mem(F + 2)).Op(EclOpcodes.Exit)
+            .Vector(2, "v2").Vector(3, "v3");
+        var rig = VmRig.Of(asm);
+        rig.Host.CampInterrupted.Enqueue(interrupted);
+        Assert.Equal(EclStopReason.Exit, rig.Run().Reason);
+        Assert.Equal(1, rig[F]);
+        Assert.Equal(2, rig[F + 1]);
+        Assert.Equal(interrupted ? 3 : 0, rig[F + 2]);
+        Assert.Equal(["Program 9"], rig.Host.Calls);
     }
 
     [Fact]

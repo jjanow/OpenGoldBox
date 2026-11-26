@@ -523,16 +523,18 @@ public sealed class FightMenu
             }
             else
             {
+                // 0xA45B–0xA50F: only the terrain cost test before the step shows the message (0xA487); once the
+                // step is taken (0x130AD, 0x12F0D, 0x2B9D1) the helpless test (START 0x1713) runs whether or not
+                // 0x12F0D moved (it fails silently for want of movement, +6 = 0). s52: Core had shown the message for
+                // that failure too and skipped the helpless test, so a creature made helpless by a free attack kept
+                // its turn.
                 var r = Fight.Moves.Step(Fight, c, dir);
-                if (r is StepResult.Blocked or StepResult.NoMovement)
+                if (r is StepResult.Blocked)
                     Notice(FightNotice.Blocked);
-                else
+                else if (c[FightRules.InPlay] == 0 || FightRules.IsHelpless(c))
                 {
-                    if (c[FightRules.InPlay] == 0 || FightRules.IsHelpless(c))
-                    {
-                        Fight.EndActions(c);
-                        done = true;
-                    }
+                    Fight.EndActions(c);
+                    done = true;
                 }
             }
         }

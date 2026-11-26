@@ -465,61 +465,73 @@ public static class VenueScreens
     private static readonly string[] LootOffLineWords = ["TAKE", "SHARE"];
 
     /// <summary>
-    /// Take (0x62B6): with money and items a "Take:" menu (Money, Items, Exit) until Exit or nothing is left; money
-    /// only → the coin take; items only → the item take. With neither (only Shift-F1 gets here) the program runs the
-    /// item take 0x6184 on the empty list; [?] what its page shows then is not read: nothing happens here.
+    /// Take (0x62B6, <see cref="LootRules.Take"/>, read whole and run under emulation s52): no money → the item take
+    /// (with nothing left either, which only Shift-F1 reaches, on the empty list: the screen redrawn, nothing else);
+    /// money only → the coin take, then the screen redrawn (START 0x3379); both → the "Take:" menu (Money, Items, Exit;
+    /// Home / End pick the member, 0x23819) with the party list drawn after every key, until Exit or until either the
+    /// money or the items are gone: then back to the loot menu.
     /// </summary>
     public static void LootTake(TradeContext t)
     {
-        while (true)
+        LootRules.Take(new LootRules.TakeSteps
         {
-            bool money = t.PoolHasMoney, items = t.Treasure.Count > 0;
-            if (money && items)
+            Flags = () => (t.PoolHasMoney, t.Treasure.Count > 0),
+            Menu = () =>
             {
-                int i = t.Dialog.Menu(["MONEY", "ITEMS", "EXIT"], t.Text[Msg.TakePrompt], cancel: 2, animates: true); // 0x630A: flag 1
-                if (i == 0) MoneyScreens.Take(t);
-                else if (i == 1) TakeItems(t);
-                else return;
-            }
-            else
-            {
-                if (money) MoneyScreens.Take(t);
-                else if (items) TakeItems(t);
-                return;
-            }
-        }
+                // 0x630A: animate flag 1. Home / End come back as the program's scan codes (0x23819's keys).
+                int i = t.Dialog.Menu(["MONEY", "ITEMS", "EXIT"], t.Text[Msg.TakePrompt], cancel: 2, partySelect: true,
+                    memberLetters: MemberLetters, animates: true);
+                return i switch
+                {
+                    0 => (byte)'M',
+                    1 => (byte)'I',
+                    ChoiceRequest.PreviousMember => PartySelection.Home,
+                    ChoiceRequest.NextMember => PartySelection.End,
+                    _ when t.SelectMember(i) => 0xFF, // a clicked name: picked already, the key does nothing
+                    _ => (byte)'E',
+                };
+            },
+            Coins = () => MoneyScreens.Take(t),
+            Items = () => TakeItems(t),
+            Select = key => PartySelection.Select(t.Party, key),
+            Redraw = t.VenueRedrawn,
+            PartyList = t.RosterDrawn,
+        });
     }
 
     /// <summary>
-    /// The item take (0x6184): the treasure list on the item page (<see cref="ItemPage"/>, title "Loot"); T or Enter
-    /// gives the highlighted item to the current character through the copy step (refused: overloaded) and frees it
-    /// from the list; any other key leaves. The position word starts at 0 (0x619F) and keeps the row the list routine
-    /// leaves (D s46: after a take on the second page the window stays at its top, one row shorter).
+    /// The item take (0x6184, <see cref="LootRules.TakeItems{T}"/>): the treasure list on the item page (<see
+    /// cref="ItemPage"/>, title "Loot"); T or Enter gives the highlighted item to the current character through the
+    /// copy step (refused: overloaded) and frees it from the list; any other key leaves; at the end the screen is
+    /// redrawn (START 0x3379). The position word starts at 0 (0x619F) and keeps the row the list routine leaves (D s46:
+    /// after a take on the second page the window stays at its top, one row shorter). On the empty list the program's
+    /// page returns at once (0x2D69C) with no key: the Client shows no page, only the redraw.
     /// </summary>
     public static void TakeItems(TradeContext t)
     {
+        if (t.Current is not { } c)
+            return;
         // The Amiga's take passes its own prompt, "Items:" with no space (hunk 19 +0x862), so its word starts a cell
         // to the left (FS-UAE s47); DOS's is the shop's "Items: ".
-        int position = 0;
-        while (t.Current is { } c && t.Treasure.Count > 0)
-        {
-            // The names as the naming routine leaves them, ending in a space (Amiga hunk 19 +0x800–0x828 names every
-            // treasure item before the list): the Amiga's lit bar covers that space too (FS-UAE s47); DOS draws it blank.
-            var rows = t.Treasure.Select(t.StoredItemName).ToList();
-            var page = ItemPage(t, t.Text[Msg.LootTitle], "TAKE", rows, position, AmigaView.LootItemsPrompt);
-            var a = t.Dialog.Page(page);
-            if (a.Action != 0 || a.Row < 0 || a.Row >= t.Treasure.Count)
-                return;
-            position = a.Row;
-            var item = t.Treasure[a.Row];
-            // 0x6184 -> the copy step 0x6F0D: START 0x1758 before the carry test and after the copy.
-            if (!ShopRules.GiveCopy(c, item, Carrying.StrengthAllowance(c), t.Recalculate))
+        ListRequest? page = null;
+        LootRules.TakeItems(t.Treasure, position =>
             {
-                RowMessageOver(t, page, t.Text[Msg.ShopOverloaded]); // the copy step's refusal, 0x6F39
-                continue;
-            }
-            t.Treasure.RemoveAt(a.Row);
-        }
+                // The names as the naming routine leaves them, ending in a space (Amiga hunk 19 +0x800–0x828 names every
+                // treasure item before the list): the Amiga's lit bar covers that space too (FS-UAE s47); DOS draws it blank.
+                var rows = t.Treasure.Select(t.StoredItemName).ToList();
+                page = ItemPage(t, t.Text[Msg.LootTitle], "TAKE", rows, position, AmigaView.LootItemsPrompt);
+                var a = t.Dialog.Page(page);
+                return (a.Action == 0 ? (byte)'T' : (byte)0, a.Row);
+            },
+            item =>
+            {
+                // 0x6184 -> the copy step 0x6F0D: START 0x1758 before the carry test and after the copy.
+                if (ShopRules.GiveCopy(c, item, Carrying.StrengthAllowance(c), t.Recalculate))
+                    return true;
+                RowMessageOver(t, page!, t.Text[Msg.ShopOverloaded]); // the copy step's refusal, 0x6F39
+                return false;
+            },
+            t.VenueRedrawn);
     }
 
     // ---- Camp (0x196A0) --------------------------------------------------------------------------------------------

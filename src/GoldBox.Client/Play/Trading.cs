@@ -301,7 +301,8 @@ public static class MoneyScreens
         int position = 0;
         while (t.Current is { } c)
         {
-            var kinds = Enumerable.Range(0, 7).Where(k => t.Pool[k] != 0).ToList();
+            // 0x259CF / 0x25BD9: a kind is listed, and the loop goes on, while its pool longint is above 0 (signed).
+            var kinds = Enumerable.Range(0, 7).Where(k => (int)t.Pool[k] > 0).ToList();
             if (kinds.Count == 0)
                 return;
             var rows = kinds.Select(k => $"{t.Text.Coin(k)} {t.Pool[k].ToString(CultureInfo.InvariantCulture)}").ToList();

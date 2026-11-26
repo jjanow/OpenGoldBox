@@ -502,7 +502,20 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
     {
         // INPUTNUM (0x1697): the line input with an empty prompt (0x16B9) and 6 characters (START 0x7C1F); the Amiga's
         // requester takes 5 digits (hunk 25 +0x1092) and asks again for an empty line (AmigaView.Number).
-        var s = AmigaView.Number(runner.Ask, new TextRequest("", true, AmigaView.On ? AmigaView.InputNumberLength : 6) { ScriptInput = true }) ?? "";
+        var request = new TextRequest("", true, AmigaView.On ? AmigaView.InputNumberLength : 6) { ScriptInput = true };
+        if (!AmigaView.On)
+        {
+            // DOS (START 0x7BF6, s52 under emulation): asked again until Val takes the line and the value is 0..65536
+            // (an empty line too); the answer is its low word (DosLineInput.Number).
+            while (true)
+            {
+                if (runner.Ask(request) is not string line)
+                    return 0;
+                if (DosLineInput.Number(line) is { } v)
+                    return v;
+            }
+        }
+        var s = AmigaView.Number(runner.Ask, request) ?? "";
         return int.TryParse(s, NumberStyles.None, CultureInfo.InvariantCulture, out var n) ? n : 0;
     }
 
@@ -608,6 +621,9 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
     private int _bottomRowClears;
 
     /// <summary>PROGRAM: 0 training hall (0x19AE0), 8 end game (0x20941), 9 camp (0x3B56: the camp menu, then the run ends).</summary>
+    /// <summary>PROGRAM 9's camp menu (the VM runs vectors 2 and 3 around it): whether a rest was interrupted.</summary>
+    public bool ProgramCamp() => Camp();
+
     public void Program(ushort program)
     {
         switch (program)
@@ -1318,14 +1334,6 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
     /// <summary>The line shown when the original program would quit to DOS (our wording).</summary>
     public static string HaltNotice(ProgramHaltException e) =>
         $"RUN-TIME ERROR {e.Code.ToString(CultureInfo.InvariantCulture)}: THE ORIGINAL GAME QUITS TO DOS HERE. THE GAME IS OVER.";
-
-    /// <summary>[?] The item maker (GAME.OVR 0x25C99) is not read: a blank item record of the type, as the headless runner.</summary>
-    public byte[] MakeRandomItem(byte type)
-    {
-        var r = new byte[EclCharacter.ItemRecordSize];
-        r[0x2E] = type;
-        return r;
-    }
 
     // ---- IAreaUi ---------------------------------------------------------------------------------------------------
     public DoorAction? ChooseDoorAction(DoorBarrier barrier, IReadOnlyList<DoorAction> choices)

@@ -118,6 +118,15 @@ public interface IEclHost
     void Call(ushort routine);
     /// <summary>PROGRAM (0x38): 0 training hall, 8 end game, 9 camp, else nothing (ids P, effects [?]). After 9 the VM ends the run (P).</summary>
     void Program(ushort program);
+    /// <summary>
+    /// PROGRAM 9's camp menu (0x3B56 → 0x3B19 → 0x196A0), run by the VM between the script's vectors 2 and 3: true when
+    /// a rest was interrupted (then the VM runs vector 3). Default: <see cref="Program"/>(9), not interrupted.
+    /// </summary>
+    bool ProgramCamp()
+    {
+        Program(9);
+        return false;
+    }
     /// <summary>PROTECT (0x3C): called by the default <see cref="DrawGlyphs"/>.</summary>
     void Protect(ushort address);
     /// <summary>
