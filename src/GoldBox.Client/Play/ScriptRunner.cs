@@ -344,6 +344,18 @@ public sealed record TextRequest(string Prompt, bool Numeric, int MaxLength) : P
     /// prompts keep what it gives (creation's name, Rename). The pad / mouse letter grid stays upper case.
     /// </summary>
     public bool KeepsCase { get; init; }
+
+    /// <summary>
+    /// The characters the input takes from the keyboard: the money input 0x24F1D (<see cref="Maximum"/>) and the
+    /// Amiga's number requester digits only; the Amiga's string requester (<see cref="KeepsCase"/>, a plain Intuition
+    /// string gadget: no filter, por-art-formats.md) any printable character; DOS's line input START 0x7A73 (names,
+    /// INPUTSTR, INPUTNUM) 0x20–0x7A (<see cref="DosLineInput.Types"/>; INPUTNUM's Val then refuses what is not a
+    /// number). The pad / mouse grid types only its own characters, all of them taken.
+    /// </summary>
+    public bool Takes(char c) =>
+        Maximum is not null || (Numeric && AmigaView.On) ? c is >= '0' and <= '9'
+        : KeepsCase ? c is >= ' ' and <= '~'
+        : GoldBox.Core.Explore.DosLineInput.Types(c);
 }
 
 /// <summary>A pause (DELAY): answered by the screen when the time has passed.</summary>

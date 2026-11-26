@@ -62,7 +62,7 @@ and the Client's renderer build the same pictures and have been pixel-checked ag
 | START 0x7737 text window word | pres | read | run inside 0x77F8 by `por_print_oracle.py` (PrintProgramTests) |
 | START 0x77A4 text window typing | pres | read | as 0x7737 |
 | START 0x77F8 text window | pres | exec | `por_print_oracle.py` calls it directly (PrintProgramTests); not in the ledger's oracle list yet, see below |
-| START 0x7A73 line input | pres | exec + fixed | `por_input_oracle.py`. Fixed: Escape ends a DOS line with the text typed (the Client made it a Backspace). Open: the Client's keyboard types the grid's characters only (A–Z, 0–9, space, '-', '.'), the program 0x20–0x7A |
+| START 0x7A73 line input | pres | exec + fixed | `por_input_oracle.py`. Fixed: Escape ends a DOS line with the text typed (the Client made it a Backspace). The Client's keyboard typed the grid's characters only (A–Z, 0–9, space, '-', '.'); fixed s55: every printable key with Shift as the keyboard gives it, 0x20–0x7A taken (`TextRequest.Takes`) |
 | START 0x7BF6 INPUTNUM | pres | exec + fixed | `por_input_oracle.py`. Fixed: the line is asked again while Val rejects it or the value is outside 0..65536 (an empty line too), the answer its low word; the Client took the first line, 999999 as is and empty as 0 |
 | START 0x7C85 row-24 key prompt | pres | read | row 24 blanked, text in the colour, one 0x89E9 |
 | START 0x7CCF GetTime | pres | read | h·360000 + m·6000 + s·100 + hundredths |
@@ -119,7 +119,6 @@ Hand-checked `read` rows (status stays W, `why` for the record): every `read` ro
 
 ## Open
 
-- 0x7A73: the Client's keyboard types only the grid's characters; the program takes 0x20–0x7A (punctuation, which it
-  upper-cases with the letters). Needs a key → character map for the punctuation keys.
-- The party menu's name entry (`PartyMenuScreen`) was not changed (another lane's unit); the Escape rule above applies to
-  the explore screen's DOS line inputs (INPUTSTR, INPUTNUM, the prompts that go through `Dialog.Number`).
+- Both closed in s55: the Client's keyboard types every printable key (Shift included, `DosKeys.Printable`) and DOS's
+  line inputs take 0x20–0x7A (`TextRequest.Takes`; INPUTNUM's Val refuses the rest and the line is asked again, now
+  from an empty line); the party menu's name entry (creation, 0x1B7BE → START 0x7A73 with 15) ends on Escape as well.

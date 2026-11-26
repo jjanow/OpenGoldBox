@@ -379,7 +379,7 @@ public static class AmigaView
     {
         while (true)
         {
-            var typed = ask(request) as string;
+            var typed = ask(request with { }) as string; // a new request: the screens start it empty
             if (!amiga || typed is not "")
                 return typed;
         }
@@ -402,6 +402,13 @@ public static class AmigaView
     /// "How much Copper will you take? ": 31 cells, 252 pixels wide).
     /// </summary>
     public static string AmountPrompt(string prompt) => AmountPrompt(prompt, On);
+
+    /// <summary>
+    /// The money amount input's length (Take, Trade, Drop): DOS 0x24F1D appends digits to a string[6] (6 characters,
+    /// only reached with a leading zero below 65536; a further digit leaves it as it is); the Amiga's number requester 5
+    /// digits (as <see cref="InputNumberLength"/>; the amount's own MaxChars not read `[?]`).
+    /// </summary>
+    public static int AmountLength(bool amiga) => amiga ? InputNumberLength : 6;
 
     /// <summary><see cref="AmountPrompt(string)"/> for a given art.</summary>
     public static string AmountPrompt(string prompt, bool amiga) => amiga ? prompt : prompt.TrimEnd();

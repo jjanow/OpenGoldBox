@@ -637,13 +637,14 @@ public sealed class ExploreScreen : IScreen
             // The money input 0x24F1D (Take's amount): digits only; a number above the maximum becomes it at once.
             if (ch is < '0' or > '9')
                 return;
+            // A full line stays as it is (DOS: the string[6] keeps its 6 characters; only a leading zero gets there).
             string next = _typed + ch;
-            _typed = next.Length > t.MaxLength || int.Parse(next, CultureInfo.InvariantCulture) > max
-                ? max.ToString(CultureInfo.InvariantCulture)
-                : next;
+            if (next.Length > t.MaxLength)
+                return;
+            _typed = int.Parse(next, CultureInfo.InvariantCulture) > max ? max.ToString(CultureInfo.InvariantCulture) : next;
             return;
         }
-        if (_typed.Length < t.MaxLength && CharGrid.Holds(Charset(t), ch))
+        if (_typed.Length < t.MaxLength && t.Takes(ch))
             _typed += ch;
     }
 

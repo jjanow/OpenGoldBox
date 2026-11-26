@@ -1329,4 +1329,27 @@ public class PartyMenuScreenTests
         Assert.IsType<PartyMenuRequest>(r.Runner.Pending);
         Assert.Equal(2, hero[TrainingHall.MageLevel]);
     }
+
+    [Fact]
+    public void The_dos_name_entry_ends_on_escape_and_the_amount_keeps_six_characters()
+    {
+        // Creation's name (0x1B7BE) is START 0x7A73 with 15 characters: Escape ends the line with what was typed, as
+        // Return does (0x7B83); punctuation is typed. The amount 0x24F1D keeps a leading zero to six characters (s55).
+        if (Dir() is null)
+            return;
+        object? name = null, amount = null;
+        using var r = Start(1, script: (_, runner) =>
+        {
+            name = runner.Ask(new TextRequest("NAME:", false, EclCharacter.MaxNameLength));
+            amount = runner.Ask(new TextRequest("HOW MUCH?", true, AmigaView.AmountLength(false)) { Maximum = 65535 });
+        });
+        r.Key(Keys.B);
+        r.Key(Keys.OemPeriod);
+        r.Key(Keys.Escape);
+        Assert.Equal("B.", name);
+        foreach (var k in new[] { Keys.D0, Keys.D0, Keys.D0, Keys.D1, Keys.D2, Keys.D3, Keys.D4 })
+            r.Key(k);
+        r.Key(Keys.Enter);
+        Assert.Equal("000123", amount);
+    }
 }

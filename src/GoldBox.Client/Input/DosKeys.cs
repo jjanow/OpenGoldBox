@@ -133,6 +133,34 @@ public static class DosKeys
 
     private static readonly byte[] CursorPad = [0x4F, 0x50, 0x51, 0x4B, 0x20, 0x4D, 0x47, 0x48, 0x49];
 
+    /// <summary>Shift with a key that gives a character (US layout): the digits' row and the punctuation keys.</summary>
+    private static readonly Dictionary<string, char> ShiftedPlain = new()
+    {
+        ["D1"] = '!', ["D2"] = '@', ["D3"] = '#', ["D4"] = '$', ["D5"] = '%', ["D6"] = '^', ["D7"] = '&', ["D8"] = '*',
+        ["D9"] = '(', ["D0"] = ')', ["OemMinus"] = '_', ["OemPlus"] = '+', ["OemComma"] = '<', ["OemPeriod"] = '>',
+        ["OemQuestion"] = '?', ["OemSemicolon"] = ':', ["OemQuotes"] = '"', ["OemOpenBrackets"] = '{',
+        ["OemCloseBrackets"] = '}', ["OemPipe"] = '|', ["OemTilde"] = '~',
+    };
+
+    /// <summary>
+    /// The printable character a key types (0x20–0x7E, US layout), with Shift held or not: a letter as a capital (the
+    /// caller picks the case), a digit or punctuation key as the BIOS gives it (Shift-1 '!', Shift-'-' '_', …), the keypad's
+    /// digits and operators (NumLock on). Null for a key that types no printable character (Alt / Ctrl combinations,
+    /// extended keys, Enter, Escape, Backspace, Tab).
+    /// </summary>
+    public static char? Printable(string name, bool shift)
+    {
+        if (name.Length == 1 && name[0] is >= 'A' and <= 'Z')
+            return name[0];
+        if (shift && ShiftedPlain.TryGetValue(name, out char sc))
+            return sc;
+        if (name.Length == 2 && name[0] == 'D' && char.IsAsciiDigit(name[1]))
+            return name[1];
+        if (name.StartsWith("NumPad", StringComparison.Ordinal) && name.Length == 7 && char.IsAsciiDigit(name[6]))
+            return name[6];
+        return Plain.TryGetValue(name, out char c) && c >= ' ' ? c : null;
+    }
+
     /// <summary>The key name of an extended key's scan code (Alt+letter included), or null.</summary>
     public static string? OfScan(byte scan)
     {

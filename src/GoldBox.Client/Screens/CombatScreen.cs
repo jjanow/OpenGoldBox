@@ -239,7 +239,7 @@ public sealed class CombatScreen
         _selected = 0;
         _typed = "";
         _letters = request is TextRequest { Numeric: false } tr
-            ? new CharGrid(CharGrid.Letters, LettersRow, tr.MaxLength) { KeepsCase = tr.KeepsCase }
+            ? new CharGrid(CharGrid.Letters, LettersRow, tr.MaxLength) { KeepsCase = tr.KeepsCase, Takes = tr.Takes }
             : null;
         // Another request that draws row 24 (or a page over the screen) replaces the menu kept there.
         if (request is not (null or DelayRequest or ChoiceRequest { Vertical: false }))
@@ -710,8 +710,11 @@ public sealed class CombatScreen
         {
             if (Digit(name) is { } ch)
             {
-                if (_typed.Length < t.MaxLength)
-                    _typed = (_typed == "0" ? "" : _typed) + ch;
+                // 0x24F1D: appended to the string[6] (a leading zero kept; a full line stays as it is), a value above
+                // the maximum replaced by it.
+                if (_typed.Length >= t.MaxLength)
+                    return false;
+                _typed += ch;
                 if (t.Maximum is { } most && long.Parse(_typed, CultureInfo.InvariantCulture) > most)
                     _typed = most.ToString(CultureInfo.InvariantCulture);
                 return false;

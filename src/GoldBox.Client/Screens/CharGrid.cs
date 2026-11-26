@@ -61,12 +61,16 @@ public sealed class CharGrid(string charset, int firstRow, int maxLength)
     };
 
     /// <summary>
-    /// The character this frame's key types: <see cref="KeyChar(string)"/>, and with <paramref name="keepsCase"/> (the
-    /// Amiga's requester, <see cref="GoldBox.Client.Play.TextRequest.KeepsCase"/>) a letter lower case unless
-    /// <see cref="ActionInput.NewShifted"/>.
+    /// The character this frame's key types on a line input: any printable key as the keyboard gives it with Shift held
+    /// or not (<see cref="DosKeys.Printable"/>: Shift-1 '!', the punctuation keys; the request filters them, as START
+    /// 0x7A73 takes 0x20–0x7A, <see cref="GoldBox.Client.Play.TextRequest.Takes"/>), a letter as a capital, or with
+    /// <paramref name="keepsCase"/> (the Amiga's requester, <see cref="GoldBox.Client.Play.TextRequest.KeepsCase"/>)
+    /// lower case unless <see cref="ActionInput.NewShifted"/>.
     /// </summary>
     public static char? KeyChar(string name, ActionInput input, bool keepsCase) =>
-        KeyChar(name) is { } ch && keepsCase && char.IsAsciiLetter(ch) && !input.NewShifted ? char.ToLowerInvariant(ch) : KeyChar(name);
+        DosKeys.Printable(name, input.NewShiftHeld) is { } ch && keepsCase && char.IsAsciiLetter(ch) && !input.NewShifted
+            ? char.ToLowerInvariant(ch)
+            : DosKeys.Printable(name, input.NewShiftHeld);
 
     /// <summary>Whether <paramref name="charset"/> holds <paramref name="ch"/>, a lower-case letter by its capital.</summary>
     public static bool Holds(string charset, char ch) => charset.Contains(char.ToUpperInvariant(ch), StringComparison.Ordinal);
@@ -74,9 +78,13 @@ public sealed class CharGrid(string charset, int firstRow, int maxLength)
     /// <summary>Letters typed lower case unless Shift (<see cref="KeyChar(string, ActionInput, bool)"/>).</summary>
     public bool KeepsCase { get; init; }
 
+    /// <summary>The characters the entry takes (a line input's rule, <see cref="GoldBox.Client.Play.TextRequest.Takes"/>);
+    /// null: the grid's own characters.</summary>
+    public Func<char, bool>? Takes { get; init; }
+
     private void Type(char ch)
     {
-        if (Typed.Length < maxLength && Holds(charset, ch))
+        if (Typed.Length < maxLength && (Takes?.Invoke(ch) ?? Holds(charset, ch)))
             Typed += ch;
     }
 

@@ -130,6 +130,61 @@ public class EntryScreenTests
         r.Runner.Dispose();
     }
 
+    private static void Keys2(Rig r, params Keys[] k)
+    {
+        r.Input.Update(new KeyboardState(k), default, default, TimeSpan.Zero, _ => null);
+        r.Screen.Update(r.Input);
+        r.Input.Update(default, default, default, TimeSpan.Zero, _ => null);
+    }
+
+    [Fact]
+    public void The_dos_line_input_types_what_0x7A73_takes()
+    {
+        // START 0x7A73 adds any key 0x20–0x7A (punctuation and shifted digits included), not '{' (0x7B) or above; INPUTNUM
+        // runs it too and asks again for a line Val refuses (s55; the Client typed only the grid's characters before).
+        if (Dir() is not { } dir)
+            return;
+        var r = Start(dir);
+        string? line = null;
+        r.Runner.Start(() => line = r.Player.InputString());
+        Key(r, Keys.A);
+        Keys2(r, Keys.LeftShift, Keys.D1);                 // '!'
+        Key(r, Keys.OemOpenBrackets);                      // '['
+        Keys2(r, Keys.LeftShift, Keys.OemOpenBrackets);    // '{': refused
+        Keys2(r, Keys.LeftShift, Keys.OemMinus);           // '_'
+        Key(r, Keys.Enter);
+        Assert.Equal("A![_", line);
+
+        int number = -1;
+        r.Runner.Start(() => number = r.Player.InputNumber());
+        Key(r, Keys.D1);
+        Key(r, Keys.X);                                    // typed; Val refuses "1X": asked again
+        Key(r, Keys.Enter);
+        Assert.IsType<TextRequest>(r.Runner.Pending);
+        Key(r, Keys.D4);
+        Key(r, Keys.D2);
+        Key(r, Keys.Enter);
+        Assert.Equal(42, number);
+        r.Runner.Dispose();
+    }
+
+    [Fact]
+    public void The_amount_input_keeps_six_characters()
+    {
+        // 0x24F1D: digits appended to a string[6]; only a leading zero gets past five below 65536, and a seventh digit
+        // leaves the line as it is (s52 lane A; the Client took 5 before s55).
+        if (Dir() is not { } dir)
+            return;
+        var r = Start(dir);
+        object? typed = null;
+        r.Runner.Start(() => typed = r.Runner.Ask(new TextRequest("HOW MUCH?", true, AmigaView.AmountLength(false)) { Maximum = 65535 }));
+        foreach (var k in new[] { Keys.D0, Keys.D1, Keys.D2, Keys.D3, Keys.D4, Keys.D5, Keys.D6 })
+            Key(r, k);
+        Key(r, Keys.Enter);
+        Assert.Equal("012345", typed);
+        r.Runner.Dispose();
+    }
+
     /// <summary>Save A with location type 2 (Load reads no map, 0x1FBB3) and $49E6 = 1 (the redraw draws 3D).</summary>
     private static void NoMapRead(byte[] bytes)
     {

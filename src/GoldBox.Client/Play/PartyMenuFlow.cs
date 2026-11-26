@@ -657,7 +657,7 @@ public sealed class PartyMenuFlow(Func<PlayerRequest, object?> ask, PartyMenuTex
         string prompt = AmigaView.AmountPrompt(GameText.Cat(GameText.Cat(words?.HowMuch ?? text[CombatMsg.HowMuch], CombatSheet.CoinName(r, kind)),
             words?.WillYou ?? text[CombatMsg.WillYouDrop]));
         // The input 0x24F1D: digits up to the count held (a larger number becomes the count as it is typed), Escape 0.
-        var typed = AmigaView.Number(ask, new TextRequest(prompt, true, 5) { Maximum = FightItemScreens.Coins(c, kind) });
+        var typed = AmigaView.Number(ask, new TextRequest(prompt, true, AmigaView.AmountLength(AmigaView.On)) { Maximum = FightItemScreens.Coins(c, kind) });
         ushort amount = ushort.TryParse(typed, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var n) ? n : (ushort)0;
         return (kind, amount);
     }

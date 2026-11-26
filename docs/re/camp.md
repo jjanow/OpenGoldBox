@@ -323,6 +323,10 @@ minutes, minutes is non-zero:
 
 Then the text box is cleared and DS:6DDA := 0.
 
+The Client asks the screen for a key before every tick (step 1), one Client update a tick (`CampScreens.RestUi`, s55;
+before, every fifth tick), so a key stops the rest at the tick DOS would and the clock can stop on any 5 minutes. Cost:
+about 4.8 s a rested day at 60 Hz (the ticks themselves run in no time, machine time not copied, s40).
+
 **Rest-time menu 0x244ED**: highlighted word starts at 2 (minutes). Shows its label (0x243AF) at column 1, row 17, then days
 and hours (two digits each, with a colon between), then minutes as 10 × ten-minutes + minutes; the highlighted word in white
 (0x243BC). **The digits (0x24331, v: byte) — W, E**: a string function, called only from 0x243BC (twice; no stub entry):

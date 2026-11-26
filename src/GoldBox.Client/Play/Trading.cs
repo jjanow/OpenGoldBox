@@ -328,7 +328,7 @@ public static class MoneyScreens
             // The program caps the input at the pool's low word (0x25B89) and lets the coin word and weight wrap:
             // original bugs, fixed (user, s48, s50): the pool up to 65535, less what would wrap the character's coin
             // word or weight (shop-format.md "Take").
-            var typed = AmigaView.Number(t.Dialog.Ask, new TextRequest(prompt, true, 5) { Maximum = TakeMaximum(c, t.Pool[kind], kind) });
+            var typed = AmigaView.Number(t.Dialog.Ask, new TextRequest(prompt, true, AmigaView.AmountLength(AmigaView.On)) { Maximum = TakeMaximum(c, t.Pool[kind], kind) });
             t.ShowPageAlone(null);
             // 0x24F1D answers 0 to Escape and to Return with nothing typed (Val of an empty string), and 0x25974 calls
             // 0x25711 with it all the same (0x25BAF): its carry test then refuses a member already over the limit (the

@@ -509,7 +509,9 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
             // (an empty line too); the answer is its low word (DosLineInput.Number).
             while (true)
             {
-                if (runner.Ask(request) is not string line)
+                // A new request each time: the screens start a line afresh only for another request (the program's
+                // 0x7A73 starts every line empty; the same one kept the refused text, s55).
+                if (runner.Ask(request with { }) is not string line)
                     return 0;
                 if (DosLineInput.Number(line) is { } v)
                     return v;

@@ -67,9 +67,8 @@ Status: `exec` oracle / test added; `read` branch-by-branch read, port matches; 
 
 ## Other observations (not fixed here)
 
-- Client, rest loop: `CampScreens.StopAsked` polls the keyboard every fifth tick (the program polls every tick,
-  0x24B1D), so a key ends a rest up to four ticks (20 game minutes, their effect timeouts and heal ticks) later than
-  in DOS. Input timing in the Client, left for the main thread.
+- Client, rest loop: `CampScreens.StopAsked` polled the keyboard every fifth tick (the program polls every tick,
+  0x24B1D). Fixed s55: a poll before every tick, one Client update each (`RestUi.Poll` zero).
 - 0x3EFA → 0x20D50(1) at a switch into block 26 with $4AB3 = 0xFE and $4AA2 = 0 has no Core / Client hook (the ledger's
   U row 0x20D50, presentation).
 - 0x99FD's view / panel / cell redraw order around trigger 0x0F (row above): presentation only.

@@ -98,7 +98,7 @@ public class CampScreenTests
         var answers = new List<object?> { 3, 2 };            // REST, then HOURS
         answers.AddRange(Enumerable.Repeat<object?>(4, 8));  // INC ×8 (Up answers INC as well)
         answers.Add(0);                                       // REST
-        answers.AddRange(Enumerable.Repeat<object?>(false, 96 / 5)); // the key polls: nothing pressed
+        answers.AddRange(Enumerable.Repeat<object?>(false, 96)); // the key polls, one a tick: nothing pressed
         answers.Add(5);                                       // EXIT the camp
         var (t, s) = Context(new Script([.. answers]), Member("ANNA"));
         var camp = Camp(t);
@@ -121,7 +121,7 @@ public class CampScreenTests
             5), Member("ANNA"));
         var camp = Camp(t);
         VenueScreens.Camp(camp, null);
-        Assert.Equal("00:20", GameClock.Format(camp.Memory));   // 4 ticks before the poll
+        Assert.Equal("00:00", GameClock.Format(camp.Memory));   // the poll comes before the first tick
         Assert.Equal(0, s.Left);
     }
 
@@ -140,7 +140,7 @@ public class CampScreenTests
             0,                          // Memorize these spells? YES
             4, 0,                       // REST (4 h 15 min = 51 ticks), REST in the rest menu
         };
-        answers.AddRange(Enumerable.Repeat<object?>(false, 10));      // polls at ticks 5 … 50
+        answers.AddRange(Enumerable.Repeat<object?>(false, 51));      // a poll before each of the 51 ticks
         answers.Add(null);              // "has memorized" at tick 51
         answers.Add(5);                 // EXIT magic
         answers.Add(5);                 // EXIT camp

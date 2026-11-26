@@ -436,13 +436,16 @@ public sealed class PartyMenuScreen(PartyMenuFlow flow, ScriptRunner runner, ISc
             // The money input 0x24F1D takes digits only; a number above the maximum becomes the maximum at once.
             if (ch is < '0' or > '9')
                 return;
+            // A full line stays as it is (DOS: the string[6] keeps its 6 characters; only a leading zero gets there).
             string next = _typed + ch;
-            _typed = next.Length > 6 || int.Parse(next, System.Globalization.CultureInfo.InvariantCulture) > max
+            if (next.Length > t.MaxLength)
+                return;
+            _typed = int.Parse(next, System.Globalization.CultureInfo.InvariantCulture) > max
                 ? max.ToString(System.Globalization.CultureInfo.InvariantCulture)
                 : next;
             return;
         }
-        if (_typed.Length < t.MaxLength)
+        if (_typed.Length < t.MaxLength && t.Takes(ch))
             _typed += ch;
     }
 
@@ -454,6 +457,8 @@ public sealed class PartyMenuScreen(PartyMenuFlow flow, ScriptRunner runner, ISc
                 return new Reply(_typed);
             if (name == "Escape" && t.Maximum is not null)
                 return new Reply(""); // 0x24F1D answers 0 to Escape
+            if (name == "Escape" && !AmigaView.On)
+                return new Reply(_typed); // creation's name (0x1B7BE → START 0x7A73): Escape ends the line as Return does
             if (name == "Back")
             {
                 if (_typed.Length > 0)

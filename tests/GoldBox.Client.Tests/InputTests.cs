@@ -1,4 +1,5 @@
 using GoldBox.Client.Input;
+using GoldBox.Client.Play;
 using GoldBox.Core.Explore;
 using Microsoft.Xna.Framework.Input;
 
@@ -223,3 +224,65 @@ public class AmigaKeymapTests
         Assert.True(GoldBox.Client.Screens.CharGrid.Holds(GoldBox.Client.Screens.CharGrid.Letters, 'l'));
     }
 }
+
+/// <summary>
+/// The keyboard on a line input (s55): every printable key as a US keyboard gives it, Shift included, and each request's
+/// rule for what it takes (DOS START 0x7A73: 0x20–0x7A; the money input 0x24F1D and the Amiga's number requester: digits;
+/// the Amiga's string requester: anything printable).
+/// </summary>
+public class LineInputKeyTests
+{
+    private static ActionInput Press(params Keys[] keys)
+    {
+        var input = new ActionInput(InputBindings.Defaults());
+        input.Update(new KeyboardState(keys), default, default, TimeSpan.Zero, _ => null);
+        return input;
+    }
+
+    private static char? Typed(params Keys[] keys) =>
+        Press(keys) is { NewInput: (InputDevice.Keyboard, var name) } input ? GoldBox.Client.Screens.CharGrid.KeyChar(name, input, false) : null;
+
+    [Fact]
+    public void Printable_keys_type_as_the_keyboard_gives_them()
+    {
+        Assert.Equal('!', DosKeys.Printable("D1", true));
+        Assert.Equal('1', DosKeys.Printable("D1", false));
+        Assert.Equal(')', DosKeys.Printable("D0", true));
+        Assert.Equal('~', DosKeys.Printable("OemTilde", true));
+        Assert.Equal('`', DosKeys.Printable("OemTilde", false));
+        Assert.Equal('*', DosKeys.Printable("Multiply", false));
+        Assert.Equal('7', DosKeys.Printable("NumPad7", true));
+        Assert.Equal('Q', DosKeys.Printable("Q", false));
+        Assert.Null(DosKeys.Printable("Tab", false));
+        Assert.Null(DosKeys.Printable("Enter", false));
+        Assert.Null(DosKeys.Printable("Escape", false));
+        Assert.Null(DosKeys.Printable("Back", false));
+        Assert.Null(DosKeys.Printable("F1", false));
+        Assert.Null(DosKeys.Printable("Alt+A", false));
+        Assert.Equal('_', Typed(Keys.LeftShift, Keys.OemMinus));
+        Assert.Equal('[', Typed(Keys.OemOpenBrackets));
+        Assert.Equal('?', Typed(Keys.RightShift, Keys.OemQuestion));
+        Assert.Equal('A', Typed(Keys.A));
+    }
+
+    [Fact]
+    public void Each_input_takes_its_own_characters()
+    {
+        var dos = new TextRequest("", false, 40);
+        foreach (char c in " !\"#[\\]^_`AZaz09")
+            Assert.True(dos.Takes(c), c.ToString());
+        foreach (char c in "{|}~")
+            Assert.False(dos.Takes(c), c.ToString());
+        var number = new TextRequest("", true, 6);       // DOS INPUTNUM: 0x7A73 too, Val judges the line
+        Assert.True(number.Takes('x'));
+        var amount = new TextRequest("", true, 6) { Maximum = 100 };
+        Assert.True(amount.Takes('5'));
+        Assert.False(amount.Takes('!'));
+        Assert.False(amount.Takes(' '));
+        var amiga = new TextRequest("", false, 39) { KeepsCase = true };
+        foreach (char c in "{|}~a!")
+            Assert.True(amiga.Takes(c), c.ToString());
+        Assert.False(amiga.Takes('\x7F'));
+    }
+}
+

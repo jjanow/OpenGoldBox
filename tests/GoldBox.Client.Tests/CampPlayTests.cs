@@ -453,10 +453,10 @@ public class CampPlayTests
         for (int i = 0; i < 6; i++)
             Click(r, 26, 24);                                      // INC ×6: 30 minutes (the line as the program spaces it: INC at 25–27)
         Click(r, 1, 24);                                           // REST
-        Assert.IsType<DelayRequest>(r.Runner.Pending);             // the first key poll, after 4 ticks
+        Assert.IsType<DelayRequest>(r.Runner.Pending);             // the first key poll, before the first tick (s55)
         Click(r, 10, 20);                                          // a click anywhere: stop resting?
         Click(r, 14, 24);                                          // YES ("STOP RESTING? " then YES)
-        Assert.Equal(t0 + 20, GameClock.TotalMinutes(r.Game.Memory));
+        Assert.Equal(t0, GameClock.TotalMinutes(r.Game.Memory));   // stopped before any tick
 
         var first = party.Members[0];
         Assert.Equal("CAMP:", Assert.IsType<ChoiceRequest>(r.Runner.Pending).MenuPrompt);

@@ -557,7 +557,7 @@ public sealed partial class CombatChooser
         int kind = order[a.Row];
         coinPage.Selected = a.Row;
         string prompt = AmigaView.AmountPrompt(GameText.Cat(GameText.Cat(Text[CombatMsg.HowMuch], CombatSheet.CoinName(r, kind)), Text[CombatMsg.WillYouDrop]));
-        var typed = AmigaView.Number(Ask, new TextRequest(prompt, true, 5) { Maximum = FightItemScreens.Coins(c, kind) });
+        var typed = AmigaView.Number(Ask, new TextRequest(prompt, true, AmigaView.AmountLength(AmigaView.On)) { Maximum = FightItemScreens.Coins(c, kind) });
         ushort amount = ushort.TryParse(typed, NumberStyles.None, CultureInfo.InvariantCulture, out var n) ? n : (ushort)0;
         return (kind, amount);
     }

@@ -407,10 +407,9 @@ public static class CampScreens
     /// <summary>The rest loop's screens: the rest-time line and menu, the key poll, the messages.</summary>
     public sealed class RestUi(CampContext c) : ICampRestUi
     {
-        /// <summary>How long a key poll waits (the Client polls at each rest-time redraw, every 5 ticks).</summary>
-        public static readonly TimeSpan Poll = TimeSpan.FromMilliseconds(30);
-
-        private int _sincePoll;
+        /// <summary>How long a key poll waits: none, one Client update (the program checks the keyboard at every tick,
+        /// 0x24B1D, so a key stops the rest at the next tick, not up to four later).</summary>
+        public static readonly TimeSpan Poll = TimeSpan.Zero;
 
         /// <summary>0x243BC: the label at column 1, row 17, then days, hours and minutes, the highlighted one white.</summary>
         public void Draw(int highlight)
@@ -504,10 +503,7 @@ public static class CampScreens
 
         public bool StopAsked()
         {
-            // The program checks the keyboard every tick; the Client asks the screen at each redraw (every 5 ticks).
-            if (++_sincePoll < 5)
-                return false;
-            _sincePoll = 0;
+            // The program checks the keyboard every tick (0x24B1D, START keypressed); so does the Client, a frame a tick.
             if (c.Dialog.Ask(new DelayRequest(Poll) { ReportInput = true }) is not true)
                 return false;
             Draw(0);
