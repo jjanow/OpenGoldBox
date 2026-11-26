@@ -23,6 +23,9 @@ SLOT=NAME writes the named save into slot B..I instead (the program loads A..J; 
     loot-shop    CLRMON, TREASURE 100 copper, COMBAT (a loot), then TREASURE (no items), SAVE 1 -> $6E6C, COMBAT: a shop
     loot-temple  the same loot, then SAVE 1 -> $6DE2, COMBAT: a temple
     inputstr     PRINT a question, INPUTSTR into $9F00, PRINT, a one-word HMENU: the text input's screen
+    loot-full    CLRMON, TREASURE 100 copper, 2 gems, 1 jewel and one random item, COMBAT (a loot with the Take: menu:
+                 money and items), then TREASURE (no items), SAVE 1 -> $6E6C, COMBAT: a shop to Appraise the gems in
+    shop-stock   CLRMON, TREASURE (three random items), SAVE 1 -> $6E6C, COMBAT: a shop with stock to Buy
     long-text    PRINTCLR of a 255-character text, then a one-word HMENU: the text routine's 255 case (START 0x77F8)
 
 The texts written by I are this tool's own. Nothing from the game is stored in this file.
@@ -59,6 +62,10 @@ NAMED = {
     'loot-shop': LOOT + bytes([TREASURE]) + imm(0, 0, 0, 0, 0, 0, 0, 255) + bytes([SAVE]) + imm(1) + b'\x01\x6c\x6e'
     + bytes([COMBAT]),
     'loot-temple': LOOT + bytes([SAVE]) + imm(1) + b'\x01\xe2\x6d' + bytes([COMBAT]),
+    'loot-full': bytes([CLRMON, TREASURE]) + imm(100, 0, 0, 0, 0, 2, 1, 129) + bytes([COMBAT, TREASURE])
+    + imm(0, 0, 0, 0, 0, 0, 0, 255) + bytes([SAVE]) + imm(1) + b'\x01\x6c\x6e' + bytes([COMBAT]),
+    'shop-stock': bytes([CLRMON, TREASURE]) + imm(0, 0, 0, 0, 0, 0, 0, 131) + bytes([SAVE]) + imm(1) + b'\x01\x6c\x6e'
+    + bytes([COMBAT]),
     'inputstr': bytes([PRINT]) + text('A QUESTION ABOVE THE TEXT INPUT.') + bytes([INPUTSTR]) + imm(40) + b'\x01\x00\x9f'
     + bytes([PRINT]) + text('DONE.') + bytes([HMENU]) + b'\x01\x82\x6e' + imm(1) + text('WAIT'),
     'long-text': bytes([PRINTCLR]) + text(('LONG TEST TEXT FOR THE PRINT ' * 9)[:255]) + bytes([HMENU]) + b'\x01\x82\x6e'

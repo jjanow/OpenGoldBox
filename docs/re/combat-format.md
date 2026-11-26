@@ -386,7 +386,10 @@ this pass found), otherwise nothing (`LootRules.ExtendedKey`; Client `ChoiceRequ
 for the BIOS's Shift-F1..F10 codes 0x54..0x5D). In the Client F1 stays the controls key; Shift-F1 is the program's
 other key and answers Take in this menu. Take with nothing left redraws the loot screen in the Client too. Tests
 `ShopRulesTests.Loot_extended_keys`, `VenueTests.Loot_extended_keys_follow_the_s51_rule`,
-`CampPlayTests.Loot_menu_extended_keys_reach_the_menu`.
+`CampPlayTests.Loot_menu_extended_keys_reach_the_menu`. **Client run on Xvfb (s57, DOS art, saves `loot-shop` /
+`loot-full`):** Shift-F3 opens View, Del shares the pool (Take / Share leave the line), Shift-F1 with the pool empty
+redraws with the lit word kept (Pool); F10 on Bakshi (Detect on the line) casts it (Detect leaves the line with the
+last copy), on Rhiannon (no Detect) does nothing.
 **D s51** (a `por_test_saves.py`-style save C: CLRMON, TREASURE 100 copper with 133 = five random items, COMBAT;
 Brother Sean's first memorised byte 5): on Brother Sean the line "View Take Pool Share Detect Exit"; Take → Items
 listed five names without marks; D: "BROTHER SEAN / IS AFFECTED" (rows 18 / 19) with row 24 keeping the loot line,

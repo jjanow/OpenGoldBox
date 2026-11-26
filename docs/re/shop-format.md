@@ -84,6 +84,11 @@ the Client uses there keep its meaning, a deliberate difference: the arrows (the
 Confirm, Cancel, hotkeys and any key bound to a command-line action. Order's Place mode: other extended keys not read
 `[?]`, left alone. Tests `KeyBufferTests.Member_pick_codes_of_extended_keys`,
 `CampScreenTests.Camp_extended_keys_make_the_first_member_current`.
+**Client run on Xvfb (s57, DOS art, save A):** 3D command line: PgUp and F5 make the first member current (after End
+picked another); camp menu: Insert and Alt-Z the first member, keypad 1 / 7 as End / Home; Magic: F2; Alter: PgDn; the
+menu helper 0x8B57 (the loot's exit question): keypad 1 the next member, Shift-F3 the first. Shift-F1 there opens the
+Client's controls screen (F1 has a Client meaning; only the loot and venue menus give Shift-F1 the program's Take).
+Order's Select not tried.
 
 **Extended keys in the venue menus** (read s52 lane A, decided s53, built s54). The shop (0x72F9–0x7426), temple
 (0x5327–0x5463), Take: (0x6315–0x6354) and Appraise (0x2663B's first menu) loops run the menu routine with the keypad
@@ -99,6 +104,13 @@ the s50/s51 rule: keys the Client gives no meaning to act as the program; keys w
 0x4D = M in Take:, keeps moving the lit word; Home / End stay the member keys where the menu picks members). Client
 `VenueScreens.VenueKeys`, the Appraise menu in `MoneyScreens.Appraise`, `DosKeys.KeypadMenuScan`; tests
 `VenueTests.Venue_extended_keys_follow_the_s53_rule`, `KeyBufferTests.Keypad_menu_codes`.
+**Client run on Xvfb (s57, DOS art, `por_test_saves.py` saves `shop-stock`, `loot-shop`, `loot-temple`, `loot-full`;
+keys by keycode through XTEST):** shop: F8 opens Buy (with an empty stock Buy returns at once, so the `shop-stock` save
+gives it three items), Shift-F3 View, F7 Appraise, P then Del shares the pool, Shift-F1 with the pool empty only
+redraws, keypad 1 / 7 the next / previous member with NumLock off and on (the Client reads them as End / Home either
+way). Temple: keypad 1, Shift-F3, P + Del, Shift-F1 the same. Take: (money and items): PgUp, and keypad 9 with NumLock
+off and on, open the item take. Appraise (gems taken from the loot first): Home acts as Gems (the gem's value
+line, then the Sell / Keep menu).
 
 **Buy** (0x7035, P). An item picker over the treasure list (0x6D04) returns a key; B or Enter buys the highlighted
 item, any other key leaves. Price = the item's value word (0x3A). Before listing, the picker writes value 1 into

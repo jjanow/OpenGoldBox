@@ -325,7 +325,11 @@ Then the text box is cleared and DS:6DDA := 0.
 
 The Client asks the screen for a key before every tick (step 1), one Client update a tick (`CampScreens.RestUi`, s55;
 before, every fifth tick), so a key stops the rest at the tick DOS would and the clock can stop on any 5 minutes. Cost:
-about 4.8 s a rested day at 60 Hz (the ticks themselves run in no time, machine time not copied, s40).
+about 4.8 s a rested day at 60 Hz (the ticks themselves run in no time, machine time not copied, s40). Client run on
+Xvfb (s57, save A, camp Rest, 1 day set): a space 1.3 s in brought the stop question with "00:15:50" left (row 24 the
+question and Yes / No, the position line still at the start time); Yes ended the rest with the clock at 19:00 (10:50 +
+8:10). The amount input (0x24F1D) in the same run (loot Take, gems, maximum 2): "1234567" shows "2" (above the maximum
+the maximum's digits), "0000001" shows "000000" (the seventh digit refused).
 
 **Rest-time menu 0x244ED**: highlighted word starts at 2 (minutes). Shows its label (0x243AF) at column 1, row 17, then days
 and hours (two digits each, with a colon between), then minutes as 10 × ten-minutes + minutes; the highlighted word in white
