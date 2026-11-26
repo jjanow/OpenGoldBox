@@ -449,6 +449,7 @@ i := 1 to the line's length at entry: a character in the set CS:154D (the unit a
 +0x20, so a digit would become 'P'–'Y', a capital; a '~' is deleted (System Delete), the character now at i is
 upper-cased (UpCase) and appended to keys, the hotkey list (at most 40). The loop keeps the entry length, so after a
 delete it walks the copies of the last character left past the new length (lower-cased, never drawn). Client
-`AmigaView.TildeCase` lower-cases A–Z only and skips a second '~' (the program upper-cases it and keeps it): equal for
-every v1.3 line (no digit, no "~~"). A one-choice HMENU passes 15 for both colours (all white). Client:
+`AmigaView.TildeCase` follows the set and the second '~' since s56 (the Amiga copy, hunk 4 +0x17A0, read s56: the same set and
+'~' rule, walking to the current strlen, and a space not before a '~' stored as 0xFF, drawn blank); no v1.3 line shows
+the difference (no digit, no "~~"). A one-choice HMENU passes 15 for both colours (all white). Client:
 `ExploreScreen.DrawLine` (also behind the party-menu pages' `PartyMenuScreen.Line`, so the camp's icon editor).

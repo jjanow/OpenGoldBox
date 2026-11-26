@@ -523,6 +523,30 @@ public class PartyMenuScreenTests
     }
 
     [Fact]
+    public void Creation_asks_again_only_for_an_empty_name()
+    {
+        if (Dir() is null)
+            return;
+        using var r = Start(31);
+        r.Key(Keys.C);
+        for (int i = 0; i < 5; i++)
+            r.Key(Keys.Down);
+        r.Key(Keys.Enter);
+        r.Key(Keys.Down);
+        r.Key(Keys.Enter);
+        r.Key(Keys.Enter);
+        r.Key(Keys.Enter);
+        r.Key(Keys.Y);
+        r.Key(Keys.Enter);                        // an empty line: asked again (0x1B7F3)
+        Assert.IsType<TextRequest>(r.Runner.Pending);
+        r.Key(Keys.Space);
+        r.Key(Keys.Space);
+        r.Key(Keys.Enter);                        // two spaces: kept as the name (DOS checks the length only)
+        var sheet = Assert.IsType<SheetRequest>(r.Runner.Pending);
+        Assert.Equal("  ", sheet.Character.Name);
+    }
+
+    [Fact]
     public void The_icon_editor_has_the_programs_menus_and_colours()
     {
         if (Dir() is null)

@@ -250,9 +250,13 @@ public static class AmigaView
     /// <summary>
     /// A '~' menu line as the menu's set-up passes it on (DOS 0x8A40, shop-format.md; the Amiga's copy hunk 4
     /// +0x17A0–0x1830): every capital lower-cased, each '~' deleted and the character after it upper-cased, so a
-    /// choice keeps one capital, its hotkey ("~COMBAT ~WAIT" → "Combat Wait"; HMENU builds its line so). DOS's set also
-    /// holds the digits (0x8A40 read s54: a digit gets +0x20), and a second '~' is upper-cased and kept; neither occurs
-    /// in v1.3's lines. [?] The Amiga copy's set (hunk 4 +0x17A0) is not read.
+    /// choice keeps one capital, its hotkey ("~COMBAT ~WAIT" → "Combat Wait"; HMENU builds its line so). Both machines'
+    /// set is A–Z and 0–9, each + 0x20 (DOS 0x8A40 read s54; the Amiga's hunk 4 +0x17A6–0x17E4 read s56), so a digit
+    /// turns into 'P'–'Y'; a second '~' is upper-cased and kept. Neither occurs in v1.3's lines (every HMENU choice of
+    /// ECL1–8 checked s56: no digit). The Amiga copy also stores a space not followed by '~' as 0xFF (+0x1856–0x1878),
+    /// which its font draws blank (as a name's spaces, <see cref="CreationName"/>): the Client keeps the space. The
+    /// hotkey list it builds alongside (the upper-cased character after each '~', at most 40, +0x1840 / +0x18C4) is the
+    /// menu's own matter.
     /// </summary>
     public static string TildeCase(string line)
     {
@@ -260,14 +264,17 @@ public static class AmigaView
         bool up = false;
         foreach (char ch in line)
         {
-            if (ch == '~')
+            // The character after a '~' (a second '~' too) is upper-cased and skipped, never lowered: a digit there
+            // stays a digit.
+            if (up)
             {
-                up = true;
-                continue;
+                sb.Append(ch is >= 'a' and <= 'z' ? (char)(ch - 32) : ch);
+                up = false;
             }
-            char c = ch is >= 'A' and <= 'Z' ? (char)(ch + 32) : ch;
-            sb.Append(up && c is >= 'a' and <= 'z' ? (char)(c - 32) : c);
-            up = false;
+            else if (ch == '~')
+                up = true;
+            else
+                sb.Append(ch is >= 'A' and <= 'Z' or >= '0' and <= '9' ? (char)(ch + 32) : ch);
         }
         return sb.ToString();
     }
@@ -405,8 +412,9 @@ public static class AmigaView
 
     /// <summary>
     /// The money amount input's length (Take, Trade, Drop): DOS 0x24F1D appends digits to a string[6] (6 characters,
-    /// only reached with a leading zero below 65536; a further digit leaves it as it is); the Amiga's number requester 5
-    /// digits (as <see cref="InputNumberLength"/>; the amount's own MaxChars not read `[?]`).
+    /// only reached with a leading zero below 65536; a further digit leaves it as it is); the Amiga's number input 5
+    /// digits (<see cref="InputNumberLength"/>): hunk 25 +0x1092 passes MaxChars 6 to the requester itself (+0x10AE, read
+    /// s56), whoever calls it, and asks again while the line does not convert (+0x10D2–0x10DE).
     /// </summary>
     public static int AmountLength(bool amiga) => amiga ? InputNumberLength : 6;
 

@@ -20,6 +20,11 @@ public class AmigaMenuTextTests
         Assert.Equal("Foo Bar", AmigaView.TildeCase("~Foo ~Bar"));
         Assert.Equal("Up and away", AmigaView.TildeCase("~UP AND AWAY"));
         Assert.Equal("GAMMA", AmigaView.HmenuCase("GAMMA"));   // off the Amiga pages unchanged
+        // The program's set is A–Z and 0–9 (+0x20: '2' → 'R'); the character after '~' is raised, never lowered, a
+        // second '~' kept (DOS 0x8A40, Amiga hunk 4 +0x17A0).
+        Assert.Equal("Room R", AmigaView.TildeCase("~ROOM 2"));
+        Assert.Equal("3d", AmigaView.TildeCase("~3D"));
+        Assert.Equal("~x", AmigaView.TildeCase("~~X"));
     }
 
     [Fact]

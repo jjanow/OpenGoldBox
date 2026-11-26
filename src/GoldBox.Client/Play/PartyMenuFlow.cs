@@ -384,12 +384,14 @@ public sealed class PartyMenuFlow(Func<PlayerRequest, object?> ask, PartyMenuTex
 
         // The Amiga asks through its requester with MaxChars 15 (hunk 10 +0x2114: 14 characters, DOS 15), the letters
         // as its keymap types them (TextRequest.KeepsCase), and keeps the name as typed (strncpy, hunk 10 +0x212E) until
-        // the character save at the end; DOS upper-cases it at once. AmigaView.CreationName.
+        // the character save at the end; DOS upper-cases it at once. AmigaView.CreationName. Both ask again only for an
+        // empty line (DOS 0x1B7EC–0x1B7F3: the name's length byte against 0; Amiga hunk 10 +0x2136–0x2146): a name of
+        // spaces is kept as typed, spaces included (s56; the Client trimmed it before).
         string name, typed;
         do
         {
             typed = ask(new TextRequest(texts.CharacterName, false, AmigaView.NameLength(AmigaView.On)) { KeepsCase = AmigaView.On }) as string ?? "";
-            name = typed.Trim();
+            name = typed;
         }
         while (name.Length == 0);
         cc.SetName(AmigaView.On ? name : AmigaView.CreationName(name, false));
