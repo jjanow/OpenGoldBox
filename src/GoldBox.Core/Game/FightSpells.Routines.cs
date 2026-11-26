@@ -84,7 +84,10 @@ public sealed partial class FightSpells
             case 59: // 0x29EFD: Strength 21 (0x2C046, message when it rose), effect 0x26 for the duration, removal on
             {
                 if (First is not { } t59)
+                {
+                    Duration(spell); // no target: the program's 1d4 of the duration (stale DS:6C95), nobody affected (s53)
                     return true;
+                }
                 if (Effects.RaiseStrength(t59, 0x15, 0, out byte code))
                     Event?.Invoke(t59, spell, EffectEvent.SpellStrengthened);
                 EffectHandlers.AddEffect(t59, 0x26, Duration(spell), code, true);
@@ -97,7 +100,7 @@ public sealed partial class FightSpells
             case 62: // 0x29FE8: the first target healed 2d4 + 2 (no bypass); message when healed
             {
                 // The program does not test the count DS:6C94: the 2d4 is drawn and DS:6C95 healed even with no
-                // target (a stale pointer then; read s52). Core draws and heals only a target it has.
+                // target (a stale pointer then; read s52). Core draws and heals nobody (original bug, fixed s53).
                 byte heal = (byte)(Dice(2, 4) + 2);
                 if (First is { } t62 && Effects.RestoreHitPoints(t62, heal, false))
                     Event?.Invoke(t62, spell, EffectEvent.Healed);
@@ -643,7 +646,10 @@ public sealed partial class FightSpells
     private void Spell58()
     {
         if (First is not { } t)
+        {
+            Dice(1, 4); // no target: the program's 1d4 on a stale DS:6C95 with nothing cured; nobody healed (s53)
             return;
+        }
         if (RemoveWithMessage(t, 0x37))
         {
             foreach (byte id in (ReadOnlySpan<byte>)[0x37, 0x16])

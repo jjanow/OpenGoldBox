@@ -261,7 +261,9 @@ without bit 3 as melee (start worth = natural dice 0xA3 × sides 0xA5, + 2 × bo
 ammunition (as START 0x3A2B) and it is throwable or no enemy is adjacent; else the melee one (possibly none). A
 weapon that is neither the choice nor cursed is unreadied, 0x100 rebuilt (START 0x1758), a non-cursed off-hand
 item's hands taken off again, and the choice readied. Rebuild, attacks left (0x1351E). Then 0x100 > 2: unready the
-off-hand item, or the chosen weapon when that item is cursed or missing; 0x100 < 2 and the off-hand item is not the
+off-hand item, or the chosen weapon when that item is cursed or missing (with no weapon chosen, e.g. a cursed
+two-hander and a cursed shield, the program calls 0x2250A with a nil pointer and reads 0000:0000: an original bug,
+**fixed, not an option** (user, s53), the call is skipped); 0x100 < 2 and the off-hand item is not the
 best shield and not cursed: it is unreadied and the best shield readied. Rebuild; redraw when anything changed.
 
 **Ready / unready** (0x2250A, for DS:5D92; read whole s51, `ItemCommands.Ready`): readied and cursed → message only;

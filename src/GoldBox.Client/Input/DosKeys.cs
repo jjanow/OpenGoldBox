@@ -115,6 +115,24 @@ public static class DosKeys
         return scan;
     }
 
+    /// <summary>
+    /// The byte a menu run with the keypad flag (the menu routine 0x2CC8C, [bp+0x0C] = 1) returns for an extended key:
+    /// the digits 1–9 (either row) and backslash give their cursor-pad codes (DS:288C: 1 End, 2 Down, 3 PgDn, 4 Left,
+    /// 5 ' ', 6 Right, 7 Home, 8 Up, 9 PgUp, backslash 0x37), any other key as <see cref="ExtendedScan"/>. Null for a
+    /// key that gives a character.
+    /// </summary>
+    public static byte? KeypadMenuScan(string name, bool shift)
+    {
+        string bare = name;
+        if (bare.StartsWith("NumPad", StringComparison.Ordinal) && bare.Length == 7 && char.IsAsciiDigit(bare[6]))
+            bare = "D" + bare[6];
+        if (bare.Length == 2 && bare[0] == 'D' && bare[1] is >= '1' and <= '9')
+            return CursorPad[bare[1] - '1'];
+        return bare == "OemPipe" ? (byte)0x37 : ExtendedScan(name, shift);
+    }
+
+    private static readonly byte[] CursorPad = [0x4F, 0x50, 0x51, 0x4B, 0x20, 0x4D, 0x47, 0x48, 0x49];
+
     /// <summary>The key name of an extended key's scan code (Alt+letter included), or null.</summary>
     public static string? OfScan(byte scan)
     {

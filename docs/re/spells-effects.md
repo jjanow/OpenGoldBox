@@ -664,10 +664,18 @@ monsters: dosbox-trace-method.md "Monsters of another disk"):
 | 57 | 0x29E1A | first target losing Slow 0x2A (message) → done; else plain |
 | 58 | 0x29E65 | first target losing poison 0x37 → under the lock its 0x16 goes; else 0x292A2; nothing cured → heal 1d4 + 8 (no bypass), message. **Original bug, fixed (user, s51; not an option):** only the first 0x37 and 0x16 go, so with a second 0x37 handler 22 finds it on the 0x16's removal and kills the target (as the temple's poison cure, `shop-format.md` "Temple"); the engine removes every further 0x37 and every 0x16 with the lock set before each (`FightSpells.Spell58`) |
 | 59 | 0x29EFD | raise to Str 21 / 0 (message); effect 0x26, duration 1d4 × 10 + 40, removal on |
-| 62 | 0x29FE8 | heal 2d4 + 2 (no bypass), message; the count DS:6C94 is not tested, so the 2d4 is drawn and DS:6C95 healed even with no target (s52: Core draws, heals only a target it has) |
+| 62 | 0x29FE8 | heal 2d4 + 2 (no bypass), message; the count DS:6C94 is not tested, so the 2d4 is drawn and DS:6C95 healed even with no target (see "No target" below) |
 | 65 | 0x2A070 | damage 2d4 + 2 (count to 681C), element 8 |
 | 66 | 0x2A0AA | nothing |
 | 67 | 0x2A0BA | strength 255, removal on (effect 4 for 1440) |
+
+**No target (s52 read, s53 decided, s54 built).** The single-target routines 10, 12, 14, 26, 28, 37, 43, 56–59 and 62
+read DS:6C95 without testing the count DS:6C94, so with an empty list they act on the stale pointer (the previous
+cast's first target). No path to an empty list in play is known. An original bug, **fixed, not an option** (user,
+s53): Core draws the program's dice (RandSeed in step) and affects nobody. Under emulation with DS:6C95 left on a
+record with no effects and no items (`por_spell_oracle.py`, 6 cases each): 14 Friends draws its 2d4, 58 its 1d4 (no
+poison, nothing cured: the heal), 59 the 1d4 of its duration, 62 its 2d4; the others draw nothing. A stale record in
+another state (poisoned for 58, say) would change the program's draws; Core takes the record with no effects.
 
 **Bolt hit** (0x298D4, x, y, damage, save type, out rebound): cell 0x30BF8; terrain with cost 0xFF → rebound. A
 creature there: DS:6819 = 0x0C, save (type, 0), 0x2C22E halved when saved, DS:6819 = 0.
@@ -893,8 +901,10 @@ does not read its record: 0x11B35 runs the granted effect's handler with a **nil
 28, 38, 39, 57, … would read the interrupt table at 0000:0000. In the data the codes grant 61, 89 and 3
 (`item-format.md`), and **89 reads it**: readying a cloak (code 133) runs handler 89 on byte 3 of 0000:0000 (the high
 byte of INT 0's segment): AND 0x0F at round 0 with attack roll 0, else with bit 4 clear the attack roll becomes −1 and
-bit 4 is set there. Core follows it on a stand-in byte (`EffectHandlers.NilRecord`, `[?]` its real value; the call
-cases set it per case); an original bug, a question for the user (s52 lane B notes).
+bit 4 is set there. An original bug, **fixed, not an option** (user, s53): Core adds the effect and skips the
+handler call for 89 (`EffectHandlers.CallMoreHandlers`; its later runs, class 8 at the fight start and class 0x10 on
+each attack roll, get the real record as in the program). The call cases with a nil 89 expect the attack roll
+unchanged; everything else as the program.
 
 ## DOSBox — D
 

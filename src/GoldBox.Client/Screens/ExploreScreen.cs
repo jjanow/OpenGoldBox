@@ -778,19 +778,21 @@ public sealed class ExploreScreen : IScreen
     }
 
     /// <summary>
-    /// The menu's own answer for this frame's extended key (<see cref="ChoiceRequest.ExtendedKeys"/>, the loot menu's
-    /// s51 rule), or null. A key with a Client meaning keeps it (as the s50 rule), unless Shift made it another key
-    /// for the program than the bound one (<see cref="ShiftedMenuKey"/>).
+    /// The menu's own answer for this frame's extended key (<see cref="ChoiceRequest.ExtendedKeys"/>: the loot menu's
+    /// s51 rule, the Take:, shop, temple and Appraise menus' s53 rule), or null. The menus run with the keypad flag, so
+    /// a digit gives its cursor-pad code (<see cref="DosKeys.KeypadMenuScan"/>). A key with a Client meaning keeps it
+    /// (as the s50 rule), unless Shift made it another key for the program than the bound one
+    /// (<see cref="ShiftedMenuKey"/>); the member actions (Home / End) count only on a menu that picks members.
     /// </summary>
     private static int? MenuExtendedAnswer(ChoiceRequest c, ActionInput input)
     {
         if (c.ExtendedKeys is not { } keys || input.NewInput is not (InputDevice.Keyboard, var name)
-            || DosKeys.ExtendedScan(name, input.NewShiftHeld) is not { } scan || keys(scan) is not { } answer)
+            || DosKeys.KeypadMenuScan(name, input.NewShiftHeld) is not { } scan || keys(scan) is not { } answer)
             return null;
         if (ShiftedMenuKey(c, input) is not null)
             return answer;
         foreach (var a in ClientMeaning)
-            if (input.Pressed(a))
+            if (input.Pressed(a) && (c.PartySelect || a is not (GameAction.PreviousMember or GameAction.NextMember)))
                 return null;
         return answer;
     }

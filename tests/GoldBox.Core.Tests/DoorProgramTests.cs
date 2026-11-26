@@ -12,8 +12,9 @@ namespace GoldBox.Core.Tests;
 /// itself: the private fixture <c>program-v1.3/doors.json</c> (<c>tools/scripts/por_door_oracle.py</c>) holds made-up
 /// parties, squares, maps, menu flags and RandSeed run under emulation (the face set 0x167D4 and the dice run as they
 /// are; the barrier accessor answers the case's barrier). <see cref="DoorRules"/> and <see cref="DoorMap.Open"/> must
-/// give the same result, records, barrier plane, flags and RandSeed. Knock's caller opens the door (0x17438), so the
-/// program's 0x16D13 leaves the map alone and only the slot is cleared.
+/// give the same result, records, barrier plane, flags and RandSeed. The program's 0x16D13 only clears the slot and
+/// its caller 0x17438 sets no face (the door stays locked); Core's caller <c>AreaLoop.DoorMenu</c> sets both faces as
+/// Bash and Pick do (original bug, fixed: user s53, AreaLoopTests).
 /// </summary>
 public class DoorProgramTests
 {

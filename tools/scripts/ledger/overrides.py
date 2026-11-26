@@ -67,7 +67,8 @@ OV = {
     'O:7689': dict(role='script init', kind='play'),
     'O:7814': dict(role='script file loader (ECL<d>)', kind='play'),
     'O:74d3': dict(role='operand loader', kind='play'),
-    'O:7a21': dict(role='encounter draw', kind='pres'),
+    'O:7a21': dict(role='encounter draw', kind='pres', status='W',
+                   why='read whole s54: every branch as ecl-format.md "The encounter draw 0x7A21" and EncounterHost.Draw'),
     'O:211d': dict(role='CHKPARTY helper: writes a VM cell (0x814A)', status='W', kind='play', why='part of CHKPARTY (golden captures)'),
     # ---- combat ----
     'O:9881': dict(role='the fight (top level)', kind='play'),
@@ -266,6 +267,7 @@ OV.update({
 # (a row that already had status W keeps its earlier reason after the s52 one)
 S52 = {
     # lane A
+    'O:8a40': dict(status='W', why='read whole s54: matches AmigaView.TildeCase for every v1.3 line (digits in its set, "~~" unused)'),
     'O:21aed': dict(status='W', why='read whole s52: matches FightItemScreens.ViewEntries / CharacterView.Run'),
     'O:23190': dict(status='W', why='read whole s52: matches CharacterView.TradeMoney'),
     'O:234e1': dict(status='W', why='read whole s52: matches FightItemScreens.DropMoney'),
@@ -328,7 +330,7 @@ S52 = {
     'O:b3b2': dict(status='W', why='read whole s52, the flee result fixed (s52-lane-D.md)'),
     'O:b6fc': dict(status='W', why='read whole s52 (s52-lane-D.md)'),
     'O:bb81': dict(status='W', why='read whole s52 (s52-lane-D.md)'),
-    'O:bf8a': dict(status='W', why='read whole s52; nil-pointer corner is a user question (s52-lane-D.md)'),
+    'O:bf8a': dict(status='W', why='read whole s52; the nil-pointer unready is skipped (original bug, fixed s53/s54)'),
     'O:e600': dict(status='W', why='read whole s52 (s52-lane-D.md)'),
     # lane E
     'O:166cb': dict(status='W', why='read whole s52 (DoorMap.Seal)'),
@@ -336,7 +338,7 @@ S52 = {
     'O:16e06': dict(status='W', why='read whole s52 (AreaLoop.Move)'),
     'O:16ee3': dict(status='W', why='read whole s52 (Overland.Step)'),
     'O:17054': dict(status='W', why='read whole s52 (AreaLoop.Execute / MenuCommand)'),
-    'O:17438': dict(status='W', why='read whole s52; Knock sets no face, $6DC9 cleared only in modes 1-4 (fixed)'),
+    'O:17438': dict(status='W', why='read whole s52; Knock sets no face (Core sets both: original bug, fixed s53/s54), $6DC9 cleared only in modes 1-4'),
     'O:17cd2': dict(status='W', why='read whole s52 (CampScreens.CastMenu)'),
     'O:17fab': dict(status='W', why='read whole s52 (CampRest.RestForPreparation)'),
     'O:18668': dict(status='W', why='read whole s51 / s52'),
@@ -349,7 +351,7 @@ S52 = {
     'O:196a0': dict(status='W', why='read whole s52 (CampScreens.Camp)'),
     'O:19ae0': dict(status='W', why='read whole s52 (PartyMenuFlow.Run, PartyMenu.Enabled)'),
     'O:1b8b6': dict(status='W', why='read whole s52 (PartyMenuFlow.Drop)'),
-    'O:1c9ec': dict(status='W', why='read whole s52 (PartyMenu.TryAdd); first-pick count byte [?]'),
+    'O:1c9ec': dict(status='W', why='read whole s52 (PartyMenu.TryAdd); the unset first-pick count is recounted (original bug, fixed s53/s54)'),
     'O:1cd66': dict(status='W', why='read whole s52 (PartyMenuFlow.Portrait); Left arrow leaves in DOS, not followed (Client menu keys)'),
     'O:1dff6': dict(status='W', why='read whole s52 (PorRoster.Entries)'),
     'O:1e19e': dict(status='W', why='read whole s52 (PorRoster.WriteEntries)'),

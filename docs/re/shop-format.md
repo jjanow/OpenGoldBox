@@ -85,6 +85,21 @@ Confirm, Cancel, hotkeys and any key bound to a command-line action. Order's Pla
 `[?]`, left alone. Tests `KeyBufferTests.Member_pick_codes_of_extended_keys`,
 `CampScreenTests.Camp_extended_keys_make_the_first_member_current`.
 
+**Extended keys in the venue menus** (read s52 lane A, decided s53, built s54). The shop (0x72F9–0x7426), temple
+(0x5327–0x5463), Take: (0x6315–0x6354) and Appraise (0x2663B's first menu) loops run the menu routine with the keypad
+flag and compare the byte it returns with their letters without testing the extended flag, so an extended key whose
+scan code equals a letter acts as it (a digit gives its cursor-pad code first): F8 (0x42) Buy; Shift-F3 (0x56) View;
+Shift-F1 (0x54) Take and Del (0x53) Share in the shop and temple, run whatever the line shows (with an empty pool
+the coin take 0x25974 blanks its window (1, 1)–(38, 22), the list routine returns at once on the empty list
+(0x2D69C) and the loop ends, then the venue's redraw (read s54; the Client shows only the redraw, the same end
+screen); Share shares nothing); F7 (0x41) Appraise; keypad 7 / 1 (0x47 /
+0x4F) the party selection; PgUp / keypad 9 (0x49) Items in Take:; Home / keypad 7 (0x47) Gems in Appraise. P (Pool)
+and the temple's H (Heal) are tested only for a plain key, so Down / Up do nothing there. **Decided (user, s53):**
+the s50/s51 rule: keys the Client gives no meaning to act as the program; keys with a Client meaning keep it (Right,
+0x4D = M in Take:, keeps moving the lit word; Home / End stay the member keys where the menu picks members). Client
+`VenueScreens.VenueKeys`, the Appraise menu in `MoneyScreens.Appraise`, `DosKeys.KeypadMenuScan`; tests
+`VenueTests.Venue_extended_keys_follow_the_s53_rule`, `KeyBufferTests.Keypad_menu_codes`.
+
 **Buy** (0x7035, P). An item picker over the treasure list (0x6D04) returns a key; B or Enter buys the highlighted
 item, any other key leaves. Price = the item's value word (0x3A). Before listing, the picker writes value 1 into
 every stock item whose value is 0 (0x6D3C: nothing in a shop is free) and renames each item: 30 spaces, the value
@@ -196,10 +211,12 @@ Jewelry / Exit, repeated until Exit or nothing is left.
   R(6000), 91–100 → 2000 + R(10000) (two draws).
 - Choices: Sell, plus Keep when 1 more weight does not overload the character and it has fewer than 16 items. K
   (only when offered) adds an identified item (type 70, word 0x65 gem / 0xD6 jewel, value, weight 1, `hidden` 0)
-  at the end of the inventory. **Original bug (s52, `[U]`):** with no items (+0xC8 nil) the new record is put in a
+  at the end of the inventory. **Original bug (s52):** with no items (+0xC8 nil) the new record is put in a
   local (0x26AFB gem, 0x26E4E jewel) and never into +0xC8, so the kept gem or jewel is lost: the count is down, no
-  item, no platinum (emulation: every such Keep). Kept faithful in Core (`ShopRules.Appraise`) pending the user. The
-  first menu runs with the keypad flag 1, so Home (scan 0x47 = G) appraises a gem too. Any other key sells: value div 5 platinum through "add platinum" (so a jewel loses
+  item, no platinum (emulation: every such Keep). **Fixed, not an option** (user, s53): Core adds it as the first
+  item (`ShopRules.Appraise`). The
+  first menu runs with the keypad flag 1, so Home (scan 0x47 = G) appraises a gem too (built s54, "Extended keys in
+  the venue menus"). Any other key sells: value div 5 platinum through "add platinum" (so a jewel loses
   value mod 5). Every pass of the menu, Exit included, ends with START 0x1758 on the character (0x26EC2); the Keep
   test reads the stored weight and item count (0x24CDD, +0xC7 against 16). With nothing to appraise at the start the
   no-gems message and no recalculation (0x26661); when the last gem or jewel is gone after an appraisal the routine
@@ -378,7 +395,8 @@ even for Raise Dead / Stone to Flesh on a target that does not qualify, which th
   and 6 and Cure Disease never do, so the lock-clearing touches no other temple cure or camp cast. Spell 58 removes
   the first 55 (no lock), then under the lock the first 22 and writes 0 right after, so the cleared lock changes
   nothing there; but with two records of 55 its handler 22 finds the second and kills the target, as the unfixed
-  temple cure did (not changed; a question for the user).
+  temple cure did (an original bug, fixed, not an option, user s51: `FightSpells.Spell58` removes every 55 and 22
+  under the lock).
   **D s51** (test save G of `por_test_saves.py`, Thrender's `.SPC` = 55, 22, 15, 15 and Bakshi's = 55, 55, 22, all
   byte 4 set, money added; Neutralize Poison paid on each): Thrender "is cured", then HP 11 → 10 and the party list
   (START 0x0767 from handler 15, 0xF28A) drawn over the heal list, which the next pass redraws only row by row, so the
@@ -426,5 +444,11 @@ fight's and the shop's lines are predicted the same and were matched as whole fr
 s24, fight s29–s38), not taken again in s39. HMENU (0x1E17) builds its
 line as "~WORD ~WORD … ~WORD", and 0x8A40 lower-cases every capital, then deletes each '~' and upper-cases the
 character after it, so each choice has one capital (its first letter; a choice of several words
-is one entry); no v1.3 HMENU word holds a digit. A one-choice HMENU passes 15 for both colours (all white). Client:
+is one entry); no v1.3 HMENU word holds a digit. **0x8A40 read whole (s54):** (var line, out keys); keys := ''; for
+i := 1 to the line's length at entry: a character in the set CS:154D (the unit at 0x74D3: '0'–'9' and 'A'–'Z') gets
++0x20, so a digit would become 'P'–'Y', a capital; a '~' is deleted (System Delete), the character now at i is
+upper-cased (UpCase) and appended to keys, the hotkey list (at most 40). The loop keeps the entry length, so after a
+delete it walks the copies of the last character left past the new length (lower-cased, never drawn). Client
+`AmigaView.TildeCase` lower-cases A–Z only and skips a second '~' (the program upper-cases it and keeps it): equal for
+every v1.3 line (no digit, no "~~"). A one-choice HMENU passes 15 for both colours (all white). Client:
 `ExploreScreen.DrawLine` (also behind the party-menu pages' `PartyMenuScreen.Line`, so the camp's icon editor).

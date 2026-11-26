@@ -875,7 +875,7 @@ public sealed class MonsterAi : IFightController
         {
             if (offHand is not null && offHand[0x36] == 0)
                 Toggle(f, c, offHand);
-            else if (chosen is not null)
+            else if (chosen is not null) // the program calls 0x2250A with nil here too (0000:0000); original bug, skipped (user, s53)
                 Toggle(f, c, chosen);
             changed = true;
         }

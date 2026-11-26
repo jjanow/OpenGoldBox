@@ -202,7 +202,8 @@ public static class DoorRules
     /// <summary>
     /// Knock (0x16D13, both barriers): the first member with spell 31 memorised loses that slot (set to 0) and the
     /// party steps through; without one nothing happens. No draw. The caller clears the slot. Unlike Bash and Pick the
-    /// program sets no face (no 0x167D4 on this path, read s52): the door stays locked in the map.
+    /// program sets no face (no 0x167D4 on this path, read s52), leaving the door locked in the map; the caller
+    /// (<c>AreaLoop.DoorMenu</c>) sets both faces as Bash and Pick do (original bug, fixed: user, s53).
     /// </summary>
     public static DoorAttempt Knock(IReadOnlyList<DoorMember> party)
     {

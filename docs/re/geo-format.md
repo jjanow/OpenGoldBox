@@ -211,7 +211,8 @@ opened door resets them. Nothing sets DS:6DE0 to 0. Model: `GoldBox.Core.Doors` 
 - **Knock** (0x16D13, both types): the first member with spell 31 memorised loses that spell slot (set to 0) and
   the party steps through (0x16E06). Without such a member nothing happens. No roll. Unlike Bash and Pick (which set
   both faces to 1 through 0x167D4 before the step), Knock sets no face: the door stays locked in the map, so the
-  door menu comes back from that side where its face is locked too (read s52; Core follows; `docs/re/s52-lane-E.md` asks whether to keep it).
+  door menu comes back from that side where its face is locked too (read s52). An original bug, **fixed, not an
+  option** (user, s53): Core's Knock sets both faces to 1 as Bash and Pick do (`AreaLoop.DoorMenu`).
 - **Step routine** (0x17438, read whole s52): only with DS:49FA = 1 (3D) or 2–4 (overland); in either, VM word
   $6DC9 ≥ 255 (a script cancelled the step) is set back to 0 and nothing else happens; in other modes $6DC9 stays.
   The 3D branch reads the party's own face through 0x2EC47: 1 steps, 2 / 3 build the door menu above (only Exit →

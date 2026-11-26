@@ -210,11 +210,9 @@ public static class ShopRules
         bool canKeep = !Money.Overloaded(c, 1, strengthAllowance, out _) && c[ItemCount] < MaxItems;
         if (keep(value, canKeep) && canKeep)
         {
-            // Original bug (read and run under emulation s52, 0x26AFB / 0x26E4E): with no items the new record goes
-            // into a local, never into the item list head 0xC8, so the kept gem or jewellery is lost (count already
-            // down, no item, no platinum). Kept faithful pending the user's decision (s52 lane A question).
-            if (c.Items.Count == 0)
-                return value;
+            // 0x26AFB / 0x26E4E: with no items the program puts the new record into a local, never into the item
+            // list head 0xC8, so the kept gem or jewellery is lost (count down, no item, no platinum). Original bug,
+            // fixed (user, s53): it is added as the first item.
             var it = new byte[EclCharacter.ItemRecordSize];
             it[0x31] = (byte)(jewellery ? 0xD6 : 0x65);
             it[ItemType] = 70;

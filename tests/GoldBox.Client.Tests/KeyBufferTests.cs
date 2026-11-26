@@ -502,4 +502,23 @@ public class HallWordTests
     {
         Assert.Equal(code is { } v ? (byte)v : null, DosKeys.ExtendedScan(key, shift));
     }
+
+    /// <summary>The byte a keypad-flag menu returns (0x2CC8C): the digits give cursor-pad codes (the s53 venue keys:
+    /// keypad 9 = PgUp = I in Take:, keypad 7 = Home = G), other extended keys their scan codes.</summary>
+    [Theory]
+    [InlineData("NumPad9", false, 0x49)]
+    [InlineData("D9", false, 0x49)]
+    [InlineData("NumPad7", false, 0x47)]
+    [InlineData("D1", false, 0x4F)]
+    [InlineData("NumPad5", false, 0x20)]
+    [InlineData("NumPad6", false, 0x4D)]
+    [InlineData("OemPipe", false, 0x37)]
+    [InlineData("F1", true, 0x54)]
+    [InlineData("Delete", false, 0x53)]
+    [InlineData("D0", false, null)]
+    [InlineData("T", false, null)]
+    public void Keypad_menu_codes(string key, bool shift, int? code)
+    {
+        Assert.Equal(code is { } v ? (byte)v : null, DosKeys.KeypadMenuScan(key, shift));
+    }
 }

@@ -122,6 +122,47 @@ public class CampPlayTests
         Assert.Null(r.Runner.Pending);
     }
 
+    /// <summary>
+    /// The s53 venue keys through the screen (<c>ExploreScreen.MenuExtendedAnswer</c>): a keypad digit gives its
+    /// cursor-pad code (keypad 9 = PgUp = I in Take:), Right keeps moving the lit word, Home stays the member key on a
+    /// menu that picks members and gives 0x47 (G, Gems) on Appraise's, which does not.
+    /// </summary>
+    [Fact]
+    public void Venue_extended_keys_reach_the_menu()
+    {
+        if (Dir() is null)
+            return;
+        var r = Start();
+        var answers = new List<int>();
+        void Run(bool partySelect)
+        {
+            r.Runner.Start(() =>
+            {
+                while (r.Runner.Ask(new ChoiceRequest(null, ["MONEY", "ITEMS", "EXIT"], false, 2)
+                       {
+                           PartySelect = partySelect,
+                           ExtendedKeys = scan => scan is 0x49 or 0x47 or 0x4D ? scan : null,
+                       }) is int a and not 2)
+                    answers.Add(a);
+            });
+        }
+
+        Run(partySelect: true);
+        Key(r, Keys.NumPad9);
+        Key(r, Keys.Right);                                // the Client's lit word, not M
+        Key(r, Keys.Home);                                 // the member key
+        Assert.Equal([0x49, ChoiceRequest.PreviousMember], answers);
+        Key(r, Keys.E);
+        Assert.Null(r.Runner.Pending);
+
+        answers.Clear();
+        Run(partySelect: false);
+        Key(r, Keys.Home);
+        Assert.Equal([0x47], answers);
+        Key(r, Keys.E);
+        Assert.Null(r.Runner.Pending);
+    }
+
     [Fact]
     public void Rest_with_actions_then_save_with_keys_and_load_it_again()
     {

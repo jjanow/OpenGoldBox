@@ -64,6 +64,22 @@ public class VenueTests
             ViewPage = viewPage,
         }, s);
 
+    private static TradeContext Ctx(Func<PlayerRequest, object?> ask, EclParty party, List<byte[]>? treasure = null,
+        uint[]? pool = null, Action? redrawn = null) =>
+        new()
+        {
+            Dialog = new Dialog(ask, new TextWindow()),
+            Text = new GameText(),
+            Party = party,
+            Pool = pool ?? new uint[7],
+            Treasure = treasure ?? [],
+            Random = n => n - 1,
+            Word = _ => null,
+            ShowWindow = _ => { },
+            RosterDrawn = () => { },
+            VenueRedrawn = redrawn ?? (() => { }),
+        };
+
     private static EclParty Party(params EclCharacter[] members)
     {
         var p = new EclParty();
@@ -316,7 +332,7 @@ public class VenueTests
         c.SetWord(Money.Gems, 1);
         var dagger = new byte[EclCharacter.ItemRecordSize];
         dagger[0x2E] = 7;
-        c.Items.Add(dagger); // with an empty pack the program loses a kept gem (s52 question): not this test
+        c.Items.Add(dagger); // with an empty pack the program loses a kept gem (fixed s53: Core's ShopRules tests)
         Carrying.RecalculateWeight(c);
         // GEMS, keep/sell; with none left after an appraisal the routine just ends (0x26698: no "no gems" key wait).
         var (t, s) = Context(new Script(0, answer), Party(c));
@@ -391,6 +407,75 @@ public class VenueTests
         Assert.Equal(3, asked[1].ExtendedKeys!(0x44));
         Assert.Equal(1, detected);
         Assert.Single(loot);
+    }
+
+    /// <summary>
+    /// The s53 rule (user; shop-format.md "Extended keys in the venue menus"): the shop, temple, Take: and Appraise
+    /// loops compare the menu routine's byte with their letters whatever the extended flag, so F8 / Shift-F3 / Shift-F1 /
+    /// Del / F7 and keypad 7 / 1 act as B / V / T / S / A and G / O; Shift-F1 and Del reach Take and Share with no money
+    /// in the pool too; P and the temple's H only for a plain key (Down / Up do nothing); PgUp (keypad 9) takes items;
+    /// Home (keypad 7) appraises a gem.
+    /// </summary>
+    [Fact]
+    public void Venue_extended_keys_follow_the_s53_rule()
+    {
+        var c = Member("ANNA");
+        var (t, s) = Context(new Script(4), Party(c));                  // EXIT (no money: BUY VIEW POOL APPRAISE EXIT)
+        VenueScreens.Shop(t);
+        var shop = Assert.IsType<ChoiceRequest>(s.Asked[0]);
+        Assert.Equal(0, shop.ExtendedKeys!(0x42));                     // F8: Buy
+        Assert.Equal(1, shop.ExtendedKeys(0x56));                      // Shift-F3: View
+        Assert.True(shop.ExtendedKeys(0x54) >= 200);                   // Shift-F1: Take, off the line
+        Assert.True(shop.ExtendedKeys(0x53) >= 200);                   // Del: Share, off the line
+        Assert.Equal(3, shop.ExtendedKeys(0x41));                      // F7: Appraise
+        Assert.Null(shop.ExtendedKeys(0x50));                          // Down (P): Pool only for a plain key
+        Assert.Equal(ChoiceRequest.PreviousMember, shop.ExtendedKeys(0x47)); // keypad 7
+        Assert.Equal(ChoiceRequest.NextMember, shop.ExtendedKeys(0x4F));     // keypad 1
+        Assert.Null(shop.ExtendedKeys(0x3C));                          // F2
+
+        (t, s) = Context(new Script(4), Party(c));                     // the temple clears the pool: EXIT
+        VenueScreens.Temple(t);
+        var temple = Assert.IsType<ChoiceRequest>(s.Asked[0]);
+        Assert.Equal(["HEAL", "VIEW", "POOL", "APPRAISE", "EXIT"], temple.Items);
+        Assert.Null(temple.ExtendedKeys!(0x48));                       // Up (H): Heal only for a plain key
+        Assert.True(temple.ExtendedKeys(0x54) >= 200);                 // Shift-F1: Take, off the line
+        Assert.Equal(1, temple.ExtendedKeys(0x56));                    // Shift-F3: View
+        Assert.Equal(3, temple.ExtendedKeys(0x41));                    // F7: Appraise
+        Assert.Null(temple.ExtendedKeys(0x42));                        // F8: no Buy in the temple
+
+        // Shift-F1 at the shop with an empty pool runs the coin take (nothing to take) and the redraw, then the menu.
+        int redraws = 0;
+        var asked = new List<ChoiceRequest>();
+        var keys = new Queue<byte>([0x54]);
+        object? Ask(PlayerRequest r)
+        {
+            if (r is not ChoiceRequest q)
+                return null;
+            asked.Add(q);
+            return keys.Count > 0 ? q.ExtendedKeys!(keys.Dequeue()) : q.Items.Count - 1;
+        }
+        VenueScreens.Shop(Ctx(Ask, Party(c), redrawn: () => redraws++));
+        Assert.Equal(2, asked.Count);
+        Assert.Equal(1, redraws);                                      // 0x743C after T
+
+        // The Take: menu: PgUp / keypad 9 (0x49 = I) takes items; Right (0x4D = M) keeps the Client's meaning there
+        var loot = new List<byte[]> { Item(5, 20) };
+        ChoiceRequest? take = null;
+        VenueScreens.LootTake(Ctx(r => r is ChoiceRequest q ? (take = q).Items.Count - 1 : null, Party(c), loot,
+            [30, 0, 0, 0, 0, 0, 0]));
+        Assert.NotNull(take);
+        Assert.Equal(["MONEY", "ITEMS", "EXIT"], take!.Items);
+        Assert.Equal(1, take.ExtendedKeys!(0x49));
+        Assert.Equal(0, take.ExtendedKeys(0x4D));
+        Assert.Equal(ChoiceRequest.NextMember, take.ExtendedKeys(0x4F));
+
+        // Appraise: Home / keypad 7 (0x47 = G) appraises a gem; End does nothing
+        c.SetWord(Money.Gems, 1);
+        (t, s) = Context(new Script(1), Party(c));                     // EXIT
+        MoneyScreens.Appraise(t);
+        var appraise = Assert.IsType<ChoiceRequest>(s.Asked[0]);
+        Assert.Equal(0, appraise.ExtendedKeys!(0x47));
+        Assert.Null(appraise.ExtendedKeys(0x4F));
     }
 
     [Fact]

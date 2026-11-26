@@ -171,6 +171,26 @@ public class AreaLoopTests
     }
 
     [CaptureFact]
+    public void Knock_opens_both_faces_of_the_door_as_Bash_does()
+    {
+        // The program's Knock (0x16D13 / 0x17438) steps through without setting a face, so the door stays locked;
+        // fixed (user, s53): both faces are set passable as Bash and Pick do (0x167D4).
+        var r = Start("door_bash");
+        var c = r.Game.Memory.Party!.Members[0];
+        c[DoorMember.SpellSlotsOffset + 2] = DoorRules.KnockSpell;
+        var p = r.Game.Memory.Position;
+        var (x, y, f) = (p.X, p.Y, p.Facing);
+        Assert.Equal(DoorBarrier.Locked, r.Game.Loop.Map!.Passage(x, y, f));
+        r.Ui.Doors.Enqueue(DoorAction.Knock);
+        r.Game.Loop.Execute(AreaCommand.Forward);
+        Assert.Contains("Door Locked [Bash,Pick,Knock]", r.Ui.Calls);
+        Assert.NotEqual((x, y), (p.X, p.Y));                                     // stepped through
+        Assert.Equal(0, c[DoorMember.SpellSlotsOffset + 2]);                   // the slot is used
+        Assert.Equal(DoorBarrier.Passable, r.Game.Loop.Map.Passage(x, y, f));
+        Assert.Equal(DoorBarrier.Passable, r.Game.Loop.Map.Passage(p.X, p.Y, (byte)((f + 4) & 7)));
+    }
+
+    [CaptureFact]
     public void Turn_runs_no_script_and_takes_no_time()
     {
         var r = Start("turn_left");

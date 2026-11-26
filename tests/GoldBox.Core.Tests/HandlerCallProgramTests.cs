@@ -139,9 +139,9 @@ public class HandlerCallProgramTests
             var o6826 = k.GetProperty("ds6826");
             fx.Cells.Other = o6826.ValueKind == JsonValueKind.Null ? null : list[o6826.GetInt32()];
             fx.InCombat = k.TryGetProperty("inFight", out var inf) && inf.GetBoolean();
-            bool nil = k.TryGetProperty("ivt3", out var ivt3); // the cloaks: handler 89 on a nil record (0000:0003)
-            if (nil)
-                fx.NilRecord[3] = (byte)ivt3.GetInt32();
+            // The cloaks: the program runs handler 89 on a nil record (0000:0003); Core skips that call (user, s53),
+            // so the attack roll DS:6822 keeps its value and the interrupt-table byte is not modelled.
+            bool nil = k.TryGetProperty("ivt3", out _);
             var how = k.GetProperty("record");
             byte[]? node = how.ValueKind == JsonValueKind.String ? null
                 : how[0].GetString() == "item" ? list[0].Items[how[1].GetInt32()]
@@ -154,7 +154,7 @@ public class HandlerCallProgramTests
             var co = res.GetProperty("cellsOut");
             void Check(string a, int got)
             {
-                int want = co.GetProperty(a).GetInt32();
+                int want = nil && a == "6822" ? Cell("6822") : co.GetProperty(a).GetInt32();
                 if ((byte)got != want)
                     fails.Add($"{what}: DS:{a} {(byte)got:X2} vs {want:X2}");
             }
@@ -175,8 +175,6 @@ public class HandlerCallProgramTests
             Check("6825", s.Morale);
             Check("682A", fx.Cells.SaveType);
             int Index(EclCharacter? c) => c is null ? -1 : list.FindIndex(x => ReferenceEquals(x, c)) is var i and >= 0 ? i : -2;
-            if (nil && fx.NilRecord[3] != res.GetProperty("ivt3").GetInt32())
-                fails.Add($"{what}: 0000:0003 {fx.NilRecord[3]:X2} vs {res.GetProperty("ivt3").GetInt32():X2}");
             if (Index(fx.Cells.Other) != res.GetProperty("ds6826").GetInt32())
                 fails.Add($"{what}: DS:6826 creature {Index(fx.Cells.Other)} vs {res.GetProperty("ds6826").GetInt32()}");
             var cOut = res.GetProperty("combat").EnumerateArray().ToList();

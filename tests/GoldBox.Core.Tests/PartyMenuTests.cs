@@ -86,6 +86,21 @@ public class PartyMenuTests
     }
 
     [Fact]
+    public void Add_recounts_the_party_after_a_pick_that_loads_no_one()
+    {
+        // 0x1C9EC reads its count byte unset after a marked name or another key (stack residue); fixed (user, s53):
+        // the party's player characters are counted, NPCs left out.
+        var party = new EclParty();
+        for (int i = 0; i < 5; i++)
+            PartyMenu.Join(party, Pc("P" + i), null);
+        PartyMenu.Join(party, Pc("N1", npc: true), null);
+        Assert.Equal(5, PartyMenu.CountPlayerCharacters(party));
+        Assert.False(PartyMenu.AddFull(party, PartyMenu.CountPlayerCharacters(party)));
+        PartyMenu.Join(party, Pc("P5"), null);
+        Assert.True(PartyMenu.AddFull(party, PartyMenu.CountPlayerCharacters(party)));
+    }
+
+    [Fact]
     public void Remove_makes_the_one_before_current_or_the_next_when_first()
     {
         var party = new EclParty();

@@ -293,7 +293,8 @@ public class TradeProgramTests
     /// <c>MoneyScreens.Appraise</c> (no gems or jewellery at the start: the message, redraw flag 0, no recalculation;
     /// G / J appraise when there is one, E or 0 end, any other key nothing; START 0x1758 after every pass) with <see
     /// cref="ShopRules.Appraise"/> gives the same menu lines, record, items, pool, messages and RandSeed. Keeping with
-    /// no items loses the gem or jewellery, as the program (an original bug kept faithful, s52 lane A question).
+    /// no items loses the gem or jewellery in the program; Core adds it as the first item (original bug, fixed: user,
+    /// s53), so such a case is checked for the item and not compared further.
     /// </summary>
     [OracleFact]
     public void Appraise_matches_0x2663B_under_emulation()
@@ -301,7 +302,7 @@ public class TradeProgramTests
         using var doc = JsonDocument.Parse(File.ReadAllText(File_!));
         var table = new BaseItemTable(Convert.FromHexString(doc.RootElement.GetProperty("items_5582").GetString()!));
         var fails = new List<string>();
-        int n = 0, kept = 0, lost = 0;
+        int n = 0, kept = 0, firstItem = 0;
         foreach (var k in doc.RootElement.GetProperty("appraise").EnumerateArray())
         {
             n++;
@@ -311,6 +312,7 @@ public class TradeProgramTests
             var rng = new TurboPascalRandom(k.GetProperty("seed").GetUInt32());
             var log = k.GetProperty("log").EnumerateArray().ToList();
             int i = 0, messages = 0, redraw = 1;
+            bool diverged = false;
             (string Line, int Key)? Next()
             {
                 if (i >= log.Count)
@@ -355,13 +357,22 @@ public class TradeProgramTests
                     if (keepAsked)
                     {
                         kept++;
-                        lost += c.Items.Count == itemsBefore ? 1 : 0;
+                        if (itemsBefore == 0)
+                        {
+                            firstItem++;
+                            diverged = true; // the program lost it; from here the two differ by that item
+                            if (c.Items.Count != 1 || c.Items[0][0x2E] != 70 || c.Items[0][0x31] != (m.Key == 'J' ? 0xD6 : 0x65))
+                                fails.Add($"{what}: the kept item is not the first item");
+                            break;
+                        }
                     }
                 }
                 StatRecalc.Recalculate(c, table);
                 if (done)
                     break;
             }
+            if (diverged)
+                continue;
             // AddPlatinum's overloaded message is the only other row-24 message.
             int want = k.GetProperty("messages").GetInt32();
             if (i != log.Count)
@@ -379,7 +390,7 @@ public class TradeProgramTests
             if (messages > want)
                 fails.Add($"{what}: messages {messages} vs {want}");
         }
-        Assert.True(n >= 400 && kept > 50 && lost > 10, $"{n} cases, {kept} kept, {lost} lost");
+        Assert.True(n >= 400 && kept > 50 && firstItem > 10, $"{n} cases, {kept} kept, {firstItem} into an empty pack");
         Assert.True(fails.Count == 0, $"{fails.Count} differences:\n" + string.Join("\n", fails.Take(40)));
     }
 }

@@ -185,11 +185,14 @@ public class FightSpellsProgramTests
             if (res.TryGetProperty("aim", out var aimAfter) && kind == "spell" &&
                 spells.Aim != (aimAfter[0].GetInt32(), aimAfter[1].GetInt32()))
                 fails.Add($"{what}: aim {spells.Aim} vs ({aimAfter[0]}, {aimAfter[1]})");
+            // (s54) no target with DS:6C95 left on an earlier target: the program's draws, but that record is not
+            // affected in Core (decided s53), so it must equal its record before the cast
+            int stale = k.TryGetProperty("stale", out var st6c95) ? st6c95.GetInt32() : -1;
             int ci = 0;
             foreach (var a in res.GetProperty("after").EnumerateArray())
             {
                 var c = list[ci];
-                var want = Load(a);
+                var want = Load(ci == stale ? k.GetProperty("creatures")[ci] : a);
                 for (int b = 0; b < EclCharacter.RecordSize; b++)
                     if (!PointerByte(b) && want[b] != c[b] &&
                         !(kind == "spell" && id == 56 && b is 0x96 - 0x12 or 0x96 + FightSpells.RestorationResidueIndex))

@@ -11,13 +11,6 @@ public sealed partial class EffectHandlers
     /// at 0x2A7B9, was read).</summary>
     public static readonly byte[] UnmodelledHandlers = [];
 
-    /// <summary>
-    /// What a handler reads and writes through a nil record: the program's far pointer 0000:0000, the interrupt table
-    /// (bytes 0–8 here). Only handler 89 is reached that way in play (the cloaks' item code 133 runs it with nil,
-    /// 0x11B35). [?] Byte 3 on a real machine is the high byte of INT 0's segment; 0 here until a handler writes it.
-    /// </summary>
-    public byte[] NilRecord { get; } = new byte[EclCharacter.EffectRecordSize];
-
     /// <summary>DS:6821: set by the item handlers 131 and 132 (read elsewhere [?]).</summary>
     public byte ItemFlag { get; set; }
 
@@ -106,13 +99,7 @@ public sealed partial class EffectHandlers
             case 89: // 0x110EB Displacement: round counter 0 and attack roll 0 (the fight start): param AND 0x0F; else
                      // the first attack of a fight on it (param bit 4 clear): attack roll −1 and the bit set
                 if (node is null)
-                {
-                    // The cloaks (item code 133, 0x11B35) run this handler with a nil record on Ready: the program
-                    // reads and writes 0000:0003, the interrupt table (s52 lane B, a user question). The stand-in keeps
-                    // that byte here ([?] its value on a real machine: the high byte of INT 0's segment).
-                    node = NilRecord;
-                    param = node[3];
-                }
+                    return; // only the cloaks' Ready reached it with nil (0x11B35); that call is skipped (s53)
                 if (F.RoundCounter == 0 && F.AttackRoll == 0)
                     node![3] = (byte)(param & 0x0F);
                 else if ((param & 0x10) == 0)
@@ -333,7 +320,12 @@ public sealed partial class EffectHandlers
                 else
                 {
                     AddEffect(c, node![0x3D], 0, 0x0C, false);
-                    CallHandler(node[0x3D], c, null, false);
+                    // The program runs the granted effect's handler with a nil record. Handlers 61 and 3 do not read
+                    // it; 89 (the cloaks, code 133) reads and writes 0000:0003, the interrupt table, and sets the
+                    // attack roll DS:6822 to -1. Original bug, fixed (user, s53): the call is skipped for 89; the
+                    // effect is still added and its later runs (fight start, attack rolls) get the real record.
+                    if (node[0x3D] != 89)
+                        CallHandler(node[0x3D], c, null, false);
                 }
                 return;
             case 131: // 0x11BB2 gauntlets

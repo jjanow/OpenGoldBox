@@ -250,7 +250,9 @@ public static class AmigaView
     /// <summary>
     /// A '~' menu line as the menu's set-up passes it on (DOS 0x8A40, shop-format.md; the Amiga's copy hunk 4
     /// +0x17A0–0x1830): every capital lower-cased, each '~' deleted and the character after it upper-cased, so a
-    /// choice keeps one capital, its hotkey ("~COMBAT ~WAIT" → "Combat Wait"; HMENU builds its line so).
+    /// choice keeps one capital, its hotkey ("~COMBAT ~WAIT" → "Combat Wait"; HMENU builds its line so). DOS's set also
+    /// holds the digits (0x8A40 read s54: a digit gets +0x20), and a second '~' is upper-cased and kept; neither occurs
+    /// in v1.3's lines. [?] The Amiga copy's set (hunk 4 +0x17A0) is not read.
     /// </summary>
     public static string TildeCase(string line)
     {

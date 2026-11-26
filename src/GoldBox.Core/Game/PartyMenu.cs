@@ -96,6 +96,13 @@ public static class PartyMenu
         return (false, pcs);
     }
 
+    /// <summary>
+    /// The count Add's end test reads after a pick that loaded no one (a marked name, another key). The program reads
+    /// its count byte [bp−0x16] there unset (set only on the load path 0x1CAEB): stack residue on a first pick.
+    /// Original bug, fixed (user, s53): the party's player characters are counted, so Add stays open below 6.
+    /// </summary>
+    public static int CountPlayerCharacters(EclParty party) => party.Members.Count(IsPlayerCharacter);
+
     /// <summary>Add's loop end test (0x1CBD6–0x1CBF2): Exit, or more than 5 player characters counted, or more than 7 members.</summary>
     public static bool AddFull(EclParty party, int playerCharacters) => playerCharacters > 5 || party.Members.Count > 7;
 

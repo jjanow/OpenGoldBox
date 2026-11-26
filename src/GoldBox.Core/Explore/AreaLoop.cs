@@ -659,12 +659,12 @@ public sealed class AreaLoop
                 a = DoorRules.Pick(barrier, party, Rng, DoorFlags);
                 break;
             default:
-                // 0x16D13 only clears the slot; 0x17438 then steps (0x16E06) with no face set: the map keeps the
-                // lock, so the door is locked again on the way back (read s52; Bash and Pick set both faces, 0x167D4)
+                // 0x16D13 only clears the slot and 0x17438 steps with no face set, so the program leaves the door
+                // locked in the map. Original bug, fixed (user, s53): Knock sets both faces as Bash and Pick (0x167D4)
                 a = DoorRules.Knock(party);
                 if (a.Opened)
                     members[a.Member][DoorMember.SpellSlotsOffset + a.KnockSlot] = 0;
-                return a.Opened;
+                break;
         }
         if (a.Opened)
             DoorMap.Open(Map!.Planes, p.X, p.Y, p.Facing);

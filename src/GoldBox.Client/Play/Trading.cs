@@ -385,7 +385,10 @@ public static class MoneyScreens
             if (gems > 0) items.Add(t.Text[Msg.GemsItem].Trim());
             if (jewels > 0) items.Add(t.Text[Msg.JewelryItem].Trim());
             items.Add("EXIT");
-            int pick = d.Menu(items, t.Text[Msg.AppraisePrompt], cancel: items.Count - 1);
+            // The first menu runs with the keypad flag and its loop compares the byte with G / J / E (s53 rule): Home
+            // and keypad 7 (0x47 = G) appraise a gem; End and the other extended keys do nothing.
+            int pick = d.Menu(items, t.Text[Msg.AppraisePrompt], cancel: items.Count - 1,
+                extendedKeys: scan => scan == 0x47 && gems > 0 ? 0 : null);
             if (pick < 0 || pick >= items.Count - 1)
             {
                 t.Recalculate(c); // Exit (E or 0) also passes 0x26EC2

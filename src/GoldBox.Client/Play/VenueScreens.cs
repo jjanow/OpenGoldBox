@@ -15,6 +15,30 @@ public static class VenueScreens
     /// <summary>The shop and loot menus compare the key with G / O for the party selection (0x7415, 0x66E4).</summary>
     private const string MemberLetters = "GO";
 
+    /// <summary>Answers past a shop or temple line: Take and Share, which the loop runs whatever the line shows.</summary>
+    private const int VenueOffLine = 200;
+    private static readonly string[] VenueOffLineWords = ["TAKE", "SHARE"];
+
+    /// <summary>
+    /// The s53 rule (user; shop-format.md "Extended keys in the venue menus"): the shop (0x72F9–0x7426) and temple
+    /// (0x5327–0x5463) loops compare the menu routine's byte with their letters without looking at the extended flag,
+    /// except P (Pool) and the temple's H (Heal), tested only for a plain key. So an extended key whose scan code is
+    /// one of the other letters acts as it: F8 (0x42) Buy, Shift-F3 (0x56) View, Shift-F1 (0x54) Take and Del (0x53)
+    /// Share whether or not the word is on the line, F7 (0x41) Appraise, keypad 7 / 1 (Home / End, 0x47 / 0x4F) the
+    /// party selection. Keys with a Client meaning keep it (<c>ExploreScreen.MenuExtendedAnswer</c>).
+    /// </summary>
+    private static Func<byte, int?> VenueKeys(string[] menu, string letters) => scan => (char)scan switch
+    {
+        'G' => ChoiceRequest.PreviousMember,
+        'O' => ChoiceRequest.NextMember,
+        var k when letters.Contains(k) => Array.FindIndex(menu, w => w[0] == k) is var i and >= 0 ? i
+            : k == 'T' ? VenueOffLine : k == 'S' ? VenueOffLine + 1 : null,
+        _ => null,
+    };
+
+    private static string VenueWord(string[] menu, int i) =>
+        i >= VenueOffLine ? VenueOffLineWords[i - VenueOffLine] : menu[Math.Clamp(i, 0, menu.Length - 1)];
+
     // ---- Shop (0x7212) ---------------------------------------------------------------------------------------------
 
     /// <summary>
@@ -31,10 +55,11 @@ public static class VenueScreens
             string[] menu = money
                 ? ["BUY", "VIEW", "TAKE", "POOL", "SHARE", "APPRAISE", "EXIT"]
                 : ["BUY", "VIEW", "POOL", "APPRAISE", "EXIT"];
-            int i = t.Dialog.Menu(menu, cancel: menu.Length - 1, partySelect: true, memberLetters: MemberLetters);
+            int i = t.Dialog.Menu(menu, cancel: menu.Length - 1, partySelect: true, memberLetters: MemberLetters,
+                extendedKeys: VenueKeys(menu, "BVTSAE"));
             if (t.SelectMember(i))
                 continue;
-            switch (menu[Math.Clamp(i, 0, menu.Length - 1)])
+            switch (VenueWord(menu, i))
             {
                 case "BUY": Buy(t); t.VenueRedrawn(); break; // 0x743C
                 case "VIEW": CharacterView.Run(t, Venue.Shop); t.VenueRedrawn(); break; // View's exit
@@ -168,10 +193,11 @@ public static class VenueScreens
             string[] menu = money
                 ? ["HEAL", "VIEW", "TAKE", "POOL", "SHARE", "APPRAISE", "EXIT"]
                 : ["HEAL", "VIEW", "POOL", "APPRAISE", "EXIT"];
-            int i = t.Dialog.Menu(menu, cancel: menu.Length - 1, partySelect: true, memberLetters: MemberLetters);
+            int i = t.Dialog.Menu(menu, cancel: menu.Length - 1, partySelect: true, memberLetters: MemberLetters,
+                extendedKeys: VenueKeys(menu, "VTSAE"));
             if (t.SelectMember(i))
                 continue;
-            switch (menu[Math.Clamp(i, 0, menu.Length - 1)])
+            switch (VenueWord(menu, i))
             {
                 case "HEAL": HealList(t); t.VenueRedrawn(); break; // the heal list's end (0x51A0)
                 case "VIEW": CharacterView.Run(t, Venue.Shop); t.VenueRedrawn(); break; // View's exit
@@ -478,9 +504,12 @@ public static class VenueScreens
             Flags = () => (t.PoolHasMoney, t.Treasure.Count > 0),
             Menu = () =>
             {
-                // 0x630A: animate flag 1. Home / End come back as the program's scan codes (0x23819's keys).
-                int i = t.Dialog.Menu(["MONEY", "ITEMS", "EXIT"], t.Text[Msg.TakePrompt], cancel: 2, partySelect: true,
-                    memberLetters: MemberLetters, animates: true);
+                // 0x630A: animate flag 1. Home / End come back as the program's scan codes (0x23819's keys). The loop
+                // (0x6315–0x6354) compares the byte with M / I / E / G / O whatever the extended flag (s53 rule): PgUp
+                // and keypad 9 (0x49) take items, keypad 7 / 1 pick the member; Right (0x4D = M) keeps moving the lit word.
+                string[] words = ["MONEY", "ITEMS", "EXIT"];
+                int i = t.Dialog.Menu(words, t.Text[Msg.TakePrompt], cancel: 2, partySelect: true,
+                    memberLetters: MemberLetters, animates: true, extendedKeys: VenueKeys(words, "MIE"));
                 return i switch
                 {
                     0 => (byte)'M',

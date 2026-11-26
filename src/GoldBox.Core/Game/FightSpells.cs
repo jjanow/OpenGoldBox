@@ -601,10 +601,12 @@ public sealed partial class FightSpells : IFightSpells
                 return;
             case 14: // 0x283F0 Friends: first target's Charisma + 2d4 (at most 25); effect strength = the old value
             {
+                // With no target the program still draws the 2d4 on the stale DS:6C95; Core draws and affects nobody (s53)
+                byte add = Dice(2, 4);
                 if (First is not { } t14)
                     return;
                 byte old = t14[EffectHandlers.Cha];
-                t14[EffectHandlers.Cha] = (byte)(t14[EffectHandlers.Cha] + Dice(2, 4));
+                t14[EffectHandlers.Cha] = (byte)(t14[EffectHandlers.Cha] + add);
                 if (t14[EffectHandlers.Cha] > 0x19)
                     t14[EffectHandlers.Cha] = 0x19;
                 Resolve(spell, old, true, 0, 0, caster);

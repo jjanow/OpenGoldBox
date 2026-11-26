@@ -221,6 +221,8 @@ class Oracle:
             e.set_dsb(0x6C94, len(case['targets']))
             for i, t in enumerate(case['targets']):
                 e.set_dsptr(0x6C95 + 4 * i, ptrs[t])
+            if 'stale' in case:  # (s54) no target, DS:6C95 left on an earlier target (a record with no effects)
+                e.set_dsptr(0x6C95, ptrs[case['stale']])
             e.call(self.routines[case['id']])
         else:
             c = ptrs[case['creature']]
@@ -521,7 +523,7 @@ def more_cases(rnd, add, placed, arena):
         c, ef, it = target()
         c[0x15] = rnd.randrange(16, 26)
         add('spell', 14, [(creature(rnd, levels=lv_any()), [], []), (c, ef, it)], 0, targets=[1], **g())
-    for sid in (3, 21, 23, 49, 13, 26):  # no target (62 heals the stale DS:6C95 then: not run)
+    for sid in (3, 21, 23, 49, 13, 26):  # no target (the routines that read DS:6C95 regardless: the 'stale' cases below)
         add('spell', sid, [(creature(rnd, levels=lv_any()), [], [])], 0, targets=[], **g())
     for _ in range(60):  # turn undead 0x13965 with the target search 0x13B4C (0x3154B: only the slot size zeroed, cells not compared)
         cs, places = placed(rnd.randrange(2, 10))
@@ -552,6 +554,12 @@ def more_cases(rnd, add, placed, arena):
         cs[0] = (cs[0][0], ef, cs[0][2])
         cs[k] = (cs[k][0], [effect(0x3A, 0, 0xFF)] if rnd.random() < 0.7 else [], cs[k][2])
         add('morale', 0, cs, 0, targets=[], cells=bytes(arena()).hex(), places=places, fight=1)
+    # (s54) the single-target routines that read DS:6C95 without the count DS:6C94: no target, DS:6C95 still on an
+    # earlier target with no effects and no items (decided s53: the program's draws, nobody affected)
+    for sid in (10, 12, 14, 26, 28, 37, 43, 56, 57, 58, 59, 62):
+        for _ in range(6):
+            add('spell', sid, [(creature(rnd, levels=lv_any()), [], []), (creature(rnd), [], [])], 0, targets=[],
+                stale=1, **g())
 
 
 def main(argv):

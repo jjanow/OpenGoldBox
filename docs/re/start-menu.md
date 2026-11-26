@@ -365,10 +365,11 @@ through the menus with Keep, Exit, Escape and No; `IconEditorProgramTests`).
   until a member with the same name and byte 0xAB; when none, a player character joins while fewer than 6 were
   counted, an NPC while the party has fewer than 8. The join 0x1F42C: last in the list, current, icon slot 0xBF :=
   the first free of 0..7, $6E3E + 1, level stats 0x2AA87. The menu ends on exit or when more than 5 player characters
-  were counted or more than 7 members; then SaveCharlist (0x1E19E) writes the unmarked names. `[?]` The count byte
+  were counted or more than 7 members; then SaveCharlist (0x1E19E) writes the unmarked names. The count byte
   [bp−0x16] is set only on the load path (0x1CAEB); a first pick of a marked name (or a key other than Return / A /
-  E / Escape) reaches the end test (0x1CBE2) with it unset, so the menu leaves or stays by stack residue. Core
-  recounts the party's player characters there (`PartyMenu.TryAdd` callers; s52, a question for the user).
+  E / Escape) reaches the end test (0x1CBE2) with it unset, so the menu leaves or stays by stack residue (the residue
+  is not traced). An original bug, **fixed, not an option** (user, s53): Core recounts the party's player characters
+  there (`PartyMenu.CountPlayerCharacters`), so Add stays open unless 6 are present.
 - **Remove**: SaveChar (0x1E684) of the current character, then 0x1CC10: out of the list; the next member becomes
   current when it was the first, else the one before it.
 - **Drop (0x1B8B6)**: yes/no `PartyMsg.Drop` + name + `PartyMsg.Forever`, then `PartyMsg.AreYouSure`; on two yeses the

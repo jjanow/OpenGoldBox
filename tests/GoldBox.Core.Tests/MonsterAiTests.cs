@@ -188,6 +188,43 @@ public class MonsterAiTests
     }
 
     [Fact]
+    public void Readying_skips_the_unready_when_two_cursed_items_leave_no_weapon_chosen()
+    {
+        // 0xBF8A (0xC41A–0xC452): with 0x100 above 2 and the off-hand item cursed, the program unreadies the chosen
+        // weapon through 0x2250A even when none was chosen (a nil pointer, 0000:0000). Original bug, fixed (user, s53):
+        // the call is skipped; both cursed items stay readied.
+        var table = new byte[BaseItemTable.EntrySize * BaseItemTable.Count];
+        var items = new BaseItemTable(table);
+        items.Set(1, BaseItemTable.Slot, 0); // two-handed weapon
+        items.Set(1, 1, 2);
+        items.Set(1, 13, 0xFF);
+        items.Set(2, BaseItemTable.Slot, 1); // shield
+        items.Set(2, 1, 1);
+        items.Set(2, 13, 0xFF);
+        var gob = Creature(1);
+        gob[MonsterAi.ClassMask] = 0xFF;
+        byte[] Item(byte type)
+        {
+            var it = new byte[EclCharacter.ItemRecordSize];
+            it[0x2E] = type;
+            it[CombatRules.ItemEquipped] = 1;
+            it[0x36] = 1; // cursed: worth 0, never the chosen one
+            gob.Items.Add(it);
+            return it;
+        }
+        var sword = Item(1);
+        var shield = Item(2);
+        gob[MonsterAi.HandsUsed] = 3;
+        var memory = new EclMemory { Party = new EclParty { CurrentIndex = 0 } };
+        memory.Party.Members.Add(gob);
+        var fight = new Fight(memory, new EncounterState(), items, new Script().Next, new EndActionsController(),
+            new TestFightMap());
+        new MonsterAi(Steps).EquipWeapon(fight, gob);
+        Assert.Equal(1, sword[CombatRules.ItemEquipped]);
+        Assert.Equal(1, shield[CombatRules.ItemEquipped]);
+    }
+
+    [Fact]
     public void Adjacent_enemy_is_attacked_with_the_program_draw_order()
     {
         // 1d8, 1d4 (opening), 1d7 (items), 1d7 (spells), 1d2 (target search among 2), 1d1 (adjacent pick), 1d20, 1d4.
