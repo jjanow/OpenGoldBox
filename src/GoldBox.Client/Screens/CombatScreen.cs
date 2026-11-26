@@ -683,12 +683,9 @@ public sealed class CombatScreen
     /// <summary>The letters grid's first row (as the party screen's, over the page's middle rows).</summary>
     private const int LettersRow = 14;
 
-    private static char? Digit(string name) => name switch
-    {
-        { Length: 2 } when name[0] == 'D' && char.IsAsciiDigit(name[1]) => name[1],
-        { Length: 7 } when name.StartsWith("NumPad", StringComparison.Ordinal) && char.IsAsciiDigit(name[6]) => name[6],
-        _ => null,
-    };
+    /// <summary>The digit a key types (Shift-1 types '!', which the amount refuses, as 0x24F1D does).</summary>
+    private static char? Digit(string name, bool shift) =>
+        DosKeys.Printable(name, shift) is { } c && char.IsAsciiDigit(c) ? c : null;
 
     private void Step(TextRequest t, int delta)
     {
@@ -708,7 +705,7 @@ public sealed class CombatScreen
         answer = null;
         if (input.NewInput is (InputDevice.Keyboard, var name))
         {
-            if (Digit(name) is { } ch)
+            if (Digit(name, input.NewShiftHeld) is { } ch)
             {
                 // 0x24F1D: appended to the string[6] (a leading zero kept; a full line stays as it is), a value above
                 // the maximum replaced by it.
