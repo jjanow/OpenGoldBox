@@ -591,7 +591,8 @@ river, green ground) and with $4AA2 = 0 (black river, grey ground) match `overla
 at 3,20 W with $4AA2 = 0, Left twice (the second step reaches the west edge's NEWECL 26): the pyramid view at (17, 15)
 dissolving, (19, 20), (23, 25); the first and last views and the redraw after them 0 pixels off against the Client.
 Times: a view every 0.356 s (the recolour's draws at 3000 cycles), the last 0.283 s after the 9th, then 1.87 s of the
-two PauseOnly calls (game speed 4) before the redraw.
+two PauseOnly calls (game speed 4) before the redraw. The Client holds the views 5 s from the first to the last (user, s59: 9 × 0.51 s + 0.41 s,
+DOSBox-X's proportions stretched ×1.43; the ANIMATION option scales it), then the PauseOnly calls as the program.
 
 **Amiga** `[?]`: the program holds the same tile lists and pan squares next to one colour map of its own (16 bytes:
 5 → 1, 12 → 2, 13 → 2, 14 → 10); its routine is not read, and the Client leaves Amiga tiles as they are.

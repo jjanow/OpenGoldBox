@@ -612,14 +612,15 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
     /// How long each view of the land's recovery stays: the program has no wait (the time is the recolour's 5,760
     /// random draws and the drawing), DOSBox-X at the reference 3000 cycles shows a view every 0.356 s (s58: from the
     /// first view to the last 3.48 s, the last 0.283 s after the 9th pan frame, then 1.87 s of PauseOnly before the
-    /// redraw). Held as measured so the
-    /// dissolve shows (as the title's lightning, s23); one update a frame would flash it past in 0.18 s. An
-    /// animation pause: the ANIMATION option scales or skips it.
+    /// redraw). Decided (user, s59): held, not flashed past at one update a frame (s40's rule would show the 9 views in
+    /// 0.15 s), and stretched to 5 s from the first view to the last (9 × 0.51 s + 0.41 s, DOSBox-X's proportions,
+    /// ×1.43) so the dissolve reads. An animation pause: the ANIMATION option scales or skips it.
     /// </summary>
-    public static readonly TimeSpan RecoveryFrame = TimeSpan.FromMilliseconds(356);
+    public static readonly TimeSpan RecoveryFrame = TimeSpan.FromMilliseconds(510);
 
-    /// <summary>The 9th pan frame's hold: the whole-mode pass (no draws) before the last view, 0.283 s in DOSBox-X.</summary>
-    public static readonly TimeSpan RecoveryLastPass = TimeSpan.FromMilliseconds(283);
+    /// <summary>The 9th pan frame's hold: the whole-mode pass (no draws) before the last view (0.283 s in DOSBox-X,
+    /// stretched as <see cref="RecoveryFrame"/>).</summary>
+    public static readonly TimeSpan RecoveryLastPass = TimeSpan.FromMilliseconds(410);
 
     /// <summary>The overland art the land's recovery recolours (<see cref="OverlandArt.DosTile"/>), or null.</summary>
     public OverlandArt? RecoveryArt { get; set; }
