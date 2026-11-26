@@ -607,6 +607,53 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
     public GoldBox.Core.Sound.ISoundSink Sound { get; set; } = GoldBox.Core.Sound.NoSound.Instance;
     public void Protect(ushort address) { } // PROTECT is drawn by DrawGlyphs (the VM passes the glyphs read)
     public ushort Random(ushort range) => 0; // AreaHost draws from the game's generator
+
+    /// <summary>
+    /// How long each view of the land's recovery stays: the program has no wait (the time is the recolour's 5,760
+    /// random draws and the drawing), DOSBox-X at the reference 3000 cycles shows a view every 0.356 s (s58: from the
+    /// first view to the last 3.48 s, the last 0.283 s after the 9th pan frame, then 1.87 s of PauseOnly before the
+    /// redraw). Held as measured so the
+    /// dissolve shows (as the title's lightning, s23); one update a frame would flash it past in 0.18 s. An
+    /// animation pause: the ANIMATION option scales or skips it.
+    /// </summary>
+    public static readonly TimeSpan RecoveryFrame = TimeSpan.FromMilliseconds(356);
+
+    /// <summary>The 9th pan frame's hold: the whole-mode pass (no draws) before the last view, 0.283 s in DOSBox-X.</summary>
+    public static readonly TimeSpan RecoveryLastPass = TimeSpan.FromMilliseconds(283);
+
+    /// <summary>The overland art the land's recovery recolours (<see cref="OverlandArt.DosTile"/>), or null.</summary>
+    public OverlandArt? RecoveryArt { get; set; }
+
+    /// <summary>
+    /// While the land's recovery pans (GAME.OVR 0x20D50 animated), the overland square at the view's top-left: the view
+    /// shows those 25 tiles alone (0x2DE38, no marker); null otherwise.
+    /// </summary>
+    public (int X, int Y)? RecoveryView { get; private set; }
+
+    /// <summary>
+    /// GAME.OVR 0x20D50 (<see cref="GoldBox.Core.Explore.OverlandRecovery"/>): the DOS tiles recoloured in place with
+    /// the game's generator; animated, each view (the first, the 9 pan frames, the last) is held
+    /// <see cref="RecoveryFrame"/>, then PauseOnly twice (<see cref="Delay"/>).
+    /// </summary>
+    public void OverlandRecovery(bool animated, Func<ushort, ushort> random)
+    {
+        var art = RecoveryArt;
+        int view = 0;
+        GoldBox.Core.Explore.OverlandRecovery.Run(animated, t => art?.DosTile(t), random,
+            (x, y) =>
+            {
+                RecoveryView = (x, y);
+                // Each view stays until the next one is computed: a random pass after the first 10, the shorter whole
+                // pass after the 9th pan frame; the last goes straight into the pauses.
+                int n = view++;
+                var hold = n < GoldBox.Core.Explore.OverlandRecovery.Frames ? RecoveryFrame
+                    : n == GoldBox.Core.Explore.OverlandRecovery.Frames ? RecoveryLastPass : AnimationTiming.OneUpdate;
+                runner.Ask(new DelayRequest(hold) { Animation = true });
+            },
+            Delay);
+        RecoveryView = null;
+        art?.MarkRecovered();
+    }
     public void ScriptChanging(ushort script)
     {
         Log.Add($"NEWECL {script}");

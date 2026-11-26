@@ -14,7 +14,6 @@ GAP_PRES = [
     ('S:1307', 'party list redraw and its colour helpers 0x148F, 0x1513, the creature panel 0x1583, the icon flash 0x257E, the View text helper 0x1C4D: run under the oracles, drawing compared only in DOSBox-X'),
     ('S:2b8b', 'effect message and pause'),
     ('O:2e8f7', '3D view internals 0x2E8F7, 0x2EA6B, 0x2EB08, 0x2EEEA never cited, the piece draw 0x32392 cited only inside (0x2EEF4 itself read whole s52): the view is pixel-equal to DOSBox-X from the formats (`view3d.md`), so only a check'),
-    ('O:20d50', 'after a load or script switch, never cited: overland / picture set-up (calls 0x2DE38 and the picture draw)'),
     ('S:4751', 'pictures, START segment 0464 (0x4640–0x6C72): read, decode, draw, recolour, free; the importer decodes the formats and the Client draws them (`por-art-formats.md`); only some draw entries are cited'),
     ('O:1e468', 'combat icon slots and their builders 0x1E315, 0x1CE5E, 0x1CF3D (icon editor preview, recolour)'),
     ('O:32123', 'text page with a key prompt on the level-drain path, never cited (trapped by the spell oracle)'),

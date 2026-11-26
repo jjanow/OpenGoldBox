@@ -315,22 +315,6 @@ public static class FightRules
     }
 
     /// <summary>
-    /// The attack roll without an attacker (0x2BB39): 1d20, ≤ 1 misses, 20 → 100, trigger 0x10 on the defender, hit when
-    /// roll ≥ 0 and roll + <paramref name="thac0"/> &gt; the defender's AC byte 0x111 (strictly greater).
-    /// </summary>
-    public static bool AttackRollNoAttacker(EclCharacter defender, byte thac0, FightState fight, Func<ushort, ushort> random,
-        IFightEffects effects)
-    {
-        fight.AttackRoll = (sbyte)Dice(random, 1, 20);
-        if (fight.AttackRoll <= 1)
-            return false;
-        if (fight.AttackRoll == 20)
-            fight.AttackRoll = 100;
-        effects.Trigger(TriggerAttackRollDefender, defender, fight);
-        return fight.AttackRoll >= 0 && fight.AttackRoll + thac0 > defender[Ac];
-    }
-
-    /// <summary>
     /// 0x14D6F: a backstab. The attacker has thief levels (0x9C &gt; 0, signed); its off hand is empty or holds type 0x32;
     /// its weapon slot is empty or holds type 7, 8 or 0x23–0x25; the defender has been attacked more than once this
     /// turn (+0x0F &gt; 1) and the attacker stands in the defender's facing direction (0x14E38 = defender +9).

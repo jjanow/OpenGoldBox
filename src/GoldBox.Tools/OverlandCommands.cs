@@ -82,6 +82,8 @@ internal static class OverlandCommands
         // --counter N, or N+M…: marker frames drawn one over the other (a marker-only redraw between tile draws).
         // Without it: the frames the area loop's counter gives (AreaLoop.MarkerCounter).
         var art = PorOverlandArt.Load(dir);
+        if (m.Read(OverlandRecovery.RiverCell) != 0) // Load's still recovery (0x1FC89, a fresh session)
+            OverlandRecovery.ApplyFinal(t => art.Tile(t, outdoor: false)?.Pixels);
         IndexedFrame frame;
         string counter;
         if (Opt("--counter") is { } co)

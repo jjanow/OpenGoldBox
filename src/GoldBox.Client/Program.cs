@@ -159,6 +159,7 @@ else
         AmigaView.Strings = content.AmigaStrings() ?? new Dictionary<string, string>();
         var endArt = clientArt;
         player.EndArt = (disk, block) => endArt.Pictures.Find("FINAL", block, disk, anyDisk: true);
+        player.RecoveryArt = clientArt.Overland;
         player.InstallPaging();
         runner.Answered = player.MenuEnded; // every program menu clears VM $4AFF at its end (0x2CFAD)
         runner.Asking = player.MenuAsked;   // and draws the loaded picture on every pass while it is set (0x2CDD6)

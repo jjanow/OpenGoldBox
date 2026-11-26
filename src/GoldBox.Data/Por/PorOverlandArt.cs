@@ -70,10 +70,13 @@ public sealed class PorOverlandArt
         return all;
     }
 
-    /// <summary>A block's 24 × 24 items as opaque tiles (a picture of another size gives none).</summary>
+    /// <summary>
+    /// A block's 24 × 24 items as opaque tiles (a picture of another size gives none). The pixels are copies: the
+    /// land's recovery recolours them in place (<see cref="OverlandRecovery"/>).
+    /// </summary>
     public static List<OverlandPicture?> Tiles(IReadOnlyList<DaxPicture>? frames) =>
         frames is [{ Width: Size, Height: Size } p]
-            ? [.. p.Items.Select(px => (OverlandPicture?)new OverlandPicture(px, Opaque(px.Length)))]
+            ? [.. p.Items.Select(px => (OverlandPicture?)new OverlandPicture([.. px], Opaque(px.Length)))]
             : [];
 
     /// <summary>The marker frames: colour 0 see-through, then 13 → 0 kept opaque (the ICON load's remap).</summary>
@@ -129,6 +132,23 @@ public sealed class PorOverlandArt
                 f.FillRect(tx, ty, Size, Size, 0);
         }
         DrawMarker(f, x, y, marker, counter, facing, slots);
+    }
+
+    /// <summary>
+    /// The 25 tiles alone with overland square (<paramref name="left"/>, <paramref name="top"/>) at the top-left, as
+    /// 0x2DE38 draws them for the land's recovery (no marker, no clamp; <see cref="OverlandRecovery"/>).
+    /// </summary>
+    public void DrawTiles(IndexedFrame f, int x, int y, OverlandMap map, int left, int top, Func<ushort, ushort> cell)
+    {
+        var tiles = Overland.ComposeView(map, left, top, cell);
+        for (int i = 0; i < tiles.Length && i < Overland.ViewTiles * Overland.ViewTiles; i++)
+        {
+            int tx = x + Size * (i % Overland.ViewTiles), ty = y + Size * (i / Overland.ViewTiles);
+            if (Tile(tiles[i]) is { } t)
+                Blit(f, t, tx, ty, false, x, y);
+            else
+                f.FillRect(tx, ty, Size, Size, 0);
+        }
     }
 
     /// <summary>The marker frame of <paramref name="counter"/> alone, over what the view at (x, y) holds; the animation

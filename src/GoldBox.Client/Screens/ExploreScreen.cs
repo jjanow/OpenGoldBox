@@ -1583,7 +1583,10 @@ public sealed class ExploreScreen : IScreen
         {
             // The overland view (OverlandUi); encounter pictures and the like go over it as over the 3D view
             // (DOSBox-X: a monster sprite at the 3D view's place over the tiles).
-            if (OverlandBoxed)
+            if (_player.RecoveryView is { } pan && _game.Content.Overland() is { } map)
+                // The land's recovery: 0x2DE38's 25 tiles over cells 1–15, whatever the window held.
+                _art.Overland.Art.DrawTiles(f, OverlandUi.ViewX, OverlandUi.ViewY, map, pan.X, pan.Y, _game.Memory.Read);
+            else if (OverlandBoxed)
             {
                 OverlandUi.Blank(f); // a picture in the 3D view's box over a blank window (below)
                 Chrome.Box(f, 2, 2, 14, 14);

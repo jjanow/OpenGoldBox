@@ -69,8 +69,8 @@ Status: `exec` oracle / test added; `read` branch-by-branch read, port matches; 
 
 - Client, rest loop: `CampScreens.StopAsked` polled the keyboard every fifth tick (the program polls every tick,
   0x24B1D). Fixed s55: a poll before every tick, one Client update each (`RestUi.Poll` zero).
-- 0x3EFA → 0x20D50(1) at a switch into block 26 with $4AB3 = 0xFE and $4AA2 = 0 has no Core / Client hook (the ledger's
-  U row 0x20D50, presentation).
+- 0x3EFA → 0x20D50(1) at a switch into block 26 with $4AB3 = 0xFE and $4AA2 = 0: hooked s58 (the land's recovery,
+  `geo-format.md` "The land recovers"; it draws 51,840 randoms, so it is play, not presentation).
 - 0x99FD's view / panel / cell redraw order around trigger 0x0F (row above): presentation only.
 
 ## Proposed `overrides.py` entries (hand-checked rows; the oracle rows count by themselves once the ledger is rebuilt)

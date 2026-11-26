@@ -35,6 +35,7 @@ public sealed class AreaHost(AreaLoop loop, IEclHost inner) : IEclHost
     }
 
     public ushort Random(ushort range) => Loop.Rng.Next(range);
+    public void OverlandRecovery(bool animated, Func<ushort, ushort> random) => Inner.OverlandRecovery(animated, random);
 
     public void Print(string text, bool clearFirst) => Inner.Print(text, clearFirst);
     public void PrintReturn() => Inner.PrintReturn();

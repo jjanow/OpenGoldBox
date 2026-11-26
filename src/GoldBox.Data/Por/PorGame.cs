@@ -221,6 +221,7 @@ public sealed class PorGame
         g.LoadedInterfaceState = sg.InterfaceState;
         g.Vm.SetCurrentScript(sg.CurrentBlock, sg.Disk); // DS:84DC := $49F2 (0x4070)
         g.ReloadSavedMap();
+        g.LoadRecovery();
         if (g.Loop.Map is null)
             g.Loop.SetMap(g._loadBuffer = mapBuffer ?? AreaMap.Unread());
         return g;
@@ -328,7 +329,19 @@ public sealed class PorGame
         if (sg.InterfaceState != 0)
             Vm.LoadingSave = true; // DS:49F8 := 1 (0x19D91)
         ReloadSavedMap();
+        LoadRecovery();
         return sg.InterfaceState;
+    }
+
+    /// <summary>
+    /// Load's last step (0x1FC89–0x1FC98): with the loaded $4AA2 ≠ 0 the land's recovery runs still
+    /// (<see cref="OverlandRecovery"/>, 0x20D50(0): the river tiles recoloured, no draws). With $4AA2 = 0 nothing runs,
+    /// and tiles an earlier run recoloured stay so (the sheets are loaded once a session).
+    /// </summary>
+    private void LoadRecovery()
+    {
+        if (Memory.Read(OverlandRecovery.RiverCell) != 0)
+            AreaHost.OverlandRecovery(false, Rng.Next);
     }
 
     /// <summary>
@@ -582,6 +595,7 @@ public sealed class PorGame
         public void Call(ushort routine) => Target.Call(routine);
         public void Program(ushort program) => Target.Program(program);
         public bool ProgramCamp() => Target.ProgramCamp();
+        public void OverlandRecovery(bool animated, Func<ushort, ushort> random) => Target.OverlandRecovery(animated, random);
         public void Protect(ushort address) => Target.Protect(address);
         public ushort Random(ushort range) => Target.Random(range);
         public void ScriptChanging(ushort script) => Target.ScriptChanging(script);

@@ -30,6 +30,26 @@ public sealed class OverlandArt
     /// <summary>The art drawn now.</summary>
     public PorOverlandArt Art { get; private set; }
 
+    private bool _lowDos, _highDos;
+
+    /// <summary>
+    /// The land's recovery ran this session (<see cref="Core.Explore.OverlandRecovery"/>): the program recolours its tile
+    /// sheets in memory, loaded once a session, so the change stays (an earlier save's Load included). An art change
+    /// rebuilds the tiles and recolours them again.
+    /// </summary>
+    public bool Recovered { get; private set; }
+
+    /// <summary>
+    /// Tile t's pixels for the recolour when its sheet is the DOS one (EGA indices), else null. [?] The Amiga program
+    /// holds the same tile lists and pan but one colour map of its own (00 01 02 03 04 01 06 07 08 09 0A 0B 02 02 0A 0F,
+    /// next to the lists in <c>program</c>); its routine is not read, so Amiga tiles are not recoloured.
+    /// </summary>
+    public byte[]? DosTile(int t) =>
+        (t < PorOverlandArt.SheetTiles ? _lowDos : _highDos) ? Art.Tile(t, outdoor: false)?.Pixels : null;
+
+    /// <summary>Marks the recovery as run (the tiles were recoloured in place by the caller).</summary>
+    public void MarkRecovered() => Recovered = true;
+
     /// <summary>Takes the art from <paramref name="choice"/>'s variant (see the class summary).</summary>
     public void UseArt(PorArtChoice choice, Func<byte[], int>? paletteBase)
     {
@@ -42,6 +62,8 @@ public sealed class OverlandArt
         if (choice == PorArtChoice.Dos || paletteBase is null)
         {
             Art = dos;
+            _lowDos = _highDos = true;
+            Recolour();
             return;
         }
         var low = Tiles("SQRPACI", 1, choice, paletteBase);
@@ -61,6 +83,15 @@ public sealed class OverlandArt
         }
         Art = new PorOverlandArt(PorOverlandArt.Sheets(SameOrDos(low, dosLow), SameOrDos(high, dosHigh)),
             SameOrDos(bac, dosBac), markers);
+        _lowDos = low.Count < dosLow.Count;
+        _highDos = high.Count < dosHigh.Count;
+        Recolour();
+    }
+
+    private void Recolour()
+    {
+        if (Recovered)
+            Core.Explore.OverlandRecovery.ApplyFinal(DosTile);
     }
 
     /// <summary>The variant's tiles cut to DOS's count, or DOS's when it has fewer (as <see cref="CombatArt.SameOrDos"/>).</summary>

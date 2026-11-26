@@ -601,6 +601,7 @@ public sealed class EncounterHost : IEclHost
     public void Clock(ushort minutes) => Inner.Clock(minutes);
     public void Program(ushort program) => Inner.Program(program);
     public bool ProgramCamp() => Inner.ProgramCamp();
+    public void OverlandRecovery(bool animated, Func<ushort, ushort> random) => Inner.OverlandRecovery(animated, random);
     public void Protect(ushort address) => Inner.Protect(address);
     public int? PickCharacter(string prompt) => Inner.PickCharacter(prompt);
     public void DrawGlyphs(ushort address, IReadOnlyList<byte> glyphs) => Inner.DrawGlyphs(address, glyphs);

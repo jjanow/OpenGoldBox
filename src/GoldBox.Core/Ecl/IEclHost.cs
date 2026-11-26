@@ -127,6 +127,13 @@ public interface IEclHost
         Program(9);
         return false;
     }
+    /// <summary>
+    /// GAME.OVR 0x20D50 (<see cref="Explore.OverlandRecovery"/>): the overland's river tiles recoloured after Yarash,
+    /// <paramref name="animated"/> from the script switch into block 26 (0x3F86), still from a Load (0x1FC98).
+    /// <paramref name="random"/> is the game's generator (the animated run draws from it). Default: the draws alone.
+    /// </summary>
+    void OverlandRecovery(bool animated, Func<ushort, ushort> random) =>
+        Explore.OverlandRecovery.Run(animated, _ => null, random);
     /// <summary>PROTECT (0x3C): called by the default <see cref="DrawGlyphs"/>.</summary>
     void Protect(ushort address);
     /// <summary>

@@ -552,6 +552,50 @@ Checked against DOSBox-X (PoR v1.3, EGA, save A put on the overland with `goldbo
   The 54 bytes are identical in all three. `geo.py special START.EXE --offset N` decodes them. The table contents are not
   copied here.
 
+### The land recovers (GAME.OVR 0x20D50, read and run s58; Core `OverlandRecovery`)
+
+After Yarash's pyramid ($4AB3 = 254, ECL7 block 23 $AC53) the overland's river and polluted-ground tiles are
+recoloured in the tile sheets themselves. Two callers:
+
+- **The script switch** 0x3EFA, into block 26 with $49E6 = 0 (0x3F44, 0x3F5F), $4AB3 = 0xFE (a word compare, 0x3F71) and
+  $4AA2 = 0 (0x3F7E): 0x20D50(1) at 0x3F86, after the view mode is set and before the switch's redraw. Block 26's
+  search vector then prints the recovery text (ECL7 block 26 $AE8F), and $AF35 sets $4AA2 := 255, so it runs once.
+- **Load** 0x1F5E8, at its end for every location type (the overland branch 0x1FBC9–0x1FBEB jumps to 0x1FC89 too): with
+  the loaded $4AA2 ≠ 0, 0x20D50(0) at 0x1FC98.
+
+0x20D50(animated):
+1. Animated: the 25 tiles with overland square (17, 15) at the view's top-left (0x2DE38: tiles only, site rules
+   applied, no marker) and the screen copy (START 0x464:0x1B52).
+2. Animated: 9 frames (the frame byte 0–8): each tile of list A (DS:0900, 11 tiles: 0x65–0x6B, 0x71, 0xE0–0xE2)
+   recoloured by map A (DS:092D: 0 → 1, 7 → 2), each of list B (DS:090B, 18 tiles: 0x56–0x59, 0x6C–0x70, 0x72–0x77,
+   0xDF, 0xF3, 0xF5) by map B (DS:093D: 7 → 2), both in the random mode; then the tiles at the frame's square
+   (DS:094D / DS:095F: (17, 15) × 3, (19, 20) × 3, (23, 25) × 3) and the screen copy. "From" is DS:091D = 0–15.
+3. Both: the two lists recoloured again in the whole mode.
+4. Animated: the tiles at (23, 25), the screen copy, PauseOnly twice (START 0x709:0xDBE).
+
+The recolour START 0x464:0x1E5C (linear 0x649C; from, to, item, random flag, block): item ≥ 0 works on that one item
+(< 0: all of them); a copy of the item is made (0x6ACE, freed at 0x6BD5); for each colour c with from[c] ≠ to[c],
+every pixel whose colour **in the original** is from[c] becomes to[c] in the copy, which then replaces the item. The
+random mode depends on DS:4A1E: EGA (1) takes a mask Random(256) AND Random(256) per 8-pixel group (bit 7 the
+leftmost pixel, both draws always made); CGA (0) and Tandy (2) draw Random(4) per matching pixel and change it on 0
+(not modelled: the engine draws EGA). In EGA the animated run draws 9 × (11 × 2 + 18) × 24 × 3 × 2 = 51,840 times, so
+RandSeed moves on as in the program. Each frame changes about a quarter of the remaining pixels; the whole pass
+finishes them. `por_recolour_oracle.py` runs the routine under unicorn (40 random tiles, maps, flags and seeds); Core
+matches pixels and RandSeed (`OverlandRecoveryTests`).
+
+The sheets are loaded once a session (the game init), BACPAC and the combat grounds write tiles 0–39 only, so the
+recolour stays for the session: a later Load of a save from before the recovery ($4AA2 = 0) still shows it.
+
+**DOSBox-X (s58, 3000 cycles, `save-overland` saves):** loads of 26 at 9,24 N with $4AB3 = 254 and $4AA2 = 255 (blue
+river, green ground) and with $4AA2 = 0 (black river, grey ground) match `overland-compare` with 0 differing pixels. 27
+at 3,20 W with $4AA2 = 0, Left twice (the second step reaches the west edge's NEWECL 26): the pyramid view at (17, 15)
+dissolving, (19, 20), (23, 25); the first and last views and the redraw after them 0 pixels off against the Client.
+Times: a view every 0.356 s (the recolour's draws at 3000 cycles), the last 0.283 s after the 9th, then 1.87 s of the
+two PauseOnly calls (game speed 4) before the redraw.
+
+**Amiga** `[?]`: the program holds the same tile lists and pan squares next to one colour map of its own (16 bytes:
+5 → 1, 12 → 2, 13 → 2, 14 → 10); its routine is not read, and the Client leaves Amiga tiles as they are.
+
 ## Version differences
 
 `GEO1–8.DAX` and `WALLDEF1–8.DAX` are byte-identical in v1.1, v1.2 and v1.3. Their sha1 hashes equal Lee's manifest. The
