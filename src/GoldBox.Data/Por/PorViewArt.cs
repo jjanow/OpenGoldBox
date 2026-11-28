@@ -48,6 +48,11 @@ public sealed class PorViewArt
         Font = font;
     }
 
+    /// <summary>
+    /// The view art at game start-up. The program's start-up (0xE600, 0xEA7B) loads the area-map tiles (8X8D block 202)
+    /// into symbol block 4 and the common tiles (203) into block 0 through the tile-block loader 0x32270 (see
+    /// <see cref="LoadWallSet"/>), from <c>8X8D&lt;DS:5376&gt;</c>, disk 1 at that point (only 8X8D1 holds 201–203).
+    /// </summary>
     public static PorViewArt Load(IPorContent dir)
     {
         var exe = (dir.Program() ?? throw new FileNotFoundException($"START.EXE not in {dir.Origin}")).View
@@ -118,7 +123,10 @@ public sealed class PorViewArt
     /// <summary>
     /// LoadWallSet for <c>WALLDEF&lt;disk&gt;.DAX</c> record <paramref name="set"/> into <paramref name="slot"/>, with its
     /// tiles: a one-block record id i uses 8X8D block i; a k-block record uses 8X8D blocks i·10+1 … i·10+k, id 0
-    /// counted as 10 (geo-format.md "WALLDEF / 8X8D"). Null empties the slot.
+    /// counted as 10 (geo-format.md "WALLDEF / 8X8D"). Null empties the slot. Each tile block goes in through
+    /// 0x32270 (block, symbol block; view3d.md "The tile-block loader 0x32270"): symbol blocks 0–4 only (the WALLDEF
+    /// size check keeps a wall set within slots 1–3, so the guard never refuses one), the block read from
+    /// <c>8X8D&lt;disk&gt;</c>, and a missing block a fatal error (here <see cref="FormatException"/>).
     /// </summary>
     public void LoadWallSet(int disk, int slot, int? set)
     {

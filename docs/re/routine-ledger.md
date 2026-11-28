@@ -6,11 +6,11 @@ Every routine of the v1.3 program (`START.EXE` and `GAME.OVR`) that the game run
 
 | Status | Meaning | Count |
 |---|---|---|
-| **W** ported whole | the Core / Client code follows the routine | 778 |
-| … W by execution | an oracle runs it (or runs its caller, for state routines), the ECL golden captures cover it, or it is empty | 624 |
-| … W by citation | the C# names its entry and the spec reads it with no open `[?]` on those lines: read and ported per the comments, not verified branch by branch | 154 |
-| **P** patched by symptom | partly built: the C# names only inside addresses, or the spec lines carry `[?]`, or the behaviour was built from emulator observations | 1 |
-| **U** unchecked | no evidence that the engine matches it (not cited, or read in a spec but not ported) | 1 |
+| **W** ported whole | the Core / Client code follows the routine | 780 |
+| … W by execution | an oracle runs it (or runs its caller, for state routines), the ECL golden captures cover it, or it is empty | 625 |
+| … W by citation | the C# names its entry and the spec reads it with no open `[?]` on those lines: read and ported per the comments, not verified branch by branch | 155 |
+| **P** patched by symptom | partly built: the C# names only inside addresses, or the spec lines carry `[?]`, or the behaviour was built from emulator observations | 0 |
+| **U** unchecked | no evidence that the engine matches it (not cited, or read in a spec but not ported) | 0 |
 | N not ported by design | platform work the module format replaces: DAX reading (the importer), disk numbers, memory release, the code wheel | 32 |
 | L library | Turbo Pascal run-time library, overlay manager, Crt and DOS units (one line per segment below) | 143 |
 
@@ -26,7 +26,7 @@ The generator scripts are in `tools/scripts/ledger/` (s47). Set `GOLDBOX_POR_DIR
 2. Recursive descent with capstone (16-bit) from the entry point (START 0x0006), every stub entry and the sound timer interrupt (START 0x9ECA, installed through INT 21h 25h): near calls stay in the segment / unit, far calls resolve through the stubs, and decoding stops at stub paragraphs. Then a sweep for routine prologues (`55 89 E5`, `55 8B EC`) not yet covered. What stays uncovered is string constants kept in the code segments.
 3. Indirect calls: the program has three, all through tables it fills at run time: the spell routines (DS:6B84, built by 0x2A42B, called from 0x27C38; its entry 0 is a procedure variable, the target pick 0x148BE, stored by the fight at 0x988C and by the builders at 0x11EB6 / 0x2A479 and called at 0x27D88), the effect handlers (DS:6828, built by 0x11DFD, called from 0x2AEEA) and the TP run-time. The tables were read by running the two builders (`por_spell_oracle.py` set-up). The ECL dispatcher (0x3C73) is a compare chain of near calls; its opcode → handler map is in the ECL section below.
 4. Citations: every `0x` number in `docs/*.md`, `docs/re/*.md` (surveys and prior art left out) and in C# comments under `src/`: after `START` / `START.EXE` (and numbers chained to it, unless no START routine holds the number) a START address, `SSSS:OOOO` resolved by segment or stub, a range `0xA–0xB` counts for every entry inside it, otherwise a GAME.OVR offset (4–5 digits, or an exact routine entry); numbers after `+`, `$`, `DS:`, `hunk n` or `Amiga` are skipped. A citation counts for the routine whose decoded instructions hold it; "entry" means the routine's first address. The oracles were read by hand (their `e.call` targets count, trapped routines do not).
-5. Rows marked with a note in the gap lists were checked by hand; the rest follow the rule in "Statuses". The count is 209 START and 2266 GAME.OVR addresses cited, on 758 routines.
+5. Rows marked with a note in the gap lists were checked by hand; the rest follow the rule in "Statuses". The count is 210 START and 2274 GAME.OVR addresses cited, on 759 routines.
 
 ## Title to ending: screens and paths
 
@@ -34,17 +34,17 @@ Each path's root routines and everything they call, without entering another pat
 
 | Code | Path | Roots | Routines | W | P | U | Play gaps (P + U, kind play) |
 |---|---|---|---|---|---|---|---|
-| Su | Start-up, title, introduction | START 0x0006, START 0x4354, 0x06FB, 0x0AA9, 0x2EA4C, 0xE600 | 86 | 85 | 0 | 1 | — |
-| Pm | Party menu, creation, Modify, icons, roster | 0x19AE0, 0x19EEB, 0x1BA1E, 0x1D1AC, 0x1E684, 0x1EAD2 | 455 | 454 | 1 | 0 | — |
-| Ex | Area loop, 3D view, area map, overland, doors | 0x403E, 0x17054, 0x17438, 0x2DCF4, 0x2EEF4, 0x2DE38 | 465 | 464 | 1 | 0 | — |
-| Ecl | ECL VM and host opcodes | 0x3C73, 0x3EB7, 0x7689, 0x7814 | 386 | 385 | 0 | 1 | — |
-| Enc | Encounters (monsters, close-up, menu, parley, surprise) | 0x2C3E, 0x3311, 0x155D, 0x240F, 0x236F, 0x1196, 0x10FA, 0x1EEAA, 0x7A21 | 85 | 84 | 0 | 1 | — |
-| Cb | Combat (map, menu, moves, AI, spells, effects, items, after combat) | 0x24E1, 0x9881, 0x6AA5 | 518 | 517 | 1 | 0 | — |
-| Cp | Camp (all menus, rest, Memorize, Scribe, Cast, Alter) | 0x196A0, 0x24A66 | 462 | 461 | 1 | 0 | — |
-| Sh | Shops, temples, venues (PROGRAM, CALL) | 0x7212, 0x5280, 0x3B56, 0x3A15 | 469 | 468 | 1 | 0 | — |
+| Su | Start-up, title, introduction | START 0x0006, START 0x4354, 0x06FB, 0x0AA9, 0x2EA4C, 0xE600 | 86 | 86 | 0 | 0 | — |
+| Pm | Party menu, creation, Modify, icons, roster | 0x19AE0, 0x19EEB, 0x1BA1E, 0x1D1AC, 0x1E684, 0x1EAD2 | 455 | 455 | 0 | 0 | — |
+| Ex | Area loop, 3D view, area map, overland, doors | 0x403E, 0x17054, 0x17438, 0x2DCF4, 0x2EEF4, 0x2DE38 | 465 | 465 | 0 | 0 | — |
+| Ecl | ECL VM and host opcodes | 0x3C73, 0x3EB7, 0x7689, 0x7814 | 386 | 386 | 0 | 0 | — |
+| Enc | Encounters (monsters, close-up, menu, parley, surprise) | 0x2C3E, 0x3311, 0x155D, 0x240F, 0x236F, 0x1196, 0x10FA, 0x1EEAA, 0x7A21 | 85 | 85 | 0 | 0 | — |
+| Cb | Combat (map, menu, moves, AI, spells, effects, items, after combat) | 0x24E1, 0x9881, 0x6AA5 | 518 | 518 | 0 | 0 | — |
+| Cp | Camp (all menus, rest, Memorize, Scribe, Cast, Alter) | 0x196A0, 0x24A66 | 462 | 462 | 0 | 0 | — |
+| Sh | Shops, temples, venues (PROGRAM, CALL) | 0x7212, 0x5280, 0x3B56, 0x3A15 | 469 | 469 | 0 | 0 | — |
 | Tl | Treasure and loot | 0x26F6 | 32 | 32 | 0 | 0 | — |
 | Lv | Training and level up | 0x1C32D, 0x2AA87 | 66 | 66 | 0 | 0 | — |
-| Sv | Save and load | 0x1FD3E, 0x1F5E8 | 46 | 45 | 0 | 1 | — |
+| Sv | Save and load | 0x1FD3E, 0x1F5E8 | 46 | 46 | 0 | 0 | — |
 | End | End game | 0x20941, 0x206A3 | 52 | 52 | 0 | 0 | — |
 | Kd | Party killed / destroyed | 0x34BB, 0x5A47 | 286 | 286 | 0 | 0 | — |
 
@@ -60,31 +60,16 @@ None since s52: every play row is W or N (the W-by-citation rows are listed in t
 
 ### Presentation only (drawing, text, sound, input timing)
 
-| # | Routine | Role | St | Why it is open |
-|---|---|---|---|---|
-| 1 | 0x2581C | [?] number / money text builder | P | number / money text builder: the C# names only inside addresses |
-| 2 | 0x32270 | [?] picture block load with disk check (wall sets, start-up) | U | picture block load with disk check (wall sets, start-up): spec only; the module replaces the disk check |
+None since s63: every presentation row is W or N.
 
-### Closed in s60
+### Closed in s63
 
-Rows that left the ranked lists this session, with the lane notes (their status stays in the unit tables). The lanes' reads are in `s52-lane-A.md` … `s52-lane-F.md`, `s60-lane-T.md`, `-V`, `-A`, `-C`, `-M` and under "Statuses set by hand".
+Rows that left the ranked lists this session (their status stays in the unit tables). Earlier lanes' reads are in `s52-lane-A.md` … `s52-lane-F.md`, `s60-lane-T.md`, `-V`, `-A`, `-C`, `-M` and under "Statuses set by hand".
 
 | Routine | Role | St | Note |
 |---|---|---|---|
-| 0x2D669 | vertical list / item list window | W | done s60 lane T: run whole with its helpers and the menu routine under emulation (`por_listwin_oracle.py`, 1468 cases); digit-row keys fixed |
-| START 0x3379 | screen redraw by case (hall, camp, loot, shop pictures and boxes) | W | read whole s60 lane T (the open `[?]` is about indirect callers) |
-| 0x239D6 | spell list window (type, action) | W | read whole s60 lane T |
-| 0x2CC8C | menu routine (horizontal words) | W | key layer under the list oracle, drawing read whole s60 lane T; `[?]` settled ($4AFF) |
-| START 0x1307 | party list redraw | W | read whole s60 lane T with its helpers; seen in DOSBox-X |
-| START 0x2B8B | effect message (text and pause) | W | read whole s60 lane T |
-| 0x2E8F7 | area map draw | W | read s60 lane V (it is the area map draw); internals read; seen 0 px |
-| START 0x4751 | picture block read (DAX block → buffer) | W | segment 0464 read branch by branch s60 lane V |
-| 0x1E468 | combat icon: builds the record's icon in slot 0xBF through scratch slot 11 | W | icon builders read whole s60 lane V; head ORed into the body fixed; icon editor 0 px in DOSBox-X |
-| 0x32123 | debug display (DS:49F7: `START STING` + Ctrl-D only) | N | s60 lane T: a debug display (START STING + Ctrl-D), not ported by design |
-| 0x2E0CE | picture frame draw | W | read whole s60 lane V; the sprite renderer's nil frame fixed |
-| START 0x8C85 | sound: tune cue | W | game-side sound calls read s60 lane V (= sound.md §2.1) |
-| START 0x4354 | start-up configuration: command line, video mode, sound device, installer flags (only the `F` line read) | W | read whole s60 lane V (five POOL.CFG lines) |
-| START 0x7D3B | [?] text / box helper (Items page, View) | N | s60 lane T: machine-level text helpers, not ported by design |
+| 0x2581C | coin row parser: the picked row's coin kind and its amount-question label | W | done s63: read whole and run under emulation (`por_coinrow_oracle.py`, `CoinRowProgramTests`); the Client takes the kind back from the row (`CombatSheet.PickedCoin`) |
+| 0x32270 | 8X8D tile-block loader into symbol blocks 0–4 (start-up, wall sets); fatal when missing | W | read whole s63 (view3d.md "The tile-block loader 0x32270"): slot guard 0–4, 8X8D<disk>, fatal when missing; `PorViewArt` |
 
 Not gaps: the N rows (DAX reader START segment 0802, disk numbers, memory release, the code wheel) and the library segments, which the module format and .NET replace.
 
@@ -236,6 +221,7 @@ Not gaps: the N rows (DAX reader START segment 0802, disk numbers, memory releas
 | 0x31B5D | W | read whole s52 (s52-lane-F.md) |
 | 0x31C34 | W | read whole s52 (s52-lane-F.md) |
 | 0x32123 | N | s60 lane T: debug only, the Client has no debug mode |
+| 0x32270 | W | read whole s63 (view3d.md "The tile-block loader 0x32270"): PorViewArt.Load / LoadWallSet; the fatal halt is the module's exception |
 | 0x32392 | W | read s60 lane V (symbol sets, error halt, buffer / direct modes) |
 | START 0x0006 | W | read whole s52 (s52-lane-F.md) |
 | START 0x1307 | W | read whole s60 lane T and seen in DOSBox-X (hall party list) |
@@ -474,7 +460,7 @@ Library segments (status L, not listed one by one):
 | START 0x4640 | [?] picture decode helper | W | pres | Su Pm Ex Ecl Enc Cb Cp Sh Sv End | C# | CombatArt.Draw |
 | START 0x46BB | [?] picture buffer helper | W | pres | Su Pm Ex Ecl Enc Cb Cp Sh Sv End | C# | OverlandRecovery.Recolour |
 | START 0x470F | [?] picture helper (start-up) | W | pres | Su Pm Ex Ecl Enc Cb Cp Sh Lv Sv End Kd | — | — |
-| START 0x473F | [?] picture block free / release | W | pres | Su Pm Ex Ecl Enc Cb Cp Sh Lv Sv End Kd | — | — |
+| START 0x473F | [?] picture block free / release | W | pres | Su Pm Ex Ecl Enc Cb Cp Sh Lv Sv End Kd | spec | — |
 | START 0x4751 | picture block read (DAX block → buffer) | W | pres | Su Pm Ex Ecl Enc Cb Cp Sh Sv End | C#, spec | CombatArt.Draw |
 | START 0x48E5 | [?] picture decode (block unpack into the off-screen buffer) | W | pres | Su Pm Ex Ecl Enc Cb Cp Sh Sv End | — | — |
 | START 0x4F14 | [?] masked piece draw (tiles, wall pieces) | W | pres | Su Pm Ex Ecl Cb Cp Sh Lv End Kd | spec | — |
@@ -666,7 +652,7 @@ Library segments (status L, not listed one by one):
 | 0x47C0 | temple cure blindness: 33 removed through 0x2AF10 | W | play | Sh | oracle, C#, spec | TempleRules.Apply |
 | 0x4864 | temple cure 1: six effects (DS:0114) removed through 0x2AF10 under the lock DS:681F | W | play | Sh | oracle, C#, spec | TempleRules.CureDisease |
 | 0x4978 | temple cures 2–4: heal 1d8 / 2d8+1 / 3d8+3 through 0x2C647 (flag 0; handler 0x4E revives) | W | play | Sh | oracle, C#, spec | TempleRules.Apply, EffectHandlers.RestoreHitPoints |
-| 0x4A87 | temple raise dead: 32 and 55 removed through 0x2AF10 under DS:681F, HP / Con / max-HP rule (max HP fixed s61: the hall's Con bonus difference per level) | W | play | Sh | oracle, C#, spec | TempleRules.RaiseDead, TempleRules.RaiseDeadLoss |
+| 0x4A87 | temple raise dead: 32 and 55 removed through 0x2AF10 under DS:681F, HP / Con / max-HP rule (max HP fixed s61: the hall's Con bonus difference per level) | W | play | Sh | oracle, C#, spec | TempleRules.RaiseDead |
 | 0x4CC8 | temple cure poison: 55, 22, 15 removed through 0x2AF10 under DS:681F (s51 decision: every record, lock held throughout; handler 22's lock clearing and kill fixed) | W | play | Sh | oracle, C#, spec | TempleRules.CurePoison |
 | 0x4DB1 | temple remove curse (DS:6C95 := member, spell routine 0x29558) | W | play | Sh | oracle, C#, spec | TempleRules.RemoveCurse |
 | 0x4E9F | temple stone to flesh | W | play | Sh | oracle, C#, spec | TempleRules.Apply |
@@ -810,7 +796,7 @@ Library segments (status L, not listed one by one):
 
 | Address | Role | St | Kind | Paths | Evidence | Port (C#) |
 |---|---|---|---|---|---|---|
-| 0xE600 | game start-up: VM zones, start values, tables | W | play | Su | C#, spec | PorGame.NewGameScript, PorGame.NewGameState, Program |
+| 0xE600 | game start-up: VM zones, start values, tables | W | play | Su | C#, spec | PorGame.NewGameScript, PorGame.NewGameState, PorViewArt.Load |
 | 0xEBE8 | empty routine (unit init or empty handler) | W | play | Su | — | — |
 
 #### Unit 0xEC5B–0x12508 (stub 41): effect handlers (127 routines: W 127 (127 by execution))
@@ -1074,8 +1060,8 @@ Library segments (status L, not listed one by one):
 | 0x1EEAA | monster loader (MON<d>CHA / ITM / SPC) | W | play | Enc | C#, spec | EncounterHost.LoadMonsterRecord |
 | 0x1F248 | see `ecl-format.md` ADDNPC v1, v2 | W | play | Ecl | C#, spec | PorProgram.NpcPortraitBases, EncounterHost.CreateNpc, IEncounterData |
 | 0x1F42C | see `start-menu.md` 4. Add, Remove, Drop, View | W | play | Pm Ecl Sv | C#, spec | PorParty.RefreshOnLoad, HallScreens.Run, CombatScreen.Icon |
-| 0x1F5E8 | game load (from the party menu) | W | play | Sv | C#, spec | PorRoster.RemoveLoaded (option, s61), PorTextCatalog, PorGame.LoadAtPartyMenu, PorGame.Loaded, PorGame.ReloadSavedMap (s48: a hall Load reloads the marker slots) |
-| 0x1FD3E | game save | W | play | Sv | C#, spec | PorRoster.RemoveSaved (option, s61), PorSaveGame.Build, PorParty.Save, PorGame.UnstartedSave |
+| 0x1F5E8 | game load (from the party menu) | W | play | Sv | C#, spec | PorTextCatalog, PorGame.LoadAtPartyMenu, PorGame.Loaded, PorGame.ReloadSavedMap (s48: a hall Load reloads the marker slots) |
+| 0x1FD3E | game save | W | play | Sv | C#, spec | PorSaveGame.Build, PorParty.Save, PorGame.UnstartedSave |
 | 0x202BB | NEWECL helper: when ECL<disk>.dax is missing, the save-and-exit / insert-disk menu; S steps the party back one square, saves and quits | N | play | Ecl | spec | — |
 | 0x203C6 | empty routine (unit init or empty handler) | W | play | Su | — | — |
 
@@ -1134,7 +1120,7 @@ Library segments (status L, not listed one by one):
 | 0x24A66 | rest loop | W | play | Cp | oracle, C#, spec | TradeContext.HoldPositionLine, SpellLists.CampScreens, CampScreens.Save |
 | 0x24C2C | empty routine (unit init or empty handler) | W | play | Su | — | — |
 
-#### Unit 0x24C89–0x26EE3 (stub 8F): money, treasure and loot (22 routines: W 21 (18 by execution), P 1)
+#### Unit 0x24C89–0x26EE3 (stub 8F): money, treasure and loot (22 routines: W 22 (19 by execution))
 
 | Address | Role | St | Kind | Paths | Evidence | Port (C#) |
 |---|---|---|---|---|---|---|
@@ -1153,7 +1139,7 @@ Library segments (status L, not listed one by one):
 | 0x252C3 | see `combat-format.md` Loot menu | W | play | Cb Sh | oracle, C#, spec | CoinTexts.MoneyScreens, MoneyScreens.Share, LootRules.ExtendedKey |
 | 0x2568A | see `combat-menu.md` View / Use | W | play | Pm Ex Cb Cp Sh | C#, spec | CharacterView.DropMoney, FightItemScreens.DropMoney, FightItemScreens.DropCoins |
 | 0x25711 | see `shop-format.md` Take | W | play | Cb Sh | oracle, C#, spec | MoneyScreens.Take, IdentifyResult.TakeMaximum, IdentifyResult.Take |
-| 0x2581C | [?] number / money text builder | P | pres | Pm Ex Cb Cp Sh | C# | GameText |
+| 0x2581C | coin row parser: the picked row's coin kind and its amount-question label | W | play | Pm Ex Cb Cp Sh | oracle, C#, spec | PartyMenuFlow.Coins, MoneyScreens.Take, CombatChooser.ChooseCoins |
 | 0x25974 | see `combat-format.md` After combat | W | play | Cb Sh | C#, spec | CoinTexts.MoneyScreens, MoneyScreens.Take, TakeSteps.Coins, MoneyScreens.TakeMaximum (s48: the maximum is the pool up to 65535) |
 | 0x25C07 | see `combat-format.md` After combat | W | play | Cb Sh | oracle, C#, spec | TradeContext.PoolHasMoney, MoneyScreens.StayForMoney, VenueScreens.Shop |
 | 0x25C5B | see `item-format.md` Types 1–59, 73, 77, 93 | W | play | Tl | oracle, C#, spec | TreasureMaker.PlusRoll |
@@ -1415,11 +1401,11 @@ Library segments (status L, not listed one by one):
 | 0x32123 | debug display (DS:49F7: `START STING` + Ctrl-D only) | N | pres | Pm Ex Ecl Cb Cp Sh Kd | — | — |
 | 0x32216 | empty routine (unit init or empty handler) | W | play | Su | — | — |
 
-#### Unit 0x32235–0x324E6 (stub 428): picture load with disk check (3 routines: W 2 (2 by execution), U 1)
+#### Unit 0x32235–0x324E6 (stub 428): picture load with disk check (3 routines: W 3 (2 by execution))
 
 | Address | Role | St | Kind | Paths | Evidence | Port (C#) |
 |---|---|---|---|---|---|---|
-| 0x32270 | [?] picture block load with disk check (wall sets, start-up) | U | pres | Su Ecl Enc Sv | spec | — |
+| 0x32270 | 8X8D tile-block loader into symbol blocks 0–4 (start-up, wall sets); fatal when missing | W | pres | Su Ecl Enc Sv | C#, spec | PorViewArt.Load, PorViewArt.LoadWallSet |
 | 0x32392 | wall / tile piece draw | W | pres | Su Pm Ex Ecl Cb Cp Sh Lv End Kd | oracle (caller), spec (inside) | — |
 | 0x324E2 | empty routine (unit init or empty handler) | W | play | Su | — | — |
 

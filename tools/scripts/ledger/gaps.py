@@ -1,26 +1,12 @@
 # ---- hand-ranked gap lists (exec'd at the end of render.py) ----
 GAP_PLAY = [
 ]
-# rows closed in s60 (W or N now): their notes, shown under "Closed in s60"; prune at the next session's rebuild
+# rows closed in s63 (W now): their notes, shown under "Closed in s63"; prune at the next session's rebuild
 GAP_DONE = [
-    ('O:2d669', 'done s60 lane T: run whole with its helpers and the menu routine under emulation (`por_listwin_oracle.py`, 1468 cases); digit-row keys fixed'),
-    ('S:3379', 'read whole s60 lane T (the open `[?]` is about indirect callers)'),
-    ('O:239d6', 'read whole s60 lane T'),
-    ('O:2cc8c', 'key layer under the list oracle, drawing read whole s60 lane T; `[?]` settled ($4AFF)'),
-    ('S:1307', 'read whole s60 lane T with its helpers; seen in DOSBox-X'),
-    ('S:2b8b', 'read whole s60 lane T'),
-    ('O:2e8f7', 'read s60 lane V (it is the area map draw); internals read; seen 0 px'),
-    ('S:4751', 'segment 0464 read branch by branch s60 lane V'),
-    ('O:1e468', 'icon builders read whole s60 lane V; head ORed into the body fixed; icon editor 0 px in DOSBox-X'),
-    ('O:32123', 's60 lane T: a debug display (START STING + Ctrl-D), not ported by design'),
-    ('O:2e0ce', 'read whole s60 lane V; the sprite renderer\'s nil frame fixed'),
-    ('S:8c85', 'game-side sound calls read s60 lane V (= sound.md §2.1)'),
-    ('S:4354', 'read whole s60 lane V (five POOL.CFG lines)'),
-    ('S:7d3b', 's60 lane T: machine-level text helpers, not ported by design'),
+    ('O:2581c', 'done s63: read whole and run under emulation (`por_coinrow_oracle.py`, `CoinRowProgramTests`); the Client takes the kind back from the row (`CombatSheet.PickedCoin`)'),
+    ('O:32270', 'read whole s63 (view3d.md "The tile-block loader 0x32270"): slot guard 0–4, 8X8D<disk>, fatal when missing; `PorViewArt`'),
 ]
 GAP_PRES = [
-    ('O:2581c', 'number / money text builder: the C# names only inside addresses'),
-    ('O:32270', 'picture block load with disk check (wall sets, start-up): spec only; the module replaces the disk check'),
 ]
 G = []
 G.append('## Gaps on the title-to-ending path')
@@ -44,12 +30,13 @@ G.append('| # | Routine | Role | St | Why it is open |')
 G.append('|---|---|---|---|---|')
 for i, (k, note) in enumerate(GAP_PRES, 1):
     G.append('| %d | %s | %s | %s | %s |' % (i, addr(k), role(k), ST[k], note))
+if not GAP_PRES:
+    G[-2:] = ['None since s63: every presentation row is W or N.']
 G.append('')
-G.append('### Closed in s60')
+G.append('### Closed in s63')
 G.append('')
-G.append('Rows that left the ranked lists this session, with the lane notes (their status stays in the unit tables). '
-         'The lanes\' reads are in `s52-lane-A.md` … `s52-lane-F.md`, `s60-lane-T.md`, `-V`, `-A`, `-C`, `-M` '
-         'and under "Statuses set by hand".')
+G.append('Rows that left the ranked lists this session (their status stays in the unit tables). Earlier lanes\' reads are '
+         'in `s52-lane-A.md` … `s52-lane-F.md`, `s60-lane-T.md`, `-V`, `-A`, `-C`, `-M` and under "Statuses set by hand".')
 G.append('')
 G.append('| Routine | Role | St | Note |')
 G.append('|---|---|---|---|')

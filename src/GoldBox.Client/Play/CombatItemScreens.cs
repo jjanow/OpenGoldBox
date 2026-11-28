@@ -554,7 +554,7 @@ public sealed partial class CombatChooser
         var a = Ask(new PageRequest([Text[CombatMsg.ViewExit].Trim()], Text[CombatMsg.SelectCoin].Trim() + " ", 0) { PickRows = true }) as ListAnswer;
         if (a is null || a.Action != PageRequest.RowPicked || a.Row < 0 || a.Row >= order.Count)
             return null;
-        int kind = order[a.Row];
+        int kind = CombatSheet.PickedCoin(r, order[a.Row]); // 0x234E1 → 0x2581C
         coinPage.Selected = a.Row;
         string prompt = AmigaView.AmountPrompt(GameText.Cat(GameText.Cat(Text[CombatMsg.HowMuch], CombatSheet.CoinName(r, kind)), Text[CombatMsg.WillYouDrop]));
         var typed = AmigaView.Number(Ask, new TextRequest(prompt, true, AmigaView.AmountLength(AmigaView.On)) { Maximum = FightItemScreens.Coins(c, kind) });

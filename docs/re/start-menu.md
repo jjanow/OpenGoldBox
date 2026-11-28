@@ -506,7 +506,9 @@ screen's ROSTER ON SAVE: KEEP / DELETE): the same rules on the engine's roster f
 after every game Save (camp, hall, party menu, Exit) `PorRoster.RemoveSaved` erases each member's JSON and DOS-named
 files, each when present; on every Load (party menu, hall, a hall Load of another area) `PorRoster.RemoveLoaded`
 erases them only when the member's character file (JSON or `.cha`) exists, before the loaded game's entry runs. A
-`--save` start is not the program's Load and deletes nothing.
+`--save` start is not the program's Load and deletes nothing. Seen in the Client on Xvfb (s63): DELETE, a hall Save
+erased the saved member's file and a party-menu Load erased one written again by Remove (`charlist.txt` kept, the
+member listed with the party mark); KEEP, the file stayed.
 
 **Save directory check (0x1E294, read s49).** The roster and save routines (0x1E00A, 0x1E1A6, 0x1E7D3, 0x1F5F0,
 0x1F9CD, 0x1FDA7) call it before their files: MkDir (START 0xC756, INT 21h AH = 39h) on the save path DS:537A minus

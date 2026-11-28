@@ -655,7 +655,7 @@ public sealed class PartyMenuFlow(Func<PlayerRequest, object?> ask, PartyMenuTex
         }) as ListAnswer;
         if (a is null || a.Action != PageRequest.RowPicked || a.Row < 0 || a.Row >= order.Count)
             return null;
-        int kind = order[a.Row];
+        int kind = CombatSheet.PickedCoin(r, order[a.Row]); // 0x234E1 / 0x23190 → 0x2581C
         string prompt = AmigaView.AmountPrompt(GameText.Cat(GameText.Cat(words?.HowMuch ?? text[CombatMsg.HowMuch], CombatSheet.CoinName(r, kind)),
             words?.WillYou ?? text[CombatMsg.WillYouDrop]));
         // The input 0x24F1D: digits up to the count held (a larger number becomes the count as it is typed), Escape 0.

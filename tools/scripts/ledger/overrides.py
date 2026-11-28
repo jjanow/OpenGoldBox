@@ -35,7 +35,8 @@ OV = {
     'O:202bb': dict(role='NEWECL helper: when ECL<disk>.dax is missing, the save-and-exit / insert-disk menu; S steps the party back one square, saves and quits', status='N', kind='play',
                     why='NEWECL\'s missing-file disk prompt; a module holds every script (ecl-format.md NEWECL, s49)'),
     'O:e600': dict(role='game start-up: VM zones, start values, tables', kind='play'),
-    'O:32270': dict(role='[?] picture block load with disk check (wall sets, start-up)', kind='pres'),
+    'O:32270': dict(role='8X8D tile-block loader into symbol blocks 0–4 (start-up, wall sets); fatal when missing', kind='pres', status='W',
+                    why='read whole s63 (view3d.md "The tile-block loader 0x32270"): PorViewArt.Load / LoadWallSet; the fatal halt is the module\'s exception'),
     # ---- explore ----
     'O:403e': dict(role='area loop (vectors 0/1, steps, party-defeated exit)', kind='play'),
     'O:3eb7': dict(role='ECL run loop', kind='play'),
@@ -123,7 +124,7 @@ OV = {
     'O:27aa9': dict(port_add='SpellGlobals.Ds6DB5 (s51: the remembered target on the game memory, kept across View / Use; cleared when its member leaves the party, an original bug fixed by decision: SpellGlobals.MemberLeft / PartyReplaced)'),
     'O:22f8c': dict(role='shop Id box', kind='play'),
     'O:23819': dict(role='party member selection (Home / End; any other key → the first member)', kind='play', port='PartySelection.Select'),
-    'O:2581c': dict(role='[?] number / money text builder', kind='pres'),
+    'O:2581c': dict(role='coin row parser: the picked row\'s coin kind and its amount-question label', kind='play'),
     # ---- shops, temples ----
     'O:7212': dict(role='shop', kind='play'),
     'O:5280': dict(role='temple', kind='play', port_add='MoneyScreens.StayForMoney (s48: the go-back question no longer clears the priest\'s message)'),

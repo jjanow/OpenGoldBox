@@ -63,6 +63,14 @@ public static class CombatSheet
     public static string CoinName(ClientResources r, int kind) =>
         Or(r.SheetCoin(kind), kind is >= 0 and < 7 ? Coins[kind] : "?");
 
+    /// <summary>
+    /// The coin kind of a picked coin row: the money Trade, Drop and Take hand the row's text (the DS:0FFA name first)
+    /// to 0x2581C, which reads the kind back from it (<see cref="GoldBox.Core.Game.CoinRows.KindOf"/>); the listed kind
+    /// when it reads none (no DS:0FFA name gets there).
+    /// </summary>
+    public static int PickedCoin(ClientResources? r, int listed) =>
+        GoldBox.Core.Game.CoinRows.KindOf(CoinName(r ?? new ClientResources(), listed)) is var k and >= 0 ? k : listed;
+
     /// <summary>One money line: (column, text) of the name and of the amount.</summary>
     public static ((int Col, string Text) Name, (int Col, string Text) Amount) MoneyLine(ClientResources r, EclCharacter c, int kind)
     {

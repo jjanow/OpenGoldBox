@@ -49,6 +49,20 @@ payments and was recomputed when View opened. **D** for those entries and the pa
   "room" = limit − weight.
 - **Add platinum** (0x24E8C, n): if overloaded by n, the character gets `room` platinum (and weight), the pool's
   platinum the rest (an "overloaded, money goes to the pool" message); else all n. Used by the appraiser's sale.
+- **The coin row parser 0x2581C** (read whole s63, run under emulation: `por_coinrow_oracle.py`,
+  `CoinRowProgramTests`; `CoinRows`). The money Trade (0x23190), Drop (0x234E1) and Take (0x25974) build their coin
+  lists from the DS:0FFA names (copper … jewellery, capitalised, 11 bytes each; Trade and Drop pad them on the left to the
+  longest, Take does not), a space and the amount, and hand the picked row's text and an output string to 0x2581C
+  (far, `retf 8`). It copies the row, skips leading spaces and reads the first character as it is: 'G' with the next
+  character upper-cased (UpCase) 'E' is gems (5), any other 'G' gold (3); 'P' platinum (4), 'E' electrum (2), 'S'
+  silver (1), 'C' copper (0), 'J' jewellery (6). It returns the kind and copies that kind's label (the overlay
+  strings at 0x257E3–0x25813: the coin names with a trailing space, electrum and silver in lower case) into
+  the output, which the caller puts between the two halves of its amount question for the amount question. Any
+  other first character returns the uninitialised local [bp-1] and leaves the output as it was `[?]`; no caller can
+  get there, since every row starts with a DS:0FFA name. The Client takes the kind back from the row's DS:0FFA name
+  (`CombatSheet.PickedCoin`). Its Drop and Trade questions name the coin by the DS:0FFA name and Take's by the label:
+  under DOS both print the same upper-case word. Under Amiga art, Drop and Trade's "Platinum" matched FS-UAE (s60);
+  electrum and silver, whose labels are lower case, were not compared `[?]`.
 
 ## Shop menu (0x7212)
 
@@ -366,7 +380,8 @@ even for Raise Dead / Stone to Flesh on a target that does not qualify, which th
   that for the new, per level: Σ over the classes with a level > 0 of level × (bonus(old) − bonus(new)), divided by
   the number of those classes (as training and creation add (rolls + Σ bonus) div classes); max HP never below 1.
   A fighter 16 → 15 at level 5 loses 5 (the program 2); a magic-user 7 → 6 at level 5 loses 5 (the program nothing:
-  below Con 14). Without the program's tables (no DS:408E) max HP is left as it is. The two removals run before the HP rule: a
+  below Con 14). Seen in the Client on Xvfb (s63): a dead Con 16 dwarf fighter of level 1 (max HP 11) raised at the
+  temple: Con 15, HP 1, status okay, max HP 10. Without the program's tables (no DS:408E) max HP is left as it is. The two removals run before the HP rule: a
   record of 32 (Animate Dead) with byte 4 set runs handler 32 (0xF776) under the lock: no death, but it writes the
   hostile byte (param >> 4), auto, undead level, attack level, move 12, NPC byte and type 0 (s51, emulation).
 - **Effect removal** (0x2AF10): the code removes one record per call (the model drops the first match); the

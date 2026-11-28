@@ -330,7 +330,7 @@ public static class MoneyScreens
             if (a.Action != ListRequest.RowPicked || a.Row < 0 || a.Row >= kinds.Count)
                 return;
             position = a.Row;
-            int kind = kinds[a.Row];
+            int kind = CombatSheet.PickedCoin(null, kinds[a.Row]); // 0x25B45 → 0x2581C (rows from the DS:0FFA names)
             string prompt = AmigaView.AmountPrompt(GameText.Cat(GameText.Cat(t.Text[Msg.HowMuch], t.Text.Coin(kind)), t.Text[Msg.WillYouTake]));
             t.ShowPageAlone(page);
             // The program caps the input at the pool's low word (0x25B89) and lets the coin word and weight wrap:

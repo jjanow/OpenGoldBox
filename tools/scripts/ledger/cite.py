@@ -207,7 +207,9 @@ ORACLE_O = {0x143F3: 'ai', 0x148BE: 'ai', 0xAEAB: 'ai', 0x22AC4: 'ai', 0x22827: 
             0x17831: 'camp', 0x1798A: 'camp', 0x179CD: 'camp', 0x17A45: 'camp', 0x17A8D: 'camp', 0x17B9D: 'camp',
             0x18055: 'camp', 0x18CDA: 'camp', 0x18E32: 'camp', 0x1813B: 'camp', 0x1838C: 'camp',
             # s52 lane F: por_list_oracle.py
-            0x2D594: 'list', 0x2D3D2: 'list', 0x2D502: 'list'}
+            0x2D594: 'list', 0x2D3D2: 'list', 0x2D502: 'list',
+            # s63: por_coinrow_oracle.py
+            0x2581C: 'coinrow'}
 ORACLE_S = {0x9E5C: 'sound', 0x9ECA: 'sound', 0xA222: 'sound', 0xA28E: 'sound', 0x2FD3: 'combat', 0x30FB: 'combat', 0x3AF7: 'level', 0x1758: 'trade',
             # s52 lane F: por_print_oracle.py, por_input_oracle.py
             0x77F8: 'print', 0x7A73: 'input', 0x7BF6: 'input'}

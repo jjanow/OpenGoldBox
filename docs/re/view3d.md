@@ -95,6 +95,18 @@ All 8 × 8 tiles share one numbering (Put8x8Symbol). Number 0 is "nothing". The 
   - Entered with fresh VM memory (the Client's `--area`) at script 3 or 4 the flags are clear and the script asks for
     block 25: `PorViewArt` then leaves the slot as it is and logs a diagnostic (the game would stop there).
   - `PorAreaEntryTests` enters every script 0..32 this way. Script 19 (the overland) loads no map and is refused.
+- **The tile-block loader 0x32270** (read whole s63; arguments block, symbol block; callers the start-up 0xE600 and
+  the wall-set loader 0x2F6FF):
+  - a symbol block outside 0–4 (the set constant at the unit's CS:0000, bits 0–4) returns at once. The WALLDEF size
+    check keeps every wall set inside slots 1–3, so neither caller is refused;
+  - the file name is `8x8d` + the disk byte DS:5376 (Str, width 1); the block is read (START 0464:0111, picture
+    class 0x0D, flag 1) into the far pointer DS:5E3A + 4 × slot;
+  - a nil pointer is fatal: 0464:00FF, an error line naming the file stem, the disk, a dash and the block (Str,
+    width 3) written to the screen, one key (0899:0059), 0464:00FF again and the quit 0899:0000 (the module holds every block, so the
+    engine throws instead: `PorViewArt`);
+  - then the key-buffer flush 0899:0104 (START 0x8A94) (after a load; the quit does not come back).
+  - The start-up (0xEA7B) loads block 202 into symbol block 4 and 203 into block 0, from disk 1 (DS:5376 is 1
+    there; only 8X8D1 holds 201–203, so another disk would stop the game).
 - LOADPIECES with 255 empties a slot. `[?]` Whether the program clears the bytes is not read; we zero them.
 - Wall type t (1..15) is the 156 bytes at (t − 1) × 156 of the three slots.
 
