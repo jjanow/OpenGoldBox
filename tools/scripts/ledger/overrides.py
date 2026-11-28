@@ -429,3 +429,73 @@ for _k, _v in S52.items():
     if _o.get('status') == 'W' and _o.get('why') and _v.get('status') == 'W':
         _v = dict(_v, why=_v['why'] + '; before s52: ' + _o['why'])
     _o.update(_v)
+
+# ---- s60 lanes (s60-lane-T/V/A/C/M.md "Ledger evidence") ----
+S60 = {
+    # lane T: list window, menu routine, text helpers
+    'O:2d669': dict(status='W', why='s60: run whole under emulation with the menu routine (por_listwin_oracle.py, ListWindowProgramTests, 1468 cases) and seen in DOSBox-X (s60-lane-T.md)'),
+    'O:2c936': dict(status='W', role='list window: the list\'s length', why='s60: run inside 0x2D669 under the list oracle'),
+    'O:2c8cf': dict(role='list window: entry k of a list'),
+    'O:2cfe0': dict(status='W', role='list window: last label at or above k (result unused by 0x2D073)', why='s60: run inside 0x2D669 under the list oracle'),
+    'O:2d073': dict(status='W', role='list window: the rows from the top', why='s60: run inside 0x2D669, draw log compared'),
+    'O:2d1a6': dict(status='W', role='list window: first non-space index', why='s60: run inside 0x2D669 under the list oracle'),
+    'O:2d1f2': dict(status='W', role='list window: last non-space index', why='s60: run inside 0x2D669 under the list oracle'),
+    'O:2d238': dict(status='W', role='list window: the highlighted row', why='s60: run inside 0x2D669, draw log compared'),
+    'O:2d2d7': dict(status='W', role='list window: the row unlit', why='s60: run inside 0x2D669, draw log compared'),
+    'O:2cc8c': dict(status='W', why='s60: key layer run under the list oracle, drawing read whole; the `[?]` settled ($4AFF); the timeout DS:6B2E–6B32 dead in v1.3'),
+    'O:2c99a': dict(role='menu routine: parse the menu words (digits and capitals start words)'),
+    'O:2caa9': dict(role='menu routine: draw the menu line'),
+    'S:3379': dict(status='W', why='read whole s60 lane T (every case; the open `[?]` is about indirect callers)'),
+    'O:239d6': dict(status='W', why='read whole s60 lane T (combat-menu.md)'),
+    'S:1307': dict(status='W', why='read whole s60 lane T and seen in DOSBox-X (hall party list)'),
+    'S:148f': dict(status='W', why='read whole s60 lane T (AC / HP number draw)'),
+    'S:1513': dict(status='W', why='read whole s60 lane T (AC / HP number draw)'),
+    'S:1583': dict(status='W', why='read whole s60 lane T (the status line is built)'),
+    'S:257e': dict(status='W', why='read s60 lane T (frame builder, no delay of its own)'),
+    'S:1c4d': dict(status='W', role='Str of a long integer (no drawing)', why='read s60 lane T'),
+    'S:1bd7': dict(role='Str of a byte'),
+    'S:2b8b': dict(status='W', why='read whole s60 lane T'),
+    'O:32123': dict(status='N', kind='pres', role='debug display (DS:49F7: `START STING` + Ctrl-D only)', why='s60 lane T: debug only, the Client has no debug mode'),
+    'S:7090': dict(status='N', kind='pres', why='s60 lane T: machine level (EGA registers, video pages, cell fill, clear)'),
+    'S:7101': dict(status='N', kind='pres', why='s60 lane T: machine level (EGA registers, video pages, cell fill, clear)'),
+    'S:7130': dict(status='N', kind='pres', why='s60 lane T: machine level (EGA registers, video pages, cell fill, clear)'),
+    'S:7147': dict(status='N', kind='pres', why='s60 lane T: machine level (EGA registers, video pages, cell fill, clear)'),
+    'S:7d3b': dict(status='N', kind='pres', why='s60 lane T: machine level (full clear)'),
+    'S:720c': dict(status='N', kind='pres', why='s60 lane T: font load (the importer)'),
+    # lane V: icons, pictures, 3D internals, sound calls, start-up
+    'O:1e468': dict(status='W', role='combat icon: builds the record\'s icon in slot 0xBF through scratch slot 11', why='read whole s60 lane V, seen (icon editor, DOSBox-X 0 px); head ORed (CombatArt.Party)'),
+    'O:1e315': dict(status='W', role='icon picture build: head ORed into the body (EGA OR / AND)', why='read whole s60 lane V, seen (pixel 46,113 = 4 | 2)'),
+    'O:1ce5e': dict(status='W', why='read whole s60 lane V, seen (editor frames from COMSPR 25 / 153, 0 px)'),
+    'O:1cf3d': dict(status='W', why='read whole s60 lane V, seen (editor screen 0 px)'),
+    'O:2e0ce': dict(status='W', why='read whole s60 lane V'),
+    'O:2e55d': dict(status='W', why='read whole s60 lane V'),
+    'O:2e7d6': dict(status='W', why='read whole s60 lane V; a nil entry draws nothing (fixed for DOS two-frame sprites)'),
+    'O:2e8f7': dict(status='W', role='area map draw', why='read s60 lane V, seen (save A 15,4 W, 0 px)'),
+    'O:2ea6b': dict(status='W', why='read s60 lane V (backdrop bands as view3d.md)'),
+    'O:2eb08': dict(status='W', role='3D view: DrawWallPiece', why='read s60 lane V (as view3d.md)'),
+    'O:2eeea': dict(status='W', role='3D view: flush the screen buffer', why='read s60 lane V'),
+    'O:32392': dict(status='W', why='read s60 lane V (symbol sets, error halt, buffer / direct modes)'),
+    'S:4354': dict(status='W', why='read whole s60 lane V (five POOL.CFG lines; the Client: EGA, --sound, full introduction)'),
+    'S:470f': dict(status='W', why='read s60 lane V (video mode set / restore)'),
+    'S:473f': dict(status='W', why='read s60 lane V (video mode set / restore)'),
+}
+for _a in ('4640', '46bb', '4751', '48e5', '4f14', '5ac4', '5b49', '5bd6', '5f91', '6ace', '6bd5', '6c72'):
+    S60['S:' + _a] = dict(status='W', why='read branch by branch s60 lane V; the visible effect matches the importer and renderer')
+for _a in ('8ae0', '8b4c', '8c5b', '8c85', '9e91', 'a2fa'):
+    S60['S:' + _a] = dict(status='W', why='read s60 lane V = sound.md §2.1; Core brackets every auto-stop caller')
+S60.update({
+    # lane A: area loop, camp, save
+    'O:3b19': dict(status='W', why='read whole s60 lane A: the camp after a vector-2 wipe fixed, seen in DOSBox-X and the Client'),
+    'O:18fb1': dict(status='W', why='read whole s60 lane A, seen in DOSBox-X and the Client (Select / Place extended keys)'),
+    'O:1fd3e': dict(status='W', why='read whole s52; the roster-file deletes read s60 (design question, not modelled)'),
+    'O:1f5e8': dict(status='W', why='read whole s52; the roster-file deletes read s60 (design question, not modelled)'),
+    # lane C: combat, items, temple
+    'O:29558': dict(status='W', why='s60 lane C: read whole, messages compared under the venue oracle (cure 7)'),
+    'O:99fd': dict(status='W', why='read whole s52; s60 lane C: the view and panel before trigger 0x0F ported'),
+    'O:bf8a': dict(status='W', why='read whole s52; s60 lane C: 0x2250A\'s "already using" shown, seen in DOSBox-X and the Client'),
+})
+for _k, _v in S60.items():
+    _o = OV.setdefault(_k, {})
+    if _o.get('status') == 'W' and _o.get('why') and _v.get('status') == 'W':
+        _v = dict(_v, why=_v['why'] + '; before: ' + _o['why'])
+    _o.update(_v)

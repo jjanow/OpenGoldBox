@@ -350,7 +350,17 @@ public static class VenueScreens
         // the name on row 18, the text from row 19, the pause and the rows blanked (Amiga hunk 25 +0x3AF0–0x3B06).
         d.Text.ClearRect(TextWindow.Left, TextWindow.Top + 1, TextWindow.Right, TextWindow.Bottom);
         MemberMessage(t, c, who, t.Text[Msg.IsCured], pause: true);
-        TempleRules.Apply(cure, c, t.Random, t.Effects);
+        // Cure 7's spell routine 0x29558 says its own texts (s60): 0x2BF6B's START 0x16EC(member, text, 10, 1) and
+        // 0x29558's START 0x2B8B(member, text, 1), whose out-of-fight branch is START 0x16EC with the pause too (the
+        // text cut to 40 characters first, 0x2B9B); outside a fight 0x16EC ignores the row.
+        TempleRules.Apply(cure, c, t.Random, t.Effects, (who2, e) =>
+        {
+            if (CombatText.SpellMessage(e) is { } m)
+            {
+                string text = t.CombatTexts[m.Text];
+                MemberMessage(t, who2, AmigaView.Case(who2.Name), text.Length > 40 ? text[..40] : text, pause: true);
+            }
+        });
     }
 
     /// <summary>

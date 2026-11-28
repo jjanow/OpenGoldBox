@@ -1,3 +1,4 @@
+using GoldBox.Core.Explore;
 using GoldBox.Data.Dax;
 using GoldBox.Data.Module;
 using GoldBox.Data.Module.Por;
@@ -202,6 +203,30 @@ public static class PorRoundTrip
                 r.Mismatches.Add($"overland: {mo.Width} × {mo.Height} in the module, {go.Width} × {go.Height} in the program");
             Compare("combat wilderness terrain via PorModule", module.Program()?.CombatTables().WildMap, gp2.CombatTables().WildMap!,
                 "OVERLAND (engine)");
+            // The land's recovery (s60): the document's tables give the program's bytes at their offsets, the squares its
+            // code immediates, and the engine reads the same tables.
+            if (gp2.RecoveryOffsets is { } ro && go.Recovery is { } gr)
+            {
+                var dr = fromDoc?.Recovery;
+                byte[] Pan(OverlandRecoveryTables t, bool y) =>
+                    [.. t.Pan.SelectMany(p => BitConverter.GetBytes((ushort)(y ? p.Y : p.X)))];
+                Compare("overland recovery list A", dr?.ListA.ToArray(), ds[ro.ListA..(ro.ListA + ro.CountA)], "OVERLAND");
+                Compare("overland recovery list B", dr?.ListB.ToArray(), ds[ro.ListB..(ro.ListB + ro.CountB)], "OVERLAND");
+                Compare("overland recovery from", dr?.From.ToArray(), ds[ro.From..(ro.From + OverlandRecovery.Colours)], "OVERLAND");
+                Compare("overland recovery map A", dr?.ToA.ToArray(), ds[ro.ToA..(ro.ToA + OverlandRecovery.Colours)], "OVERLAND");
+                Compare("overland recovery map B", dr?.ToB.ToArray(), ds[ro.ToB..(ro.ToB + OverlandRecovery.Colours)], "OVERLAND");
+                Compare("overland recovery pan x", dr is null ? null : Pan(dr, false), ds[ro.PanX..(ro.PanX + 2 * ro.Frames)], "OVERLAND");
+                Compare("overland recovery pan y", dr is null ? null : Pan(dr, true), ds[ro.PanY..(ro.PanY + 2 * ro.Frames)], "OVERLAND");
+                r.Count("OVERLAND");
+                if (dr is null || dr.First != ro.First || dr.Last != ro.Last)
+                    r.Mismatches.Add("overland recovery: the squares before / after the frames differ from the program's code");
+                r.Count("OVERLAND (engine)");
+                if (mo?.Recovery is not { } mr || !mr.ListA.SequenceEqual(gr.ListA) || !mr.ListB.SequenceEqual(gr.ListB)
+                    || !mr.From.SequenceEqual(gr.From)
+                    || !mr.ToA.SequenceEqual(gr.ToA) || !mr.ToB.SequenceEqual(gr.ToB) || !mr.Pan.SequenceEqual(gr.Pan)
+                    || mr.First != gr.First || mr.Last != gr.Last)
+                    r.Mismatches.Add("overland recovery via PorModule differs from the program's tables");
+            }
             foreach (var id in game.EclFiles().SelectMany(f => f.File.Entries.Select(e => (int)e.Id)).Distinct())
             {
                 r.Count("OVERLAND (areas)");

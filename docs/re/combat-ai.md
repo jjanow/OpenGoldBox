@@ -270,8 +270,16 @@ best shield and not cursed: it is unreadied and the best shield readied. Rebuild
 readied → unreadied (items with 0x3E > 0x7F run their handler, 0x2AEEA, "removed"). Unreadied → readied only when 0x100
 + hands ≤ 2, its slot (0–8; a ring → the second ring slot; arrows 0x49 / bolts 0x1C → slots 11/12) is free and the
 class mask fits; otherwise a message (camp.md "The Items page's Ready, Drop, Halve and Join"), the hands-full one not
-for a creature with 0x10F ≠ 0 in a fight. `[?]` The AI's own calls (the weapon pick) show the class and slot messages
-too when they refuse; Core's `MonsterAi.Toggle` drops them (not seen in DOSBox-X).
+for a creature with 0x10F ≠ 0 in a fight. **The AI's own calls** (0xBF8A, read s60) show the refusals as the Items
+page does (START 0x1693, row 24, the pause): Core's `MonsterAi.Toggle` raises `ReadyNotice`, the Client shows it as
+the item screens' notice. Which can come: "already using" + the weapon in slot 0 when a cursed weapon that is not the
+choice keeps the slot (the readying branch is skipped), 0x100 > 2 and the off-hand item is cursed or missing (0xC449
+readies the choice: hands and slot fail, the slot test is the later one); never the hands-full text (0x10F ≠ 0 in
+an AI turn).
+"It's Cursed" cannot come (a cursed item's worth is 0, which never beats a start worth, so the choice is never cursed,
+and the other calls skip cursed items), nor "Wrong Class" (the pick takes only items whose class mask fits, the same
+test as 0x2250A's). Core test `MonsterAiTests.Readying_says_already_using_when_a_cursed_weapon_keeps_the_slot`. Not
+set up in DOSBox-X (a Quick party member with a cursed two-hander, a cursed shield and a better weapon in the pack).
 
 ## Random draws, in order
 

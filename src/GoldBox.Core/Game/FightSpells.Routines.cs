@@ -671,13 +671,18 @@ public sealed partial class FightSpells
 /// <summary>
 /// Program globals of the spell routines that are never reset by a fight or a camp: DS:4844 (Enlarge's Strength 18,
 /// Sleep's 4d4 budget, Dispel Magic's scratch) and DS:4845 (Enlarge's exceptional part, Sleep's last target cost,
-/// Dispel Magic's last effect level). Both lie in the uninitialised data (the run-time does not clear it): the value
-/// before the first writer is `[?]` (0 here, as DOSBox-X's fresh memory).
+/// Dispel Magic's last effect level). Both lie past the end of START.EXE's expanded image, in the memory the EXEPACK
+/// unpacker leaves behind (neither the unpacker nor the Turbo Pascal start-up clears it): **100 and 11** when the program
+/// starts (s60: the v1.3 unpacker run under emulation on zeroed and on 0xFF-filled memory gives 100 / 11 both times, and
+/// a DOSBox-X state at the party menu holds 100 / 11), so these are the start values until the first writer.
 /// </summary>
 public sealed class SpellGlobals
 {
-    public byte Ds4844 { get; set; }
-    public byte Ds4845 { get; set; }
+    /// <summary>The values the EXEPACK unpacker leaves at DS:4844 / DS:4845 (START.EXE v1.3).</summary>
+    public const byte StartDs4844 = 100, StartDs4845 = 11;
+
+    public byte Ds4844 { get; set; } = StartDs4844;
+    public byte Ds4845 { get; set; } = StartDs4845;
 
     /// <summary>
     /// DS:6DB5 (far pointer): the remembered target of a cast outside a fight (0x27AA9, mode 2). Its writers in the

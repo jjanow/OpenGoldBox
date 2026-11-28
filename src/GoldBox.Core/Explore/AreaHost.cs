@@ -35,7 +35,7 @@ public sealed class AreaHost(AreaLoop loop, IEclHost inner) : IEclHost
     }
 
     public ushort Random(ushort range) => Loop.Rng.Next(range);
-    public void OverlandRecovery(bool animated, Func<ushort, ushort> random) => Inner.OverlandRecovery(animated, random);
+    public void OverlandRecovery(OverlandRecoveryTables tables, bool animated, Func<ushort, ushort> random) => Inner.OverlandRecovery(tables, animated, random);
 
     public void Print(string text, bool clearFirst) => Inner.Print(text, clearFirst);
     public void PrintReturn() => Inner.PrintReturn();
@@ -74,6 +74,7 @@ public sealed class AreaHost(AreaLoop loop, IEclHost inner) : IEclHost
     public void DrawGlyphs(ushort address, IReadOnlyList<byte> glyphs) => Inner.DrawGlyphs(address, glyphs);
     public EclCharacter? CreateNpc(ushort monster) => Inner.CreateNpc(monster);
     public void DamageReport(EclDamageReport report) => Inner.DamageReport(report);
+    public void DamageApplied(EclCharacter target) => Inner.DamageApplied(target);
     public void DamageEnd(bool partyKilled) => Inner.DamageEnd(partyKilled);
     public void TextHome() => Inner.TextHome();
 }

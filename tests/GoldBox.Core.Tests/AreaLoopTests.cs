@@ -269,4 +269,28 @@ public class AreaLoopTests
         g.Loop.Redraw();
         Assert.False(g.Loop.ShowAreaMap);
     }
+
+    [PorFact]
+    public void Encamp_opens_the_camp_menu_after_a_vector_2_that_destroyed_the_party()
+    {
+        // 0x3B19 runs vector 2, then 0x196A0 whatever (neither tests DS:49FF); vector 3 runs nothing (0x3EB7 tests
+        // DS:49FF first) and the area loop ends at 0x4172 (s60).
+        var dir = PorData.Open();
+        var ui = new ScriptedAreaUi { CampInterrupted = true };
+        var player = new PorPlayer(new ScriptedEclHost { StopWhenInputMissing = true },
+            new ScriptedEncounterUi { StopWhenInputMissing = true }, new RecordingCombatRunner(), ui);
+        var g = PorGame.FromSave(dir, PorViewArt.Load(dir), dir.Find("SAVGAMA.DAT")!, player, 1);
+        var area = g.Memory.ScriptArea;
+        area[0x1F] = 0x00;                                         // EXIT for vector 3
+        byte[] wipe = [0x2E, 0, 0xE0, 0, 1, 0, 1, 0, 200, 0, 0, 0x00]; // DAMAGE 0xE0, 1, 1, 200, 0; EXIT
+        wipe.CopyTo(area[0x20..]);
+        g.Vm.Vectors[2] = 0x9920;
+        g.Vm.Vectors[3] = 0x991F;
+        g.Loop.Execute(AreaCommand.Encamp);
+        Assert.Contains("Camp", ui.Calls);
+        Assert.Equal(EclStopReason.ExternalStop, g.Loop.Runs[0].Reason);
+        Assert.Equal(EclStopReason.ExternalStop, g.Loop.Runs[1].Reason); // vector 3: no opcode run
+        Assert.Equal(0, g.Loop.Runs[1].Steps);
+        Assert.True(g.Loop.Ended);
+    }
 }

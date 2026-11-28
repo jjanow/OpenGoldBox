@@ -48,7 +48,7 @@ public sealed class PorImportReport
 /// </summary>
 public static class PorImporter
 {
-    public const string ImporterName = "GoldBox.Importer 0.7.39";
+    public const string ImporterName = "GoldBox.Importer 0.7.42";
 
     /// <summary>VM $6E12 (DS:5376): the disk LOADFILES reads GEO&lt;d&gt; from.</summary>
     private const ushort DiskCell = 0x6E12;
@@ -238,8 +238,10 @@ public static class PorImporter
             });
             if (program.Overland is { } overland)
             {
-                ModuleJson.Write(Out(OverlandDocument.RelativePath), PorModuleCodec.Overland(overland, program.OverlandOffsets));
+                ModuleJson.Write(Out(OverlandDocument.RelativePath), PorModuleCodec.Overland(overland, program.OverlandOffsets, program.RecoveryOffsets));
                 report.Overland = true;
+                if (overland.Recovery is null)
+                    report.Notes.Add("the land's recovery tables were not found in GAME.OVR's code: rules/overland.json has no \"recovery\" (the recovery after Yarash is skipped)");
             }
             else
                 report.Notes.Add("the overland tables were not found in GAME.OVR's code: rules/overland.json not written");

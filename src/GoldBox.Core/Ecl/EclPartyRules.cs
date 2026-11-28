@@ -37,6 +37,9 @@ public sealed class EclPartyRules(EclMemory memory, Func<int, int> random)
     public event Action<string>? Diagnostic;
     /// <summary>DAMAGE applied to one creature (0x959F), for the text box.</summary>
     public event Action<EclDamageReport>? Damaged;
+    /// <summary>DAMAGE's hit applied (0x96BF, START 0x2DC8): the line's creature has its new HP and status; the program
+    /// blanks the cells under the list and draws the party list now (0x96D0 / 0x96DD).</summary>
+    public event Action<EclCharacter>? DamageApplied;
 
     private EclParty Party => Memory.Party ?? throw new InvalidOperationException("no party attached");
 
@@ -316,5 +319,6 @@ public sealed class EclPartyRules(EclMemory memory, Func<int, int> random)
             m[InPlay] = 0;
             m[Hp] = 0;
         }
+        DamageApplied?.Invoke(m);
     }
 }

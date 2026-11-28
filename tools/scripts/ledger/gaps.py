@@ -1,26 +1,26 @@
 # ---- hand-ranked gap lists (exec'd at the end of render.py) ----
 GAP_PLAY = [
 ]
-# rows closed in s52 (W now): their hand notes, shown under "Closed in s52"; prune at the next session's rebuild
+# rows closed in s60 (W or N now): their notes, shown under "Closed in s60"; prune at the next session's rebuild
 GAP_DONE = [
-    ('O:6184', 'done s52 lane A: an empty list ends at once and the screen is redrawn (DOSBox-X); run under emulation inside 0x62B6 (`por_venue_oracle.py` lootTake)'),
-    ('O:2eef4', 'read whole s52 lane F: the view pixel-equal to DOSBox-X from the formats (`view3d.md`); its internals stay in the presentation list'),
+    ('O:2d669', 'done s60 lane T: run whole with its helpers and the menu routine under emulation (`por_listwin_oracle.py`, 1468 cases); digit-row keys fixed'),
+    ('S:3379', 'read whole s60 lane T (the open `[?]` is about indirect callers)'),
+    ('O:239d6', 'read whole s60 lane T'),
+    ('O:2cc8c', 'key layer under the list oracle, drawing read whole s60 lane T; `[?]` settled ($4AFF)'),
+    ('S:1307', 'read whole s60 lane T with its helpers; seen in DOSBox-X'),
+    ('S:2b8b', 'read whole s60 lane T'),
+    ('O:2e8f7', 'read s60 lane V (it is the area map draw); internals read; seen 0 px'),
+    ('S:4751', 'segment 0464 read branch by branch s60 lane V'),
+    ('O:1e468', 'icon builders read whole s60 lane V; head ORed into the body fixed; icon editor 0 px in DOSBox-X'),
+    ('O:32123', 's60 lane T: a debug display (START STING + Ctrl-D), not ported by design'),
+    ('O:2e0ce', 'read whole s60 lane V; the sprite renderer\'s nil frame fixed'),
+    ('S:8c85', 'game-side sound calls read s60 lane V (= sound.md §2.1)'),
+    ('S:4354', 'read whole s60 lane V (five POOL.CFG lines)'),
+    ('S:7d3b', 's60 lane T: machine-level text helpers, not ported by design'),
 ]
 GAP_PRES = [
-    ('O:2d669', 'list window and its never-cited helpers 0x2C936, 0x2CFE0, 0x2D073, 0x2D1A6, 0x2D1F2, 0x2D238, 0x2D2D7: the Client rebuilt the pages from DOSBox-X (s45–s46)'),
-    ('S:3379', 'screen redraw by case (hall, camp, loot, shop): two `[?]` and three observed-only lines'),
-    ('O:239d6', 'spell list window: four `[?]` lines; the Client draws its own page'),
-    ('O:2cc8c', 'menu routine (every horizontal menu): one `[?]` line; its key handling is run by the oracles but its drawing is not compared'),
-    ('S:1307', 'party list redraw and its colour helpers 0x148F, 0x1513, the creature panel 0x1583, the icon flash 0x257E, the View text helper 0x1C4D: run under the oracles, drawing compared only in DOSBox-X'),
-    ('S:2b8b', 'effect message and pause'),
-    ('O:2e8f7', '3D view internals 0x2E8F7, 0x2EA6B, 0x2EB08, 0x2EEEA never cited, the piece draw 0x32392 cited only inside (0x2EEF4 itself read whole s52): the view is pixel-equal to DOSBox-X from the formats (`view3d.md`), so only a check'),
-    ('S:4751', 'pictures, START segment 0464 (0x4640–0x6C72): read, decode, draw, recolour, free; the importer decodes the formats and the Client draws them (`por-art-formats.md`); only some draw entries are cited'),
-    ('O:1e468', 'combat icon slots and their builders 0x1E315, 0x1CE5E, 0x1CF3D (icon editor preview, recolour)'),
-    ('O:32123', 'text page with a key prompt on the level-drain path, never cited (trapped by the spell oracle)'),
-    ('O:2e0ce', 'picture frame draw / free (0x2E0CE, 0x2E55D) and the sprite renderer 0x2E7D6: spec lines only'),
-    ('S:8c85', 'sound API (cue 0x8C85, device set-up 0x8C5B, driver start 0x8BBC and helpers): the driver itself is oracle-checked, the game-side calls are spec only'),
-    ('S:4354', 'start-up configuration (video, sound, installer lines), read in part'),
-    ('S:7d3b', 'text helpers 0x7090, 0x7101, 0x7130, 0x7147, 0x720C, 0x7D3B never cited'),
+    ('O:2581c', 'number / money text builder: the C# names only inside addresses'),
+    ('O:32270', 'picture block load with disk check (wall sets, start-up): spec only; the module replaces the disk check'),
 ]
 G = []
 G.append('## Gaps on the title-to-ending path')
@@ -45,10 +45,10 @@ G.append('|---|---|---|---|---|')
 for i, (k, note) in enumerate(GAP_PRES, 1):
     G.append('| %d | %s | %s | %s | %s |' % (i, addr(k), role(k), ST[k], note))
 G.append('')
-G.append('### Closed in s52')
+G.append('### Closed in s60')
 G.append('')
 G.append('Rows that left the ranked lists this session, with the lane notes (their status stays in the unit tables). '
-         'The s52 lanes\' branch-by-branch reads of the W-by-citation rows are in `s52-lane-A.md` … `s52-lane-F.md` '
+         'The lanes\' reads are in `s52-lane-A.md` … `s52-lane-F.md`, `s60-lane-T.md`, `-V`, `-A`, `-C`, `-M` '
          'and under "Statuses set by hand".')
 G.append('')
 G.append('| Routine | Role | St | Note |')

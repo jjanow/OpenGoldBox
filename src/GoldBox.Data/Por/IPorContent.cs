@@ -62,6 +62,13 @@ public interface IPorContent : IEclScriptSource, IAreaMapSource
     byte[]? AmigaIconPairs() => null;
 
     /// <summary>
+    /// The Amiga program's land's-recovery tables (its own colour map and generator; taken from the player's
+    /// <c>program</c> at import, <see cref="Module.AmigaOverlandRecoveryDocument"/>), or null without the Amiga overlay:
+    /// then Amiga tile sheets are not recoloured.
+    /// </summary>
+    GoldBox.Core.Explore.AmigaOverlandRecoveryTables? AmigaOverlandRecovery() => null;
+
+    /// <summary>
     /// The pens the Amiga program draws each DOS text colour 0–15 in with its text font (pass 2 takes the next pen;
     /// <see cref="Module.AmigaTextPensDocument"/>), or null without the Amiga text font.
     /// </summary>

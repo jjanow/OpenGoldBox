@@ -156,6 +156,8 @@ public sealed partial class EffectHandlers
                 RecalculateStats(c);
                 c[0x112] = c[0x112] > 0x34 ? (byte)(c[0x112] - 2) : (byte)0x32;
                 c[0x111] = c[0x112];
+                if (ReferenceEquals(c, Current))
+                    Emit(c, EffectEvent.PanelRedrawn); // 0xF749–0xF761: START 0x1583 for DS:5D92
                 return;
             case 31 or 51 or 52 or 53: // 0xFF9A helpless, snake charm, paralysis, sleep: actions end (START 0x31D7)
                 FightRules.EndActions(rec);

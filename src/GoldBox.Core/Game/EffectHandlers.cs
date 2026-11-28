@@ -30,6 +30,11 @@ public interface IFightTerrain
 public enum EffectEvent
 {
     StartsTraining, Silenced, LostImage, Coughing, Ages, Weakens, ParalysisFailed,
+    /// <summary>
+    /// Handler 30 (0xF749–0xF761, s60): the coughing creature's status panel drawn again (START 0x1583) when it is the
+    /// current creature (DS:5D92), after its AC bytes changed. No text.
+    /// </summary>
+    PanelRedrawn,
     GainsItem, Unaffected, EffectGained, CastingLost, NonWeaponDamage, MissileDodged, Hardier,
     FearsDragon, Charmed, Healed, SpellCast, SpellAborted, BeginsCasting, Other,
     /// <summary>Non-weapon damage put the creature out of play (0x2C44A: the "goes down" / dying / killed message).</summary>

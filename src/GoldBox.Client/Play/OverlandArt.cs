@@ -9,8 +9,9 @@ namespace GoldBox.Client.Play;
 /// file's variant (the Amiga overlay has its own SQRPACI, BACPAC and ICON, por-art-formats.md §3) with its palette run,
 /// DOS where the variant has none or fewer tiles than DOS.
 /// <para>
-/// [?] The Amiga sets are taken tile for tile in the DOS order (the tile bytes of the overland table number DOS's
-/// sheets; the Amiga program's own numbering is not read). [?] The Amiga marker frames are drawn with colour 0
+/// The Amiga sets are taken tile for tile in the DOS order (the tile bytes of the overland table number DOS's sheets;
+/// the Amiga land's recovery numbers its sheets the same way, s60: hunk 13 +0x2914; [?] the Amiga view's own tile
+/// lookup, hunk 25 +0x1AD6, not compared table for table). [?] The Amiga marker frames are drawn with colour 0
 /// see-through and no recolouring: the DOS ICON load's light magenta → black remap (DS:0CD2 → 0CF2) is DOS-palette
 /// specific, and the Amiga program's icon handling is not read.
 /// </para>
@@ -32,23 +33,37 @@ public sealed class OverlandArt
 
     private bool _lowDos, _highDos;
 
+    /// <summary>The Amiga sheets' palette-run start, or null where the sheet is DOS's.</summary>
+    private int? _lowAmiga, _highAmiga;
+
     /// <summary>
     /// The land's recovery ran this session (<see cref="Core.Explore.OverlandRecovery"/>): the program recolours its tile
     /// sheets in memory, loaded once a session, so the change stays (an earlier save's Load included). An art change
     /// rebuilds the tiles and recolours them again.
     /// </summary>
-    public bool Recovered { get; private set; }
+    public bool Recovered => _recovery is not null;
+    private Core.Explore.OverlandRecoveryTables? _recovery;
 
-    /// <summary>
-    /// Tile t's pixels for the recolour when its sheet is the DOS one (EGA indices), else null. [?] The Amiga program
-    /// holds the same tile lists and pan but one colour map of its own (00 01 02 03 04 01 06 07 08 09 0A 0B 02 02 0A 0F,
-    /// next to the lists in <c>program</c>); its routine is not read, so Amiga tiles are not recoloured.
-    /// </summary>
+    /// <summary>Tile t's pixels for the DOS recolour when its sheet is the DOS one (EGA indices), else null.</summary>
     public byte[]? DosTile(int t) =>
         (t < PorOverlandArt.SheetTiles ? _lowDos : _highDos) ? Art.Tile(t, outdoor: false)?.Pixels : null;
 
-    /// <summary>Marks the recovery as run (the tiles were recoloured in place by the caller).</summary>
-    public void MarkRecovered() => Recovered = true;
+    /// <summary>
+    /// Tile t's pixels and palette-run start for the Amiga recolour (<see cref="Core.Explore.AmigaOverlandRecovery"/>,
+    /// hunk 27 +0x7160) when its sheet is the Amiga one (pens 0–15 from the start), else null. The Amiga program numbers
+    /// its sheets as DOS (hunk 13 +0x2914: item t &amp; 0x7F of the low sheet hunk 32 +0xB18 or, above 0x7F, the high
+    /// one +0xB1C; two tiles side by side per item, even on the left), as the split of the variant's items.
+    /// </summary>
+    /// <summary>The Amiga program's recovery tables (the module's <c>art/amiga/overland-recovery.json</c>), or null.</summary>
+    public Core.Explore.AmigaOverlandRecoveryTables? AmigaRecovery => _content?.AmigaOverlandRecovery();
+
+    public (byte[] Px, int Pen0)? AmigaTile(int t) =>
+        (t < PorOverlandArt.SheetTiles ? _lowAmiga : _highAmiga) is int b && Art.Tile(t, outdoor: false) is { } p
+            ? (p.Pixels, b) : null;
+
+    /// <summary>Marks the recovery as run with the module's <paramref name="tables"/> (the tiles were recoloured in place
+    /// by the caller; a rebuild recolours them again with the same tables).</summary>
+    public void MarkRecovered(Core.Explore.OverlandRecoveryTables tables) => _recovery = tables;
 
     /// <summary>Takes the art from <paramref name="choice"/>'s variant (see the class summary).</summary>
     public void UseArt(PorArtChoice choice, Func<byte[], int>? paletteBase)
@@ -63,6 +78,7 @@ public sealed class OverlandArt
         {
             Art = dos;
             _lowDos = _highDos = true;
+            _lowAmiga = _highAmiga = null;
             Recolour();
             return;
         }
@@ -85,14 +101,24 @@ public sealed class OverlandArt
             SameOrDos(bac, dosBac), markers);
         _lowDos = low.Count < dosLow.Count;
         _highDos = high.Count < dosHigh.Count;
+        _lowAmiga = _lowDos ? null : AmigaBase("SQRPACI", 1, choice, paletteBase);
+        _highAmiga = _highDos ? null : AmigaBase("SQRPACI", 2, choice, paletteBase);
         Recolour();
     }
 
     private void Recolour()
     {
-        if (Recovered)
-            Core.Explore.OverlandRecovery.ApplyFinal(DosTile);
+        if (_recovery is not { } tables)
+            return;
+        Core.Explore.OverlandRecovery.ApplyFinal(tables, DosTile);
+        if (AmigaRecovery is { } amiga)
+            Core.Explore.AmigaOverlandRecovery.ApplyFinal(amiga, AmigaTile);
     }
+
+    /// <summary>The palette-run start of an Amiga variant block (only the Amiga program's own map fits its pens), or null.</summary>
+    private int? AmigaBase(string file, int id, PorArtChoice choice, Func<byte[], int> paletteBase) =>
+        _content?.Art(file, id, choice) is { Variant: GoldBox.Data.Module.Por.PorAmigaArt.Variant, Frames: [{ Delay: null }] } img
+            ? paletteBase(img.PaletteRgb) : null;
 
     /// <summary>The variant's tiles cut to DOS's count, or DOS's when it has fewer (as <see cref="CombatArt.SameOrDos"/>).</summary>
     public static List<OverlandPicture?> SameOrDos(List<OverlandPicture?> chosen, List<OverlandPicture?> dos) =>

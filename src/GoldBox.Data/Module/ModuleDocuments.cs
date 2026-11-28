@@ -22,6 +22,54 @@ public sealed record AmigaIconColoursDocument
 }
 
 /// <summary>
+/// <c>art/amiga/overland-recovery.json</c> (docs/module-format.md §10, docs/re/geo-format.md "The land recovers",
+/// Amiga; importer 0.7.42): the Amiga program's land's-recovery tables (hunk 13 +0x2872, recolour hunk 27 +0x7160,
+/// generator +0x72C8), read from the player's <c>program</c> at import (<see cref="Por.PorAmigaOverlandRecovery"/>):
+/// the two tile lists (bit 7: the high sheet), the one colour map (16 Amiga tile pens), the view squares before and
+/// after the frames and one per frame (x, y), and the generator's two nibble tables (16 each).
+/// </summary>
+public sealed record AmigaOverlandRecoveryDocument
+{
+    public const string RelativePath = "art/amiga/overland-recovery.json";
+
+    public required int[] ListA { get; init; }
+    public required int[] ListB { get; init; }
+    public required int[] Map { get; init; }
+    public required int[] First { get; init; }
+    public required int[] Last { get; init; }
+    public required int[][] Pan { get; init; }
+    public required int[] GeneratorHigh { get; init; }
+    public required int[] GeneratorLow { get; init; }
+    public SourceRef? Source { get; init; }
+
+    public static AmigaOverlandRecoveryDocument From(GoldBox.Core.Explore.AmigaOverlandRecoveryTables t) => new()
+    {
+        ListA = [.. t.ListA.Select(b => (int)b)],
+        ListB = [.. t.ListB.Select(b => (int)b)],
+        Map = [.. t.Map.Select(b => (int)b)],
+        First = [t.First.X, t.First.Y],
+        Last = [t.Last.X, t.Last.Y],
+        Pan = [.. t.Pan.Select(p => new[] { p.X, p.Y })],
+        GeneratorHigh = [.. t.High.Select(b => (int)b)],
+        GeneratorLow = [.. t.Low.Select(b => (int)b)],
+        Source = new SourceRef { Container = "program" },
+    };
+
+    /// <summary>The tables, or null when a value is out of range or the shape is not the routine's.</summary>
+    public GoldBox.Core.Explore.AmigaOverlandRecoveryTables? ToTables()
+    {
+        static bool Bytes(int[] a) => a.All(v => v is >= 0 and <= 255);
+        if (!Bytes(ListA) || !Bytes(ListB) || !Bytes(Map) || !Bytes(GeneratorHigh) || !Bytes(GeneratorLow)
+            || First is not [var fx, var fy] || Last is not [var lx, var ly] || Pan.Any(p => p.Length != 2))
+            return null;
+        var t = new GoldBox.Core.Explore.AmigaOverlandRecoveryTables([.. ListA.Select(v => (byte)v)],
+            [.. ListB.Select(v => (byte)v)], [.. Map.Select(v => (byte)v)], (fx, fy), (lx, ly),
+            [.. Pan.Select(p => (p[0], p[1]))], [.. GeneratorHigh.Select(v => (byte)v)], [.. GeneratorLow.Select(v => (byte)v)]);
+        return t.Problem() is null ? t : null;
+    }
+}
+
+/// <summary>
 /// <c>art/amiga/text-pens.json</c> (docs/module-format.md §10, docs/re/por-art-formats.md §4 "Text font"): for each DOS
 /// text colour 0–15, the screen pen the Amiga program draws that text in with its text font (<c>art/amiga/poolrad/0/8</c>);
 /// the second pass, one pixel to the right, takes the next pen. Pens are registers 16–31 (the font PNG's palette).
@@ -273,7 +321,46 @@ public sealed record OverlandDocument
     public int Height { get; init; }
     public required int[] Tiles { get; init; }
     public List<OverlandSiteDocument> SpecialLocations { get; init; } = [];
+    /// <summary>The land's recovery after Yarash (PoR GAME.OVR 0x20D50; s60), or null when the module has none.</summary>
+    public OverlandRecoveryDocument? Recovery { get; init; }
     public OverlandSource? Source { get; init; }
+}
+
+/// <summary>
+/// <c>rules/overland.json</c> "recovery" (§6): two tile lists (sheet item numbers, bit 7 the high sheet) recoloured by
+/// <see cref="From"/> → <see cref="ToA"/> / <see cref="ToB"/> (16 EGA colours each), the view's top-left overland square
+/// before the frames and after them, and one top-left square per animated frame (their count is the frame count).
+/// </summary>
+public sealed record OverlandRecoveryDocument
+{
+    public required int[] ListA { get; init; }
+    public required int[] ListB { get; init; }
+    public required int[] From { get; init; }
+    public required int[] ToA { get; init; }
+    public required int[] ToB { get; init; }
+    public required OverlandSquareDocument First { get; init; }
+    public required OverlandSquareDocument Last { get; init; }
+    public required List<OverlandSquareDocument> Pan { get; init; }
+    /// <summary>Where the importer read the tables: START.EXE data-segment offsets (the squares are GAME.OVR code immediates).</summary>
+    public OverlandRecoverySource? Source { get; init; }
+}
+
+public sealed record OverlandSquareDocument
+{
+    public int X { get; init; }
+    public int Y { get; init; }
+}
+
+public sealed record OverlandRecoverySource
+{
+    public required string Container { get; init; }
+    public int ListA { get; init; }
+    public int ListB { get; init; }
+    public int From { get; init; }
+    public int ToA { get; init; }
+    public int ToB { get; init; }
+    public int PanX { get; init; }
+    public int PanY { get; init; }
 }
 
 public sealed record OverlandSiteDocument

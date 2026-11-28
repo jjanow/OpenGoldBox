@@ -225,6 +225,52 @@ public class MonsterAiTests
     }
 
     [Fact]
+    public void Readying_says_already_using_when_a_cursed_weapon_keeps_the_slot()
+    {
+        // 0xBF8A (s60): a cursed two-handed sword (worth 0, not chosen) keeps slot 0, so the readying branch is skipped;
+        // with 0x100 = 3 and the off-hand shield cursed, 0xC449 calls 0x2250A on the chosen dagger, which refuses (the
+        // last failing test wins: hands, then the slot) and shows "already using" + the sword (START 0x1693).
+        var table = new byte[BaseItemTable.EntrySize * BaseItemTable.Count];
+        var items = new BaseItemTable(table);
+        items.Set(1, BaseItemTable.Slot, 0); // two-handed sword
+        items.Set(1, 1, 2);
+        items.Set(1, 13, 0xFF);
+        items.Set(2, BaseItemTable.Slot, 1); // shield
+        items.Set(2, 1, 1);
+        items.Set(2, 13, 0xFF);
+        items.Set(3, BaseItemTable.Slot, 0); // dagger, 1d4
+        items.Set(3, 1, 1);
+        items.Set(3, 9, 1);
+        items.Set(3, 10, 4);
+        items.Set(3, 13, 0xFF);
+        var gob = Creature(1);
+        gob[MonsterAi.ClassMask] = 0xFF;
+        byte[] Item(byte type, bool readied, bool cursed)
+        {
+            var it = new byte[EclCharacter.ItemRecordSize];
+            it[0x2E] = type;
+            it[CombatRules.ItemEquipped] = (byte)(readied ? 1 : 0);
+            it[0x36] = (byte)(cursed ? 1 : 0);
+            gob.Items.Add(it);
+            return it;
+        }
+        var sword = Item(1, true, true);
+        Item(2, true, true);
+        var dagger = Item(3, false, false);
+        gob[MonsterAi.HandsUsed] = 3;
+        var memory = new EclMemory { Party = new EclParty { CurrentIndex = 0 } };
+        memory.Party.Members.Add(gob);
+        var fight = new Fight(memory, new EncounterState(), items, new Script().Next, new EndActionsController(),
+            new TestFightMap());
+        var said = new List<(ItemNotice, byte[]?)>();
+        new MonsterAi(Steps) { ReadyNotice = (_, n, it) => said.Add((n, it)) }.EquipWeapon(fight, gob);
+        Assert.Equal(0, dagger[CombatRules.ItemEquipped]);
+        var (notice, named) = Assert.Single(said);
+        Assert.Equal(ItemNotice.SlotTaken, notice);
+        Assert.Same(sword, named);
+    }
+
+    [Fact]
     public void Adjacent_enemy_is_attacked_with_the_program_draw_order()
     {
         // 1d8, 1d4 (opening), 1d7 (items), 1d7 (spells), 1d2 (target search among 2), 1d1 (adjacent pick), 1d20, 1d4.

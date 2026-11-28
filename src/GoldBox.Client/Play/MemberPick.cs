@@ -36,6 +36,9 @@ public static class MemberPick
                 // Return gives 13, which ends the loop with the pick whatever word is lit (DOSBox-X s42: Exit lit from
                 // the shared cell, Return traded); the pad's A is Return. A click on a word or its hotkey is that word.
                 ConfirmAnswer = 0,
+                // The menu runs with the keypad flag (START 0x38A5) and 0x37E8 takes only Home / End's codes (0x38C9,
+                // 0x38F7): the keypad's and the digits' row 7 / 1 move the pick as Home / End (s60).
+                ExtendedKeys = scan => scan switch { 0x47 => ChoiceRequest.PreviousMember, 0x4F => ChoiceRequest.NextMember, _ => null },
             }) is int x ? x : items.Count - 1;
             int n = party.Members.Count;
             if (a == Escaped)

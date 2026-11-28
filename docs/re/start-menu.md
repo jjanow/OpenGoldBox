@@ -314,7 +314,8 @@ hall's classes and Train is offered.
 Cancelling any list leaves Create at once (0x1B84D), without a character.
 
 **Icon editor 0x1D1AC** (combat palette 0x3081D, grey ground): OLD at row 6 and NEW at row 12 (column 8), the ready and action
-frames at x 32 and 104 over bevelled boxes (icon slot 25's frames `[?]`), labels at rows 10 and 16 (`PartyMsg.IconOld`,
+frames at x 32 and 104 over bevelled boxes (icon slot 25: COMSPR blocks 25 and 153, loaded at start-up 0xEB1D, drawn
+by the preview 0x1CE5E over a colour-0 band; read and seen s60), labels at rows 10 and 16 (`PartyMsg.IconOld`,
 `IconNew`, `IconFrames`). Read s20, Core `IconEditor`, matched on 600 emulated cases (`por_icon_oracle.py`: random walks
 through the menus with Keep, Exit, Escape and No; `IconEditorProgramTests`).
 
@@ -559,8 +560,6 @@ before it uses them (`PorProgramData.CreationTables`). `[?]` Not decoded into a 
 ## 7. Open `[?]`
 
 - Home / End wrapping on the party menu; the drop message's line and how long it stays.
-- The icon editor's frame boxes (icon slot 25) are drawn as seen, not decoded. The camp's Alter Icon
-  runs the same routine (camp.md "Alter").
 - The save's (and Load's) deletion of the members' roster files is not done (camp.md); the file-name rule is read
   (s52: START 0x8445 removes the ten characters of DS:0D1A one by one, keeps 8, upper case; `PorRoster.DosStem`).
 - Load at the party menu of a state-0 save: what the program's re-read of map $49C5 = 0 and wall set 0 gives.

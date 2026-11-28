@@ -333,4 +333,20 @@ public class HandlerMessageTests
         r.Fx.TriggerEffect(r.A, 0x4D);
         Assert.Equal(["HeldFast B"], r.Log);
     }
+
+    [PorFact]
+    public void Coughing_redraws_the_panel_only_for_the_current_creature()
+    {
+        // Handler 30 (0xF6C0, s60): its text when item use was allowed (0xF6F0), then START 0x1583 at 0xF761 only when
+        // the coughing creature is DS:5D92.
+        var r = Setup(new Script(), 30, 11);
+        r.Fight.Record(r.A)[CombatRecord.ItemUseAllowed] = 1;
+        r.Fight.State.Current = r.A;
+        r.Fx.TriggerEffect(r.A, 30);
+        Assert.Equal(["Coughing A", "PanelRedrawn A"], r.Log);
+        r.Log.Clear();
+        r.Fight.State.Current = r.B;
+        r.Fx.TriggerEffect(r.A, 30); // item use now 0: no text either
+        Assert.Empty(r.Log);
+    }
 }

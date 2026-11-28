@@ -54,6 +54,8 @@ public sealed class PorProgramData
     public OverlandMap? Overland { get; init; }
     /// <summary>Where the overland's tables were found in the program (a folder only; a module has none), or null.</summary>
     public PorOverlandOffsets? OverlandOffsets { get; init; }
+    /// <summary>Where the land's recovery tables were found (<see cref="PorOverlandRecovery"/>; a folder only), or null.</summary>
+    public PorOverlandRecoveryOffsets? RecoveryOffsets { get; init; }
 
     /// <summary>The program in <paramref name="dir"/>, or null without START.EXE.</summary>
     public static PorProgramData? Open(PorGameDirectory dir)
@@ -88,11 +90,18 @@ public sealed class PorProgramData
                     texts[key] = s;
         }
         var overland = PorOverland.Locate(p.Overlay);
+        var recovery = PorOverlandRecovery.Locate(p.Overlay);
         return new PorProgramData
         {
             Ds = p.Ds.ToArray(),
             OverlandOffsets = overland,
-            Overland = overland is null ? null : PorOverland.Read(p.Ds, overland),
+            RecoveryOffsets = recovery,
+            Overland = overland is null ? null : PorOverland.Read(p.Ds, overland) is { } map
+                ? new OverlandMap(map.Width, map.Height, map.Tiles, map.Sites)
+                {
+                    Recovery = recovery is null ? null : PorOverlandRecovery.Read(p.Ds, recovery),
+                }
+                : null,
             Offsets = new PorProgramOffsets
             {
                 Spells = PorSpellData.SpellTableBase(p),

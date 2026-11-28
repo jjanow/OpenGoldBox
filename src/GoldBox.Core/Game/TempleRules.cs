@@ -59,9 +59,11 @@ public static class TempleRules
     /// record's byte 4 is set), cures 1, 5 and 6 under the effect lock DS:681F = 1 (written 0 after, not restored), and
     /// the healing of cures 2–4 is 0x2C647 with flag 0 (<see cref="EffectHandlers.RestoreHitPoints"/>, which revives an
     /// unconscious character through handler 0x4E). Without an engine the records are only dropped and the healing is
-    /// <see cref="Heal"/>.
+    /// <see cref="Heal"/>. <paramref name="said"/> receives the spell routine's own messages that cure 7 raises
+    /// (<see cref="RemoveCurse"/>), in the program's order.
     /// </summary>
-    public static void Apply(Cure cure, EclCharacter c, Func<int, int> random, EffectHandlers? effects = null)
+    public static void Apply(Cure cure, EclCharacter c, Func<int, int> random, EffectHandlers? effects = null,
+        Action<EclCharacter, EffectEvent>? said = null)
     {
         switch (cure)
         {
@@ -102,7 +104,7 @@ public static class TempleRules
                     RaiseDead(c, effects);
                 break;
             case Cure.RemoveCurse:
-                RemoveCurse(c, effects);
+                RemoveCurse(c, effects, said);
                 break;
             case Cure.StoneToFlesh:
                 if (c[Status] == 7)
@@ -186,22 +188,32 @@ public static class TempleRules
     }
 
     /// <summary>
-    /// The remove-curse routine (0x29558) on the character: with effect 36 only that effect is removed; else the
-    /// first item with <c>cursed</c> ≠ 0 gets <c>cursed</c> := 0 (later cursed items stay cursed).
+    /// The remove-curse routine (0x29558) on the character, as the temple's cure 7 runs it (DS:6C95 := the member,
+    /// read whole s60): 0x2BF6B(member, 36): with effect 36 its message (CS:1078 of unit 0x2BF6B, START 0x16EC(member,
+    /// text, row 10, pause 1): <see cref="EffectEvent.SpellEffectRemoved"/>), then the removal 0x2AF10 (the handler
+    /// first when byte 4 is set), then 0x29558's own text CS:251E through START 0x2B8B(member, text, 1)
+    /// (<see cref="EffectEvent.SpellCurseLifted"/>), and nothing else. Else the item walk sets <c>cursed</c> 0x36 := 0 on
+    /// the <b>first</b> cursed item only (the flag [bp−5] ends the walk) and, when one was found, CS:252B through START
+    /// 0x2B8B (<see cref="EffectEvent.SpellItemUncursed"/>); with nothing cursed nothing is said. The messages go to
+    /// <paramref name="said"/>.
     /// </summary>
-    public static void RemoveCurse(EclCharacter c, EffectHandlers? effects = null)
+    public static void RemoveCurse(EclCharacter c, EffectHandlers? effects = null, Action<EclCharacter, EffectEvent>? said = null)
     {
         if (c.HasEffect(36))
         {
+            said?.Invoke(c, EffectEvent.SpellEffectRemoved); // 0x2BFA8, before the removal
             if (effects is not null)
                 effects.RemoveEffect(c, 36); // 0x2BF6B → 0x2AF10
             else
                 RemoveEffects(c, 36);
+            said?.Invoke(c, EffectEvent.SpellCurseLifted); // 0x2958C
             return;
         }
         var item = c.Items.FirstOrDefault(i => i[0x36] != 0);
-        if (item is not null)
-            item[0x36] = 0;
+        if (item is null)
+            return;
+        item[0x36] = 0;
+        said?.Invoke(c, EffectEvent.SpellItemUncursed); // 0x29602
     }
 
     /// <summary>

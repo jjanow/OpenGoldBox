@@ -196,13 +196,18 @@ public sealed class CombatArt
     public const int IconHead = 0xBD, IconBody = 0xBE, IconSize = 0xC0, IconColours = 0xC1;
 
     /// <summary>
-    /// A party member's icon: the body (CBODY) with the head (CHEAD, 24 wide, 10 rows tall or 8 short) over its top
-    /// rows, both recoloured (the routine is not read). **D** (DOSBox-X, the six members of save A at the start of a
-    /// fight, every icon pixel equal): CHEAD/CBODY id + 64 for icon size 2 (heads 8 rows, shoulders 2 rows higher), the
-    /// plain id for size 1, the head at the top, and the recolouring: the art uses the colour pairs (1, 9), (2, 10),
-    /// (3, 11), (4, 12), (6, 14), (7, 15); colour byte k of 0xC1–0xC6 replaces the pair's first colour with its low
-    /// nibble and the second with its high nibble. [?] id + 128 as the attack pose (CBODY 128+ hold the weapon forward)
-    /// is from the art only.
+    /// A party member's icon: the body (CBODY) with the head (CHEAD, 24 wide, 10 rows tall or 8 short) ORed into its
+    /// top rows, then recoloured. The builder GAME.OVR 0x1E468 (read whole s60) loads CHEAD block 0xBD into the scratch
+    /// icon slot 11 and CBODY block 0xBE into the record's slot 0xBF through 0x31C34 (name + the size letter S / T, T
+    /// adding 0x40; both poses, block and block + 0x80, colour 0 see-through), then 0x1E315 merges each head picture
+    /// into the body picture of the same pose: in EGA mode the packed pixel bytes are ORed and the see-through masks
+    /// ANDed, so a pixel where both are drawn becomes head | body (32 head / body pairs differ from a head drawn over the
+    /// body, by one or two pixels), and slot 11 is freed (0x31BBA). With its argument set the slot's two pictures are
+    /// then recoloured (0x1E585–0x1E63D). **D** (DOSBox-X, the six members of save A at the start of a fight, every icon
+    /// pixel equal): CHEAD/CBODY id + 64 for icon size 2 (heads 8 rows, shoulders 2 rows higher), the plain id for size
+    /// 1, the head at the top, and the recolouring: the art uses the colour pairs (1, 9), (2, 10), (3, 11), (4, 12),
+    /// (6, 14), (7, 15); colour byte k of 0xC1–0xC6 replaces the pair's first colour with its low nibble and the second
+    /// with its high nibble. The attack pose is CBODY and CHEAD block + 0x80 (0x31D44 for both names).
     /// </summary>
     public CombatPicture? Party(EclCharacter c, bool attack)
     {
@@ -216,9 +221,9 @@ public sealed class CombatArt
         int w = 24, h = 24;
         var px = new byte[w * h];
         if (body is not null)
-            Copy(body, px, w, h, 0);
+            Or(body, px, w, h);
         if (head is not null)
-            Copy(head, px, w, h, 0);
+            Or(head, px, w, h);
         var map = ColourMap(c);
         for (int i = 0; i < px.Length; i++)
             px[i] = map[px[i]];
@@ -263,15 +268,12 @@ public sealed class CombatArt
         return p;
     }
 
-    private static void Copy(CombatPicture src, byte[] dst, int w, int h, int top)
+    /// <summary>0x1E315 in EGA mode: the picture's pixel indices ORed into the top rows of <paramref name="dst"/>.</summary>
+    private static void Or(CombatPicture src, byte[] dst, int w, int h)
     {
-        for (int y = 0; y < src.Height && y + top < h; y++)
+        for (int y = 0; y < src.Height && y < h; y++)
             for (int x = 0; x < src.Width && x < w; x++)
-            {
-                byte p = src.Pixels[y * src.Width + x];
-                if (p != 0)
-                    dst[(y + top) * w + x] = p;
-            }
+                dst[y * w + x] |= src.Pixels[y * src.Width + x];
     }
 
     /// <summary>The colour pairs of the party icons, in the order of the colour bytes 0xC1–0xC6 (DS:3CF5[1..6] in v1.3).</summary>
@@ -297,8 +299,8 @@ public sealed class CombatArt
     }
 
     /// <summary>
-    /// Draws <paramref name="p"/> at (x, y), index 0 see-through [?] (DOSBox-X shows no box around icons over the
-    /// ground), mirrored when <paramref name="mirror"/>, clipped to <paramref name="clip"/>.
+    /// Draws <paramref name="p"/> at (x, y), index 0 see-through (the icon loader 0x31C34 reads every block with
+    /// colour 0 as the see-through colour: START 0x4751's mask, set by 0x4640 where a pixel is 0; read s60), mirrored when <paramref name="mirror"/>, clipped to <paramref name="clip"/>.
     /// </summary>
     public static void Draw(IndexedFrame f, CombatPicture p, int x, int y, bool mirror, (int X0, int Y0, int X1, int Y1) clip,
         bool opaque = false)

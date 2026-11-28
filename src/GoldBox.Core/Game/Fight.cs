@@ -83,14 +83,16 @@ public sealed class Fight
     public bool NoContinueQuestion { get; set; }
 
     /// <summary>
-    /// Display hook (no game state): called when a creature becomes current in <see cref="Turn"/>, before it acts. A
-    /// front end shows the creature here. Draws nothing and changes nothing.
+    /// Display hook (no game state): called when a creature becomes current in <see cref="Turn"/>, after its stats are
+    /// recalculated and before trigger 0x0F (0x99FD: 0x319D2 and START 0x1583), so also when that trigger leaves it no
+    /// action. A front end shows the creature and its panel here. Draws nothing and changes nothing.
     /// </summary>
     public Action<EclCharacter>? TurnStarted { get; set; }
 
     /// <summary>
-    /// Display hook (no game state): after an acting creature's turn, 0x99FD redraws the cell at its square
-    /// (0x9AD9–0x9AF1: 0x3E0:0x34 with its x and y), so a cursor box there goes.
+    /// Display hook (no game state): after the turn of a creature that got past the first initiative test (whether
+    /// trigger 0x0F left it an action or not), 0x99FD redraws the cell at its square (0x9AD9–0x9AF1: 0x3E0:0x34 with its
+    /// x and y), so a cursor box there goes.
     /// </summary>
     public Action<EclCharacter>? TurnEnded { get; set; }
 
@@ -202,11 +204,14 @@ public sealed class Fight
             rec.InitiativeValue = 19;
         State.Current = c;
         RecalculateStats(c);
+        // 0x9A7F–0x9A95: the view on the creature with its cursor box (0x319D2(c, 2, 1), before the recalculation, which
+        // draws nothing) and its panel (START 0x1583) come before trigger 0x0F (s60: Core had shown them after it, and
+        // only when the initiative was still above 0).
+        TurnStarted?.Invoke(c);
         Effects.Trigger(FightRules.TriggerActionStart, c, State);
         if (rec.InitiativeValue > 0)
         {
             _delayed = false;
-            TurnStarted?.Invoke(c);
             Controller.Act(this, c, c[CombatRules.AutoCombat] != 0);
             // The program's menu loops until an action ends the turn (or Delay / Alt-Q set initiative 1 / 20). A
             // controller that returns without either would be picked again at once; end its actions instead.
@@ -215,8 +220,8 @@ public sealed class Fight
                 Diagnostics.Add($"controller left {c.Name} with initiative {rec.InitiativeValue}; actions ended");
                 FightRules.EndActions(rec);
             }
-            TurnEnded?.Invoke(c);
         }
+        TurnEnded?.Invoke(c); // 0x9AD9–0x9AF1: the cell redrawn whether or not the creature acted
     }
 
     /// <summary>

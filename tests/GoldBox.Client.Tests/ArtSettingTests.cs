@@ -286,6 +286,7 @@ public class ArtSettingTests
         c.Dos[("SPRIT3", 9)] = [PicAt(8, 4, 0, 1, Fill(32, _ => 8)),
             PicAt(8, 3, 1, 1, Fill(24, i => (byte)(i == 1 ? 13 : i < 8 ? 0 : 10))),
             PicAt(8, 2, 2, 1, Fill(16, _ => 11))];
+        c.Dos[("SPRIT3", 10)] = [PicAt(8, 4, 0, 1, Fill(32, _ => 8)), PicAt(8, 3, 1, 1, Fill(24, _ => 10))];
         var palette = new ScreenPalette();
         var pics = new ViewPictures(c, PorArtChoice.Dos, palette.Base);
         var f = new IndexedFrame(320, 200);
@@ -331,6 +332,12 @@ public class ArtSettingTests
         Assert.True(pics.Draw(f, 24, 24, sprite with { Distance = 2, OnOverland = true }));
         Assert.Equal(10, f[32, 33]);
         Assert.Equal(1, f[40, 32]);
+        // A DOS block with two frames at distance 2: the renderer's table entry 3 is nil, nothing drawn (0x2E7D6).
+        f.Clear(1);
+        Assert.True(pics.Draw(f, 24, 24, new ViewPicture(ViewPictureKind.Sprite, 10, null, 2, 3)));
+        Assert.All(Enumerable.Range(0, 320 * 200), i => Assert.Equal(1, f[i % 320, i / 320]));
+        Assert.True(pics.Draw(f, 24, 24, new ViewPicture(ViewPictureKind.Sprite, 10, null, 1, 3)));
+        Assert.Equal(10, f[32, 32]);
         Assert.Equal(2, ViewPictures.SpriteFrame(9, 3));
         Assert.Equal(0, ViewPictures.SpriteFrame(2, 1));
 

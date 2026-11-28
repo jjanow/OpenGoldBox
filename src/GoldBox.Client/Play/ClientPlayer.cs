@@ -447,12 +447,18 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
         Text.MoveTo(col, row + 1);
     }
 
-    /// <summary>DELAY: game speed DS:49E2 (<see cref="EclMemory.GameSpeed"/>) × 225 ms; speed 0 does not wait.</summary>
+    /// <summary>
+    /// DELAY (and the land's recovery's PauseOnly): game speed DS:49E2 (<see cref="EclMemory.GameSpeed"/>) × 225 ms
+    /// (START 0x7E4E); speed 0 does not wait. Under the Amiga pages the Amiga program's own (read s47 / s60): DELAY
+    /// hunk 16 +0x43DA adds 1 to the counter hunk 32 +0xB4 and calls hunk 25 +0xD7A, Delay(speed byte · 5 ticks of
+    /// 1/50 s), 100 ms a step (<see cref="AmigaView.MessagePause(int)"/>); the recovery's two pauses (hunk 13 +0x2AC8)
+    /// are the same call.
+    /// </summary>
     public void Delay()
     {
-        int speed = memory().GameSpeed;
-        if (speed is > 0 and <= 9)
-            runner.Ask(new DelayRequest(TimeSpan.FromMilliseconds(225 * speed)));
+        var wait = AmigaView.MessagePause(memory().GameSpeed);
+        if (wait > TimeSpan.Zero)
+            runner.Ask(new DelayRequest(wait));
     }
 
     // ---- Menus and input -----------------------------------------------------------------------------------------
@@ -633,28 +639,47 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
 
     /// <summary>
     /// GAME.OVR 0x20D50 (<see cref="GoldBox.Core.Explore.OverlandRecovery"/>): the DOS tiles recoloured in place with
-    /// the game's generator; animated, each view (the first, the 9 pan frames, the last) is held
-    /// <see cref="RecoveryFrame"/>, then PauseOnly twice (<see cref="Delay"/>).
+    /// the game's generator (the draws are made under every art setting: DOS rules); Amiga sheets get the Amiga
+    /// program's pass in step (hunk 13 +0x2872, <see cref="GoldBox.Core.Explore.AmigaOverlandRecovery"/>: its own map
+    /// and generator, the game's generator untouched). Animated, each view (the first, the 9 pan frames, the last) is
+    /// held <see cref="RecoveryFrame"/>, then PauseOnly twice (<see cref="Delay"/>).
     /// </summary>
-    public void OverlandRecovery(bool animated, Func<ushort, ushort> random)
+    public void OverlandRecovery(GoldBox.Core.Explore.OverlandRecoveryTables tables, bool animated, Func<ushort, ushort> random)
     {
         var art = RecoveryArt;
         int view = 0;
-        GoldBox.Core.Explore.OverlandRecovery.Run(animated, t => art?.DosTile(t), random,
+        GoldBox.Core.Explore.OverlandRecovery.Run(tables, animated, t => art?.DosTile(t), random,
             (x, y) =>
             {
                 RecoveryView = (x, y);
                 // Each view stays until the next one is computed: a random pass after the first 10, the shorter whole
                 // pass after the 9th pan frame; the last goes straight into the pauses.
                 int n = view++;
-                var hold = n < GoldBox.Core.Explore.OverlandRecovery.Frames ? RecoveryFrame
-                    : n == GoldBox.Core.Explore.OverlandRecovery.Frames ? RecoveryLastPass : AnimationTiming.OneUpdate;
+                var hold = n < tables.Pan.Count ? RecoveryFrame
+                    : n == tables.Pan.Count ? RecoveryLastPass : AnimationTiming.OneUpdate;
                 runner.Ask(new DelayRequest(hold) { Animation = true });
             },
-            Delay);
+            Delay,
+            randomMode =>
+            {
+                // The Amiga sheets with the Amiga program's own tables (the module's art/amiga/overland-recovery.json);
+                // its views and pauses are DOS's (the same squares and order, AmigaOverlandRecoveryTests).
+                if (art?.AmigaRecovery is { } amiga)
+                    GoldBox.Core.Explore.AmigaOverlandRecovery.Pass(amiga, art.AmigaTile, randomMode,
+                        _amigaGenerator ??= new(amiga), AmigaBeam);
+            });
         RecoveryView = null;
-        art?.MarkRecovered();
+        art?.MarkRecovered(tables);
     }
+
+    /// <summary>The Amiga recolour's generator (hunk 27 +0x72C8): its state byte lives in the program's code hunk, 0
+    /// at load and kept for the session.</summary>
+    private GoldBox.Core.Explore.AmigaOverlandRecovery.Generator? _amigaGenerator;
+
+    /// <summary>[?] The beam position bytes the Amiga generator adds ($DFF006 / $DFF007): machine timing, taken from
+    /// the Client's own random source (never the game's).</summary>
+    private static byte AmigaBeam() => (byte)System.Random.Shared.Next(256);
+
     public void ScriptChanging(ushort script)
     {
         Log.Add($"NEWECL {script}");
@@ -1154,10 +1179,18 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
         Text.MoveTo(TextWindow.Right, Text.Row);
         // The Amiga prints the line with pen 24 (hunk 4 +0x238A), not colour 15's usual pen 30 (s45; red c00/800 in FS-UAE).
         Text.Print(line, clear, colour: AmigaView.CallPen(GoldBox.Data.Module.Por.PorAmigaText.DamageLinePen) is int pen and >= 16 and <= 31 ? (byte)pen : (byte)15);
-        // 0x96D0: cells (17, 1)–(38, 15) are blanked before the party list is drawn again, so the position line on
-        // row 15 is gone until the next redraw point (DOSBox-X s22).
+    }
+
+    /// <summary>
+    /// After the line, the hit is applied (START 0x2DC8 at 0x96BF), then 0x96D0 blanks cells (17, 1)–(38, 15), so the
+    /// position line on row 15 is gone until the next redraw point (DOSBox-X s22), and the party list is drawn again
+    /// (0x96DD: START 0x0767) with the new HP and colour. s60: the list was taken before the hit, one line late (DOSBox-X:
+    /// at the sixth line's page prompt the fifth member already shows 0 HP in red).
+    /// </summary>
+    public void DamageApplied(EclCharacter target)
+    {
         PositionLineErased = true;
-        ReleaseRosterNames(); // 0x96DD: START 0x0767 after each line
+        ReleaseRosterNames();
     }
 
     /// <summary>
@@ -1239,6 +1272,10 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
     /// <summary>With <see cref="PageUnder"/>: the text box is drawn over the page (false: the page alone, <see cref="TradeContext.ShowPageAlone"/>).</summary>
     public bool PageUnderBox { get; set; } = true;
 
+    /// <summary>With <see cref="PageUnderBox"/>: the box's texts go straight over the page, no frame and nothing blanked
+    /// (<see cref="TradeContext.ShowPageBare"/>), until START 0x16EC frames the box again.</summary>
+    public bool PageUnderBare { get; set; }
+
     /// <summary>The text box's frame was drawn again over the screen's (<see cref="TradeContext.FrameTextBox"/>).</summary>
     public bool TextBoxFramed { get; set; }
 
@@ -1299,9 +1336,19 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
                 KeepsCombatRow24 = true;
                 TypesInto(box);
             },
-            ShowPageUnder = p => (PageUnder, PageUnderBox) = (p, true),
-            ShowPageAlone = p => (PageUnder, PageUnderBox) = (p, false),
-            FrameTextBox = on => TextBoxFramed = on,
+            ShowPageUnder = p => (PageUnder, PageUnderBox, PageUnderBare) = (p, true, false),
+            ShowPageAlone = p => (PageUnder, PageUnderBox, PageUnderBare) = (p, false, false),
+            ShowPageBare = p => (PageUnder, PageUnderBox, PageUnderBare) = (p, true, true),
+            // False is START 0x27D9 / 0x3379's redraw, whose camp case draws the position line (s60: DOSBox-X shows
+            // the camping word on it when the camp opens after a DAMAGE wipe in vector 2, which had blanked it).
+            FrameTextBox = on =>
+            {
+                TextBoxFramed = on;
+                if (on)
+                    PageUnderBare = false; // START 0x16EC's frame (and blanked box) over the page
+                else
+                    PositionLineErased = false;
+            },
             HoldRosterName = HoldRosterName,
             RosterDrawn = ReleaseRosterNames,
             VenueRedrawn = VenueDrawn,

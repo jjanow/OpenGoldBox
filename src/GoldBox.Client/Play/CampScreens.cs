@@ -372,9 +372,17 @@ public static class CampScreens
         }) is int a ? a : -1;
         if (i < 0 || i >= items.Count || keys[i] is < 'A' or > 'J')
             return;
-        c.Dialog.Show(c.Text[Msg.Saving]);
+        // The Amiga's game save (hunk 16 +0x155A) leaves the text window alone: its saving line and the
+        // character files' disk-access line go to row 24 through the string routine for the disk's time
+        // (hunk 16 +0x1780, +0x564…; machine time, not shown, as the script load's row-24 line), and row 24 is blanked
+        // (hunk 19 +0x58A8). FS-UAE s60: the camp's text stays over the quit question.
+        bool amiga = AmigaView.On;
+        if (!amiga)
+            c.Dialog.Show(c.Text[Msg.Saving]);
         if (c.Save?.Invoke(keys[i]) is { } problem)
             c.Dialog.Say(AmigaView.Case(problem), colour: 14);
+        else if (amiga)
+            return;
         c.Dialog.Text.Clear();
     }
 
@@ -802,6 +810,9 @@ public static class CampScreens
         var w = c.Dialog.Text;
         void ItemMessage(EclCharacter user, byte[] used)
         {
+            // START 0x16EC outside a fight draws the text window's frame again (03F1:0000): over the Items page too, so
+            // the box stays framed there with the item's lines and the combat-only lines after them (DOSBox-X s49; s60).
+            c.Trade.FrameOverItemsPage(true);
             PanelMessage(c, user, c.Resources.CombatTexts[CombatMsg.UsesAnItem], pause: false);
             string label = c.Resources.CombatTexts[CombatMsg.ItemLabel];
             w.Put(22, 1, label, TextWindow.ScriptColour);
@@ -827,11 +838,11 @@ public static class CampScreens
         int ScrollSpell()
         {
             // The scroll's list stays on the screen through the cast (D s49: the item's combat-only lines over it with
-            // the question on row 24; Bless's effect messages in the text box, its frame drawn by START 0x16EC). [?]
-            // The Client shows the box's frame from the start (the program draws none under the combat-only lines).
+            // the question on row 24, no frame; Bless's effect messages in the text box, its frame drawn by START 0x16EC,
+            // which ends the bare mode: TradeContext.FrameTextBox).
             int spell = SpellPage(c, CampSpells.ListKind.InMemory, Msg.CastAction, scroll: item).Spell;
             if (spell != 0)
-                c.Trade.ShowPageUnder(c.LastPage);
+                c.Trade.ShowPageBare(c.LastPage);
             return spell;
         }
         try
@@ -841,6 +852,7 @@ public static class CampScreens
         finally
         {
             c.Trade.ShowPageUnder(null);
+            c.Trade.FrameOverItemsPage(false); // the page is drawn again whole when the use ends
         }
     }
 
@@ -1257,7 +1269,7 @@ public static class CampScreens
             {
                 MenuPrompt = c.Text[Msg.PartyOrder].TrimEnd(),
                 PartySelect = true,
-                ExtendedKeysPickFirst = mode == 0, // Select (user s50); Place's other keys not read [?]
+                ExtendedKeysPickFirst = mode == 0, // Select (user s50); Place: extended keys other than Home / End only redraw the list (0x19032–0x1904F, s60)
                 Hotkeys = keys,
                 Animates = true, // 0x19006
             }) is int a ? a : items.Count - 1;

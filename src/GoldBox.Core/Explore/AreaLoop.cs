@@ -548,14 +548,17 @@ public sealed class AreaLoop
     /// The camp routine 0x3B19: vector 2, the camp menu (0x196A0), vector 3 if the rest was interrupted, redraw. Both
     /// vectors run through the run loop 0x3EB7 alone: a NEWECL there is not followed here (no 0x3EFA); the script-changed
     /// flag stays set and the next command's vector 0 (0x41A1) or a Look's vector 1 (0x4159) follows it (s52: Core had
-    /// followed it at once, vectors 4, 0, 1 before the camp menu). The camp menu opens after a NEWECL too. [?] Core
-    /// still skips it when the party was destroyed (DS:49FF) or the run faulted; the program opens it whatever.
+    /// followed it at once, vectors 4, 0, 1 before the camp menu). The camp menu opens after a NEWECL too, and after a
+    /// vector 2 that destroyed the party (DS:49FF set by DAMAGE): 0x3B19 opens 0x196A0 whatever, and neither tests
+    /// DS:49FF (s60). Vector 3 then runs nothing (0x3EB7 tests DS:49FF before the first opcode), and the area loop
+    /// ends at 0x4172. Only the engine's own stops (a fault, the step budget, a missing input answer) skip the menu:
+    /// the program has no such run.
     /// </summary>
     private void Encamp()
     {
         var r = Vm.RunVector(2);
         Runs.Add(r);
-        if (r.Reason is EclStopReason.Exit or EclStopReason.NewScript && !Defeated && Ui.Camp())
+        if (r.Reason is EclStopReason.Exit or EclStopReason.NewScript or EclStopReason.ExternalStop && Ui.Camp())
             Runs.Add(Vm.RunVector(3));
         Redraw();
     }

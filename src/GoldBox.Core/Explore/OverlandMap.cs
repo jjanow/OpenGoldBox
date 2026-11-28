@@ -18,6 +18,8 @@ public sealed class OverlandMap
     /// <summary>The tile numbers as stored, <see cref="Width"/> × <see cref="Height"/> bytes.</summary>
     public byte[] Tiles { get; }
     public IReadOnlyList<OverlandSite> Sites { get; }
+    /// <summary>The land's recovery tables (<see cref="OverlandRecovery"/>), or null when the module has none.</summary>
+    public OverlandRecoveryTables? Recovery { get; init; }
 
     public OverlandMap(int width, int height, byte[] tiles, IReadOnlyList<OverlandSite> sites)
     {

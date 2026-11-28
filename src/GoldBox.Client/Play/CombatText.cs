@@ -59,6 +59,11 @@ public enum CombatMsg
     // handler texts 87 (0x110E0), 73 (0x16240), 77 (0x10629), 75 (0x10485), 131 (0x11CB1), 40 (0xF9A4), 135 (0x11DCA).
     StatusRevivedEnemy, StatusRevived, StatusEscapes, HandlerDiseased, HandlerRakes, HandlerHeldFast, HandlerSucksBlood,
     HandlerStronger, HandlerAirClears, HandlerNeedsGiantStrength,
+    // s60: the effect handlers' other own texts, each START 0x16EC(creature, text, row 10, pause 1): 4 (0xEDFB), 7
+    // (0xEEAF), 21 (0xF39A), 23 (0xF55D), 28 (0xF668), 30 (0xF6F0), 39 (0xF8E7), the missile dodge (0xFC5F), 43
+    // (0xFD81); and the paralysing hit's START 0x2B8B(target, effect frames, text) (0x10294).
+    HandlerStartsTraining, HandlerHardier, HandlerSilenced, HandlerGainsItem, HandlerLostImage, HandlerCoughing,
+    HandlerAges, HandlerAvoids, HandlerWeakened, HandlerParalyzed,
     SpellReduced, SpellEffectRemoved, SpellCloudFormed, SpellBlindnessCured, SpellMagicDispelled,
     SpellCurseLifted, SpellItemUncursed, SpellLevelRestored,
     // START 0x2EEA's healed words (HP 0x11B = 0x32 or not): handlers 50, 62 and Cure Light Wounds (s39).
@@ -220,6 +225,16 @@ public sealed class CombatText
         [CombatMsg.HandlerStronger] = "GAINS MIGHT",
         [CombatMsg.HandlerAirClears] = "THE CLOUD THINS",
         [CombatMsg.HandlerNeedsGiantStrength] = "NEEDS A GIANT'S MIGHT",
+        [CombatMsg.HandlerStartsTraining] = "BEGINS TO PRACTISE",
+        [CombatMsg.HandlerHardier] = "GROWS TOUGHER",
+        [CombatMsg.HandlerSilenced] = "CANNOT SPEAK",
+        [CombatMsg.HandlerGainsItem] = "RECEIVES AN ITEM",
+        [CombatMsg.HandlerLostImage] = "ONE DOUBLE FADES",
+        [CombatMsg.HandlerCoughing] = "CHOKES",
+        [CombatMsg.HandlerAges] = "GROWS OLDER",
+        [CombatMsg.HandlerAvoids] = "DODGES THE MISSILE",
+        [CombatMsg.HandlerWeakened] = "LOSES STRENGTH",
+        [CombatMsg.HandlerParalyzed] = "CANNOT MOVE",
         [CombatMsg.SpellReduced] = "RETURNS TO NORMAL SIZE",
         [CombatMsg.SpellEffectRemoved] = "LOSES AN EFFECT",
         [CombatMsg.SpellCloudFormed] = "CONJURES NOXIOUS FOG",
@@ -334,6 +349,21 @@ public sealed class CombatText
 
     /// <summary>A text in the program's own case (the Amiga draws its bytes as they are; <see cref="AmigaView.Case"/>).</summary>
     public string Raw(CombatMsg id) => _texts.TryGetValue(id, out var s) ? s : Table.TryGetValue(id, out var t) ? t : StartTable[id];
+
+    /// <summary>The effect handlers' own texts shown by START 0x16EC(creature, text, row 10, pause 1) (s60).</summary>
+    internal static CombatMsg? HandlerMessage(EffectEvent e) => e switch
+    {
+        EffectEvent.StartsTraining => CombatMsg.HandlerStartsTraining,
+        EffectEvent.Hardier => CombatMsg.HandlerHardier,
+        EffectEvent.Silenced => CombatMsg.HandlerSilenced,
+        EffectEvent.GainsItem => CombatMsg.HandlerGainsItem,
+        EffectEvent.LostImage => CombatMsg.HandlerLostImage,
+        EffectEvent.Coughing => CombatMsg.HandlerCoughing,
+        EffectEvent.Ages => CombatMsg.HandlerAges,
+        EffectEvent.MissileDodged => CombatMsg.HandlerAvoids,
+        EffectEvent.Weakens => CombatMsg.HandlerWeakened,
+        _ => null,
+    };
 
     /// <summary>A spell routine's own text and whether it goes through START 0x2B8B with effect frames.</summary>
     internal static (CombatMsg Text, bool Animated)? SpellMessage(EffectEvent e) => e switch

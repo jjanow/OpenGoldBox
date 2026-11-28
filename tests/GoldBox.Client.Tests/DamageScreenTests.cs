@@ -27,7 +27,9 @@ public class DamageScreenTests
         {
             runner.Start(() =>
             {
-                player.DamageReport(new EclDamageReport(Member("ANNA"), 1, false));
+                var anna = Member("ANNA");
+                player.DamageReport(new EclDamageReport(anna, 1, false));
+                player.DamageApplied(anna); // the hit, then the blank and the party list (0x96BF–0x96DD)
                 player.DamageEnd(false);
             });
             var key = Assert.IsType<KeyRequest>(runner.Pending);
@@ -103,6 +105,32 @@ public class DamageScreenTests
             Assert.All(w.Skip(1), l => Assert.True(l.Column == 2 && l.Row >= 5 && l.Column + l.Text.Length - 1 <= 37));
             runner.Answer(null);
             Assert.Null(player.Window);
+        }
+    }
+
+    [Fact]
+    public void The_party_list_is_drawn_after_the_hit_not_before()
+    {
+        // 0x959F: the line (0x96B0), the hit (START 0x2DC8), the blank and the party list (0x96DD). DOSBox-X s60: at
+        // the sixth line's page prompt the fifth member already shows 0 HP in red; the Client took the list one line late.
+        var party = new EclParty();
+        var anna = new EclCharacter { Name = "ANNA", [EclPartyRules.Hp] = 9, [EclPartyRules.InPlay] = 1 };
+        party.Members.Add(anna);
+        party.CurrentIndex = 0;
+        var memory = new EclMemory { Party = party };
+        var runner = new ScriptRunner();
+        var player = new ClientPlayer(runner, () => memory) { TypesText = false };
+        player.InstallPaging();
+        using (runner)
+        {
+            var rules = new EclPartyRules(memory, _ => 0);
+            rules.Damaged += player.DamageReport;
+            rules.DamageApplied += player.DamageApplied;
+            player.ReleaseRosterNames();
+            runner.Start(() => rules.Apply(anna, 4));
+            Assert.Null(runner.Pending);
+            Assert.Equal(5, player.RosterAsDrawn(anna)[EclPartyRules.Hp]);
+            Assert.True(player.PositionLineErased);
         }
     }
 }

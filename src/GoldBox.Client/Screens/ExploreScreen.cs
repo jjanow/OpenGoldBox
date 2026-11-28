@@ -534,9 +534,10 @@ public sealed class ExploreScreen : IScreen
         int n = c.Items.Count, rows = ListWindow(c).Rows;
         var words = ListWords(c);
         bool keys = input.LastDevice == InputDevice.Keyboard, pad = input.LastDevice == InputDevice.Gamepad;
-        if (n > 0 && (input.Pressed(GameAction.MenuUp) || (keys && input.Pressed(GameAction.StepUpLeft))))
+        byte? digit = ListWindowRoutine.DigitRowKey(input);   // the digits' row 7 / 1 / 9 / 3 as the keypad's (s60)
+        if (n > 0 && (input.Pressed(GameAction.MenuUp) || (keys && input.Pressed(GameAction.StepUpLeft)) || digit == ListWindowRoutine.HomeCode))
             _selected = ListWindowSteps.Step(_selected, _listTop, rows, n, down: false);
-        if (n > 0 && (input.Pressed(GameAction.MenuDown) || (keys && input.Pressed(GameAction.StepDownLeft))))
+        if (n > 0 && (input.Pressed(GameAction.MenuDown) || (keys && input.Pressed(GameAction.StepDownLeft)) || digit == ListWindowRoutine.EndCode))
             _selected = ListWindowSteps.Step(_selected, _listTop, rows, n, down: true);
         if (words.Count > 0 && input.Pressed(GameAction.MenuLeft))
             _listWord = (ListWord(c) + words.Count - 1) % words.Count;
@@ -544,9 +545,9 @@ public sealed class ExploreScreen : IScreen
             _listWord = (ListWord(c) + 1) % words.Count;
         bool? page = _listPageClick;
         _listPageClick = null;
-        if (input.Pressed(GameAction.StepDownRight) || (pad && input.Pressed(GameAction.NextMember)))
+        if (input.Pressed(GameAction.StepDownRight) || (pad && input.Pressed(GameAction.NextMember)) || digit == ListWindowRoutine.PgDnCode)
             page = true;
-        if (input.Pressed(GameAction.StepUpRight) || (pad && input.Pressed(GameAction.PreviousMember)))
+        if (input.Pressed(GameAction.StepUpRight) || (pad && input.Pressed(GameAction.PreviousMember)) || digit == ListWindowRoutine.PgUpCode)
             page = false;
         if (input.NewInput is (InputDevice.Keyboard, { Length: 1 } key))
             for (int i = 0; i < words.Count; i++)
@@ -966,6 +967,11 @@ public sealed class ExploreScreen : IScreen
                     return new Reply(up);
                 if (!c.Vertical && c.DownAnswer is { } down && input.Pressed(GameAction.MenuDown))
                     return new Reply(down);
+                // The menus that answer the arrows (Speed 0x193BD, the rest time 0x24535) run with the keypad flag: the
+                // digits 8 / 2 / 4 / 6 of either row are Up / Down / Left / Right there (DS:288C; s60).
+                if (!c.Vertical && DosKeys.KeypadFlagCode(input) is { } pad
+                    && (pad switch { 0x48 => c.UpAnswer, 0x50 => c.DownAnswer, 0x4B => c.LeftAnswer, 0x4D => c.RightAnswer, _ => null }) is { } padAnswer)
+                    return new Reply(padAnswer);
                 if (c.PartySelect && input.Pressed(GameAction.PreviousMember))
                     return new Reply(ChoiceRequest.PreviousMember);
                 if (c.PartySelect && input.Pressed(GameAction.NextMember))
@@ -1345,9 +1351,12 @@ public sealed class ExploreScreen : IScreen
         _list.Draw(f, font, under, input, highlight: false);
         if (_player.PageUnderBox)
         {
-            for (int r = TextWindow.Top; r <= TextWindow.Bottom; r++)
-                Chrome.Clear(f, TextWindow.Left, r, TextWindow.Right - TextWindow.Left + 1);
-            Chrome.Box(f, TextWindow.Left - 1, TextWindow.Top - 1, TextWindow.Right + 1, TextWindow.Bottom + 1);
+            if (!_player.PageUnderBare)
+            {
+                for (int r = TextWindow.Top; r <= TextWindow.Bottom; r++)
+                    Chrome.Clear(f, TextWindow.Left, r, TextWindow.Right - TextWindow.Left + 1);
+                Chrome.Box(f, TextWindow.Left - 1, TextWindow.Top - 1, TextWindow.Right + 1, TextWindow.Bottom + 1);
+            }
             switch (pending)
             {
                 case ChoiceRequest { Vertical: true } v:
@@ -1427,6 +1436,15 @@ public sealed class ExploreScreen : IScreen
         string text = Fit(KeyPrompt(k, input), 40 - col);
         if (AmigaView.KeyPen(k) is int pen && font.DrawAmiga(f, col * 8, MenuRow * 8, text, pen))
             return;
+        // A menu-style key line under the Amiga pages: the menu routine draws its entries glyph by glyph (hunk 19
+        // +0x4FD2–0x5070: each character through the glyph routine, both passes before the next), so a character's
+        // pass 1 covers the pass-2 pixel the one before it left (FS-UAE s60: the summary's press-enter line).
+        if (AmigaView.MenuKeyPen(k) is int menuPen)
+        {
+            for (int j = 0; j < text.Length; j++)
+                AmigaMenuCharacter(f, font, col + j, text[j], new AmigaMenuPens(menuPen, menuPen));
+            return;
+        }
         Chrome.Text(f, font, col, MenuRow, text, KeyColour(k));
     }
 
@@ -1857,7 +1875,8 @@ public sealed class ExploreScreen : IScreen
             ? i : null;
         // LOADMON appends the monsters to the party list (DS:5D96), but the program draws the list (START 0x1307) only at
         // fixed points, none between LOADMON and the fight: DOSBox-X s29 (a vampire loaded by a step's script) shows the
-        // six members through "A battle begins". [?] START 0x1307 is not read: whether a redraw there would list them.
+        // six members through "A battle begins". START 0x1307 (read s60) walks DS:5D96 whole with no row limit, so a redraw
+        // there would list them; none comes.
         var monsters = _game.Encounter.State.Monsters;
         // Where the program draws the list while exploring (D s39, GAME.OVR read): an area's entry and a script switch
         // (LOADFILES + LOADPIECES 0x1B27 or the loop's 0x40BE, the switch's end 0x402B), a member picked with Home / End

@@ -15,6 +15,8 @@ public sealed class PorAmigaReport
     public bool IconColours { get; set; }
     /// <summary>The music and effect players' data were read from <c>program</c> (<see cref="AmigaSoundDocument"/>).</summary>
     public bool Sound { get; set; }
+    /// <summary>The land's-recovery tables were read from <c>program</c> (<see cref="AmigaOverlandRecoveryDocument"/>).</summary>
+    public bool OverlandRecovery { get; set; }
     /// <summary>The rune font was imported (disk A's <c>fonts</c> folder was found; it is optional; <see cref="PorAmigaRunes"/>).</summary>
     public bool RuneFont { get; set; }
     /// <summary>The text font and its pens were imported (disk A's <c>fonts</c> folder; optional; <see cref="PorAmigaText"/>).</summary>
@@ -411,6 +413,13 @@ public static class PorAmigaArt
                 });
             report.IconColours = true;
         }
+        // The land's-recovery tables (docs/re/geo-format.md "The land recovers", Amiga), found through the routine's code.
+        if (PorAmigaOverlandRecovery.Read(programBytes) is { } recovery)
+        {
+            ModuleJson.Write(Path.Combine(moduleRoot, AmigaOverlandRecoveryDocument.RelativePath.Replace('/', Path.DirectorySeparatorChar)),
+                AmigaOverlandRecoveryDocument.From(recovery));
+            report.OverlandRecovery = true;
+        }
         // The music and effect players' data (docs/re/sound.md §5), found through their code.
         if (PorAmigaSound.Read(programBytes) is { } sound)
         {
@@ -572,6 +581,12 @@ public static class PorAmigaArt
             if (module.AmigaIconPairs() is not { } got || !got.AsSpan().SequenceEqual(pairs))
                 r.Mismatches.Add("amiga icon colours: missing in the module or not the program's bytes");
         }
+        if (PorAmigaOverlandRecovery.Read(File.ReadAllBytes(programPath)) is { } recovery)
+        {
+            r.Count("AMIGA OVERLAND RECOVERY");
+            if (module.AmigaOverlandRecovery() is not { } got || !Same(got, recovery))
+                r.Mismatches.Add("amiga overland recovery: missing in the module or not the program's tables");
+        }
         if (LocateRuneFont(amigaDir, File.ReadAllBytes(programPath)) is var (fontPath, setup) && RuneFont(fontPath, setup) is var (cells, rgb))
         {
             r.Count("AMIGA RUNE FONT");
@@ -630,4 +645,8 @@ public static class PorAmigaArt
     }
 
     private static string Sha256(byte[] b) => Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(b));
+
+    private static bool Same(GoldBox.Core.Explore.AmigaOverlandRecoveryTables a, GoldBox.Core.Explore.AmigaOverlandRecoveryTables b) =>
+        a.ListA.SequenceEqual(b.ListA) && a.ListB.SequenceEqual(b.ListB) && a.Map.SequenceEqual(b.Map) && a.First == b.First
+        && a.Last == b.Last && a.Pan.SequenceEqual(b.Pan) && a.High.SequenceEqual(b.High) && a.Low.SequenceEqual(b.Low);
 }

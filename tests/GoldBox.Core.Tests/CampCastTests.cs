@@ -65,6 +65,15 @@ public class CampCastTests
     }
 
     [Fact]
+    public void Spell_globals_start_as_the_unpacker_leaves_them()
+    {
+        // DS:4844 / DS:4845 before their first writer: 100 / 11 (s60: the EXEPACK unpacker under emulation, DOSBox-X).
+        var g = new SpellGlobals();
+        Assert.Equal(100, g.Ds4844);
+        Assert.Equal(11, g.Ds4845);
+    }
+
+    [Fact]
     public void A_combat_only_spell_asks_lose_it_and_yes_removes_the_memorised_copy()
     {
         foreach (bool yes in new[] { false, true })

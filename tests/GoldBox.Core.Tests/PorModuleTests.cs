@@ -47,8 +47,8 @@ public class PorModuleTests(ITestOutputHelper output)
         Assert.Equal(["a.json", "j.json"], Directory.EnumerateFiles(PorModuleData.Open().SaveFolder!).Select(Path.GetFileName).Order(StringComparer.Ordinal));
         // The overland: tiles and special locations as bytes, as the engine reads them (and the combat terrain), and
         // every area's column.
-        Assert.Equal(2, r.Checked["OVERLAND"]);
-        Assert.Equal(3, r.Checked["OVERLAND (engine)"]);
+        Assert.Equal(10, r.Checked["OVERLAND"]);         // tiles, sites; the recovery's seven tables and squares (s60)
+        Assert.Equal(4, r.Checked["OVERLAND (engine)"]);
         Assert.Equal(29, r.Checked["OVERLAND (areas)"]);
     }
 

@@ -1,0 +1,88 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "AmigaOverlandRecoveryDocument",
+  "type": "object",
+  "properties": {
+    "listA": {
+      "type": "array",
+      "items": {
+        "type": "integer"
+      }
+    },
+    "listB": {
+      "type": "array",
+      "items": {
+        "type": "integer"
+      }
+    },
+    "map": {
+      "type": "array",
+      "items": {
+        "type": "integer"
+      }
+    },
+    "first": {
+      "type": "array",
+      "items": {
+        "type": "integer"
+      }
+    },
+    "last": {
+      "type": "array",
+      "items": {
+        "type": "integer"
+      }
+    },
+    "pan": {
+      "type": "array",
+      "items": {
+        "type": "array",
+        "items": {
+          "type": "integer"
+        }
+      }
+    },
+    "generatorHigh": {
+      "type": "array",
+      "items": {
+        "type": "integer"
+      }
+    },
+    "generatorLow": {
+      "type": "array",
+      "items": {
+        "type": "integer"
+      }
+    },
+    "source": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "container": {
+          "type": "string"
+        },
+        "block": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "container"
+      ]
+    }
+  },
+  "required": [
+    "listA",
+    "listB",
+    "map",
+    "first",
+    "last",
+    "pan",
+    "generatorHigh",
+    "generatorLow"
+  ]
+}

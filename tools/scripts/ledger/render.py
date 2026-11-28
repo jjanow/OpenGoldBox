@@ -300,9 +300,11 @@ P('Evidence column: `oracle` = a `tools/scripts/por_*_oracle.py` runs the routin
 P('')
 P('## How it was built (to rebuild after a session)')
 P('')
-P('The generator scripts are in `tools/scripts/ledger/` (copied as used in s47; set `GOLDBOX_POR_DIR` to a v1.3 copy '
-  'and `LEDGER_WORK` to a scratch folder, run them with the unicorn + capstone venv; `cg.py` first, then the citation, '
-  'table and dispatcher passes, then `build.py` and `render.py`; check each script\'s inputs at its top).')
+P('The generator scripts are in `tools/scripts/ledger/` (s47). Set `GOLDBOX_POR_DIR` to a v1.3 copy, `LEDGER_WORK` '
+  'to a scratch folder (with a `porgame` link to the copy and a `tools/` copy of the scripts: `render.py` imports '
+  '`overrides.py` and runs `gaps.py` from there) and `PYTHONPATH` to `tools/scripts`; run them from the repo path with '
+  'the unicorn + capstone venv in this order: `cg.py`, `disp.py`, `ecldisp.py`, `cite.py`, `build.py`, `render.py` '
+  '(`tables.py`, `peek.py` and the rest are probes).')
 P('')
 P('1. Load the program with `tools/scripts/por_emu.py` `load_image` (EXEPACK expanded); the overlay stubs are the '
   'paragraphs starting `CD 3F 00 00` (dword GAME.OVR offset at +4, word code size at +8, entry count at +0x0C, '

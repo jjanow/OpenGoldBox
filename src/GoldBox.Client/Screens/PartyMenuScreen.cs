@@ -221,6 +221,10 @@ public sealed class PartyMenuScreen(PartyMenuFlow flow, ScriptRunner runner, ISc
                 if (input.Pressed(GameAction.MenuDown)) _selected = (_selected + 1) % n;
                 if (input.Pressed(GameAction.PreviousMember)) return new Reply(ChoiceRequest.PreviousMember);
                 if (input.Pressed(GameAction.NextMember)) return new Reply(ChoiceRequest.NextMember);
+                // 0x19C77 runs the menu with the keypad flag and takes Home / End's codes to 0x23819 (its set CS:00F6 =
+                // {G, O}; other extended codes do nothing): the digits 7 / 1 of either row pick the member too (s60).
+                if (DosKeys.KeypadFlagCode(input) is { } pad && pad is 0x47 or 0x4F)
+                    return new Reply(pad == 0x47 ? ChoiceRequest.PreviousMember : ChoiceRequest.NextMember);
                 if (input.Pressed(GameAction.Confirm)) return new Reply(_selected);
                 // The hidden J (0x19E2C), from its binding (the pad's left stick) as from the J key.
                 if (input.Pressed(GameAction.HallJ)) return new Reply(PartyMenuFlow.PasswordAnswer);
@@ -247,8 +251,14 @@ public sealed class PartyMenuScreen(PartyMenuFlow flow, ScriptRunner runner, ISc
             case PickRequest p:
             {
                 int n = p.Rows.Count, w = p.Actions.Count;
-                if (n > 0 && input.Pressed(GameAction.MenuUp)) _selected = (_selected + n - 1) % n;
-                if (n > 0 && input.Pressed(GameAction.MenuDown)) _selected = (_selected + 1) % n;
+                // The creation lists are 0x2D669 windows: Home / End, the keypad's and the digits' row 7 / 1 move the
+                // highlight as Up / Down (s60; wrapping inside the window, which holds the whole list).
+                bool keys = input.LastDevice == InputDevice.Keyboard;
+                byte? digit = ListWindowRoutine.DigitRowKey(input);
+                if (n > 0 && (input.Pressed(GameAction.MenuUp) || (keys && input.Pressed(GameAction.StepUpLeft)) || digit == ListWindowRoutine.HomeCode))
+                    _selected = (_selected + n - 1) % n;
+                if (n > 0 && (input.Pressed(GameAction.MenuDown) || (keys && input.Pressed(GameAction.StepDownLeft)) || digit == ListWindowRoutine.EndCode))
+                    _selected = (_selected + 1) % n;
                 if (w > 0 && input.Pressed(GameAction.MenuLeft)) _word = (_word + w - 1) % w;
                 if (w > 0 && input.Pressed(GameAction.MenuRight)) _word = (_word + 1) % w;
                 if (input.Pressed(GameAction.Cancel)) return new Reply(new ListAnswer(p.CancelAction, _selected));
@@ -331,9 +341,10 @@ public sealed class PartyMenuScreen(PartyMenuFlow flow, ScriptRunner runner, ISc
     {
         int n = cp.Page.Rows.Count, w = cp.Entries.Count;
         bool keys = input.LastDevice == InputDevice.Keyboard;
-        if (n > 0 && (input.Pressed(GameAction.MenuUp) || input.Pressed(GameAction.PreviousMember) || (keys && input.Pressed(GameAction.StepUpLeft))))
+        byte? digit = ListWindowRoutine.DigitRowKey(input);   // the digits' row 7 / 1 as the keypad's (s60)
+        if (n > 0 && (input.Pressed(GameAction.MenuUp) || input.Pressed(GameAction.PreviousMember) || (keys && input.Pressed(GameAction.StepUpLeft)) || digit == ListWindowRoutine.HomeCode))
             _selected = (_selected + n - 1) % n;
-        if (n > 0 && (input.Pressed(GameAction.MenuDown) || input.Pressed(GameAction.NextMember) || (keys && input.Pressed(GameAction.StepDownLeft))))
+        if (n > 0 && (input.Pressed(GameAction.MenuDown) || input.Pressed(GameAction.NextMember) || (keys && input.Pressed(GameAction.StepDownLeft)) || digit == ListWindowRoutine.EndCode))
             _selected = (_selected + 1) % n;
         cp.Page.Selected = _selected;
         if (w > 0 && (input.Pressed(GameAction.MenuLeft) || input.NewInput is (InputDevice.Keyboard, "OemComma")))
@@ -774,7 +785,9 @@ public sealed class PartyMenuScreen(PartyMenuFlow flow, ScriptRunner runner, ISc
                 Line(f, md.Prompt, PromptColour, md.Actions, _word);
                 break;
             case ChoiceRequest c:
-                Line(f, c.MenuPrompt, c.MenuPromptColour ?? PromptColour, c.Items, _word, ChoiceStart(c.MenuPrompt));
+                // The caller's word colours (s60: the wand's "Use it?" over the Items page, 0x27D30 with 13, 15, 10).
+                Line(f, c.MenuPrompt, c.MenuPromptColour ?? PromptColour, c.Items, _word, ChoiceStart(c.MenuPrompt),
+                    colours: c.MenuColours);
                 break;
             case TextRequest t when back is CharacterPageRequest { PickRows: true } && input.LastDevice == InputDevice.Keyboard && !AmigaView.On:
                 // Drop's amount (input 0x24F1D; DOSBox-X s39): the question in green, a space, the digits typed in white,
@@ -815,7 +828,8 @@ public sealed class PartyMenuScreen(PartyMenuFlow flow, ScriptRunner runner, ISc
                 Chrome.Text(f, font, 0, MenuRow, Fit(bl.Text, 40), bl.Colour);
             }
             else if (pending is DelayRequest && _talkChoice is var (kc, lit))
-                Line(f, kc.MenuPrompt, kc.MenuPromptColour ?? PromptColour, kc.Items, lit, ChoiceStart(kc.MenuPrompt));
+                Line(f, kc.MenuPrompt, kc.MenuPromptColour ?? PromptColour, kc.Items, lit, ChoiceStart(kc.MenuPrompt),
+                    colours: kc.MenuColours);
             else if (pending is DelayRequest && back is CharacterPageRequest itemsPage)
                 // Row 24 keeps the page's menu with the chosen entry lit while the text types and pauses (DOSBox-X
                 // s41: the page menu with Id lit under Id's offer).
@@ -850,7 +864,8 @@ public sealed class PartyMenuScreen(PartyMenuFlow flow, ScriptRunner runner, ISc
     /// (<see cref="ExploreScreen.DrawLine"/>: the hotkey is the first letter, or the word's character in
     /// <paramref name="hotkeys"/>; the lit entry runs from its hotkey to two cells before the next one).</summary>
     private void Line(IndexedFrame f, string? prompt, byte promptColour, IReadOnlyList<string> words, int selected,
-        int? start = null, string? hotkeys = null, ExploreScreen.AmigaMenuPens? amigaPens = null)
+        int? start = null, string? hotkeys = null, ExploreScreen.AmigaMenuPens? amigaPens = null,
+        (byte Words, byte Lit)? colours = null)
     {
         Chrome.Clear(f, 0, MenuRow, 40);
         if (prompt is { Length: > 0 })
@@ -858,7 +873,8 @@ public sealed class PartyMenuScreen(PartyMenuFlow flow, ScriptRunner runner, ISc
         // D s39: the icon editor's "Parts color-1 color-2 Size Exit" (hotkeys P 1 2 S E): Parts lit shows PARTS COLOR
         // white, the '-' green and the 1 white; color-1 lit shows its 1 and the next word's COLOR white.
         ExploreScreen.DrawLine(f, font, words, selected, start ?? WordsStart(prompt),
-            hotkeys is null ? null : i => i < hotkeys.Length ? hotkeys[i] : words[i].Length > 0 ? words[i][0] : '\0', amigaPens: amigaPens);
+            hotkeys is null ? null : i => i < hotkeys.Length ? hotkeys[i] : words[i].Length > 0 ? words[i][0] : '\0', amigaPens: amigaPens,
+            colours: colours);
     }
 
     private void DrawMenu(IndexedFrame f, PartyMenuRequest m, ActionInput input, bool active)
@@ -974,20 +990,28 @@ public sealed class PartyMenuScreen(PartyMenuFlow flow, ScriptRunner runner, ISc
         // swaps the whole frame (CombatScreen.SwapGrey). The boxes below give the colours as seen, swapped back here.
         Chrome.Box(f, 0, 0, 39, 23);
         var old = new EclCharacter(ic.OldRecord);
-        // Each frame over a 24 × 24 box (DOSBox-X s19: ready on light grey with a white / black bevel, action on dark
-        // grey with a light grey / black bevel; [?] the program draws icon slot 25's frames there, not decoded).
+        // Each frame over a 24 × 24 box: the preview 0x1CE5E (read s60) blanks the band in colour 0 (START 0x6C72), then
+        // draws icon slot 25 (COMSPR block 25 and block 153, loaded at start-up 0xEB1D) at the two cells, colour 0
+        // see-through, then the icon's two poses (slot 12): ready on light grey with a white / black bevel, action on
+        // dark grey with a light grey / black bevel, one row on top and bottom, two columns on each side (DOSBox-X s60).
+        // The boxes as seen stand in when COMSPR lacks the blocks.
         static byte Seen(byte c) => c switch { 0 => 8, 8 => 0, _ => c };
-        void Box(int x0, int y0, byte fill, byte light)
+        void Box(int x0, int y0, int block, byte fill, byte light)
         {
+            if (art.Combat.Sprite(block) is { Width: 24, Height: 24 } frame)
+            {
+                CombatArt.Draw(f, frame, x0, y0, false, (0, 0, 320, 200));
+                return;
+            }
             for (int y = 0; y < 24; y++)
                 for (int x = 0; x < 24; x++)
-                    f[x0 + x, y0 + y] = Seen(x < 2 || y < 2 ? light : x >= 22 || y >= 22 ? (byte)0 : fill);
+                    f[x0 + x, y0 + y] = Seen(x < 2 || y < 1 ? light : x >= 22 || y >= 23 ? (byte)0 : fill);
         }
         void Pair(EclCharacter c, int y, string label)
         {
             Chrome.Text(f, font, 8, y / 8 - 1, label, Chrome.White);
-            Box(32, y, 7, 15);
-            Box(104, y, 8, 7);
+            Box(32, y, 25, 7, 15);
+            Box(104, y, 25 + 128, 8, 7);
             for (int k = 0; k < 2; k++)
                 if (art.Combat.Party(c, k == 1) is { } pic)
                     CombatArt.Draw(f, pic, 32 + 72 * k, y, false, (0, 0, 320, 200));

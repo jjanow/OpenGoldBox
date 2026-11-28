@@ -490,7 +490,9 @@ Checked against DOSBox-X (PoR v1.3, EGA, save A put on the overland with `goldbo
     Client (s47): `PorGame.ReloadSavedMap` (Load's tail) sets `AreaLoop.MarkerSlots[2] = 0` for location type > 1,
     as `IconEditorDone`; the Client's run of the same steps on DOS save A placed alike (`save-overland`, vector 0
     patched the same way, `--art amiga`): all five markers equal to FS-UAE's (0 of 57–64 light pixels differ at the
-    `ashot` offset (+2, −1)). DOS not run in DOSBox-X on this path (the same code read). **An original bug, fixed
+    `ashot` offset (+2, −1)). DOS in DOSBox-X (s60, the same steps: save A on block 26's overland at 10,20 N with
+    vector 0 = PROGRAM 0 then EXIT, Remove × 6, Load of a copy whose vector 0 is an EXIT, four steps north): ICON
+    blocks 0, 128, 0, 128, 1 for counters 4, 5, 0, 1, 2, every marker pixel equal to the block (s60-lane-V.md). **An original bug, fixed
     (user, s48)**: since s49 `ReloadSavedMap` loads the three slots again (`AreaLoop.ReloadMarkerSlots`: ICON 0, 1, 2
     into 9, 10, 11), so after a hall Load counters 4, 5, 0, 1, 2 draw blocks 2, 130, 0, 128, 1 as on any overland step
     (test `OverlandViewTests.A_hall_load_on_the_overland_loads_the_marker_slots_again`; not re-run on screen). The icon
@@ -552,7 +554,14 @@ Checked against DOSBox-X (PoR v1.3, EGA, save A put on the overland with `goldbo
   The 54 bytes are identical in all three. `geo.py special START.EXE --offset N` decodes them. The table contents are not
   copied here.
 
-### The land recovers (GAME.OVR 0x20D50, read and run s58; Core `OverlandRecovery`)
+### The land recovers (GAME.OVR 0x20D50, read and run s58; Core `OverlandRecovery`, its tables in the module s60)
+
+The lists, maps and squares below are the module's (`rules/overland.json` "recovery", `module-format.md` §6): the
+importer finds them through 0x20D50's code (`PorOverlandRecovery`: the lists' sheet tests `80 BD imm 7F` with the two
+maps pushed after them, the loop ends `cmp [bp-1], 0Ah / 11h` for the counts, the pan's `push word [di+imm]` pair and
+the frame loop's `cmp [bp-2], 8`, the squares before and after the frames as `mov ax, imm` pairs) and reads the
+player's data segment; Core holds only the callers' cells and block. A module without them skips the recovery with a
+diagnostic (no recolour, no draws).
 
 After Yarash's pyramid ($4AB3 = 254, ECL7 block 23 $AC53) the overland's river and polluted-ground tiles are
 recoloured in the tile sheets themselves. Two callers:
@@ -593,9 +602,42 @@ dissolving, (19, 20), (23, 25); the first and last views and the redraw after th
 Times: a view every 0.356 s (the recolour's draws at 3000 cycles), the last 0.283 s after the 9th, then 1.87 s of the
 two PauseOnly calls (game speed 4) before the redraw. The Client holds the views 5 s from the first to the last (user, s59: 9 × 0.51 s + 0.41 s,
 DOSBox-X's proportions stretched ×1.43; the ANIMATION option scales it), then the PauseOnly calls as the program.
+**Client (s60, Xvfb, frames 0.196 s apart):** the three squares in order, the ground dissolving; first view to the
+10th ≈ 4.5 s (23 frames), the 10th held ≈ 0.39 s, the recovered view held ≈ 1.76 s (the PauseOnly calls), then the
+redraw and the block-26 text: within the sampling of the s59 timings.
 
-**Amiga** `[?]`: the program holds the same tile lists and pan squares next to one colour map of its own (16 bytes:
-5 → 1, 12 → 2, 13 → 2, 14 → 10); its routine is not read, and the Client leaves Amiga tiles as they are.
+**Amiga (read whole and run s60; Core `AmigaOverlandRecovery` with the module's `art/amiga/overland-recovery.json`, read from `program` at import by `PorAmigaOverlandRecovery`, importer 0.7.42):** the routine is hunk 13 +0x2872 (`program`, hunks
+from 0 in file order), the same shape as 0x20D50. Callers: the script switch (hunk 16 +0x50F8: $49E6 = 0, block 26,
+$4AB3 = 0xFE as a word, $4AA2 = 0; VM cells are big-endian words at 2 × (cell − $4900) from hunk 32 +0x98) and the
+game Load (hunk 16 +0xFC2, at its end +0x1544 with $4AA2 ≠ 0, still). The lists (hunk 14 +0x22B, +0x236) and the pan
+(+0x258 x words, +0x26A y words) are DOS's; the views go through the Amiga copy of 0x2DE38 (hunk 25 +0x1AD6, site rules,
+no marker), the screen copy hunk 25 +0x896 and the pause hunk 25 +0xD7A (Delay(speed · 5 ticks), 100 ms a step), in
+DOS's order. The differences are in the tiles:
+
+- **One map for both lists** (hunk 14 +0x248: pens 5 → 1, 12 → 2, 13 → 2, 14 → 10; table 3's brown 940 to blue 06b,
+  the greys 555 / 777 to green 096, aaa to 0d8), no "from" list.
+- **The recolour** hunk 27 +0x7160 (assembly; args map, item, random flag, block) works on the sheet's 4 bitplanes in
+  place (planes 0x2400 apart after a 0x14-byte head; 6-byte rows of two 24-pixel tiles, item t at 72 t, + 3 when odd:
+  the sheets number tiles as DOS, low sheet hunk 32 +0xB18, above 0x7F the high one +0xB1C with t & 0x7F). Pixel by
+  pixel in raster order (bit 7 the leftmost): when map[c] ≠ c, the random mode calls the generator and keeps the
+  pixel when the result's bit 7 is set (about half a pass, DOS about a quarter); the whole mode always changes it. The
+  map changes no pen twice, so in place equals DOS's copy.
+- **Its generator** (hunk 27 +0x72C8) is not RandSeed: a state byte s at hunk 27 +0x7314 (0 at load) becomes
+  (T1[s & 15] << 4 | T2[s >> 4]) + the beam position bytes $DFF007 and $DFF006 (VHPOSR), mod 256; the tables are hunk 27
+  +0x7315 and +0x7325. The pattern hangs on machine timing `[?]` (the Client feeds the beam bytes from its own random
+  source); the game's random numbers do not move.
+
+The sheets are loaded once by the game init (hunk 25 +0x12A8 → +0x15F6, SQRPACI blocks 1 and 2); the combat grounds
+and BACPAC overwrite the low sheet from tile 0 (hunk 22 +0x177A, at most 42 tiles), so the recolour stays for the
+session as on DOS. `por_amiga_recolour_oracle.py` runs hunk 27 +0x7160 (30 random cases) and hunk 13 +0x2872 (animated
+and still, the views / copies / pauses trapped) under unicorn with a fed beam; Core matches pixels, generator state
+and beam reads (`AmigaOverlandRecoveryTests`). The Client runs the DOS pass (RandSeed's draws, DOS rules under every
+art setting) and, in step, the Amiga pass on the sheets that come from the Amiga overlay (Amiga art, or Best where it
+takes them); the pan holds as decided (s59), the two pauses at the Amiga's 100 ms a step under the Amiga pages.
+Client on Xvfb (s60, `--art amiga`, the save above): the pyramid's grey ground goes green in about four views, the
+river square and the lake, then the block-26 text. **FS-UAE (s60):** an Amiga save on 27's overland (s60-lane-M.md) gave
+the same views in the same order, about 6 s from the first to the last (A500 machine time; the Client keeps the s59
+hold).
 
 ## Version differences
 

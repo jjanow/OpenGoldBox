@@ -270,8 +270,19 @@ for ECL games (PoR: 0–29) and the area number for FRUA (1–40).
   ```json
   { "width": 44, "height": 36, "tiles": [ … width × height, row-major … ],
     "specialLocations": [ { "x": 0, "y": 0, "tile": 1 }, … ],
+    "recovery": { "listA": [ … ], "listB": [ … ], "from": [ 16 colours ], "toA": [ 16 ], "toB": [ 16 ],
+                  "first": { "x": 0, "y": 0 }, "last": { "x": 0, "y": 0 }, "pan": [ { "x": 0, "y": 0 }, … ],
+                  "source": { "container": "START.EXE", "listA": …, "listB": …, "from": …, "toA": …, "toB": …,
+                              "panX": …, "panY": … } },
     "source": { "container": "START.EXE", "tiles": 13896, "specialLocations": 3126 } }
   ```
+
+  `recovery` (optional, s60, importer 0.7.40): PoR's land recovery after Yarash (GAME.OVR 0x20D50, `geo-format.md` "The
+  land recovers"): the tile lists A and B (sheet item numbers, bit 7 the high sheet), the colour maps `from` → `toA` /
+  `toB` (16 EGA colours each), the view's top-left overland square before the frames (`first`) and after them (`last`),
+  and one square per animated frame (`pan`; its length is the frame count). The engine runs the routine
+  (`OverlandRecovery`, Core) on these tables; without them the recovery is skipped with a diagnostic (no recolour, no
+  RandSeed draws), so a module imported before 0.7.40 should be imported again.
 
   Values are stored as the program holds them: `tiles` are 1-based tile numbers (the view draws value − 1), the
   special locations are in stored order (x and y over the whole table), and the rules key them by 1-based index.
@@ -435,6 +446,12 @@ For FRUA designs, and later for hand-made modules that don't want bytecode.
   `program` after checking the three routines that read them; `source`). Written only when the pairs hold the pens of
   the DOS colour pairs. Engine side: `IPorContent.AmigaIconPairs()`; the Client builds party icons the Amiga way under
   Best / Amiga (docs/re/por-art-formats.md §4 "Party icons").
+- **Land's-recovery tables (importer 0.7.42, s60):** `art/amiga/overland-recovery.json`
+  (`AmigaOverlandRecoveryDocument`: `listA`, `listB` (tile numbers, bit 7 the high sheet), `map` (16 Amiga tile pens),
+  `first`, `last`, `pan` ([x, y] per frame), `generatorHigh`, `generatorLow` (the recolour generator's nibble tables, 16
+  each), `source`), read from the player's `program` after checking the routine hunk 13 +0x2872, its recolour hunk 27
+  +0x7160 and generator +0x72C8 (`PorAmigaOverlandRecovery`). Engine side: `IPorContent.AmigaOverlandRecovery()`; the
+  Client recolours Amiga tile sheets with it in step with the DOS pass (docs/re/geo-format.md "The land recovers").
 - `kind` names follow what the engine draws: `picture`, `portraitHead`, `portraitBody`, `sprite`, `icon`, `wallset`
   (symbol sheets, plus the WALLDEF layout in JSON), `backdrop`, `combatGround`, `tile`, `frame`, `font`, `title`.
 - The palette values themselves come from the player's files at import. The engine source holds none (see PLAN §9,
@@ -666,7 +683,8 @@ PoR v1.3 import (s16): 29 scripts and areas, 29 maps, 172 monsters, 105 monster 
 treasure lists, 128 item types, 822 art blocks (783 pictures, 39 raw: the WALLDEF records and the font), 266 program
 texts, 36 save files; every block (and the `ITEMS` file, the program data, the saves) rebuilds byte for byte, from the
 files and again through the engine's readers (2,489 comparisons). The module is about 12 MB. Since s18 the overland too
-(`rules/overland.json`: tiles and special locations as bytes, through the engine, and the 29 areas' columns): 2,523.
+(`rules/overland.json`: tiles and special locations as bytes, through the engine, and the 29 areas' columns): 2,523;
+since s60 the land recovery's tables (seven byte tables and the squares, and through the engine): 2,532.
 With `--amiga` (Amiga v1.0, s17): 508 Amiga pictures over 16 files (every picture block except the three left out), each rebuilding to its decoded Amiga block (`PorAmigaArt.Check`); 5 MB more.
 
 ## 17. Implementation order

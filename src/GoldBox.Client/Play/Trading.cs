@@ -47,6 +47,11 @@ public sealed class TradeContext
     /// <summary>A list page stays on the screen with nothing over it but row 24 (a keep question after a spell list). Null takes it away.</summary>
     public Action<ListRequest?> ShowPageAlone { get; init; } = _ => { };
 
+    /// <summary>A list page stays on the screen with the text box's texts written straight over it (no frame, nothing
+    /// blanked: START 0x76B6's glyphs, e.g. a scroll's combat-only lines, 0x27CDE–0x27D13) until START 0x16EC frames
+    /// the box (<see cref="FrameTextBox"/>). Null takes it away.</summary>
+    public Action<ListRequest?> ShowPageBare { get; init; } = _ => { };
+
     /// <summary>
     /// START 0x16EC's camp branch drew the text box's frame again (03F1:0000 around (1, 17)–(38, 22)): its top row runs
     /// through the joint at (16, 16) until the screen is redrawn (START 0x27D9). False: the redraw.
@@ -305,7 +310,7 @@ public static class MoneyScreens
             var kinds = Enumerable.Range(0, 7).Where(k => (int)t.Pool[k] > 0).ToList();
             if (kinds.Count == 0)
                 return;
-            var rows = kinds.Select(k => $"{t.Text.Coin(k)} {t.Pool[k].ToString(CultureInfo.InvariantCulture)}").ToList();
+            var rows = kinds.Select(k => $"{AmigaView.CoinListName(k) ?? t.Text.Coin(k)} {t.Pool[k].ToString(CultureInfo.InvariantCulture)}").ToList();
             var page = new ListRequest([], rows, ["EXIT"], 0, FirstRow: CoinKindsFirstRow)
             {
                 Selected = position,

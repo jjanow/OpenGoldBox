@@ -1045,6 +1045,26 @@ public class CombatScreenGameTests
         Assert.NotNull(art.Sprite(CombatArt.HitMarker));
     }
 
+    [Fact]
+    public void Party_icon_heads_are_ored_into_the_body_as_the_builder()
+    {
+        // GAME.OVR 0x1E315 (read s60): EGA pixel bytes ORed, masks ANDed. CHEAD 3 over CBODY 1 (size 1, pose 0) has two
+        // pixels drawn in both: (7, 7) head 4 | body 7 = 7 and (6, 8) head 4 | body 15 = 15 (a head drawn over gives 4).
+        if (Dir() is null)
+            return;
+        var art = new CombatArt(new PorGameDirectory(Dir()!));
+        var member = new Core.Ecl.EclCharacter();
+        member[CombatArt.IconHead] = 3;
+        member[CombatArt.IconBody] = 1;
+        member[CombatArt.IconSize] = 1;
+        byte[] identity = [0x91, 0xA2, 0xB3, 0xC4, 0xE6, 0xF7];
+        for (int k = 0; k < 6; k++)
+            member[CombatArt.IconColours + k] = identity[k];
+        var icon = art.Party(member, false)!;
+        Assert.Equal(7, icon.Pixels[7 * 24 + 7]);
+        Assert.Equal(15, icon.Pixels[8 * 24 + 6]);
+    }
+
     [Theory]
     [InlineData(26, "bcb363a456232bd31955989bc3162a10f742d644772fc2c07e12c3d934b9e5fd")]
     [InlineData(27, "7faf5e1bbb76a5e0fb0af1191b9fd27165c8a51336c1d23fbbdb6e7c4b8b0167")]

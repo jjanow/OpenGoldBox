@@ -293,8 +293,11 @@ save type, effect id, when (0 not in a fight), casting time, AI priority, offens
 **Spell globals DS:4844 / DS:4845** (s49): written by Enlarge (DS:4844 := 18, DS:4845 := the exceptional part by
 level), Sleep (DS:4844 = the 4d4 budget, DS:4845 = each target's cost, the last one staying) and Dispel Magic
 (DS:4845 = an effect's level, DS:4844 = the chance) and by nothing else; never reset, so a value lasts from fight to
-camp to fight for the whole run (`EclMemory.SpellGlobals`, not saved). They lie in the uninitialised data, which the
-run-time does not clear: the value before the first writer is `[?]` (0 in Core).
+camp to fight for the whole run (`EclMemory.SpellGlobals`, not saved). They lie past the end of START.EXE's expanded
+image (DS:4844 is linear 0x11004 from the load segment; the image ends at 0x10BF0), in memory that neither the EXEPACK
+unpacker nor the Turbo Pascal start-up (0AF8:0000, no fill) clears. **Start values 100 / 11** (s60): the v1.3 unpacker
+run under unicorn on zeroed and on 0xFF-filled memory leaves 100 / 11 there both times (its own leftovers), and a
+DOSBox-X state at the party menu after a plain start holds 100 / 11. Core starts with them (`SpellGlobals.StartDs4844`).
 **Range** (0x27741): fixed + per level × level (byte), with an item per level × 6 + fixed; 0 with an area → 1; 255 → 1.
 **Duration** (0x277EE): spell 40 → 1d6 × 10; 57, 61 → 5d4; 59 → 1d4 × 10 + 40; 63 → in a fight 2d10 × 10, else
 (1d10 + 10) × 10; 67 → 1440; else fixed + per level × level.
@@ -435,6 +438,22 @@ the moving icon that follows until the next 0x16EC call clears its rows; with it
 | 75 blood drain (s30) | 0x10485 | drinker | 0x103B9 (CS:175E) | 10 | yes |
 | 73 rake (s30) | 0x16240 | raker | 0x161C4 (CS:39C9 of unit 0x127FB) | 10 | yes |
 | 131 gauntlets (s30) | 0x11CB1 / 0x11CD8 | wearer | 0x11BA6 (CS:2F4B) | 10 | yes; only when 0x2C046 raised the Strength; in a fight the handler sets DS:49F3 = 2 around the call (0x11C91 / 0x11CB6), so the text-window layout is drawn over the Items page |
+| 4 training (s60) | 0xEDFB | creature | 0xEDCA (CS:016F) | 10 | yes |
+| 7 hardier (s60) | 0xEEAF | creature | 0xEE83 (CS:0228) | 10 | yes |
+| 21 silence (s60) | 0xF39A | creature, when item use (record +2) was allowed | 0xF35E (CS:0703) | 10 | yes |
+| 23 hammer (s60) | 0xF55D | creature | 0xF42D (CS:07D2) | 10 | yes |
+| 28 mirror image (s60) | 0xF668 | creature | 0xF60D (CS:09B2) | 10 | yes |
+| 30 coughing (s60) | 0xF6F0 | creature, when item use was allowed; then START 0x1583 (its panel) at 0xF761 when it is DS:5D92 | 0xF6B4 (CS:0A59) | 10 | yes |
+| 39 ageing (s60) | 0xF8E7 | creature | 0xF8A1 (CS:0C46) | 10 | yes |
+| missile dodge (s60) | 0xFC5F | creature | 0xFBFD (CS:0FA2) | 10 | yes |
+| 43 weakness (s60) | 0xFD81 | creature, Str > 3 | 0xFD2D (CS:10D2) | 10 | yes |
+| paralysing hit 0x10246 (s60) | 0x10294 | the last target, through START 0x2B8B with the effect frames (no START 0x2383 after) | 0x10239 (CS:15DE) | 10 | no |
+
+The s60 rows: Core raised these events since s30–s52 (`StartsTraining`, `Hardier`, `Silenced`, `GainsItem`,
+`LostImage`, `Coughing`, `Ages`, `MissileDodged`, `Weakens`, `ParalysisFailed`), but the Client showed none of them,
+in a fight or outside (`CombatChooser.EffectMessage`, `OutsideEffectMessages`); now each is shown as the program's
+call (texts from the player's GAME.OVR, `PorTextCatalog`). Handler 30's panel redraw is the event `PanelRedrawn`
+(Core test `HandlerMessageTests.Coughing_redraws_the_panel_only_for_the_current_creature`). Not seen in DOSBox-X.
 | 40 cloud ends (s30) | 0xF9A4 | — | 0xF903 (CS:0CA8) | START 0x1693: row 24, green | yes |
 | 135 too weak (s30) | 0x11DCA | — | 0x11D76 (CS:311B) | START 0x1693: row 24, green | yes |
 
@@ -706,7 +725,8 @@ hit), at least 0; without a rebound the same line goes on, else a new line. DS:6
   pick is settled under "Combat cast"; the camp's out-of-combat cast and 0x27AA9 are in camp.md); the map target list 0x3045B (implemented by
   the map code through `IFightTargetList` / `IFightAuraRange`; without it auras in a fight are not found and area
   spells fall back to the map distance with a diagnostic).
-- Handler 84's range word is a sampled residue (0x3E58 at 18 of 18 gazes, s49), not proven for every turn; handlers 90 / 97's
+- Handler 84's range word is a sampled residue (0x3E58 at 18 of 18 gazes, s49), not proven for every turn (s60: its likely
+  writer traced by frame arithmetic, see "Handlers 40, 84, 88, 90, 97 under emulation"); handlers 90 / 97's
   residue byte varies (only reached with Constitution outside 4..20).
 - Everything else here is **P**; the Sleep cast and Restoration's no-class index below are **D**; the routines under "Checked under emulation" are **E**.
 
@@ -858,8 +878,16 @@ as `por_spell_oracle.py` (outside a fight), compares record bytes, effects, Rand
 **DOSBox-X** (s49, residue probe `tools/dosbox/handlerprobe.s`, `dosbox-trace-method.md` "Handler residue probe"; the
 s39 vampire fight `fight_save.py BASE OUT 1C0B00170001001724 --mon 4 --hp 200`, then with two large scorpions added,
 party on Quick): handler 84 ran 18 times, every time with BP 0x3D64 and [bp−2] = **0x3E58** (it looks like a saved
-frame pointer; its writer was not traced. The AI turn 0xABCF → 0xB6FC → class 0x0E is the handler's only path, at a
-fixed depth).
+frame pointer; the AI turn 0xABCF → 0xB6FC → class 0x0E is the handler's only path, at a fixed depth). **Writer (s60,
+read by frame arithmetic, not run):** the path's frames are 0xABCF BP 0x3EB6, 0xB6FC 0x3E9A, 0x2B1E4 0x3E7A, 0x2B04A
+0x3E6A, the dispatch 0x2AEEA 0x3D74 and the handler 0x3D64 (DOSBox-X's BP, so the arithmetic holds); its [bp−2] is
+SS:0x3D62. Earlier in the same AI turn the target search 0x15FDF (BP 0x3E94, from 0xABCF at 0xAD87) calls the
+may-target test 0x13880 (BP 0x3E7A), whose triggers 0x2B1E4 (class 1 on the target at 0x138B9, class 2 on the
+attacker at 0x138FA) run at BP 0x3E68, so 0x2B04A at **BP 0x3E58**; when that creature carries an effect of the class,
+0x2B04A calls the dispatch 0x2AEEA, whose `push bp` lands at **SS:0x3D62** with the value 0x3E58. Nothing deeper in
+0xB6FC's own path writes that cell before the handler (0x2B04A's callees there sit at BP 0x3D76 and above, the TP set
+test START 0xBD40 keeps no frame). So the word is 0x2AEEA's saved BP from the may-target test; with no class 1 / 2
+effect found there it is an older value `[?]` (not traced).
 C#: `EffectHandlers.CharmGazeRangeResidue`. Handler 97 ran twice on Thrender (dwarf, Con 16) for the charm gaze's save:
 [bp−1] = 0x1F once and 0x00 once (BP 0x3C10 both times), so the byte depends on what ran before; with Constitution in
 4..20 it is overwritten. Carriers are created dwarves, gnomes and halflings (race limits 12–19, 8–18, 10–19 at

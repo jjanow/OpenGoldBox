@@ -130,10 +130,11 @@ public interface IEclHost
     /// <summary>
     /// GAME.OVR 0x20D50 (<see cref="Explore.OverlandRecovery"/>): the overland's river tiles recoloured after Yarash,
     /// <paramref name="animated"/> from the script switch into block 26 (0x3F86), still from a Load (0x1FC98).
-    /// <paramref name="random"/> is the game's generator (the animated run draws from it). Default: the draws alone.
+    /// <paramref name="random"/> is the game's generator (the animated run draws from it); <paramref name="tables"/> are
+    /// the module's (<see cref="EclVm.OverlandRecovery"/>). Default: the draws alone.
     /// </summary>
-    void OverlandRecovery(bool animated, Func<ushort, ushort> random) =>
-        Explore.OverlandRecovery.Run(animated, _ => null, random);
+    void OverlandRecovery(Explore.OverlandRecoveryTables tables, bool animated, Func<ushort, ushort> random) =>
+        Explore.OverlandRecovery.Run(tables, animated, _ => null, random);
     /// <summary>PROTECT (0x3C): called by the default <see cref="DrawGlyphs"/>.</summary>
     void Protect(ushort address);
     /// <summary>
@@ -176,6 +177,12 @@ public interface IEclHost
 
     /// <summary>DAMAGE (0x2E) hit one creature: the text-box line ("dies" / "is hit FOR n points of Damage").</summary>
     void DamageReport(EclDamageReport report) { }
+
+    /// <summary>
+    /// DAMAGE's hit applied to <paramref name="target"/> after its line (0x959F: the line 0x96B0, the hit START 0x2DC8,
+    /// then the blank 0x96D0 and the party list 0x96DD): the list shows the new HP and status from here.
+    /// </summary>
+    void DamageApplied(EclCharacter target) { }
 
     /// <summary>
     /// The end of every DAMAGE (0x375A–0x37E4): with <paramref name="partyKilled"/> (no list member left in play,

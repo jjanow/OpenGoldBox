@@ -127,6 +127,11 @@ public sealed class EclVm
     /// <summary>DS:49FF "party defeated": while set, the run loop stops (set by DAMAGE and the after-combat check in the game).</summary>
     public bool ExternalStop { get; set; }
     /// <summary>
+    /// The land's recovery tables from the module (<c>rules/overland.json</c> "recovery"), for the switch into block 26
+    /// (0x3F86); null: the module has none, and the recovery is skipped with a diagnostic.
+    /// </summary>
+    public Explore.OverlandRecoveryTables? OverlandRecovery { get; set; }
+    /// <summary>
     /// DS:49F8 "loading a save": set by the main menu's Load command; the next script init then keeps $4A00–$4A1F and
     /// $6E79–$6E82, and clears this flag.
     /// </summary>
@@ -199,6 +204,7 @@ public sealed class EclVm
         Effects.AttachTo(PartyRules);
         PartyRules.Damaged += d => HostCall("DamageReport", [d.Target.Name, Num(d.Damage), d.Dies ? "dies" : "hit"], null,
             () => Host.DamageReport(d));
+        PartyRules.DamageApplied += m => Host.DamageApplied(m); // drawing only: not a traced host call
         Memory.Written += w => _step?.Writes.Add(w);
         Memory.Diagnostic += Diag;
         Memory.WallSetRequested += (slot, set) =>
@@ -467,7 +473,12 @@ public sealed class EclVm
                 if (CurrentScript == Explore.OverlandRecovery.Block
                     && ReadMem(Explore.OverlandRecovery.YarashCell) == Explore.OverlandRecovery.YarashBeaten
                     && ReadMem(Explore.OverlandRecovery.RiverCell) == 0)
-                    Host.OverlandRecovery(true, Host.Random);
+                {
+                    if (OverlandRecovery is { } tables)
+                        Host.OverlandRecovery(tables, true, Host.Random);
+                    else
+                        Diag("the land's recovery (0x20D50) has no tables in the module (rules/overland.json \"recovery\"): not run, RandSeed not drawn");
+                }
             }
             Memory.InterfaceState = (byte)(Memory.ViewMode == 1 ? 4 : 3); // DS:49F3 (0x3F3B–0x3F99)
             // The redraw 0x2DCF4 runs (0x3FD2–0x3FF5) when the view mode stayed 1, or when the old mode was outdoors or

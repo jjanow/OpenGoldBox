@@ -93,6 +93,11 @@ block offset  VM address     content
     in vector 2. The main loop calls 0x3B19 on key "E" (0x412C); PROGRAM 9 also calls it (0x3B56, saving and
     restoring the PC, and then executes EXIT, 0x3BBC: the script run ends). Confirmed by a DOSBox-X RAM
     snapshot (2026-11-17): encamp ran vector 2 only; vector 3 ran when an 8-hour rest was interrupted.
+  - Neither 0x3B19 nor 0x196A0 tests DS:49FF: a vector 2 whose DAMAGE kills the whole party shows the lines, the
+    party-killed window, then **the camp menu over the dead party** (every Save / View / Magic / Rest / Alter works);
+    on its Exit vector 3 runs nothing (0x3EB7 tests DS:49FF first), 0x4172 skips the command read and the area loop
+    ends (back to DOS). DOSBox-X s60 (`por_test_saves.py` camp-wipe) and the Client (`AreaLoop.Encamp`) alike; before
+    s60 Core skipped the menu.
   - The script init 0x7689 sets $6DD2 = $6DD3 = 0, so rest is never interrupted unless the script sets them.
 - **On load** (script init 0x7689): PC = $9900, the GOSUB stack is cleared, the six compare flags are cleared,
   $6DE1 = 255, $6DD2 = $6DD3 = 0, $49E5 = 0, and after reading the vectors $49E6 = 1 (display bytes too: DS:84E0,
@@ -554,8 +559,9 @@ does (0x1EEAA: `MON<d>CHA/ITM/SPC` block m, icon size, **five 1d6** icon colours
 0x8E1 otherwise) [5·g + **1d5**] (portrait body), g = record 0x9E (gender, signed); record 0xBB (portrait head) = DS:0x8C7 [8·g + **1d8**] (DS tables in START.EXE's data segment, indexed 1-based: heads DS:08C8–08D7, bodies base + 1 … base + 10; read
 from the player's program by `PorProgram.NpcPortraitBases` through the code that indexes them, s15). The record is
 appended at the end of the party list and **becomes current** (0x1F42C: icon slot 0xBF = lowest of 0..7 not used by
-a list member, $6E3E + 1, then the level stats 0x2AA87, spells-effects.md "Level stats", called at 0x1F55A; Core: `EclVm` through `Effects.LevelStats`, checked on every v1.3 ADDNPC record against the routine under emulation, `LevelStatsProgramTests`), then 0x1E468 (`[?]` the
-combat icon load, by its calls; no random draws in it). Then, whether or not a record was added: current record 0x84
+a list member, $6E3E + 1, then the level stats 0x2AA87, spells-effects.md "Level stats", called at 0x1F55A; Core: `EclVm` through `Effects.LevelStats`, checked on every v1.3 ADDNPC record against the routine under emulation, `LevelStatsProgramTests`), then 0x1E468 (read whole s60: the
+combat icon build, CHEAD and CBODY into the record's slot 0xBF through the scratch slot 11, with 1: recoloured;
+no random draws in it; combat-menu.md "Icons"). Then, whether or not a record was added: current record 0x84
 (morale) = (low byte of v2 / 2) OR 0x80, record 0x10E (hostile) = 1 if m = 24 else 0, and START.EXE 0x1758 and 0x1307
 (`[?]` not read; 0x1307 is called after most changes to a character, presumably a display refresh). With a full party the morale lands on whoever is current.
 
@@ -822,7 +828,7 @@ only. `[?]` = unknown or unconfirmed.
 | 37 | LOADPIECES | LOAD PIECES | 3 | 3 | v v v | Load wall sets for slots 1–3 (same handler as 21; see below) | P | 35 |
 | 38 | PROGRAM | PROGRAM | 1 | 1 | v | 0 training hall (0x19AE0), 8 end game (0x20941), 9 camp (then EXIT: the run ends, 0x3BBC); else nothing (training.md) | P | 4 |
 | 39 | WHO | WHO | 1 | 1 | s | Prompt, player picks a character (becomes current; survives EXIT) | P | 11 |
-| 3A | DELAY | DELAY | 0 | 0 | – | Pause for game speed (DS:49E2, 0–9) × 225 ms (Crt-style Delay, START.EXE 0x7E4E/0xA69C); speed 0 = none. Amiga (hunk 16 +0x43DA, read s47): a counter (hunk 32 +0xB4) + 1, then Delay(speed · 5 ticks), 100 ms per step; not built `[?]` | P | 188 |
+| 3A | DELAY | DELAY | 0 | 0 | – | Pause for game speed (DS:49E2, 0–9) × 225 ms (Crt-style Delay, START.EXE 0x7E4E/0xA69C); speed 0 = none. Amiga (hunk 16 +0x43DA, read s47 / s60): the VM's PC (hunk 32 +0xB4, the opcode's step, as every no-operand handler) + 1, then hunk 25 +0xD7A, Delay(speed · 5 ticks), 100 ms per step; built s60 under the Amiga pages (`ClientPlayer.Delay`) | P | 188 |
 | 3B | SPELL | SPELL | 3 | 3 | v a a | Search the first member's spell bytes for v (skipped when the residue byte is non-zero, as in DOSBox: 0xCA at the v1.3 site); results written to $00xx (low address bytes only): no effect in v1.3 | P, D | 1 |
 | 3C | PROTECT | PROTECTION | 1 | 1 | a | Draw the glyph line at a (bytes + 1 until 0/255), used for rune texts | P | 12 |
 | 3D | CLEARBOX | CLEAR BOX | 0 | 0 | – | Clear the picture window (1,1)–(15,15); the next PROTECT starts inside it | P | 27 |

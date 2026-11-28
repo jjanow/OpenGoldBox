@@ -354,10 +354,12 @@ even for Raise Dead / Stone to Flesh on a target that does not qualify, which th
   or dying character out of play and brings it back to status 0. Core `EffectHandlers.RestoreHitPoints` (78 →
   `Revive`).
 - **Raise dead** (0x4B22–0x4C9D), literally: remove effects 32 and 55 (DS:681F = 1); HP 1, status 0, in play 1;
-  Con (0x14) − 1 if > 0; d = max HP − 0xB1 (rolled HP) if positive, else 0 (byte). If the new Con ≥ 14: s = Σ over
+  Con (0x14) − 1 if > 0; d = max HP − 0xB1 (rolled HP) if positive, else 0 (byte). If the new Con is below 14 the
+  routine ends (0x4BCE → 0x4CA1: max HP untouched). Else s = Σ over
   level bytes 0x96 + k (k = 0..7) that are > 0: k = 2 (fighter) → level × (Con − 14); else 2 × level when Con > 15,
   else level (byte sum); d := d div s when s > 0; max HP −= d unless Con ≥ 17 and the fighter level ≤ 0. No dice,
-  no survival roll, no ageing. `[?]` what this is meant to compute. The two removals run before the HP rule: a
+  no survival roll, no ageing. `[?]` what this is meant to compute (s60: worked cases and options in `s60-lane-C.md`
+  question 1). The two removals run before the HP rule: a
   record of 32 (Animate Dead) with byte 4 set runs handler 32 (0xF776) under the lock: no death, but it writes the
   hostile byte (param >> 4), auto, undead level, attack level, move 12, NPC byte and type 0 (s51, emulation).
 - **Effect removal** (0x2AF10): the code removes one record per call (the model drops the first match); the
@@ -386,8 +388,13 @@ even for Raise Dead / Stone to Flesh on a target that does not qualify, which th
   tested before the questions; absent: the not-dead text (CS:04F8) and 0x458A; price text (CS:0505), 5500; on Y, only when
   [bp−0x106] is set, 0x4B22–0x4C9D (above, with a local copy of DS:5D92); otherwise the money is gone and nothing happens.
   **Remove curse (0x4DB1):** the cursed-item walk stops at the first cursed item; else START 0x2199(member, 36); the
-  pay path sets DS:6C95 := DS:5D92 and calls the spell routine 0x29558 (its messages START 0x2B8B / 0x16EC are the spell's;
-  the Client does not show them yet).
+  pay path sets DS:6C95 := DS:5D92 and calls the spell routine 0x29558 (read whole s60): with effect 36, 0x2BF6B says
+  its text (unit CS:1078) through START 0x16EC(member, text, 10, 1) and removes the record (0x2AF10), then 0x29558 says
+  CS:251E through START 0x2B8B(member, text, 1); else the first cursed item's byte 0x36 := 0 and CS:252B through START
+  0x2B8B; nothing cursed, nothing said. Outside a fight both end in START 0x16EC's camp branch (name row 18, text row 19,
+  PauseOnly, rows 18–22 blanked), after the "is cured." message. Core raises them in order (`TempleRules.RemoveCurse`'s
+  callback; the venue oracle's START 0x16EC and 0x2B8B counts now compared for cure 7 too), the Client shows them in the
+  text box under the heal list (`VenueScreens.Heal`).
   **Handler 22's own lock (original bug, fixed: user decision s51, not an option):** handler 22 (0xF3D0) on removal
   sets DS:681F := 1 (0xF40B), removes 15 and writes DS:681F := 0 (0xF424), inside the cure's own lock. So with two
   records of 15 (and 22 with byte 4 set) the cure's removal of the second 15 runs unlocked: handler 15 re-adds itself
@@ -420,8 +427,7 @@ even for Raise Dead / Stone to Flesh on a target that does not qualify, which th
   (no hit point lost, no death, no party list over the heal list), a deliberate difference from these DOSBox-X screens.
 ## Open `[?]`
 
-- Temple: the intent of the raise dead hit-point rule; the remove-curse entry's spell messages (0x29558) in the
-  Client.
+- Temple: the intent of the raise dead hit-point rule (s60: written up as a `bug?` question, `s60-lane-C.md`).
 
 ## The menu routine (0x2CC8C) — P (s15)
 

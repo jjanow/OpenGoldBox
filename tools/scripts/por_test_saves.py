@@ -27,6 +27,8 @@ SLOT=NAME writes the named save into slot B..I instead (the program loads A..J; 
                  money and items), then TREASURE (no items), SAVE 1 -> $6E6C, COMBAT: a shop to Appraise the gems in
     shop-stock   CLRMON, TREASURE (three random items), SAVE 1 -> $6E6C, COMBAT: a shop with stock to Buy
     long-text    PRINTCLR of a 255-character text, then a one-word HMENU: the text routine's 255 case (START 0x77F8)
+    camp-wipe    vector 2 (pre-camp, not vector 0) is slot B's DAMAGE: Encamp destroys the party, then the camp menu
+                 opens all the same (0x3B19 / 0x196A0 do not test DS:49FF; s60)
 
 The texts written by I are this tool's own. Nothing from the game is stored in this file.
 The folder can stay GOLDBOX_POR_DIR afterwards: the tests that count the release's files read a copy without these.
@@ -70,7 +72,9 @@ NAMED = {
     + bytes([PRINT]) + text('DONE.') + bytes([HMENU]) + b'\x01\x82\x6e' + imm(1) + text('WAIT'),
     'long-text': bytes([PRINTCLR]) + text(('LONG TEST TEXT FOR THE PRINT ' * 9)[:255]) + bytes([HMENU]) + b'\x01\x82\x6e'
     + imm(1) + text('WAIT'),
+    'camp-wipe': bytes([DAMAGE]) + imm(0xE0, 1, 1, 200, 0),
 }
+VECTOR = {'camp-wipe': 2}  # the vector that runs the test code (0 unless named here)
 
 
 def main(argv):
@@ -82,9 +86,9 @@ def main(argv):
     game = Path(argv[1])
     base = (game / 'SAVGAMA.DAT').read_bytes()
 
-    def save(slot, code, chars=None):
+    def save(slot, code, chars=None, vector=0):
         d = bytearray(base)
-        vectors = b''.join(b'\x01\x01' + struct.pack('<H', v) for v in (0x9920, 0x991F, 0x991F, 0x991F, 0x991F))
+        vectors = b''.join(b'\x01\x01' + struct.pack('<H', 0x9920 if k == vector else 0x991F) for k in range(5))
         area = vectors + bytes(0x1F - 0x14) + b'\x00' + code + b'\x00'
         d[SCRIPT:SCRIPT + 7680] = area + bytes(7680 - len(area))
         if chars:
@@ -116,7 +120,7 @@ def main(argv):
     save('I', bytes([PRINT]) + text('FIRST TEXT BEFORE THE HALL.') + bytes([PROGRAM]) + imm(0) + bytes([PRINT])
          + text('SECOND.') + bytes([HMENU]) + b'\x01\x82\x6e' + imm(1) + text('WAIT'))
     for slot, name in named:
-        save(slot, NAMED[name])
+        save(slot, NAMED[name], vector=VECTOR.get(name, 0))
         print(name, 'in slot', slot)
     print('saves B-I written to', game)
     return 0

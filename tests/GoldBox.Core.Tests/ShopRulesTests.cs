@@ -225,12 +225,21 @@ public class ShopRulesTests
         var i2 = Item(1); i2[0x36] = 1;
         c.Items.AddRange([i1, i2]);
         c.Effects.Add([36, 0, 0, 255, 0, 0, 0, 0, 0]);
-        TempleRules.RemoveCurse(c);
+        var said = new List<EffectEvent>();
+        TempleRules.RemoveCurse(c, null, (_, e) => said.Add(e));
         Assert.Empty(c.Effects);
         Assert.Equal(1, i1[0x36]);
-        TempleRules.RemoveCurse(c);
+        // 0x2BF6B's message before the removal, then 0x29558's own (s60).
+        Assert.Equal([EffectEvent.SpellEffectRemoved, EffectEvent.SpellCurseLifted], said);
+        said.Clear();
+        TempleRules.RemoveCurse(c, null, (_, e) => said.Add(e));
         Assert.Equal(0, i1[0x36]);
         Assert.Equal(1, i2[0x36]);
+        Assert.Equal([EffectEvent.SpellItemUncursed], said);
+        i2[0x36] = 0;
+        said.Clear();
+        TempleRules.RemoveCurse(c, null, (_, e) => said.Add(e));
+        Assert.Empty(said); // nothing cursed: nothing said
     }
 
     [Fact]

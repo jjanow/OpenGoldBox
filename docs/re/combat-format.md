@@ -57,9 +57,12 @@ No pick when best stays 0. So the number of random draws per round depends on th
 length and the number of turns; a fight replay must follow this order.
 
 **A creature's turn** (0x99FD, P structure): combat record +0x0F, +0x12, +0x07 = 0; effects with trigger 7
-(0x2B1E4); if initiative > 0: initiative 20 becomes 19, the creature becomes current (DS:5D92), stats are
-recalculated, effects with trigger 15; then if initiative is still > 0 the AI (0xABCF) acts when 0x10F ≠ 0, else the
-player's menu (0x9B21). The stat recalculation is START 0x1758 (`character-format.md` "Stat recalculation";
+(0x2B1E4); if initiative > 0: initiative 20 becomes 19, the creature becomes current (DS:5D92), the view goes to it
+with its cursor box (0x319D2(creature, 2, 1)), stats are recalculated, its panel is drawn (START 0x1583), effects with
+trigger 15; then if initiative is still > 0 the AI (0xABCF) acts when 0x10F ≠ 0, else the player's menu (0x9B21);
+last, for every creature that got past the first test, its cell is drawn again (0x9AD9–0x9AF1). Core (s60) raises
+`Fight.TurnStarted` after the recalculation and before trigger 15, `TurnEnded` whether or not the creature acted (it
+had raised both only when the initiative was still above 0 after the trigger). The stat recalculation is START 0x1758 (`character-format.md` "Stat recalculation";
 `StatRecalc`), called at 0x9A8A.
 
 **Program units of the fight** (overlay stubs, `ecl-format.md` "Program references"): stub 0x35 (0x9807–0xAA86)

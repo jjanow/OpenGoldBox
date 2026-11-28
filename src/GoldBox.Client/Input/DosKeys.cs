@@ -133,6 +133,20 @@ public static class DosKeys
 
     private static readonly byte[] CursorPad = [0x4F, 0x50, 0x51, 0x4B, 0x20, 0x4D, 0x47, 0x48, 0x49];
 
+    /// <summary>
+    /// The code this frame's digit key (either row, without Shift) gives a menu run with the keypad flag (the menu
+    /// routine 0x2CC8C, [bp+0x0C] = 1: DS:288C, 2 Down, 4 Left, 6 Right, 8 Up, 7 Home, 1 End, 9 PgUp, 3 PgDn, 5 a space),
+    /// or null. DOS reads the keypad's digits (NumLock on) and the digits' row alike.
+    /// </summary>
+    public static byte? KeypadFlagCode(ActionInput input)
+    {
+        if (input.NewInput is not (InputDevice.Keyboard, var name) || input.NewShiftHeld)
+            return null;
+        if (name.StartsWith("NumPad", StringComparison.Ordinal) && name.Length == 7)
+            name = "D" + name[6];
+        return name.Length == 2 && name[0] == 'D' && name[1] is >= '1' and <= '9' ? CursorPad[name[1] - '1'] : null;
+    }
+
     /// <summary>Shift with a key that gives a character (US layout): the digits' row and the punctuation keys.</summary>
     private static readonly Dictionary<string, char> ShiftedPlain = new()
     {

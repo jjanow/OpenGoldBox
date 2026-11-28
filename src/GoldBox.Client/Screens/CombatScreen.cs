@@ -637,9 +637,10 @@ public sealed class CombatScreen
         // The list routine 0x2D669 moves its highlight with Home / End and the keypad's 7 / 1, which come as the step
         // bindings' NumPad7 / NumPad1 (D s33: keypad 1 on the Items page moved it in DOSBox-X).
         bool keys = input.LastDevice == InputDevice.Keyboard;
-        if (n > 0 && (input.Pressed(GameAction.MenuUp) || input.Pressed(GameAction.PreviousMember) || (keys && input.Pressed(GameAction.StepUpLeft))))
+        byte? digit = ListWindowRoutine.DigitRowKey(input);   // the digits' row 7 / 1 as the keypad's (s60)
+        if (n > 0 && (input.Pressed(GameAction.MenuUp) || input.Pressed(GameAction.PreviousMember) || (keys && input.Pressed(GameAction.StepUpLeft)) || digit == ListWindowRoutine.HomeCode))
             page.Selected = (page.Selected + n - 1) % n;
-        if (n > 0 && (input.Pressed(GameAction.MenuDown) || input.Pressed(GameAction.NextMember) || (keys && input.Pressed(GameAction.StepDownLeft))))
+        if (n > 0 && (input.Pressed(GameAction.MenuDown) || input.Pressed(GameAction.NextMember) || (keys && input.Pressed(GameAction.StepDownLeft)) || digit == ListWindowRoutine.EndCode))
             page.Selected = (page.Selected + 1) % n;
         // ',' / '.' are the menu routine's own keys for the lit word (0x2CE93 / 0x2CEB7); Left / Right the Client's.
         if (m > 0 && (input.Pressed(GameAction.MenuLeft) || input.NewInput is (InputDevice.Keyboard, "OemComma")))
@@ -1084,7 +1085,8 @@ public sealed class CombatScreen
                     Fit(lines.Item3.ToString(CultureInfo.InvariantCulture), 16 - hpLabel.Length), lines.Item3 < c[0x32] ? 8 : 10))
                 Text(f, PanelCol + hpLabel.Length, 3, Fit(lines.Item3.ToString(CultureInfo.InvariantCulture), 16 - hpLabel.Length),
                     lines.Item3 < c[0x32] ? Chrome.Yellow : Chrome.Green);
-            // [?] AC as 60 − record byte 0x111, as the party list (ExploreScreen); DOSBox-X: Darkstar 7, Thrender 1.
+            // AC as START 0x148F draws it (read s60): |0x111 − 60| with '-' first when 0x111 > 60, at column 26 (the
+            // party list's routine, in the panel without its column shift); DOSBox-X: Darkstar 7, Thrender 1.
             // The label and the number are two strings (Amiga +0x3EC8 / +0x3D38), one cell apart.
             string acLabel = _text[CombatMsg.PanelAc].Trim();
             Whole(f, PanelCol, 5, Fit(acLabel, 16), Chrome.Green);

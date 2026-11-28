@@ -73,6 +73,7 @@ public sealed class PorGame
         Loop = new AreaLoop(Vm, Rng, player.Area) { MapSource = content.LoadMap, NoWrapOffMap = content.NoWrapOffMap };
         // The overland step (view modes 2–4 → wilderness scripts 25–27): the content's map and columns.
         Loop.OverlandMap = content.Overland();
+        Vm.OverlandRecovery = Loop.OverlandMap?.Recovery; // the module's tables (rules/overland.json "recovery", s60)
         Loop.OverlandColumn = mode => content.OverlandColumn(mode - Overland.FirstMode + PorOverland.FirstScript);
         // 0x241A1 → 0x23DCC outside camp (DS:49F3 = 3 or 4): every flag set, the whole list aged.
         Loop.EffectTimeout = (count, unit) => CampTime.TimeOutEffects(memory, Camp.EffectFlags, false, count, unit,
@@ -340,8 +341,8 @@ public sealed class PorGame
     /// </summary>
     private void LoadRecovery()
     {
-        if (Memory.Read(OverlandRecovery.RiverCell) != 0)
-            AreaHost.OverlandRecovery(false, Rng.Next);
+        if (Memory.Read(OverlandRecovery.RiverCell) != 0 && Vm.OverlandRecovery is { } tables)
+            AreaHost.OverlandRecovery(tables, false, Rng.Next);
     }
 
     /// <summary>
@@ -595,7 +596,7 @@ public sealed class PorGame
         public void Call(ushort routine) => Target.Call(routine);
         public void Program(ushort program) => Target.Program(program);
         public bool ProgramCamp() => Target.ProgramCamp();
-        public void OverlandRecovery(bool animated, Func<ushort, ushort> random) => Target.OverlandRecovery(animated, random);
+        public void OverlandRecovery(OverlandRecoveryTables tables, bool animated, Func<ushort, ushort> random) => Target.OverlandRecovery(tables, animated, random);
         public void Protect(ushort address) => Target.Protect(address);
         public ushort Random(ushort range) => Target.Random(range);
         public void ScriptChanging(ushort script) => Target.ScriptChanging(script);
@@ -603,6 +604,7 @@ public sealed class PorGame
         public void DrawGlyphs(ushort address, IReadOnlyList<byte> glyphs) => Target.DrawGlyphs(address, glyphs);
         public EclCharacter? CreateNpc(ushort monster) => Target.CreateNpc(monster);
         public void DamageReport(EclDamageReport report) => Target.DamageReport(report);
+        public void DamageApplied(EclCharacter target) => Target.DamageApplied(target);
         public void DamageEnd(bool partyKilled) => Target.DamageEnd(partyKilled);
         public void TextHome() => Target.TextHome();
     }

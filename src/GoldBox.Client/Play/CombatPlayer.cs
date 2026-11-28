@@ -276,10 +276,13 @@ public sealed partial class CombatChooser(Func<PlayerRequest, object?> ask, Comb
             {
                 View.MovePrompt = null;
                 View.Row24Written();
+                ClearMessageWindow(); // 0xABE7: START 0x2383 after row 24 (0x2CFCA)
             };
             // 0xBF8A's redraw (START 0x1583 at 0xC4D7) when its readying changed anything: the panel cleared and drawn
             // again, the weapon typed from an empty line (DOSBox-X s39: after Quick, "11 DARTS" typed again).
             ai.PanelRedrawn = c => ShowPanel(c);
+            // 0x2250A's refusal inside the AI's readying (0xBF8A, s60): START 0x1693 as on the Items page.
+            ai.ReadyNotice = (c, n, item) => Notice(n, c, item);
         }
         // Nothing in a fight writes DS:4A00 (the only writers are the start-up 0xE974, PRINT 0x1763 / 0x17DC, ENCMENU
         // 0x2C4F / 0x32E0 and the after-combat end 0x6BAF): the panel's texts through START 0x77F8 type out when the
@@ -359,6 +362,7 @@ public sealed partial class CombatChooser(Func<PlayerRequest, object?> ask, Comb
         {
             ai.Message = null;
             ai.PanelRedrawn = null;
+            ai.ReadyNotice = null;
         }
         _menu = null;
         _announced = null;
@@ -494,10 +498,11 @@ public sealed partial class CombatChooser(Func<PlayerRequest, object?> ask, Comb
     }
 
     /// <summary>
-    /// A creature's turn (0x99FD, read s19): 0x319D2(creature, 2, cursor on): the view keeps the creature within 2
-    /// squares of its centre and the cursor box is drawn under it, for the AI's creatures too; then the panel (START
-    /// 0x1583). The box stays until that cell is redrawn (a step, an attack pose, a scrolled view, the turn's end). The
-    /// program waits nothing here.
+    /// A creature's turn (0x99FD, read s19, order s60): 0x319D2(creature, 2, cursor on): the view keeps the creature
+    /// within 2 squares of its centre and the cursor box is drawn under it, for the AI's creatures too; then the panel
+    /// (START 0x1583); both before trigger 0x0F, so also for a creature that trigger leaves no action. The box stays
+    /// until that cell is redrawn (a step, an attack pose, a scrolled view, the turn's end). The program waits nothing
+    /// here.
     /// </summary>
     internal void TurnStarted(EclCharacter c)
     {
@@ -516,11 +521,9 @@ public sealed partial class CombatChooser(Func<PlayerRequest, object?> ask, Comb
         {
             View.Mode = CombatMode.Watch;
             Frame();
-            // The AI's start (0xABCF): row 24 (0x2CFCA) and the message area (START 0x2383) are cleared; until then the
-            // last creature's move prompt is still up (DOSBox-X s19: Darkstar's box and panel under Rhiannon's prompt).
-            View.MovePrompt = null;
-            View.Row24Written();
-            ClearMessageWindow();
+            // The AI's start (0xABCF) clears row 24 and the message area (MonsterAi.Starting, below), after trigger 0x0F;
+            // until then the last creature's move prompt is still up (DOSBox-X s19: Darkstar's box and panel under
+            // Rhiannon's prompt).
         }
     }
 
@@ -1000,6 +1003,19 @@ public sealed partial class CombatChooser(Func<PlayerRequest, object?> ask, Comb
                 break;
             case EffectEvent.Stronger:
                 ItemEffectTextWindow(c, t[CombatMsg.HandlerStronger]);
+                break;
+            // s60: the handlers' other own texts (START 0x16EC, row 10, pause 1).
+            case EffectEvent.StartsTraining or EffectEvent.Hardier or EffectEvent.Silenced or EffectEvent.GainsItem
+                or EffectEvent.LostImage or EffectEvent.Coughing or EffectEvent.Ages or EffectEvent.MissileDodged
+                or EffectEvent.Weakens when CombatText.HandlerMessage(e) is { } own:
+                HandlerMessage(c, t[own], CombatView.MessageTop, true);
+                break;
+            case EffectEvent.ParalysisFailed:
+                // 0x10294: START 0x2B8B(target, effect frames, text); no START 0x2383 after it.
+                ShowHit(c, t[CombatMsg.HandlerParalyzed], effect: true);
+                break;
+            case EffectEvent.PanelRedrawn:
+                ShowPanel(c); // handler 30, 0xF761: START 0x1583 for the current creature
                 break;
             case EffectEvent.AirClears:
                 PageSay(t[CombatMsg.HandlerAirClears]);

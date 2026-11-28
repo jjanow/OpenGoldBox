@@ -178,7 +178,7 @@ public class VenueProgramTests
                 CanRevive = _ => true,
                 Recalculate = _ => { },
             };
-            int messages = 0;
+            int messages = 0, effectMessages = 0;
             fx.Event += (_, e) =>
             {
                 if (e is EffectEvent.Revived or EffectEvent.PoisonDeath or EffectEvent.GoesDown)
@@ -195,7 +195,14 @@ public class VenueProgramTests
             if (cured)
             {
                 seen.Add((int)cure);
-                TempleRules.Apply(cure, c, x => rng.Next((ushort)x), fx);
+                TempleRules.Apply(cure, c, x => rng.Next((ushort)x), fx, (_, e) =>
+                {
+                    // Cure 7's spell routine 0x29558: 0x2BF6B's START 0x16EC, then its own START 0x2B8B texts.
+                    if (e == EffectEvent.SpellEffectRemoved)
+                        messages++;
+                    else
+                        effectMessages++;
+                });
             }
             string what = $"case {n} ({cure})";
             var counts = k.GetProperty("counts");
@@ -225,9 +232,8 @@ public class VenueProgramTests
                     continue;
                 }
             }
-            // START 0x2B8B and the 0x16EC of the remove-curse spell routine 0x29558 (cure 7) are not raised by the rules.
-            if (cure != TempleRules.Cure.RemoveCurse && messages != Count("message"))
-                fails.Add($"{what}: {messages} messages vs {counts}");
+            if (messages != Count("message") || effectMessages != Count("effectMessage"))
+                fails.Add($"{what}: {messages} / {effectMessages} messages vs {counts}");
             if (fx.Cells.Lock != k.GetProperty("lock").GetInt32())
                 fails.Add($"{what}: lock {fx.Cells.Lock}");
             if (rng.Seed != k.GetProperty("seedAfter").GetUInt32())

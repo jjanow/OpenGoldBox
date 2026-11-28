@@ -63,7 +63,22 @@ public sealed class ActionInput(InputBindings bindings)
     public IReadOnlyList<string> KeysOf(GameAction a) => KeysOf(Bindings, a, UseAmigaKeys, AmigaAltKeys);
 
     private static IReadOnlyList<string> KeysOf(InputBindings bindings, GameAction a, bool amiga, bool altToo) =>
-        amiga && AmigaFightKeys.TryGetValue(a, out var k) ? altToo ? [.. k, .. bindings.Keys(a)] : k : bindings.Keys(a);
+        amiga && AmigaFightKeys.TryGetValue(a, out var k) ? altToo ? [.. k, .. bindings.Keys(a)] : k
+        : amiga && AmigaMemberKeys.TryGetValue(a, out var m) ? [.. bindings.Keys(a), .. m]
+        : bindings.Keys(a);
+
+    /// <summary>
+    /// The Amiga program's keys that its table (hunk 20 +0x629) turns into keypad digits besides the keypad itself:
+    /// left Shift (raw 0x60) gives '7' and left Alt (0x64) '1', which the menu routine returns with the digit flag
+    /// (hunk 19 +0x57D0), so on every menu with a party selection they are Home / End, the previous / next member
+    /// (FS-UAE s60, the 3D command line: left Shift lit the member above, from the first the last). Added to the
+    /// bindings' keys under the Amiga art. [?] Left Alt is read, not seen (FS-UAE keeps it).
+    /// </summary>
+    public static readonly IReadOnlyDictionary<GameAction, string[]> AmigaMemberKeys = new Dictionary<GameAction, string[]>
+    {
+        [GameAction.PreviousMember] = ["LeftShift"],
+        [GameAction.NextMember] = ["LeftAlt"],
+    };
 
     public InputBindings Bindings { get; set; } = bindings;
 
@@ -193,7 +208,10 @@ public sealed class ActionInput(InputBindings bindings)
             else if (name.StartsWith("Ctrl+", StringComparison.Ordinal)) { ctrl = true; name = name[5..]; }
             else break;
         }
-        return Enum.TryParse<Keys>(name, out var k) && keys.IsKeyDown(k) && AltDown(keys) == alt && CtrlDown(keys) == ctrl;
+        // A modifier bound alone ("LeftAlt") is down with itself held.
+        return Enum.TryParse<Keys>(name, out var k) && keys.IsKeyDown(k)
+            && (AltDown(keys) == alt || k is Keys.LeftAlt or Keys.RightAlt)
+            && (CtrlDown(keys) == ctrl || k is Keys.LeftControl or Keys.RightControl);
     }
 
     private bool IsDown(GameAction a, KeyboardState keys, GamePadState pad)

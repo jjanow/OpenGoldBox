@@ -155,6 +155,10 @@ public sealed class HallView
             return ChoiceRequest.PreviousMember;
         if (input.Pressed(GameAction.NextMember))
             return ChoiceRequest.NextMember;
+        // The party menu's menu runs with the keypad flag (0x19C77): the digits 7 / 1 of either row are Home / End's
+        // codes, which go to 0x23819 as Home / End (DOSBox-X s60: '1' at the hall's menu lights the next member).
+        if (DosKeys.KeypadFlagCode(input) is { } pad && pad is 0x47 or 0x4F)
+            return pad == 0x47 ? ChoiceRequest.PreviousMember : ChoiceRequest.NextMember;
         // The hidden J (0x19E2C), from its binding (the pad's left stick) as from the J key.
         if (input.Pressed(GameAction.HallJ))
             return HallScreens.PasswordKey;

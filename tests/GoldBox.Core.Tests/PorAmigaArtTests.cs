@@ -301,7 +301,14 @@ public class PorAmigaArtTests(ITestOutputHelper output)
         var root = Path.Combine(Imported.Value.Dir, "art", "amiga");
         var files = Directory.EnumerateFiles(root, "*.json", SearchOption.AllDirectories)
             .Where(p => !p.EndsWith(Path.GetFileName(AmigaIconColoursDocument.RelativePath), StringComparison.Ordinal)
-                && !p.EndsWith(Path.GetFileName(AmigaTextPensDocument.RelativePath), StringComparison.Ordinal)).ToList();
+                && !p.EndsWith(Path.GetFileName(AmigaTextPensDocument.RelativePath), StringComparison.Ordinal)
+                && !p.EndsWith(Path.GetFileName(AmigaOverlandRecoveryDocument.RelativePath), StringComparison.Ordinal)).ToList();
+        // The land's-recovery tables (s60): their own document, read strictly, with the routine's shape.
+        Assert.True(Imported.Value.Report.Amiga!.OverlandRecovery);
+        var recovery = (AmigaOverlandRecoveryDocument)System.Text.Json.JsonSerializer.Deserialize(
+            File.ReadAllText(Path.Combine(root, Path.GetFileName(AmigaOverlandRecoveryDocument.RelativePath))),
+            typeof(AmigaOverlandRecoveryDocument), ModuleSchemas.Strict)!;
+        Assert.NotNull(recovery.ToTables());
         bool title = Imported.Value.Report.Amiga!.Title;
         Assert.Equal(PorAmigaArt.LocateIntro(PorAmigaData.Dir!) is not null, title);
         Assert.Equal(title ? PorAmigaArt.PanelCount : 0, Imported.Value.Report.Amiga!.IntroPanels);

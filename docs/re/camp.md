@@ -542,7 +542,8 @@ Menu DS:055A (Order, Drop, Speed, Icon, Pics, Exit), prompt 0x19441; extended ke
 - **Order (0x18FB1)**: prompt 0x18F71 with DS:0584 (Select, Exit) or DS:05AD (Place, Exit). Select mode: extended
   keys pick the member. Place mode: Home moves the current character up (0x18CDA: it swaps with the one before; the
   head goes to the end of the list), End down (0x18E32: swaps with the one after; the last goes to the head); the
-  current character stays the same record. Enter, P and S switch the mode (into Place: the message 0x18F9F; back:
+  current character stays the same record; any other extended key only draws the party list again (0x19032–0x1904F,
+  read s60). Enter, P and S switch the mode (into Place: the message 0x18F9F; back:
   the message box cleared). The Client adds the mouse: in Place mode a click on a name above the current member moves
   it up one place, below it down one (our addition; the program has no mouse).
 - **Drop (0x19116)**: the only member: the quit question 0x190A8 (Yes removes it and quits). Else the message 0x190B6, the

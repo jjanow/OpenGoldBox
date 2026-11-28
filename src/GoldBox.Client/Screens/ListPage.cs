@@ -242,14 +242,15 @@ public sealed class ListPage
     }
 
     /// <summary>
-    /// The page keys of 0x2D669's window, each only while its word is shown: PgDn / PgUp (keypad 3 / 9; the pad's right
+    /// The page keys of 0x2D669's window, each only while its word is shown: PgDn / PgUp (keypad 3 / 9, the digits' row 3 / 9; the pad's right
     /// stick, as their step bindings), and on the pad the shoulders / triggers (no original; no paging list picks a member).
     /// </summary>
     private bool PageKeys(ListRequest r, ActionInput input)
     {
         bool pad = input.LastDevice == InputDevice.Gamepad;
-        bool down = input.Pressed(GameAction.StepDownRight) || (pad && input.Pressed(GameAction.NextMember));
-        bool up = input.Pressed(GameAction.StepUpRight) || (pad && input.Pressed(GameAction.PreviousMember));
+        byte? digit = ListWindowRoutine.DigitRowKey(input);   // the digits' row 3 / 9 (s60)
+        bool down = input.Pressed(GameAction.StepDownRight) || (pad && input.Pressed(GameAction.NextMember)) || digit == ListWindowRoutine.PgDnCode;
+        bool up = input.Pressed(GameAction.StepUpRight) || (pad && input.Pressed(GameAction.PreviousMember)) || digit == ListWindowRoutine.PgUpCode;
         if (down && _map.Contains(NextWord))
         {
             Page(r, down: true);
@@ -290,18 +291,20 @@ public sealed class ListPage
             return c;
         }
         int n = r.Rows.Count, m = _words.Count;
+        byte? digit = ListWindowRoutine.DigitRowKey(input);
         if (r.Paging is not null)
         {
             // 0x2D669: Home / End (keypad 7 / 1) move the highlight; the Client's Up / Down do the same. On the keyboard
             // only (the pad's right stick turned to those diagonals pages, PageKeys); a list that picks a member keeps them.
+            // The digits' row 7 / 1 too (the keypad flag's codes, ListWindowRoutine.DigitRowKey; s60).
             bool keys = input.LastDevice == InputDevice.Keyboard && !r.PartySelect;
-            if ((input.Pressed(GameAction.MenuUp) || (keys && input.Pressed(GameAction.StepUpLeft))) && n > 0) Step(r, down: false);
-            if ((input.Pressed(GameAction.MenuDown) || (keys && input.Pressed(GameAction.StepDownLeft))) && n > 0) Step(r, down: true);
+            if ((input.Pressed(GameAction.MenuUp) || (keys && input.Pressed(GameAction.StepUpLeft)) || digit == ListWindowRoutine.HomeCode) && n > 0) Step(r, down: false);
+            if ((input.Pressed(GameAction.MenuDown) || (keys && input.Pressed(GameAction.StepDownLeft)) || digit == ListWindowRoutine.EndCode) && n > 0) Step(r, down: true);
         }
         else
         {
-            if (input.Pressed(GameAction.MenuUp) && n > 0) _row = SkipLabels(r, (_row + n - 1) % n, -1);
-            if (input.Pressed(GameAction.MenuDown) && n > 0) _row = SkipLabels(r, (_row + 1) % n, 1);
+            if ((input.Pressed(GameAction.MenuUp) || digit == ListWindowRoutine.HomeCode) && n > 0) _row = SkipLabels(r, (_row + n - 1) % n, -1);
+            if ((input.Pressed(GameAction.MenuDown) || digit == ListWindowRoutine.EndCode) && n > 0) _row = SkipLabels(r, (_row + 1) % n, 1);
         }
         if (m > 0 && input.Pressed(GameAction.MenuLeft)) _action = (_action + m - 1) % m;
         if (m > 0 && input.Pressed(GameAction.MenuRight)) _action = (_action + 1) % m;

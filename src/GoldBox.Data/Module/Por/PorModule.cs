@@ -238,6 +238,21 @@ public sealed class PorModule : IPorContent
 
     // ---- art -------------------------------------------------------------------------------------------------------
 
+    private GoldBox.Core.Explore.AmigaOverlandRecoveryTables? _amigaRecovery;
+    private bool _amigaRecoveryRead;
+
+    /// <summary><c>art/amiga/overland-recovery.json</c>'s tables, or null (no Amiga overlay, or not the routine's shape).</summary>
+    public GoldBox.Core.Explore.AmigaOverlandRecoveryTables? AmigaOverlandRecovery()
+    {
+        if (!_amigaRecoveryRead)
+        {
+            _amigaRecoveryRead = true;
+            if (Modules.File(AmigaOverlandRecoveryDocument.RelativePath) is { } p)
+                _amigaRecovery = ModuleJson.Read<AmigaOverlandRecoveryDocument>(p).ToTables();
+        }
+        return _amigaRecovery;
+    }
+
     private byte[]? _iconPairs;
     private bool _iconPairsRead;
 

@@ -32,6 +32,125 @@
         }
       }
     },
+    "recovery": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "listA": {
+          "type": "array",
+          "items": {
+            "type": "integer"
+          }
+        },
+        "listB": {
+          "type": "array",
+          "items": {
+            "type": "integer"
+          }
+        },
+        "from": {
+          "type": "array",
+          "items": {
+            "type": "integer"
+          }
+        },
+        "toA": {
+          "type": "array",
+          "items": {
+            "type": "integer"
+          }
+        },
+        "toB": {
+          "type": "array",
+          "items": {
+            "type": "integer"
+          }
+        },
+        "first": {
+          "type": "object",
+          "properties": {
+            "x": {
+              "type": "integer"
+            },
+            "y": {
+              "type": "integer"
+            }
+          }
+        },
+        "last": {
+          "type": "object",
+          "properties": {
+            "x": {
+              "type": "integer"
+            },
+            "y": {
+              "type": "integer"
+            }
+          }
+        },
+        "pan": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "x": {
+                "type": "integer"
+              },
+              "y": {
+                "type": "integer"
+              }
+            }
+          }
+        },
+        "source": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "properties": {
+            "container": {
+              "type": "string"
+            },
+            "listA": {
+              "type": "integer"
+            },
+            "listB": {
+              "type": "integer"
+            },
+            "from": {
+              "type": "integer"
+            },
+            "toA": {
+              "type": "integer"
+            },
+            "toB": {
+              "type": "integer"
+            },
+            "panX": {
+              "type": "integer"
+            },
+            "panY": {
+              "type": "integer"
+            }
+          },
+          "required": [
+            "container"
+          ]
+        }
+      },
+      "required": [
+        "listA",
+        "listB",
+        "from",
+        "toA",
+        "toB",
+        "first",
+        "last",
+        "pan"
+      ]
+    },
     "source": {
       "type": [
         "object",

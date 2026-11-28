@@ -40,6 +40,7 @@ public static class ModuleSchemas
         ("amiga-sound.schema.json", typeof(AmigaSoundDocument)),
         ("amiga-icon-colours.schema.json", typeof(AmigaIconColoursDocument)),
         ("amiga-text-pens.schema.json", typeof(AmigaTextPensDocument)),
+        ("amiga-overland-recovery.schema.json", typeof(AmigaOverlandRecoveryDocument)),
     ];
 
     /// <summary>The options of <see cref="ModuleJson"/> that reject members the types do not have.</summary>

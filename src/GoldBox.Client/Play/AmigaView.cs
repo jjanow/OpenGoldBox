@@ -196,6 +196,12 @@ public static class AmigaView
     public static string? LootItemsPrompt =>
         On && Strings.TryGetValue(GoldBox.Data.Module.Por.PorAmigaText.LootItemsPromptKey, out var s) ? s : null;
 
+    /// <summary>The coin take's row name for kind 0–6 under the Amiga pages (capitalised, read from the program at
+    /// import: <see cref="GoldBox.Data.Module.Por.PorAmigaText.CoinListKey"/>; FS-UAE s60: "Electrum", whose capital E
+    /// differs from the font's e), or null.</summary>
+    public static string? CoinListName(int kind) =>
+        On && Strings.TryGetValue(GoldBox.Data.Module.Por.PorAmigaText.CoinListKey + kind, out var s) ? s : null;
+
     /// <summary>An Amiga caller's pen read from the program (<see cref="CallPens"/>) under the Amiga pages, or null.</summary>
     public static int? CallPen(string key) => On && CallPens.TryGetValue(key, out int pen) ? pen : null;
 
@@ -332,6 +338,12 @@ public static class AmigaView
     /// colour 15, white), so green (DOS 10's pen 28); null otherwise.
     /// </summary>
     public static byte? KeyColour(KeyRequest k) => On && k.AsMenu ? (byte)10 : null;
+
+    /// <summary>
+    /// A menu-style key line's Amiga pen for words and capitals alike (28, the callers above), drawn glyph by glyph as
+    /// the menu routine draws its entries (hunk 19 +0x5038 / +0x5064 through the glyph routine; FS-UAE s60), or null.
+    /// </summary>
+    public static int? MenuKeyPen(KeyRequest k) => On && k.AsMenu ? 28 : null;
 
     /// <summary>
     /// A key line's text under the Amiga pages (keyboard), or null: the text window's page prompt is the Amiga's own

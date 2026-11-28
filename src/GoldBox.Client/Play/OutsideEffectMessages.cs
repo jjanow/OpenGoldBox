@@ -71,6 +71,13 @@ public sealed class OutsideEffectMessages(TextWindow window, Func<PlayerRequest,
             case EffectEvent.SucksBlood: Message(c, t[CombatMsg.HandlerSucksBlood], true); return true;
             case EffectEvent.Rakes: Message(c, t[CombatMsg.HandlerRakes], true); return true;
             case EffectEvent.Stronger: Message(c, t[CombatMsg.HandlerStronger], true); return true;
+            // s60: the handlers' other own texts (START 0x16EC with the pause); the paralysing hit's START 0x2B8B, whose
+            // out-of-fight branch is START 0x16EC with the pause too (the text cut to 40 characters).
+            // (Not while 0x2C540 shows its own text for the same event: Coughing is also the stinking cloud's added effect.)
+            case var _ when fx?.EffectText is null && CombatText.HandlerMessage(e) is { } own: Message(c, t[own], true); return true;
+            case EffectEvent.ParalysisFailed: Message(c, t[CombatMsg.HandlerParalyzed], true); return true;
+            // Handler 30's START 0x1583 runs only in a fight (its effect comes from the stinking cloud) [?] outside one.
+            case EffectEvent.PanelRedrawn: return true;
             case EffectEvent.Escapes: Message(c, t[CombatMsg.StatusEscapes], true); return true;
             case EffectEvent.AirClears: BottomLine(t[CombatMsg.HandlerAirClears]); return true;
             case EffectEvent.NeedsGiantStrength: BottomLine(t[CombatMsg.HandlerNeedsGiantStrength]); return true;

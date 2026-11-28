@@ -305,6 +305,30 @@ public class KeyBufferTests
     /// all-quick key 0xE6; Alt is not read, so there is no Alt-M or Alt-Q, and the AI's key check takes only the toggle
     /// and space ('2' is not the toggle there, '-' no Alt-X).
     /// </summary>
+    /// <summary>Under the Amiga art left Shift and left Alt are the program's '7' / '1' (hunk 20 +0x629): the previous /
+    /// next member; Home / End keep working, and without the Amiga keys the two modifiers do nothing.</summary>
+    [Fact]
+    public void Amiga_left_shift_and_left_alt_pick_the_previous_and_next_member()
+    {
+        var i = new ActionInput(InputBindings.Defaults()) { AmigaKeys = true };
+        Frame(i);
+        Frame(i, Keys.LeftShift);
+        Assert.True(i.Pressed(GameAction.PreviousMember));
+        Frame(i);
+        Frame(i, Keys.LeftAlt);
+        Assert.True(i.Pressed(GameAction.NextMember));
+        Frame(i);
+        Frame(i, Keys.Home);
+        Assert.True(i.Pressed(GameAction.PreviousMember));
+        var d = new ActionInput(InputBindings.Defaults()) { AmigaKeys = false };
+        Frame(d);
+        Frame(d, Keys.LeftShift);
+        Assert.False(d.Pressed(GameAction.PreviousMember));
+        Frame(d);
+        Frame(d, Keys.LeftAlt);
+        Assert.False(d.Pressed(GameAction.NextMember));
+    }
+
     [Fact]
     public void The_amiga_fight_keys_are_semicolon_f8_and_f6()
     {

@@ -268,6 +268,11 @@ public static class PorAmigaText
     /// </summary>
     public const string LootItemsPromptKey = "Loot.ItemsPrompt";
 
+    /// <summary>The coin take's row names, kinds 0–6 (copper … jewellery), capitalised as the Amiga's list shows them
+    /// (hunk 19 +0x3B08 → hunk 31 +0x2D6, 11 bytes each; DOS's kinds list uses its own case). Read s60.</summary>
+    public const string CoinListKey = "Coin.ListName";
+    private const int CoinKinds = 7, CoinListStride = 11;
+
     /// <summary>DAMAGE's press-enter key waits (hunk 16 +0x46D2–0x46DC after the party-killed window, hunk 4
     /// +0x2364–0x236E before a hit line when the box is full: pen 28; DOS 0x34BB / 0x959F: colour 15).</summary>
     public const string KeyDamagePen = "keyDamage";
@@ -691,6 +696,20 @@ public static class PorAmigaText
                 if (CString(Pointer(1, at), 60) is not { Length: > 0 } line)
                     return null;
                 strings[key] = line;
+            }
+            // The coin take's row names (s60, FS-UAE): hunk 19 +0x3B02–0x3B32 builds each row from the 11-byte table the
+            // lea at +0x3B08 names (hunk 31 +0x2D6: "Copper", … "Jewelry", capitalised; the amount prompt's names, hunk 20
+            // +0x3A8 "electrum " …, are other strings). Left out when the code is not laid out so.
+            if (In(19, 0x3B02, 12) && program.AsSpan(Base(19)!.Value + 0x3B02, 4).SequenceEqual(Convert.FromHexString("720b4eba"))
+                && program.AsSpan(Base(19)!.Value + 0x3B08, 2).SequenceEqual(Convert.FromHexString("41f9"))
+                && Pointer(19, 0x3B0A) is var (ch, ct))
+            {
+                var names = new string?[CoinKinds];
+                for (int k = 0; k < CoinKinds; k++)
+                    names[k] = CString((ch, ct + CoinListStride * k), CoinListStride);
+                if (names.All(n => n is { Length: > 0 }))
+                    for (int k = 0; k < CoinKinds; k++)
+                        strings[CoinListKey + k] = names[k]!;
             }
             // Creation's developer names (s45): left out when the code is not laid out so (nothing else depends on them).
             if (ReadDevelopers(program, hunks, relocs) is var (devPen, blocks))

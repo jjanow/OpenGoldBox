@@ -361,6 +361,18 @@ public static class PorTextCatalog
         ["CombatMsg.HandlerStronger"] = 0x11BA6,
         ["CombatMsg.HandlerAirClears"] = 0xF903,
         ["CombatMsg.HandlerNeedsGiantStrength"] = 0x11D76,
+        // s60: handlers 4 (CS:016F), 7 (CS:0228), 21 (CS:0703), 23 (CS:07D2), 28 (CS:09B2), 30 (CS:0A59), 39 (CS:0C46),
+        // the missile dodge (CS:0FA2), 43 (CS:10D2) and the paralysing hit (CS:15DE) of unit 0xEC5B.
+        ["CombatMsg.HandlerStartsTraining"] = 0xEDCA,
+        ["CombatMsg.HandlerHardier"] = 0xEE83,
+        ["CombatMsg.HandlerSilenced"] = 0xF35E,
+        ["CombatMsg.HandlerGainsItem"] = 0xF42D,
+        ["CombatMsg.HandlerLostImage"] = 0xF60D,
+        ["CombatMsg.HandlerCoughing"] = 0xF6B4,
+        ["CombatMsg.HandlerAges"] = 0xF8A1,
+        ["CombatMsg.HandlerAvoids"] = 0xFBFD,
+        ["CombatMsg.HandlerWeakened"] = 0xFD2D,
+        ["CombatMsg.HandlerParalyzed"] = 0x10239,
         // Spell routines' messages (direct START 0x16EC or START 0x2B8B, docs/re/spells-effects.md).
         ["CombatMsg.SpellReduced"] = 0x28375,
         ["CombatMsg.SpellEffectRemoved"] = 0x2BF62,

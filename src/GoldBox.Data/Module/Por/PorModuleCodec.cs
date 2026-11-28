@@ -153,12 +153,28 @@ public static class PorModuleCodec
     // ---- overland (§6, §12) ------------------------------------------------------------------------------------------
 
     /// <summary>The overland → <c>rules/overland.json</c> (values as stored).</summary>
-    public static OverlandDocument Overland(OverlandMap map, PorOverlandOffsets? at) => new()
+    public static OverlandDocument Overland(OverlandMap map, PorOverlandOffsets? at, PorOverlandRecoveryOffsets? recoveryAt = null) => new()
     {
         Width = map.Width,
         Height = map.Height,
         Tiles = [.. map.Tiles.Select(b => (int)b)],
         SpecialLocations = [.. map.Sites.Select(s => new OverlandSiteDocument { X = s.X, Y = s.Y, Tile = s.Tile })],
+        Recovery = map.Recovery is { } r ? new OverlandRecoveryDocument
+        {
+            ListA = [.. r.ListA.Select(b => (int)b)],
+            ListB = [.. r.ListB.Select(b => (int)b)],
+            From = [.. r.From.Select(b => (int)b)],
+            ToA = [.. r.ToA.Select(b => (int)b)],
+            ToB = [.. r.ToB.Select(b => (int)b)],
+            First = new OverlandSquareDocument { X = r.First.X, Y = r.First.Y },
+            Last = new OverlandSquareDocument { X = r.Last.X, Y = r.Last.Y },
+            Pan = [.. r.Pan.Select(p => new OverlandSquareDocument { X = p.X, Y = p.Y })],
+            Source = recoveryAt is { } o ? new OverlandRecoverySource
+            {
+                Container = "START.EXE", ListA = o.ListA, ListB = o.ListB, From = o.From, ToA = o.ToA, ToB = o.ToB,
+                PanX = o.PanX, PanY = o.PanY,
+            } : null,
+        } : null,
         Source = new OverlandSource { Container = "START.EXE", Tiles = at?.Tiles, SpecialLocations = at?.Sites },
     };
 
@@ -167,7 +183,16 @@ public static class PorModuleCodec
     {
         byte Byte(int v) => v is >= 0 and <= 255 ? (byte)v : throw new FormatException($"overland tile {v} is not a byte");
         ushort Word(int v) => v is >= 0 and <= 0xFFFF ? (ushort)v : throw new FormatException($"overland value {v} is not a word");
+        OverlandRecoveryTables? recovery = null;
+        if (d.Recovery is { } r)
+        {
+            recovery = new OverlandRecoveryTables([.. r.ListA.Select(Byte)], [.. r.ListB.Select(Byte)],
+                [.. r.From.Select(Byte)], [.. r.ToA.Select(Byte)], [.. r.ToB.Select(Byte)], (r.First.X, r.First.Y),
+                (r.Last.X, r.Last.Y), [.. r.Pan.Select(p => (p.X, p.Y))]);
+            if (recovery.Problem() is { } problem)
+                throw new FormatException("overland recovery: " + problem);
+        }
         return new OverlandMap(d.Width, d.Height, [.. d.Tiles.Select(Byte)],
-            [.. d.SpecialLocations.Select(s => new OverlandSite(Word(s.X), Word(s.Y), Word(s.Tile)))]);
+            [.. d.SpecialLocations.Select(s => new OverlandSite(Word(s.X), Word(s.Y), Word(s.Tile)))]) { Recovery = recovery };
     }
 }

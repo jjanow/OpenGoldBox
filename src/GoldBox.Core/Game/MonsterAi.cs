@@ -84,6 +84,17 @@ public sealed class MonsterAi : IFightController
     /// </summary>
     public Action<EclCharacter>? PanelRedrawn { get; set; }
 
+    /// <summary>
+    /// A refusal message of 0x2250A inside 0xBF8A's readying (START 0x1693 on row 24 with the pause; s60): the creature,
+    /// the notice and the item the words name (for a taken slot the item in the slot). The program shows them in an AI
+    /// turn as on the Items page. Only "already using" + the item can come: a cursed weapon that is not the chosen one
+    /// keeps slot 0 and the second hand test (0x100 &gt; 2, off hand missing or cursed) readies the chosen weapon
+    /// (0xC449). Not "It's Cursed" (a cursed item's worth is 0, so it is never chosen, and the other calls skip cursed
+    /// items), not "Wrong Class" (the pick takes only items whose class mask fits, the test 0x2250A makes), and never
+    /// the hands-full text (0x10F ≠ 0 in an AI turn).
+    /// </summary>
+    public Action<EclCharacter, ItemNotice, byte[]?>? ReadyNotice { get; set; }
+
     public bool ContinueBattle() => Menu?.ContinueBattle() ?? false;
 
     public void Act(Fight fight, EclCharacter creature, bool auto)
@@ -898,11 +909,10 @@ public sealed class MonsterAi : IFightController
     /// 0x100 + its hands ≤ 2, its slot (0–8; ring slot 9 → the second ring; arrows 0x49 / bolts 0x1C → slots 11/12)
     /// is free and its class mask fits. Items with 0x3E &gt; 0x7F run their handler (0x2AEEA, <see cref="ItemHandler"/>).
     /// </summary>
-    public void Toggle(Fight f, EclCharacter c, byte[] item) => ToggleReady(f, c, item, ItemHandler);
-
-    /// <summary>0x2250A as <see cref="Toggle"/>, with the item handler 0x2AEEA given (null = none). Returns the
-    /// refusal: 0 done, 1 class, 2 slot taken, 3 hands full (the message 0x2250A shows), 4 cursed
-    /// (<see cref="ItemCommands.Ready"/>).</summary>
-    public static int ToggleReady(Fight f, EclCharacter c, byte[] item, Action<EclCharacter, byte[], bool>? itemHandler) =>
-        (int)ItemCommands.Ready(f.Items, c, item, FightItemScreens.InFight, itemHandler).Refusal;
+    public void Toggle(Fight f, EclCharacter c, byte[] item)
+    {
+        var r = ItemCommands.Ready(f.Items, c, item, FightItemScreens.InFight, ItemHandler);
+        if (r.Message)
+            ReadyNotice?.Invoke(c, FightItemScreens.Notice(r.Refusal), r.Refusal == ReadyRefusal.SlotTaken ? r.InTheWay : item);
+    }
 }

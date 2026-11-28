@@ -149,8 +149,10 @@ or **0x3B, 0xAE and 0xE6 whatever the menu**; anything else is ignored. So:
   s48; off = original)**: `ClientSettings.AmigaAltKeys` (`--amiga-alt-keys`, the controls screen's AMIGA ALT-M/Q)
   lets the Client's fight under the Amiga art also take DOS's Alt-M / Alt-Q (the bindings' keys, menu and AI key
   check), the Amiga's ';' / F8 and F6 still working; Alt-X stays off (`ActionInput.AmigaAltKeys`).
-- Left Shift alone gives '7' and left Alt '1' (keypad digits: on a 3D or overland command line those are the diagonal
-  / turn keys DOS gives keypad 7 and 1 `[?]` not tried); the cursor keys give the keypad's digits.
+- Left Shift alone gives '7' and left Alt '1' (keypad digits, which the menu routine returns with the digit flag):
+  on the 3D command line left Shift lit the previous member, wrapping from the first to the last (FS-UAE s60), as
+  Home; left Alt is End, read (FS-UAE keeps left Alt, not seen `[?]`). The Client adds both to Previous / Next member
+  under the Amiga art (`ActionInput.AmigaMemberKeys`). The cursor keys give the keypad's digits.
 
 FS-UAE (s47, disk A's party in a fight from a test save: vector 0 = CLRMON, LOADMON 2, 8, 2, COMBAT on block 26's
 overland; keys sent by bare keycode through XTEST, as xdotool adds Alt_L to function keys on Xvfb): at the menu F8
@@ -518,7 +520,8 @@ and Speed menus, an AI attack at game speed 9). Code: `src/GoldBox.Client/Screen
   38, 40, 45, 47, 56 (one picture per terrain throughout).
 - **Icons**: player characters (record 0x84 < 0x80) get the party icon, other creatures the CPIC block = their icon slot's picture (LoadCombatIcon). A joined NPC (ADDNPC; NPC byte ≥ 0x80) gets the composed party icon: the party join 0x1F42C
   gives it a free slot of 0..7 and 0x1E468 builds that slot's picture from its record as for a player character (CHEAD
-  0xBD and CBODY 0xBE at 0x1E4BE / 0x1E506, recoloured from 0xC1–0xC6 through DS:3CF5 at 0x1E58B–0x1E63D); the icon
+  0xBD into the scratch slot 11 and CBODY 0xBE into the slot at 0x1E4BE / 0x1E506, the head ORed into the body by
+  0x1E315 and slot 11 freed (0x31BBA), recoloured from 0xC1–0xC6 through DS:3CF5 at 0x1E58B–0x1E63D; read whole s60); the icon
   drawer only reads the slot. Client: party-side creatures (combat record +0x13 = 0) use the composed icon (**D** s39,
   ADDNPC 94 the level 3 magic-user, every fight frame equal; `A_joined_npc_is_drawn_with_the_composed_party_icon`), attack pose + 128 (seen in the AI
   burst); party members are CBODY + CHEAD (head on the top rows) recoloured by 0xC1–0xC6, + 64 for icon size 2: all six
@@ -736,7 +739,7 @@ and Speed menus, an AI attack at game speed 9). Code: `src/GoldBox.Client/Screen
     sleep messages and the slept members equal. Fixed: a **spell's aim keeps the spell label on row 23** — 0x1529B
     draws "Range = n" only in attack mode (0x152CD), Manual writes row 23 only in attack mode (0x15722 / 0x15768);
     the Client had put the range line over the label. Left: the help lines before the step (the Client's own), the
-    spell list (Client's own page, `[?]` 0x239D6 not read), three AI panel frames (below; one of them a turn start's box under the half-drawn panel).
+    spell list (then the Client's own page; 0x239D6 read s33 and whole s60: the program's page since s33), three AI panel frames (below; one of them a turn start's box under the half-drawn panel).
   - **Charm Person** (Prev to an orc, Target) with Rhiannon's **Drop answered No** first: 259 of 261 (99.2 %) after two fixes.
     The aim menu after Prev opens with **Prev lit**, the drop question opens on **No** and the Items menu comes back
     after No; both equal. Fixed: the **charmed orc's morale** — the charm handler 11 writes 100 into DS:6825 for the
@@ -902,7 +905,12 @@ and Speed menus, an AI attack at game speed 9). Code: `src/GoldBox.Client/Screen
 - **AI turn** (read s19): 0x99FD shows the box and the panel; the AI (0xABCF) starts by clearing row 24 (0x2CFCA)
   and rows 10–21; each step (AiMoveStep) first writes 0xB396 + movement ÷ 2 + " " on row 24 in green, which stays
   until row 24 is written again. **D** (s19): 9, 6, 4, 3 under Brother Sean's steps.
-- **Not read `[?]`**: the spell list page's title layout (its list window and menu line: "Spell lists' Next / Prev", s30), the Guard message.
+- **The spell list page's title** (read whole s60, 0x239D6(kind, action, var position, var not-empty)): the title words by kind
+  (CS:2939…2985 of its unit: 0 "in Memory", 1 "in Spell Book", 2 "on Scroll", 3 "on Scrolls", 4 "to choose from", 5 "to be
+  memorized", 6 "to be scribed", any other none); the list built (0x275B4); empty: 0, nothing drawn; a position below 0: the
+  window (1, 1)–(38, 1) (START 0x41F8, style 0, colour 0, no title), the name with "'s" (START 0x23B6 at (1, 1), flag 1)
+  and "Spells " + the words at (name length + 4, 1) in colour 10; then 0x270A2(action, position). The Client's
+  `SpellPageLayout` matches (s33 frames). `[?]` Not read: the Guard message.
 - **Moving icon** (read s25, P; START 0x25C9 = 0xBA:0x1A29, `retf 0x0C`; the Delays at 0x2884 / 0x2B4A are inside it):
   arguments x0, y0, x1, y1 (squares), frame count, delay (ms, passed to Delay as is: not the game speed). The sprite
   DS:6E36 is built before the call by START 0x257E(cell) (four frames: first picture, first mirrored, second mirrored,

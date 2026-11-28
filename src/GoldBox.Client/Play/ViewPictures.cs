@@ -188,6 +188,12 @@ public sealed class ViewPictures
             {
                 if (Find("SPRIT", v.Id, v.Disk) is not { Frames.Count: > 0 } img)
                     return false;
+                // The renderer 0x2E7D6 (read s60) draws frame table entry distance + 1 (2 on the overland); the loader
+                // frees and zeroes the table before a new block (0x2E55D), so an entry past a DOS block's frames is nil
+                // and nothing is drawn (SPRIT6 10, 67, 74, 119 and SPRIT8 113, 116 have two frames: no sprite at
+                // distance 2). An entry outside 1..3 stops the program with an error line (not modelled).
+                if (img.Variant == "dos" && (v.OnOverland ? 1 : v.Distance) >= img.Frames.Count)
+                    return true;
                 var p = img.Frames[SpriteFrame(v.Distance, img.Frames.Count, v.OnOverland)];
                 Blit(f, x, y, p.X * 8, p.Y * 8, p, Base(img), transparent: true,
                     blackenMagenta: img.Variant == "dos");
