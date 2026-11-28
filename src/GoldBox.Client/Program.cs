@@ -32,8 +32,9 @@ catch (Exception e) when (e is ArgumentException or FormatException)
 var settings = ClientSettings.Load();
 if (options.GameDirectory is not null || options.Stretch43 is not null || options.AmigaDirectory is not null
     || options.Art is not null || options.Sound is not null || options.ProgramWord is not null || options.AnimationSpeed is not null
-    || options.AmigaAltKeys is not null || options.AmigaGridOffText is not null)
+    || options.AmigaAltKeys is not null || options.AmigaGridOffText is not null || options.RosterDeletes is not null)
 {
+    settings.RosterDeletes = options.RosterDeletes ?? settings.RosterDeletes;
     settings.AmigaAltKeys = options.AmigaAltKeys ?? settings.AmigaAltKeys;
     settings.AmigaGridOffText = options.AmigaGridOffText ?? settings.AmigaGridOffText;
     if (options.AnimationSpeed is { } anim)
@@ -207,6 +208,18 @@ else
             return g;
         }
         var roster = new PorRoster(Path.Combine(ClientSettings.SavesFolder, "characters"));
+        // The roster deletes of the game Save (0x1FD3E) and Load (0x1F5E8): an option, off by default (user s61), in the
+        // engine's roster folder only. Save: after the save is written. Load: once the party is joined, before the entry.
+        player.GameSaved = party =>
+        {
+            if (settings.RosterDeletes)
+                roster.RemoveSaved(party.Members);
+        };
+        void RosterLoaded(PorGame g)
+        {
+            if (settings.RosterDeletes && g.Memory.Party is { } party)
+                roster.RemoveLoaded(party.Members);
+        }
         IReadOnlyList<char> Slots() => [.. "ABCDEFGHIJ".Where(l => ClientOptions.ResolveSave(l.ToString(), ClientSettings.SavesFolder, content.SaveFolder) is not null)];
         string SlotPath(char slot) => ClientOptions.ResolveSave(slot.ToString(), ClientSettings.SavesFolder, content.SaveFolder)
             ?? throw new FileNotFoundException($"save {slot} not found");
@@ -228,6 +241,7 @@ else
                             game?.Memory.MarkerCounter ?? 0, g =>
                             {
                                 game = WithSound(g);
+                                RosterLoaded(g);
                                 // vector 4 draws over the party menu's page until START 0x3379 runs (DOSBox-X s42)
                                 player.PartyMenuUnder = g.LoadedInterfaceState != 0;
                                 started(g);
@@ -280,8 +294,10 @@ else
                         switch (g.LoadInHall(SlotPath(slot), party))
                         {
                             case GoldBox.Data.Por.HallLoad.StayInMenu:
+                                RosterLoaded(g);
                                 return;
                             case GoldBox.Data.Por.HallLoad.CarryOn:
+                                RosterLoaded(g);
                                 if (player.Hall is { } hallState)
                                     hallState.LeaveAfterLoad = true;
                                 return;
@@ -330,6 +346,7 @@ else
                         g.Memory.PictureArmed = armed;
                         g.Memory.TypesText = typing;
                         game = WithSound(g);
+                        RosterLoaded(g);
                         started(g);
                     }, game?.Loop.Map));
             };
@@ -393,6 +410,7 @@ IReadOnlyList<SettingToggle> toggles =
     }),
     SettingToggle.AmigaAltKeys(settings, v => { if (windowRef is not null) windowRef.Input.AmigaAltKeys = v; }),
     SettingToggle.AmigaGridOffText(settings, v => AmigaView.GridOffText = v),
+    SettingToggle.RosterDeletes(settings),
 ];
 IScreen MenuScreen(PartyMenuFlow flow, IScreenHost host) =>
     new PartyMenuScreen(flow, runner, host, menuContent!.Font, player!.Resources, clientArt!, g => ExploreFor(g, 'A', host))

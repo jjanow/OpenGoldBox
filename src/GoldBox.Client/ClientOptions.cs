@@ -26,7 +26,8 @@ namespace GoldBox.Client;
 /// <c>--anim-speed</c> sets the QoL animation speed (remembered; also on the controls screen; original = the program's
 /// timings). <c>--amiga-alt-keys</c> / <c>--amiga-grid-off-text</c> switch on the two Amiga QoL options (remembered;
 /// <c>--no-…</c> switches each off; also on the controls screen; <see cref="ClientSettings.AmigaAltKeys"/>,
-/// <see cref="ClientSettings.AmigaGridOffText"/>).
+/// <see cref="ClientSettings.AmigaGridOffText"/>). <c>--roster-deletes</c> / <c>--no-roster-deletes</c> switch the
+/// program's roster deletes on a game Save / Load (remembered; off by default; <see cref="ClientSettings.RosterDeletes"/>).
 /// </summary>
 public sealed record ClientOptions
 {
@@ -56,8 +57,10 @@ public sealed record ClientOptions
     public bool? AmigaAltKeys { get; init; }
     /// <summary>--amiga-grid-off-text / --no-amiga-grid-off-text: the Amiga input grid off the text window (remembered; QoL).</summary>
     public bool? AmigaGridOffText { get; init; }
+    /// <summary>--roster-deletes / --no-roster-deletes: the program's roster deletes on Save and Load (remembered; off by default).</summary>
+    public bool? RosterDeletes { get; init; }
 
-    public const string Usage = "usage: GoldBox.Client [--game DIR] [--amiga DIR] [--module DIR] [--art dos|best|amiga] [--save A|FILE] [--area N --at X,Y,F] [--scale K] [--stretch|--no-stretch] [--sound speaker|tandy|tandy-early|amiga|off] [--anim-speed slowest|slower|original|faster|fastest|instant] [--param WORD|--no-param] [--amiga-alt-keys|--no-amiga-alt-keys] [--amiga-grid-off-text|--no-amiga-grid-off-text] [--seed N]";
+    public const string Usage = "usage: GoldBox.Client [--game DIR] [--amiga DIR] [--module DIR] [--art dos|best|amiga] [--save A|FILE] [--area N --at X,Y,F] [--scale K] [--stretch|--no-stretch] [--sound speaker|tandy|tandy-early|amiga|off] [--anim-speed slowest|slower|original|faster|fastest|instant] [--param WORD|--no-param] [--amiga-alt-keys|--no-amiga-alt-keys] [--amiga-grid-off-text|--no-amiga-grid-off-text] [--roster-deletes|--no-roster-deletes] [--seed N]";
 
     public static ClientOptions Parse(IReadOnlyList<string> args)
     {
@@ -83,6 +86,8 @@ public sealed record ClientOptions
                 "--no-amiga-alt-keys" => o with { AmigaAltKeys = false },
                 "--amiga-grid-off-text" => o with { AmigaGridOffText = true },
                 "--no-amiga-grid-off-text" => o with { AmigaGridOffText = false },
+                "--roster-deletes" => o with { RosterDeletes = true },
+                "--no-roster-deletes" => o with { RosterDeletes = false },
                 "--sound" => Next() is var sw && (Audio.ClientAudio.Parse(sw) is not null || sw.Equals("off", StringComparison.OrdinalIgnoreCase))
                     ? o with { Sound = Audio.ClientAudio.Word(Audio.ClientAudio.Parse(sw)) }
                     : throw new ArgumentException($"--sound {sw}: use speaker, tandy, tandy-early, amiga or off"),

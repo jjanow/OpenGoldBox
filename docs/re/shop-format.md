@@ -358,8 +358,15 @@ even for Raise Dead / Stone to Flesh on a target that does not qualify, which th
   routine ends (0x4BCE → 0x4CA1: max HP untouched). Else s = Σ over
   level bytes 0x96 + k (k = 0..7) that are > 0: k = 2 (fighter) → level × (Con − 14); else 2 × level when Con > 15,
   else level (byte sum); d := d div s when s > 0; max HP −= d unless Con ≥ 17 and the fighter level ≤ 0. No dice,
-  no survival roll, no ageing. `[?]` what this is meant to compute (s60: worked cases and options in `s60-lane-C.md`
-  question 1). The two removals run before the HP rule: a
+  no survival roll, no ageing. **Original bug, fixed, not an option (user s61)**: the division takes off 1 or 2
+  points where the Con point lost was worth one a level, and Con 14 counts for classes the hall gives nothing at 14
+  (worked cases in `s60-lane-C.md` question 1). The engine (`TempleRules.RaiseDead` / `RaiseDeadLoss`) keeps the
+  removals, HP 1, status 0, in play 1 and Con − 1, then takes off max HP the hall's own Constitution bonus (0x1D8B0's
+  per-class term: DS:408E[Con] signed, +1 above 16 and +1 above 17 when the class byte 0x2F is 2) for the old Con minus
+  that for the new, per level: Σ over the classes with a level > 0 of level × (bonus(old) − bonus(new)), divided by
+  the number of those classes (as training and creation add (rolls + Σ bonus) div classes); max HP never below 1.
+  A fighter 16 → 15 at level 5 loses 5 (the program 2); a magic-user 7 → 6 at level 5 loses 5 (the program nothing:
+  below Con 14). Without the program's tables (no DS:408E) max HP is left as it is. The two removals run before the HP rule: a
   record of 32 (Animate Dead) with byte 4 set runs handler 32 (0xF776) under the lock: no death, but it writes the
   hostile byte (param >> 4), auto, undead level, attack level, move 12, NPC byte and type 0 (s51, emulation).
 - **Effect removal** (0x2AF10): the code removes one record per call (the model drops the first match); the
@@ -427,7 +434,7 @@ even for Raise Dead / Stone to Flesh on a target that does not qualify, which th
   (no hit point lost, no death, no party list over the heal list), a deliberate difference from these DOSBox-X screens.
 ## Open `[?]`
 
-- Temple: the intent of the raise dead hit-point rule (s60: written up as a `bug?` question, `s60-lane-C.md`).
+- None for the temple (s61: raise dead's hit-point rule decided as an original bug, fixed, above).
 
 ## The menu routine (0x2CC8C) — P (s15)
 

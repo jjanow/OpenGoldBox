@@ -186,8 +186,8 @@ Not gaps: the N rows (DAX reader START segment 0802, disk numbers, memory releas
 | 0x1EEAA | W | read whole s52 (EncounterHost.LoadMonsterRecord) |
 | 0x1F248 | W | read whole s52 (EncounterHost.CreateNpc, EclVm.DoAddNpc) |
 | 0x1F42C | W | read whole s52 (PartyMenu.Join, EclVm.DoAddNpc) |
-| 0x1F5E8 | W | read whole s52; the roster-file deletes read s60 (design question, not modelled); before: read whole s52 (PorGame.Loaded, PorParty.Load); roster-file erase not done |
-| 0x1FD3E | W | read whole s52; the roster-file deletes read s60 (design question, not modelled); before: read whole s52 (PorSaveGame.Build, PorParty.Save); roster-file erase not done |
+| 0x1F5E8 | W | read whole s52; the roster-file deletes read s60, built s61 as an option off by default (PorRoster.RemoveLoaded); before: read whole s52 (PorGame.Loaded, PorParty.Load) |
+| 0x1FD3E | W | read whole s52; the roster-file deletes read s60, built s61 as an option off by default (PorRoster.RemoveSaved); before: read whole s52 (PorSaveGame.Build, PorParty.Save) |
 | 0x202BB | N | NEWECL's missing-file disk prompt; a module holds every script (ecl-format.md NEWECL, s49) |
 | 0x206A3 | W | read whole s52 (EndGame.FrameTime, EndGameAnimation) |
 | 0x20941 | W | read whole s52 (EndGame.Steps) |
@@ -666,7 +666,7 @@ Library segments (status L, not listed one by one):
 | 0x47C0 | temple cure blindness: 33 removed through 0x2AF10 | W | play | Sh | oracle, C#, spec | TempleRules.Apply |
 | 0x4864 | temple cure 1: six effects (DS:0114) removed through 0x2AF10 under the lock DS:681F | W | play | Sh | oracle, C#, spec | TempleRules.CureDisease |
 | 0x4978 | temple cures 2–4: heal 1d8 / 2d8+1 / 3d8+3 through 0x2C647 (flag 0; handler 0x4E revives) | W | play | Sh | oracle, C#, spec | TempleRules.Apply, EffectHandlers.RestoreHitPoints |
-| 0x4A87 | temple raise dead: 32 and 55 removed through 0x2AF10 under DS:681F, HP / Con / max-HP rule | W | play | Sh | oracle, C#, spec | TempleRules.RaiseDead |
+| 0x4A87 | temple raise dead: 32 and 55 removed through 0x2AF10 under DS:681F, HP / Con / max-HP rule (max HP fixed s61: the hall's Con bonus difference per level) | W | play | Sh | oracle, C#, spec | TempleRules.RaiseDead, TempleRules.RaiseDeadLoss |
 | 0x4CC8 | temple cure poison: 55, 22, 15 removed through 0x2AF10 under DS:681F (s51 decision: every record, lock held throughout; handler 22's lock clearing and kill fixed) | W | play | Sh | oracle, C#, spec | TempleRules.CurePoison |
 | 0x4DB1 | temple remove curse (DS:6C95 := member, spell routine 0x29558) | W | play | Sh | oracle, C#, spec | TempleRules.RemoveCurse |
 | 0x4E9F | temple stone to flesh | W | play | Sh | oracle, C#, spec | TempleRules.Apply |
@@ -1074,8 +1074,8 @@ Library segments (status L, not listed one by one):
 | 0x1EEAA | monster loader (MON<d>CHA / ITM / SPC) | W | play | Enc | C#, spec | EncounterHost.LoadMonsterRecord |
 | 0x1F248 | see `ecl-format.md` ADDNPC v1, v2 | W | play | Ecl | C#, spec | PorProgram.NpcPortraitBases, EncounterHost.CreateNpc, IEncounterData |
 | 0x1F42C | see `start-menu.md` 4. Add, Remove, Drop, View | W | play | Pm Ecl Sv | C#, spec | PorParty.RefreshOnLoad, HallScreens.Run, CombatScreen.Icon |
-| 0x1F5E8 | game load (from the party menu) | W | play | Sv | C#, spec | PorTextCatalog, PorGame.LoadAtPartyMenu, PorGame.Loaded, PorGame.ReloadSavedMap (s48: a hall Load reloads the marker slots) |
-| 0x1FD3E | game save | W | play | Sv | C#, spec | PorSaveGame.Build, PorParty.Save, PorGame.UnstartedSave |
+| 0x1F5E8 | game load (from the party menu) | W | play | Sv | C#, spec | PorRoster.RemoveLoaded (option, s61), PorTextCatalog, PorGame.LoadAtPartyMenu, PorGame.Loaded, PorGame.ReloadSavedMap (s48: a hall Load reloads the marker slots) |
+| 0x1FD3E | game save | W | play | Sv | C#, spec | PorRoster.RemoveSaved (option, s61), PorSaveGame.Build, PorParty.Save, PorGame.UnstartedSave |
 | 0x202BB | NEWECL helper: when ECL<disk>.dax is missing, the save-and-exit / insert-disk menu; S steps the party back one square, saves and quits | N | play | Ecl | spec | — |
 | 0x203C6 | empty routine (unit init or empty handler) | W | play | Su | — | — |
 

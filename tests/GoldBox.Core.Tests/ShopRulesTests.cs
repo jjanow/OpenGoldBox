@@ -334,21 +334,83 @@ public class ShopRulesTests
     public void Loot_extended_keys(int scan, bool detectOnLine, string? word) =>
         Assert.Equal(word, LootRules.ExtendedKey((byte)scan, detectOnLine));
 
-    [Fact]
-    public void Raise_dead_follows_the_program()
+    /// <summary>The hall's tables with DS:408E as the program's (3 → −2, 4–6 → −1, 7–14 → 0, 15 → +1, 16+ → +2).</summary>
+    private static TrainingTables ConTables()
+    {
+        var ds = new byte[0x5000];
+        for (int con = 0; con <= 25; con++)
+            ds[0x408E + con] = unchecked((byte)(sbyte)(con switch { <= 3 => -2, <= 6 => -1, <= 14 => 0, 15 => 1, _ => 2 }));
+        return new TrainingTables
+        {
+            Data = ds,
+            Levels = new LevelStatsTables
+            {
+                Data = ds, Thac0 = 0, ClericSlots = 0, MageSlots = 0, SpellTable = 0, Saves = 0, ThiefBase = 0,
+                ThiefRace = 0, ThiefDex = 0,
+            },
+        };
+    }
+
+    /// <summary>
+    /// Raise dead's max HP, the original bug fixed (user s61, not an option): the hall's Constitution bonus for the
+    /// old Con minus that for the new Con, per level (lane C's worked cases, level 5); the program's d div s is gone.
+    /// </summary>
+    [Theory]
+    [InlineData(2, 15, 5)]  // fighter 15 → 14: +1 → 0 (program: 5)
+    [InlineData(2, 16, 5)]  // fighter 16 → 15: +2 → +1 (program: 2)
+    [InlineData(2, 17, 5)]  // fighter 17 → 16: +3 → +2 (program: 1)
+    [InlineData(2, 18, 5)]  // fighter 18 → 17: +4 → +3 (program: 1)
+    [InlineData(5, 15, 5)]  // magic-user 15 → 14 (program: 1)
+    [InlineData(5, 16, 5)]  // magic-user 16 → 15 (program: 2)
+    [InlineData(5, 17, 0)]  // magic-user 17 → 16: +2 both
+    [InlineData(5, 14, 0)]  // any 14 → 13
+    [InlineData(5, 7, 5)]   // 7 → 6: 0 → −1 (program: skipped below Con 14)
+    [InlineData(5, 0, 0)]   // Con 0 stays 0
+    public void Raise_dead_takes_off_the_halls_con_bonus_per_level(int cls, int con, int loss)
     {
         var c = Char();
         c[0x10C] = 6;
-        c[0x14] = 17;       // Con 17 → 16
-        c[0x32] = 40;       // max HP
-        c[0xB1] = 30;       // rolled HP: d = 10
-        c[0x96 + 2] = 4;    // fighter level 4: s = 4 × (16 − 14) = 8 → d = 1
+        c[0x14] = (byte)con;
+        c[0x2F] = (byte)cls; // the class byte: 2 = fighter (its extra +1s above 16 and 17)
+        c[0x32] = 60;
+        c[0xB1] = 30;
+        c[0x96 + cls] = 5;
         Assert.True(TempleRules.Applies(TempleRules.Cure.RaiseDead, c));
-        TempleRules.Apply(TempleRules.Cure.RaiseDead, c, _ => 0);
+        TempleRules.Apply(TempleRules.Cure.RaiseDead, c, _ => 0, tables: ConTables());
         Assert.Equal(0, c[0x10C]);
         Assert.Equal(1, c[0x10D]);
         Assert.Equal(1, c[0x11B]);
-        Assert.Equal(16, c[0x14]);
-        Assert.Equal(39, c[0x32]);
+        Assert.Equal(Math.Max(0, con - 1), c[0x14]);
+        Assert.Equal(60 - loss, c[0x32]);
+    }
+
+    [Fact]
+    public void Raise_dead_divides_by_the_classes_and_keeps_max_hp_at_least_1()
+    {
+        var c = Char();
+        c[0x10C] = 6;
+        c[0x14] = 16;          // 16 → 15: 1 a level
+        c[0x2F] = 9;           // a multi-class byte (no fighter extras)
+        c[0x96 + 2] = 6;       // fighter 6
+        c[0x96 + 5] = 4;       // magic-user 4: (6 + 4) div 2 = 5
+        c[0x32] = 40;
+        TempleRules.Apply(TempleRules.Cure.RaiseDead, c, _ => 0, tables: ConTables());
+        Assert.Equal(35, c[0x32]);
+
+        var d = Char();
+        d[0x10C] = 6;
+        d[0x14] = 16;
+        d[0x96 + 5] = 9;       // 9 points lost from a max of 3
+        d[0x32] = 3;
+        TempleRules.Apply(TempleRules.Cure.RaiseDead, d, _ => 0, tables: ConTables());
+        Assert.Equal(1, d[0x32]);
+
+        var e = Char();        // no tables (no program data): max HP left as it is
+        e[0x10C] = 6;
+        e[0x14] = 16;
+        e[0x96 + 5] = 9;
+        e[0x32] = 30;
+        TempleRules.Apply(TempleRules.Cure.RaiseDead, e, _ => 0);
+        Assert.Equal(30, e[0x32]);
     }
 }

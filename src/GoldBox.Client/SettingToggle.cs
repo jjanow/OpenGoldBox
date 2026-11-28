@@ -100,4 +100,16 @@ public sealed class SettingToggle
             (saved ?? settings.Save)();
         },
             ["AMIGA ART: THE LETTER GRID OF A TEXT", "INPUT LEAVES THE SCRIPT'S TEXT SHOWN"]);
+
+    /// <summary>
+    /// Option <see cref="ClientSettings.RosterDeletes"/> (off by default, user s61): KEEP (the roster keeps every
+    /// character) or DELETE (a game Save / Load erases the members' roster files, as the original).
+    /// </summary>
+    public static SettingToggle RosterDeletes(ClientSettings settings, Action? saved = null) =>
+        new("ROSTER ON SAVE", ["KEEP", "DELETE"], () => settings.RosterDeletes ? 1 : 0, i =>
+        {
+            settings.RosterDeletes = i != 0;
+            (saved ?? settings.Save)();
+        },
+            ["DELETE: SAVE/LOAD TAKES THE PARTY OFF", "THE ROSTER, AS THE ORIGINAL (NO COPY)"]);
 }

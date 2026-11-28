@@ -100,7 +100,7 @@ DELAY (hunk 16 +0x43DA) adds 1 to the VM's PC (hunk 32 +0xB4, the opcode's own s
     0 pixels off against FS-UAE (the Client's sheet names already match the program's table). Trade's lit kinds row
     is 0 pixels off, apart from the amount. The Trade and Drop amount requesters ("How much Platinum will you
     trade?" / "… drop?") are **0 pixels off** in rows 184–199.
-- **Escape in the loot take: traced, bug? (question for the user).**
+- **Escape in the loot take: traced; decided (user s61): Escape always leaves, as DOS, under every art setting.**
   - The cause, read whole:
     - The menu routine (hunk 19 +0x4DD6) reads RAWKEY through its table (hunk 20 +0x629). Esc (raw 0x45) gives
       0xFE, and the routine returns 0 for it at once (hunk 19 +0x533C–0x5388).
@@ -115,10 +115,10 @@ DELAY (hunk 16 +0x43DA) adds 1 to the VM's PC (hunk 32 +0xB4, the opcode's own s
     - Escape as the first key: nothing (three times, s47 included).
     - Down, then Escape: nothing (Down gives the digit '2').
     - X, then Escape: the list left.
-  - **The question.** The Client keeps DOS's Escape, which always leaves. Options: (a) leave it as DOS; (b) port the
-    Amiga's flag under the Amiga art. Under (b), Escape is ignored until a non-digit key has been read in that list
-    call, and the first key's residue is taken as set, as seen. It is an uninitialised byte, so this is an original
-    bug or quirk. Nothing was changed.
+  - **Decided (user s61): (a).** The question was: (a) leave it as DOS; (b) port the Amiga's flag under the Amiga
+    art (Escape ignored until a non-digit key has been read in that list call, the first key's residue taken as set).
+    The flag is an uninitialised byte, an original quirk, and is **not followed**: Escape in every Amiga list always
+    leaves, as DOS does, under DOS, Best and Amiga art. This is how the Client already behaved; no code change.
 - **The exit question (C1): seen.** Leaving the loot with treasure left: the treasure-left line with the
   question in pen 24, then Yes / No. The text window and row 24 are **0 pixels off** against the Client, apart from
   the Client's gadget highlight.
@@ -200,7 +200,7 @@ needs their handlers in play. Neither was set up. **open**
 - hunk 19 +0x3A60–0x3B84 (Amiga coin take kinds list) → read; seen in FS-UAE (0 pixels off). Names from hunk 31 +0x2D6.
 - hunk 13 +0x2B76–0x2FAC (Amiga list routine) → read for its keys: the digit-flag byte -1(a5) is never set by the
   list. Escape exits only when the menu routine's lookup cleared it before (FS-UAE s60: X then Escape leaves, Escape
-  first does not). bug? question.
+  first does not). Not followed (user s61): Escape always leaves, as DOS.
 - hunk 19 +0x4DD6–0x5884 (Amiga menu routine: RAWKEY → table hunk 20 +0x629, Esc 0xFE → 0 at +0x533C, lookup
   +0x57D0) → read for its keys; left Shift as '7' seen on the 3D command line.
 - hunk 16 +0x155A (Amiga game save) → read: its messages go to row 24 and the text window is kept; Client fixed;

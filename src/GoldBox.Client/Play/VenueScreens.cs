@@ -360,7 +360,7 @@ public static class VenueScreens
                 string text = t.CombatTexts[m.Text];
                 MemberMessage(t, who2, AmigaView.Case(who2.Name), text.Length > 40 ? text[..40] : text, pause: true);
             }
-        });
+        }, t.Training);
     }
 
     /// <summary>

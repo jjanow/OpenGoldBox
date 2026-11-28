@@ -79,6 +79,15 @@ public sealed class ClientSettings
     /// </summary>
     public bool AmigaGridOffText { get; set; }
 
+    /// <summary>
+    /// Option, off by default (user, s61): the program's roster deletes on a game Save and Load (GAME.OVR 0x1FD3E,
+    /// 0x1F5E8; docs/re/start-menu.md "Roster deletes"). Off: the engine's roster keeps every character, so a member of a
+    /// saved game can be Added again (a copy). On: a Save erases the members' roster files and a Load erases those of
+    /// members whose character file exists, as the original, in the engine's roster folder only (never the game folder).
+    /// Changed with <c>--roster-deletes</c> / <c>--no-roster-deletes</c> or the controls screen's ROSTER ON SAVE row.
+    /// </summary>
+    public bool RosterDeletes { get; set; }
+
     /// <summary>QoL, off = original: show the 320×200 screen stretched to 4:3 (pixels 1.2 times taller, as on a CRT).</summary>
     public bool Stretch43 { get; set; }
 

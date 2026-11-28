@@ -132,7 +132,7 @@ OV = {
     'O:4978': dict(role='temple cures 2–4: heal 1d8 / 2d8+1 / 3d8+3 through 0x2C647 (flag 0; handler 0x4E revives)', kind='play',
                    port='TempleRules.Apply, EffectHandlers.RestoreHitPoints'),
     'O:4db1': dict(role='temple remove curse (DS:6C95 := member, spell routine 0x29558)', kind='play', port='TempleRules.RemoveCurse'),
-    'O:4a87': dict(role='temple raise dead: 32 and 55 removed through 0x2AF10 under DS:681F, HP / Con / max-HP rule', kind='play',
+    'O:4a87': dict(role='temple raise dead: 32 and 55 removed through 0x2AF10 under DS:681F, HP / Con / max-HP rule (max HP fixed s61: the hall\'s Con bonus difference per level)', kind='play',
                    port='TempleRules.RaiseDead'),
     'O:4cc8': dict(role='temple cure poison: 55, 22, 15 removed through 0x2AF10 under DS:681F (s51 decision: every record, lock held throughout; handler 22\'s lock clearing and kill fixed)', kind='play', port='TempleRules.CurePoison'),
     'O:47c0': dict(role='temple cure blindness: 33 removed through 0x2AF10', kind='play', port='TempleRules.Apply'),
@@ -362,8 +362,8 @@ S52 = {
     'O:1eeaa': dict(status='W', why='read whole s52 (EncounterHost.LoadMonsterRecord)'),
     'O:1f248': dict(status='W', why='read whole s52 (EncounterHost.CreateNpc, EclVm.DoAddNpc)'),
     'O:1f42c': dict(status='W', why='read whole s52 (PartyMenu.Join, EclVm.DoAddNpc)'),
-    'O:1f5e8': dict(status='W', why='read whole s52 (PorGame.Loaded, PorParty.Load); roster-file erase not done'),
-    'O:1fd3e': dict(status='W', why='read whole s52 (PorSaveGame.Build, PorParty.Save); roster-file erase not done'),
+    'O:1f5e8': dict(status='W', why='read whole s52 (PorGame.Loaded, PorParty.Load)'),
+    'O:1fd3e': dict(status='W', why='read whole s52 (PorSaveGame.Build, PorParty.Save)'),
     'O:206a3': dict(status='W', why='read whole s52 (EndGame.FrameTime, EndGameAnimation)'),
     'O:20941': dict(status='W', why='read whole s52 (EndGame.Steps)'),
     # lane F
@@ -487,8 +487,8 @@ S60.update({
     # lane A: area loop, camp, save
     'O:3b19': dict(status='W', why='read whole s60 lane A: the camp after a vector-2 wipe fixed, seen in DOSBox-X and the Client'),
     'O:18fb1': dict(status='W', why='read whole s60 lane A, seen in DOSBox-X and the Client (Select / Place extended keys)'),
-    'O:1fd3e': dict(status='W', why='read whole s52; the roster-file deletes read s60 (design question, not modelled)'),
-    'O:1f5e8': dict(status='W', why='read whole s52; the roster-file deletes read s60 (design question, not modelled)'),
+    'O:1fd3e': dict(status='W', why='read whole s52; the roster-file deletes read s60, built s61 as an option off by default (PorRoster.RemoveSaved)'),
+    'O:1f5e8': dict(status='W', why='read whole s52; the roster-file deletes read s60, built s61 as an option off by default (PorRoster.RemoveLoaded)'),
     # lane C: combat, items, temple
     'O:29558': dict(status='W', why='s60 lane C: read whole, messages compared under the venue oracle (cure 7)'),
     'O:99fd': dict(status='W', why='read whole s52; s60 lane C: the view and panel before trigger 0x0F ported'),

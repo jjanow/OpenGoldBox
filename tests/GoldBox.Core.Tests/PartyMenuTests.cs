@@ -146,6 +146,44 @@ public class PartyMenuTests
         }
     }
 
+    /// <summary>
+    /// The roster deletes of the game Save (0x1FD3E) and Load (0x1F5E8), the option of user s61 (off by default in the
+    /// Client): Save erases each member's files that exist, each on its own; Load only when the character file (JSON or
+    /// <c>.cha</c>) exists, else none. Other characters' files and the list stay.
+    /// </summary>
+    [Fact]
+    public void Roster_deletes_follow_the_programs_save_and_load_rules()
+    {
+        var dir = Directory.CreateTempSubdirectory("goldbox-roster-");
+        try
+        {
+            var roster = new PorRoster(dir.FullName);
+            roster.Save(Pc("ALF"), null);
+            roster.Save(Pc("BO"), null);
+            File.WriteAllBytes(Path.Combine(dir.FullName, "ALF.SPC"), new byte[9]); // a DOS file next to the JSON
+            Assert.Equal(2, roster.RemoveSaved([Pc("ALF")]));
+            Assert.Null(roster.Load("ALF"));
+            Assert.NotNull(roster.Load("BO"));
+            Assert.Equal(["ALF", "BO"], roster.Entries(null)); // the program's Save leaves charlist.txt alone
+
+            // Load: no character file → the .itm stays (0x1FA6B jumps past all three).
+            File.WriteAllBytes(Path.Combine(dir.FullName, "CY.ITM"), new byte[63]);
+            Assert.Equal(0, roster.RemoveLoaded([Pc("CY")]));
+            Assert.True(File.Exists(Path.Combine(dir.FullName, "CY.ITM")));
+            // Save erases it on its own test.
+            Assert.Equal(1, roster.RemoveSaved([Pc("CY")]));
+            // Load with the character file: every file present goes.
+            File.WriteAllBytes(Path.Combine(dir.FullName, "BO.ITM"), new byte[63]);
+            Assert.Equal(2, roster.RemoveLoaded([Pc("BO")]));
+            Assert.Null(roster.Load("BO"));
+            Assert.Empty(dir.GetFiles().Where(f => f.Name != PorRoster.ListFile));
+        }
+        finally
+        {
+            dir.Delete(true);
+        }
+    }
+
     [Fact]
     public void Roster_reads_a_character_copied_from_the_dos_game()
     {

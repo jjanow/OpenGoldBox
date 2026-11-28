@@ -34,7 +34,7 @@ public static class TempleRules
     public static readonly byte[] PoisonEffects = [55, 22, 15];
 
     private const int Status = 0x10C, InPlay = 0x10D, Hp = 0x11B, MaxHp = 0x32, Con = 0x14, RolledHp = 0xB1,
-        Levels = 0x96, FighterLevel = 0x98;
+        Levels = 0x96, ClassByte = 0x2F;
 
     /// <summary>
     /// Whether the entry's condition holds (else the program asks "cure anyway"). Cures 2–4 have none (always
@@ -60,10 +60,11 @@ public static class TempleRules
     /// the healing of cures 2–4 is 0x2C647 with flag 0 (<see cref="EffectHandlers.RestoreHitPoints"/>, which revives an
     /// unconscious character through handler 0x4E). Without an engine the records are only dropped and the healing is
     /// <see cref="Heal"/>. <paramref name="said"/> receives the spell routine's own messages that cure 7 raises
-    /// (<see cref="RemoveCurse"/>), in the program's order.
+    /// (<see cref="RemoveCurse"/>), in the program's order. <paramref name="tables"/> gives raise dead the hall's
+    /// Constitution bonus (DS:408E) for its fixed max-HP rule.
     /// </summary>
     public static void Apply(Cure cure, EclCharacter c, Func<int, int> random, EffectHandlers? effects = null,
-        Action<EclCharacter, EffectEvent>? said = null)
+        Action<EclCharacter, EffectEvent>? said = null, TrainingTables? tables = null)
     {
         switch (cure)
         {
@@ -101,7 +102,7 @@ public static class TempleRules
                 break;
             case Cure.RaiseDead:
                 if (Applies(cure, c)) // 0x4B18: the status test made before the questions ([bp−0x106])
-                    RaiseDead(c, effects);
+                    RaiseDead(c, effects, tables);
                 break;
             case Cure.RemoveCurse:
                 RemoveCurse(c, effects, said);
@@ -139,13 +140,15 @@ public static class TempleRules
     }
 
     /// <summary>
-    /// Raise dead (0x4B22–0x4C9D), read literally: remove effects 32 and 55; HP 1, status 0, in play 1; Con − 1 if
-    /// above 0; d = max HP − rolled HP (0xB1) when above, else 0. With the new Con ≥ 14: s = Σ over the 8 level bytes
-    /// (0x96 + k) that are &gt; 0 of: fighter (k = 2) level × (Con − 14); others 2 × level when Con &gt; 15, else
-    /// level (byte sum); d = d div s when s &gt; 0; then max HP −= d unless Con ≥ 17 and the fighter level ≤ 0.
-    /// No dice. [?] The intent (removing one level's worth of Constitution hit points?) is not settled.
+    /// Raise dead (0x4B22–0x4C9D): remove effects 32 and 55 (under the lock, with the engine); HP 1, status 0, in play
+    /// 1; Con − 1 if above 0; then max HP loses the hit points the lost point of Constitution gave
+    /// (<see cref="RaiseDeadLoss"/>). The program's own max-HP rule (d = max HP − rolled HP; d div s, s from the new
+    /// Con; skipped below Con 14 and for Con ≥ 17 without a fighter level; docs/re/shop-format.md "Raise dead") is an
+    /// original bug, <b>fixed, not an option</b> (user, s61): its division takes off 1 or 2 points where the hall's own
+    /// bonus would take off one per level, and its Con 14 counts for classes the hall gives nothing at 14. Without
+    /// <paramref name="tables"/> (no program data) max HP is left as it is. No dice.
     /// </summary>
-    public static void RaiseDead(EclCharacter c, EffectHandlers? effects = null)
+    public static void RaiseDead(EclCharacter c, EffectHandlers? effects = null, TrainingTables? tables = null)
     {
         if (effects is not null)
         {
@@ -162,29 +165,37 @@ public static class TempleRules
         c[Hp] = 1;
         c[Status] = 0;
         c[InPlay] = 1;
+        byte oldCon = c[Con];
         if (c[Con] > 0)
             c[Con]--;
-        byte d = c[MaxHp] > c[RolledHp] ? (byte)(c[MaxHp] - c[RolledHp]) : (byte)0;
-        if (c[Con] < 14)
+        if (tables is null)
             return;
-        byte s = 0;
+        int loss = RaiseDeadLoss(c, oldCon, c[Con], tables);
+        if (loss > 0)
+            c[MaxHp] = (byte)Math.Max(1, c[MaxHp] - loss);
+    }
+
+    /// <summary>
+    /// The fixed raise-dead loss (user, s61): per level, the hall's Constitution bonus (0x1D8B0's per-class term:
+    /// DS:408E[Con] signed, +1 for Con &gt; 16 and +1 for Con &gt; 17 when the class byte 0x2F is 2) for
+    /// <paramref name="oldCon"/> minus that for <paramref name="newCon"/>, as the hall and creation add it:
+    /// Σ over the classes with a level &gt; 0 of level × (bonus(old) − bonus(new)), divided by the number of those
+    /// classes (each training and creation add (rolls + Σ bonus) div classes). Max HP never drops below 1.
+    /// </summary>
+    public static int RaiseDeadLoss(EclCharacter c, byte oldCon, byte newCon, TrainingTables tables)
+    {
+        int Bonus(byte con) => (sbyte)tables.At(tables.ConBonus + con)
+            + (c[ClassByte] == 2 && con > 16 ? 1 : 0) + (c[ClassByte] == 2 && con > 17 ? 1 : 0);
+        int diff = Bonus(oldCon) - Bonus(newCon), sum = 0, classes = 0;
         for (int k = 0; k < 8; k++)
         {
             sbyte lv = (sbyte)c[Levels + k];
             if (lv <= 0)
                 continue;
-            if (k == 2)
-                s = unchecked((byte)(s + lv * (c[Con] - 14)));
-            else if (c[Con] > 15)
-                s = unchecked((byte)(s + 2 * lv));
-            else
-                s = unchecked((byte)(s + lv));
+            classes++;
+            sum += lv * diff;
         }
-        if (s > 0)
-            d = (byte)(d / s);
-        if (c[Con] >= 17 && (sbyte)c[FighterLevel] <= 0)
-            return;
-        c[MaxHp] = unchecked((byte)(c[MaxHp] - d));
+        return classes == 0 ? 0 : sum / classes;
     }
 
     /// <summary>

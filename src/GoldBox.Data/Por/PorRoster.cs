@@ -81,6 +81,56 @@ public sealed class PorRoster(string folder)
         return c;
     }
 
+    /// <summary>
+    /// The game Save's roster deletes (0x1FD3E, 0x20124–0x2023C: after each member's save files, its <c>.cha</c>,
+    /// <c>.itm</c> and <c>.spc</c> are erased, each when it exists), on this folder only: per member its JSON file and
+    /// any DOS-named <c>.cha</c> / <c>.itm</c> / <c>.spc</c>, each when present. A character in a saved game is then no
+    /// longer in the roster (no copies); Remove writes it back. An option, off by default (user s61): the Client runs
+    /// it only when <c>RosterDeletes</c> is on. Returns the files removed.
+    /// </summary>
+    public int RemoveSaved(IEnumerable<EclCharacter> members)
+    {
+        int n = 0;
+        foreach (var c in members)
+            foreach (var f in Files(c.Name))
+                n += Erase(f);
+        return n;
+    }
+
+    /// <summary>
+    /// The game Load's roster deletes (0x1F5E8, 0x1F9DD–0x1FA6B): per member, only when its character file exists (the
+    /// program: <c>.cha</c>; here the JSON file or a DOS <c>.cha</c>) every one of its files present is erased; with no
+    /// character file none is touched. Same option as <see cref="RemoveSaved"/>. Returns the files removed.
+    /// </summary>
+    public int RemoveLoaded(IEnumerable<EclCharacter> members)
+    {
+        int n = 0;
+        foreach (var c in members)
+        {
+            var files = Files(c.Name);
+            if (files[0] is null && files[1] is null)
+                continue;
+            foreach (var f in files)
+                n += Erase(f);
+        }
+        return n;
+    }
+
+    /// <summary>A name's files here: JSON, <c>.cha</c>, <c>.itm</c>, <c>.spc</c> (null where absent).</summary>
+    private string?[] Files(string name)
+    {
+        var dos = DosStem(name);
+        return [Find(Stem(name) + ".json"), Find(dos + ".cha"), Find(dos + ".itm"), Find(dos + ".spc")];
+    }
+
+    private static int Erase(string? path)
+    {
+        if (path is null || !File.Exists(path))
+            return 0;
+        File.Delete(path);
+        return 1;
+    }
+
     private static IEnumerable<byte[]> Records(string? path, int size)
     {
         if (path is null)

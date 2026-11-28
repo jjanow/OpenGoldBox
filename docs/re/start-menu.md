@@ -496,6 +496,18 @@ save's party-entry shape (`SavedCharacter`, module-format §15). A DOS `NAME.CHA
 JSON file has the name. `[?]` The program's file name is the name through its 8.3 clean-up; ours keeps letters, digits,
 '-' and '_'.
 
+**Roster deletes (0x1FD3E, 0x1F5E8; read s60, `s60-lane-A.md` §2).** The game Save, for each party member after its
+save files, erases its `.cha`, `.itm` and `.spc` from the roster, each when it exists; the game Load, once every member
+is loaded and joined, erases the three only when the member's `.cha` exists (none of them otherwise). `charlist.txt` is
+not touched by either. So in the original a character in a saved game is off the roster until Remove writes it back
+(no copies). **Engine (user s61): an option, off by default.** Off: nothing is deleted, a saved member can be Added
+again (a copy). On (`ClientSettings.RosterDeletes`, `--roster-deletes` / `--no-roster-deletes`, the controls
+screen's ROSTER ON SAVE: KEEP / DELETE): the same rules on the engine's roster folder only, never the game folder:
+after every game Save (camp, hall, party menu, Exit) `PorRoster.RemoveSaved` erases each member's JSON and DOS-named
+files, each when present; on every Load (party menu, hall, a hall Load of another area) `PorRoster.RemoveLoaded`
+erases them only when the member's character file (JSON or `.cha`) exists, before the loaded game's entry runs. A
+`--save` start is not the program's Load and deletes nothing.
+
 **Save directory check (0x1E294, read s49).** The roster and save routines (0x1E00A, 0x1E1A6, 0x1E7D3, 0x1F5F0,
 0x1F9CD, 0x1FDA7) call it before their files: MkDir (START 0xC756, INT 21h AH = 39h) on the save path DS:537A minus
 its last character (the trailing backslash), then IOResult. 0 (made) or 5 (access denied: it exists) → done; any other

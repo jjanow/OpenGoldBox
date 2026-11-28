@@ -144,16 +144,19 @@ public class VenueProgramTests
     /// fixed (user s51, <see cref="TempleRules.CurePoison"/>): where the program's cure leaves a record of 55, 22 or 15,
     /// changes the record (handler 15's hit point, handler 22's death) or raises a message, the test expects the fixed
     /// result instead, worked out here from the input: every 55, 22 and 15 gone, the record, RandSeed and messages
-    /// unchanged, the lock 0.
+    /// unchanged, the lock 0. Raise dead's max HP is also an original bug fixed (user s61,
+    /// <see cref="TempleRules.RaiseDead"/>): the test expects the hall's Con bonus difference per level instead of the
+    /// program's byte 0x32; every other byte as the program.
     /// </summary>
     [OracleDataFact]
     public void Temple_entries_match_the_program_under_emulation()
     {
         var program = PorProgram.Open(PorData.Open())!;
         var names = PorSpellData.Names(program);
+        var tables = PorTrainingTables.From(PorProgramData.Open(PorData.Open()))!;
         using var doc = Doc();
         var fails = new List<string>();
-        int n = 0, poisonFixed = 0;
+        int n = 0, poisonFixed = 0, raiseFixed = 0;
         var seen = new HashSet<int>();
         foreach (var k in doc.RootElement.GetProperty("templeEntries").EnumerateArray())
         {
@@ -202,7 +205,7 @@ public class VenueProgramTests
                         messages++;
                     else
                         effectMessages++;
-                });
+                }, tables);
             }
             string what = $"case {n} ({cure})";
             var counts = k.GetProperty("counts");
@@ -238,7 +241,31 @@ public class VenueProgramTests
                 fails.Add($"{what}: lock {fx.Cells.Lock}");
             if (rng.Seed != k.GetProperty("seedAfter").GetUInt32())
                 fails.Add($"{what}: RandSeed differs");
-            SameRecord(fails, what, c, after.GetProperty("record").GetString()!);
+            string wantRecord = after.GetProperty("record").GetString()!;
+            if (cured && applies && cure == TempleRules.Cure.RaiseDead)
+            {
+                // Raise dead's max HP, an original bug fixed (user s61): the program's byte 0x32 is replaced by the
+                // input's max HP less, per level, the hall's bonus (DS:408E, +1 above 16 and 17 for class byte 2) for
+                // the old Con minus that for the new, divided by the classes with a level; never below 1.
+                var input = Convert.FromHexString(k.GetProperty("record").GetString()!);
+                int Bonus(int con) => (sbyte)tables.At(0x408E + con) + (input[0x2F] == 2 && con > 16 ? 1 : 0)
+                    + (input[0x2F] == 2 && con > 17 ? 1 : 0);
+                int oldCon = input[0x14], diff = Bonus(oldCon) - Bonus(Math.Max(0, oldCon - 1)), sum = 0, classes = 0;
+                for (int j = 0; j < 8; j++)
+                    if ((sbyte)input[0x96 + j] > 0)
+                    {
+                        classes++;
+                        sum += (sbyte)input[0x96 + j] * diff;
+                    }
+                int loss = classes == 0 ? 0 : sum / classes;
+                var want = Convert.FromHexString(wantRecord);
+                byte fixedMax = loss > 0 ? (byte)Math.Max(1, input[0x32] - loss) : input[0x32];
+                if (want[0x32] != fixedMax)
+                    raiseFixed++;
+                want[0x32] = fixedMax;
+                wantRecord = Convert.ToHexString(want);
+            }
+            SameRecord(fails, what, c, wantRecord);
             string wantEffects = string.Join(" ", after.GetProperty("effects").EnumerateArray().Select(e => e.GetString()!.ToUpperInvariant()));
             if (Effects(c.Effects) != wantEffects)
                 fails.Add($"{what} effects: {Effects(c.Effects)} vs {wantEffects}");
@@ -254,6 +281,7 @@ public class VenueProgramTests
         Assert.True(n >= 1000, $"{n} cases");
         Assert.True(seen.Count == 9, $"entries cured: {string.Join(",", seen)}");
         Assert.True(poisonFixed >= 5, $"{poisonFixed} poison cures where the program harms");
+        Assert.True(raiseFixed >= 5, $"{raiseFixed} raise deads where the fixed max HP differs from the program's");
         Assert.True(fails.Count == 0, $"{fails.Count} differences:\n" + string.Join("\n", fails.Take(40)));
     }
 

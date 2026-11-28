@@ -1365,6 +1365,7 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
             IsScroll = Resources.IsScroll,
             ItemTypes = Resources.ItemTypes,
             TempleNames = Resources.TempleNames,
+            Training = Resources.Training,
             Effects = game?.OutsideEffects,
             ItemEffects = () => CampEffects(party),
             Halt = Halt,
@@ -1731,6 +1732,7 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
             var path = Path.Combine(SaveFolder, GoldBox.Data.Module.Por.PorEngineSave.FileName(letter));
             GoldBox.Data.Module.Por.PorEngineSave.Write(path, save);
             Log.Add($"saved slot {letter} to {path}");
+            GameSaved?.Invoke(party);
             return null;
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
@@ -1760,6 +1762,7 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
             var path = Path.Combine(SaveFolder, GoldBox.Data.Module.Por.PorEngineSave.FileName(letter));
             GoldBox.Data.Module.Por.PorEngineSave.Write(path, save);
             Log.Add($"saved slot {letter} (party menu) to {path}");
+            GameSaved?.Invoke(party);
             return null;
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
@@ -1767,6 +1770,12 @@ public sealed class ClientPlayer(ScriptRunner runner, Func<EclMemory> memory) : 
             return "SAVE FAILED: " + e.Message;
         }
     }
+
+    /// <summary>
+    /// Called with the party after every game Save is written (the camp's, the hall's, the party menu's and Exit's,
+    /// all 0x1FD3E): the roster-delete option's hook (<see cref="GoldBox.Data.Por.PorRoster.RemoveSaved"/>).
+    /// </summary>
+    public Action<EclParty>? GameSaved { get; set; }
 
     /// <summary>The camp menu is up (the position line says CAMPING, DS:49F3 = 2).</summary>
     public bool Camping => Interface == Venue.Camp;

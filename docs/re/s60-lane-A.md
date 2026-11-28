@@ -41,7 +41,7 @@ Noted, not a question: a dead party at this camp can Save (the program writes it
 dead). It needs a vector 2 with a party-killing DAMAGE, which the shipped scripts would have to contain; not checked
 which, if any, do.
 
-## 2. The game Save / Load roster-file deletes (0x1FD3E, 0x1F5E8) — bug? (design question)
+## 2. The game Save / Load roster-file deletes (0x1FD3E, 0x1F5E8) — decided s61, built (an option, off by default)
 
 Read whole (the delete parts):
 - **Save 0x1FD3E**, for each member in list order (DS:5D96, next at +0x104), after its `CHRDAT<l><n>` files are written
@@ -60,12 +60,11 @@ names with the same DosStem share one file, so a Save erases the other character
 
 The engine keeps its roster in its own folder (`PorRoster`, JSON per character, DOS files read when no JSON exists) and
 never writes into the player's game folder; the deletes are not done, so a saved member can be Added again from the
-roster (a copy). **Question for the user**, behaviour left as it is:
-1. Keep the separate roster as it is (copies possible; nothing is ever deleted).
-2. Port the deletes onto the engine's roster folder: on Save and Load remove the members' JSON (and any DOS-named
-   files there), with Load's "only when `.cha` exists" rule mapped to "only when the character file exists"; never in
-   the game folder.
-3. Make (2) an option, off = (1) or on = the original.
+roster (a copy). **Decided (user s61): option 3**, built: an option, **off by default** (the separate roster as
+before); on, the program's deletes run on the engine's roster folder only (`PorRoster.RemoveSaved` after every game
+Save, `PorRoster.RemoveLoaded` on Load: only when the member's character file, JSON or `.cha`, exists), never in the
+game folder. `start-menu.md` §5 "Roster deletes"; Client setting `RosterDeletes`, `--roster-deletes`, controls screen
+ROSTER ON SAVE.
 
 ## 3. Order's Select / Place extended keys (0x18FB1) — seen, read
 
@@ -132,8 +131,8 @@ lane added:
 - 0x959F → line, hit, blank, list order read; Client list timing fixed, seen (§1)
 - 0x34BB → its party-wipe path seen in DOSBox-X and the Client with the camp after it (§1)
 - 0x18FB1 → read whole, seen in DOSBox-X and the Client (Select / Place extended keys) (§3)
-- 0x1FD3E → the roster deletes read (bug? design question §2)
-- 0x1F5E8 → the roster deletes read (bug? design question §2)
+- 0x1FD3E → the roster deletes read; built as an option, off by default (user s61, §2)
+- 0x1F5E8 → the roster deletes read; built as an option, off by default (user s61, §2)
 - 0x1E294 → read (MkDir + save-disk prompt; N as before)
 - 0x424E, 0xEBE8, 0x17772, 0x1980A, 0x1DDD3, 0x203C6, 0x24C2C → empty routines, read
 - START 0x0006 → read whole (§5)

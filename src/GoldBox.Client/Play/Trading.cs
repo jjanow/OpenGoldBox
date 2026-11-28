@@ -123,6 +123,9 @@ public sealed class TradeContext
     }
     /// <summary>The temple's heal list names (program table), or null.</summary>
     public IReadOnlyList<string>? TempleNames { get; init; }
+    /// <summary>The hall's tables (DS:408E, the Constitution bonus) for raise dead's fixed max-HP rule (user s61,
+    /// <see cref="TempleRules.RaiseDead"/>). Null: max HP is left as it is.</summary>
+    public TrainingTables? Training { get; init; }
     /// <summary>The game's effect engine outside a fight (<c>PorGame.OutsideEffects</c>): the temple's cure 1 removes the
     /// disease effects through it (0x4864, <see cref="TempleRules.CureDisease"/>). Null: the records are only dropped.</summary>
     public EffectHandlers? Effects { get; init; }

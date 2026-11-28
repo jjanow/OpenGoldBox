@@ -120,4 +120,24 @@ public class SettingToggleTests
         Assert.Null(ClientOptions.Parse([]).AmigaAltKeys);
         Assert.Contains("--amiga-grid-off-text", ClientOptions.Usage);
     }
+
+    /// <summary>The roster-delete option of s61: off by default (the engine's roster keeps everyone), saved, and on the
+    /// command line.</summary>
+    [Fact]
+    public void The_roster_delete_option_is_off_by_default_and_remembered()
+    {
+        var settings = new ClientSettings();
+        Assert.False(settings.RosterDeletes);
+        int saves = 0;
+        var t = SettingToggle.RosterDeletes(settings, () => saves++);
+        Assert.Equal("ROSTER ON SAVE: KEEP", t.Row);
+        t.Flip();
+        Assert.Equal(("ROSTER ON SAVE: DELETE", 1), (t.Row, saves));
+        Assert.All(t.Help, h => Assert.True(h.Length <= 37, h));
+        Assert.True(ClientSettings.FromJson(settings.ToJson()).RosterDeletes);
+        Assert.True(ClientOptions.Parse(["--roster-deletes"]).RosterDeletes);
+        Assert.False(ClientOptions.Parse(["--no-roster-deletes"]).RosterDeletes);
+        Assert.Null(ClientOptions.Parse([]).RosterDeletes);
+        Assert.Contains("--roster-deletes", ClientOptions.Usage);
+    }
 }
